@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { diagnoseStagingPreviewBinding } from "./staging-browser-smoke.mjs";
 
 import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyCriticalResourceFailureKind, classifyCriticalResourceRequestFailure, classifyCriticalResourceResponse, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isDashboardDetailsGet, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
@@ -22,6 +23,13 @@ test("protected dispatch takes a deployment binding and verifies it before owner
   assert.ok(workflow.indexOf("Verify exact Preview lineage before secret injection") < workflow.indexOf("Check authenticated staging pages with synthetic owner"));
   assert.ok(workflow.indexOf("Verify fixed staging alias before owner secret injection") < workflow.indexOf("Check authenticated staging pages with synthetic owner"));
   assert.match(workflow, /github\.ref_protected/u);
+  assert.match(workflow, /default: fixed_alias/u);
+  assert.match(workflow, /CELEBRATEDEAL_BROWSER_SURFACE: \$\{\{ inputs\.surface \}\}/u);
+  const previewStart = workflow.indexOf("Verify immutable staging Preview before owner secret injection");
+  const sessionStart = workflow.indexOf("Check authenticated staging pages with synthetic owner");
+  assert.ok(previewStart > 0 && previewStart < sessionStart);
+  assert.match(workflow.slice(previewStart, sessionStart), /inputs\.surface == 'immutable_preview'/u);
+  assert.equal(workflow.slice(0, sessionStart).includes("secrets.JOB_SECRET"), false);
 });
 
 test("validated source and immutable Preview host are required before launching a browser", async () => {
@@ -163,7 +171,7 @@ test("Dashboard detail diagnostics match only the staging read endpoint", () => 
 });
 
 test("a rendered journey remains blocked when an unexpected browser POST occurs", async () => {
-  const origin = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
+  let origin = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
   let unsafeAborts = 0;
   let localNoOps = 0;
   let cleanupStatus = 204;
@@ -172,6 +180,7 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
   let triggerChunkNetworkFailure = false;
   let triggerNavigationAbort = false;
   let timeoutStage = null;
+  const sessionRequests = [];
   const browser = {
     newContext: async () => {
       let handler;
@@ -182,8 +191,8 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
         route: async (_pattern, callback) => { handler = callback; },
         routeWebSocket: async () => {},
         request: {
-          post: async () => ({ status: () => 204, dispose: async () => {} }),
-          delete: async () => ({ status: () => cleanupStatus, dispose: async () => {} }),
+          post: async (url, options) => { sessionRequests.push({ method: "POST", url, options }); return { status: () => 204, dispose: async () => {} }; },
+          delete: async (url, options) => { sessionRequests.push({ method: "DELETE", url, options }); return { status: () => cleanupStatus, dispose: async () => {} }; },
         },
         newPage: async () => {
           let onResponse = () => {};
@@ -357,6 +366,92 @@ test("a rendered journey remains blocked when an unexpected browser POST occurs"
     kpisReady: true, detailsReady: false,
   });
   assert.equal(JSON.stringify(noDom).includes(INPUT.JOB_SECRET), false);
+  timeoutStage = null;
+  origin = `https://${INPUT.CELEBRATEDEAL_DEPLOYMENT_HOST}`;
+  sessionRequests.length = 0;
+  const previewEnv = { ...INPUT, CELEBRATEDEAL_BROWSER_SURFACE: "immutable_preview" };
+  const preview = await runBrowserSmoke(previewEnv, {
+    verifyLineage: async () => true,
+    verifyPreview: async () => true,
+    verifyAlias: async () => { throw new Error("Preview must not use the current alias"); },
+    playwright: { chromium: { launch: async () => browser } },
+  });
+  assert.equal(preview.result, "PASS");
+  assert.equal(preview.schemaVersion, "celebratedeal-staging-preview-browser-smoke/v1");
+  assert.equal(preview.surface, "immutable_preview");
+  assert.equal(preview.previewBinding, "VERIFIED");
+  assert.equal(preview.aliasBinding, "NOT_VERIFIED");
+  assert.equal(preview.journeys.length, 10);
+  assert.equal(preview.sideEffects.syntheticSessionCreated, 2);
+  assert.equal(preview.sideEffects.syntheticSessionRevoked, 2);
+  assert.equal(preview.browser.hydrationInteractionsPassed, 2);
+  assert.equal(preview.browser.navigationInteractionsPassed, 2);
+  assert.deepEqual(sessionRequests.map(({ method }) => method), ["POST", "DELETE", "POST", "DELETE"]);
+  for (const request of sessionRequests) {
+    assert.equal(request.url, `${origin}/api/admin/ops/payuni/wp4-session`);
+    assert.equal(request.options.maxRedirects, 0);
+    assert.equal(request.options.headers["x-celebratedeal-source-sha"], INPUT.CELEBRATEDEAL_SOURCE_SHA);
+  }
+  assert.equal(JSON.stringify(preview).includes(INPUT.JOB_SECRET), false);
+  sessionRequests.length = 0;
+  let previewChecks = 0;
+  const drift = await runBrowserSmoke(previewEnv, {
+    verifyLineage: async () => true, verifyPreview: async () => ++previewChecks < 3,
+    playwright: { chromium: { launch: async () => browser } },
+  });
+  assert.equal(drift.result, "BLOCKED");
+  assert.equal(drift.reason, "SESSION_CLEANUP_FAILED");
+  assert.equal(drift.sideEffects.syntheticSessionRevoked, 0);
+  assert.deepEqual(sessionRequests.map(({ method }) => method), ["POST"]);
+  cleanupStatus = 500;
+  const previewCleanup = await runBrowserSmoke(previewEnv, {
+    verifyLineage: async () => true, verifyPreview: async () => true,
+    playwright: { chromium: { launch: async () => browser } },
+  });
+  assert.equal(previewCleanup.result, "BLOCKED");
+  assert.equal(previewCleanup.reason, "SESSION_CLEANUP_FAILED");
+});
+
+test("immutable Preview metadata is exact and fails closed before owner session", async () => {
+  const deployment = { id: "dpl_fixture", name: "celebrate-deal-staging", target: null, readyState: "READY",
+    url: INPUT.CELEBRATEDEAL_DEPLOYMENT_HOST, meta: { githubCommitSha: INPUT.CELEBRATEDEAL_SOURCE_SHA } };
+  const probe = (body) => async (url, options) => {
+    assert.equal(url, `https://api.vercel.com/v13/deployments/${INPUT.CELEBRATEDEAL_DEPLOYMENT_HOST}?slug=a25814740s-projects`);
+    assert.equal(options.redirect, "manual");
+    return { status: 200, json: async () => body };
+  };
+  assert.equal(await diagnoseStagingPreviewBinding(INPUT, probe(deployment)), "VERIFIED");
+  for (const wrong of [{ target: "production" }, { name: "celebrate-deal" }, { readyState: "BUILDING" },
+    { url: "different.vercel.app" }, { meta: { githubCommitSha: "f".repeat(40) } }, { id: "" }]) {
+    assert.equal(await diagnoseStagingPreviewBinding(INPUT, probe({ ...deployment, ...wrong })), "DEPLOYMENT_METADATA_INVALID");
+  }
+  const env = { ...INPUT, CELEBRATEDEAL_BROWSER_SURFACE: "immutable_preview" };
+  assert.equal(validateBrowserSmokeBinding({ ...env, CELEBRATEDEAL_BROWSER_SURFACE: "arbitrary" }), false);
+  for (const host of ["evil.example", "example.vercel.app:443", "example.vercel.app/path", "user@example.vercel.app", "example.vercel.app?x=y"]) {
+    assert.equal(validateBrowserSmokeBinding({ ...env, CELEBRATEDEAL_DEPLOYMENT_HOST: host }), false);
+  }
+  const report = await runBrowserSmoke(env, {
+    verifyLineage: async () => true, verifyPreview: async () => false,
+    playwright: { chromium: { launch: () => { throw new Error("must not launch"); } } },
+  });
+  assert.equal(report.reason, "PREVIEW_NOT_VERIFIED");
+  assert.equal(report.sideEffects.syntheticSessionCreated, 0);
+});
+
+test("Preview browser guards and diagnostics use only the selected target origin", () => {
+  const host = INPUT.CELEBRATEDEAL_DEPLOYMENT_HOST;
+  const request = (url, method = "GET") => ({ url: () => url, method: () => method, resourceType: () => "script", failure: () => ({ errorText: "net::ERR_ABORTED" }) });
+  const same = request(`https://${host}/api/dashboard/details`);
+  assert.equal(isDashboardDetailsGet(same, host), true);
+  assert.equal(classifyBrowserRequest(same, host), "READ");
+  assert.equal(classifyBrowserRequest(request(`https://${host}/api/payments/checkout`, "POST"), host), "UNSAFE");
+  assert.equal(classifyCriticalResourceResponse({ url: same.url, status: () => 404, request: () => same }, host), "http4xxScript");
+  assert.equal(classifyCriticalResourceRequestFailure(same, host), "abortedScript");
+  for (const url of ["https://celebrate-deal-staging.carry-digital-nomad.in.net/dashboard", `http://${host}/dashboard`, `https://${host}:444/dashboard`, `https://user@${host}/dashboard`]) {
+    assert.equal(classifyBrowserRequest(request(url), host), "EXTERNAL");
+    assert.equal(classifyFinalPath(url, "/dashboard", host), "OFF_HOST");
+  }
+  assert.equal(classifyFinalPath(`https://${host}/dashboard`, "/dashboard", host), "EXPECTED");
 });
 
 test("browser failures expose only fixed categories", () => {
