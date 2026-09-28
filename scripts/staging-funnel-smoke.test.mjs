@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { classifyFunnelRequest, funnelCreateFeedbackKind, funnelEditorNavigationKind, funnelRouteCategory, inspectSyntheticProjectStatus, runStagingFunnelSmoke } from "./staging-funnel-smoke.mjs";
+import { classifyFunnelRequest, funnelCreateFeedbackKind, funnelEditorNavigationKind, funnelRouteCategory, inspectSyntheticProjectStatus, inspectPublicSurface, syntheticFunnelSlug, runStagingFunnelSmoke } from "./staging-funnel-smoke.mjs";
+
+test("read-only diagnostics reject arbitrary paths and emit only fixed surface categories", async () => {
+  assert.equal(syntheticFunnelSlug('/lp/staging-synthetic-abcdef123456'), 'staging-synthetic-abcdef123456');
+  for (const value of ['/lp/customer', '/lp/staging-synthetic-abcdef123456?secret=value', 'https://elsewhere.test/lp/staging-synthetic-abcdef123456', null]) assert.equal(syntheticFunnelSlug(value), null);
+  for (const [heading, expected] of [['404', 'NOT_FOUND'], ['此活動已截止', 'CLOSED'], ['系統暫時無法顯示這個頁面', 'APPLICATION_ERROR'], ['private content', 'UNKNOWN']]) {
+    const page = { getByRole: (_, options) => ({ count: async () => options.name === heading ? 1 : 0 }) };
+    assert.equal(await inspectPublicSurface(page, false), expected);
+    assert.equal(await inspectPublicSurface(page, true), 'RENDERER');
+  }
+});
 
 test("project diagnostic reads only the exact synthetic project and rejects ambiguity", async () => {
   for (const [labels, count, expected] of [[['草稿'], 1, 'DRAFT'], [['已發布'], 1, 'PUBLISHED'], [['已封存'], 1, 'ARCHIVED'], [[], 0, 'MISSING_OR_AMBIGUOUS'], [['草稿'], 2, 'MISSING_OR_AMBIGUOUS'], [['草稿', '已發布'], 1, 'UNKNOWN']]) {
@@ -12,6 +22,7 @@ test("project diagnostic reads only the exact synthetic project and rejects ambi
       },
       getByRole: (role, options) => {
         assert.equal(role, 'heading');
+        if (options.name === '銷售專案') return { waitFor: async () => {} };
         assert.deepEqual(options, { name: 'Staging Synthetic Project', exact: true });
         return { count: async () => count, locator: () => ({ getByText: (label) => ({ count: async () => labels.includes(label) ? 1 : 0 }) }) };
       },

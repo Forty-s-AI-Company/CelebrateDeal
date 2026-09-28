@@ -22,6 +22,7 @@ function receipt(sourceSha) {
     editorGetRequests: 0, editorGetResponses: 0, editorGetFinished: 0, editorGetFailures: 0, editorGetLastStatus: null,
     editorDialogs: 0, editorNavigation: "NOT_OBSERVED",
     publicStatus: null, publicRouteMatched: false, publicRendererVisible: false,
+    publicSurface: "NOT_OBSERVED",
     syntheticProjectStatus: "NOT_OBSERVED",
     pageErrors: 0, blockedWrites: 0, blockedExternal: 0,
     sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, projectCreates: 0, funnelCreates: 0, funnelWrites: 0, paymentSubmissions: 0, refundSubmissions: 0, emailSubmissions: 0 },
@@ -91,6 +92,7 @@ export async function inspectSyntheticProjectStatus(page) {
   try {
     const response = await page.goto(`https://${ALIAS}/projects`, { waitUntil: "domcontentloaded", timeout: 20_000 });
     if (response?.status() !== 200) return "UNAVAILABLE";
+    if (!await visible(page.getByRole("heading", { name: "銷售專案", exact: true }))) return "UNAVAILABLE";
     const heading = page.getByRole("heading", { name: "Staging Synthetic Project", exact: true });
     if (await heading.count() !== 1) return "MISSING_OR_AMBIGUOUS";
     // The card contains the title/status row and the management link.
@@ -103,8 +105,24 @@ export async function inspectSyntheticProjectStatus(page) {
   } catch { return "UNAVAILABLE"; }
 }
 
+/** Accept only paths created by this runner, not arbitrary tenant/public URLs. */
+export function syntheticFunnelSlug(value) {
+  return typeof value === "string" && /^\/lp\/staging-synthetic-[a-f0-9]{12}$/u.test(value.trim())
+    ? value.trim().slice(4) : null;
+}
+
+export async function inspectPublicSurface(page, rendererVisible) {
+  if (rendererVisible) return "RENDERER";
+  for (const [name, result] of [["404", "NOT_FOUND"], ["此活動已截止", "CLOSED"], ["系統暫時無法顯示這個頁面", "APPLICATION_ERROR"]]) {
+    if (await page.getByRole("heading", { name, exact: true }).count() > 0) return result;
+  }
+  return "UNKNOWN";
+}
+
 export async function runStagingFunnelSmoke(env = process.env, dependencies = {}) {
   const result = receipt(env.CELEBRATEDEAL_SOURCE_SHA);
+  const diagnosticOnly = env.CELEBRATEDEAL_FUNNEL_DIAGNOSTIC_ONLY === "true";
+  if (diagnosticOnly) result.scope = "existing_public_read_only";
   if (!validateBrowserSmokeBinding(env)) return result;
   const verifyLineage = dependencies.verifyLineage ?? verifyMvpPayUniLineage;
   const verifyAlias = dependencies.verifyAlias ?? verifyStagingAliasBinding;
@@ -130,11 +148,11 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     await context.route("**/*", (route) => {
       const kind = classifyFunnelRequest(route.request(), allowedFunnelPath);
       if (kind === "READ") return route.continue();
-      if (kind === "PROJECT_CREATE" && result.sideEffects.projectCreates === 0) {
+      if (!diagnosticOnly && kind === "PROJECT_CREATE" && result.sideEffects.projectCreates === 0) {
         result.sideEffects.projectCreates += 1;
         return route.continue();
       }
-      if (kind === "FUNNEL_WRITE" && !(new URL(route.request().url()).pathname === "/landing-pages/new" && result.sideEffects.funnelCreates > 0)) {
+      if (!diagnosticOnly && kind === "FUNNEL_WRITE" && !(new URL(route.request().url()).pathname === "/landing-pages/new" && result.sideEffects.funnelCreates > 0)) {
         result.sideEffects.funnelWrites += 1;
         if (new URL(route.request().url()).pathname === "/landing-pages/new") result.sideEffects.funnelCreates += 1;
         return route.continue();
@@ -202,7 +220,17 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
         if (url.hostname === ALIAS && url.pathname === "/landing-pages/new") result.createActionStatus = response.status();
       } catch { /* The action status stays unknown. */ }
     });
-    const slug = `staging-synthetic-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+    let slug;
+    if (diagnosticOnly) {
+      result.stage = "EXISTING_FUNNEL";
+      await page.goto(`${origin}/landing-pages`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+      const row = page.getByRole("row").filter({ has: page.getByText("Staging Synthetic Funnel", { exact: true }) }).filter({ hasText: "已發布" }).first();
+      if (!await visible(row)) { result.reason = "EXISTING_FUNNEL_UNAVAILABLE"; return result; }
+      slug = syntheticFunnelSlug(await row.getByText(/^\/lp\/staging-synthetic-[a-f0-9]{12}$/u).textContent());
+      if (!slug) { result.reason = "EXISTING_FUNNEL_INVALID"; return result; }
+      result.syntheticProjectStatus = await inspectSyntheticProjectStatus(page);
+    } else {
+    slug = `staging-synthetic-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
     result.stage = "CREATE";
     let createResponse = await page.goto(`${origin}/landing-pages/new`, { waitUntil: "domcontentloaded", timeout: 20_000 });
     if (await visible(page.getByText("請先選擇一個銷售專案，再建立一頁式網站。", { exact: true }), 2_000)) {
@@ -274,6 +302,7 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     await page.getByRole("button", { name: "發布已儲存草稿", exact: true }).click({ timeout: 10_000 });
     if (!await visible(page.getByRole("link", { name: /查看公開頁/u }))) { result.reason = "PUBLISH_FAILED"; return result; }
     result.published = true;
+    }
 
     // A separate cookie-free context proves the published page works for buyers.
     publicContext = await browser.newContext({ locale: "zh-TW", viewport: { width: 1365, height: 768 }, serviceWorkers: "block" });
@@ -294,9 +323,10 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     result.publicStatus = publicResponse?.status() ?? null;
     result.publicRouteMatched = PUBLIC_PATH.test(new URL(publicPage.url()).pathname);
     result.publicRendererVisible = await visible(publicPage.locator("[data-funnel-renderer]"));
+    result.publicSurface = await inspectPublicSurface(publicPage, result.publicRendererVisible);
     result.publicDesktop = result.publicStatus === 200 && result.publicRouteMatched && result.publicRendererVisible;
     if (!result.publicDesktop) {
-      result.syntheticProjectStatus = await inspectSyntheticProjectStatus(page);
+      if (!diagnosticOnly) result.syntheticProjectStatus = await inspectSyntheticProjectStatus(page);
       result.reason = "PUBLIC_DESKTOP_FAILED"; return result;
     }
     result.stage = "PUBLIC_MOBILE";
@@ -306,6 +336,8 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
       && await visible(publicPage.locator("[data-funnel-renderer]"))
       && await publicPage.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 1);
     result.stage = "COMPLETE";
+    // Read-only diagnostics cannot attest the create/save/publish journey.
+    if (diagnosticOnly) { result.reason = "DIAGNOSTIC_ONLY"; return result; }
     result.result = result.publicMobile && result.pageErrors === 0 && result.blockedWrites === 0
       && result.sideEffects.funnelCreates === 1 && result.sideEffects.funnelWrites >= 3 ? "PASS" : "BLOCKED";
     result.reason = result.result === "PASS" ? "NONE" : "FUNNEL_JOURNEY_FAILED";

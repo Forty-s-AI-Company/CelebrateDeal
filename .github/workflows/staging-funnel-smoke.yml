@@ -11,6 +11,11 @@ on:
         description: Immutable Preview host recorded by the protected GitHub deployment
         required: true
         type: string
+      diagnostic_only:
+        description: Read an existing published synthetic Funnel without creating or updating content
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -25,6 +30,7 @@ jobs:
     env:
       CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
       CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+      CELEBRATEDEAL_FUNNEL_DIAGNOSTIC_ONLY: ${{ inputs.diagnostic_only }}
     steps:
       - name: Checkout protected Funnel runner
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
