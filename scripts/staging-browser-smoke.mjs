@@ -17,10 +17,10 @@ const ROUTES = [
 ];
 
 /** Match only the fixed read-only Dashboard details endpoint; never persist the URL. */
-export function isDashboardDetailsGet(request) {
+export function isDashboardDetailsGet(request, targetHost = STAGING_ALIAS) {
   try {
     const url = new URL(request.url());
-    return request.method() === "GET" && url.hostname === STAGING_ALIAS
+    return request.method() === "GET" && url.hostname === targetHost
       && url.pathname === "/api/dashboard/details";
   } catch { return false; }
 }
@@ -56,7 +56,8 @@ function emptyReport(reason = "NOT_RUN", sourceSha = null) {
 }
 
 export function validateBrowserSmokeBinding(env) {
-  return SOURCE_SHA.test(env.CELEBRATEDEAL_SOURCE_SHA ?? "")
+  return ["fixed_alias", "immutable_preview"].includes(env.CELEBRATEDEAL_BROWSER_SURFACE ?? "fixed_alias")
+    && SOURCE_SHA.test(env.CELEBRATEDEAL_SOURCE_SHA ?? "")
     && PREVIEW_HOST.test(env.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")
     && typeof env.GITHUB_TOKEN === "string" && env.GITHUB_TOKEN.length > 0
     && typeof env.VERCEL_TOKEN === "string" && env.VERCEL_TOKEN.length > 0
@@ -101,20 +102,39 @@ export async function verifyStagingAliasBinding(env, fetchImpl = fetch) {
   return await diagnoseStagingAliasBinding(env, fetchImpl) === "VERIFIED";
 }
 
+/** Attest only this staging project's immutable Preview before sending an owner credential. */
+export async function diagnoseStagingPreviewBinding(env, fetchImpl = fetch) {
+  if (!SOURCE_SHA.test(env.CELEBRATEDEAL_SOURCE_SHA ?? "")
+    || !PREVIEW_HOST.test(env.CELEBRATEDEAL_DEPLOYMENT_HOST ?? "")) return "SOURCE_BINDING_INVALID";
+  if (typeof env.VERCEL_TOKEN !== "string" || env.VERCEL_TOKEN.length === 0) return "VERCEL_TOKEN_MISSING";
+  try {
+    const response = await fetchImpl(`https://api.vercel.com/v13/deployments/${env.CELEBRATEDEAL_DEPLOYMENT_HOST}?slug=${VERCEL_SCOPE}`, {
+      headers: { Authorization: `Bearer ${env.VERCEL_TOKEN}` }, redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(10_000),
+    });
+    if (response.status !== 200) return vercelApiFailure(response, "DEPLOYMENT");
+    const deployment = await response.json();
+    if (!/^dpl_[a-zA-Z0-9]+$/u.test(deployment.id ?? "")
+      || deployment.url !== env.CELEBRATEDEAL_DEPLOYMENT_HOST || deployment.name !== VERCEL_PROJECT
+      || deployment.target !== null || deployment.readyState !== "READY"
+      || deployment.meta?.githubCommitSha !== env.CELEBRATEDEAL_SOURCE_SHA) return "DEPLOYMENT_METADATA_INVALID";
+    return "VERIFIED";
+  } catch { return "VERCEL_API_EXCEPTION"; }
+}
+
 /** Emit only a fixed category; the failing resource URL and network error stay private. */
-export function classifyCriticalResourceResponse(response) {
+export function classifyCriticalResourceResponse(response, targetHost = STAGING_ALIAS) {
   try {
     const url = new URL(response.url());
     const type = response.request().resourceType();
-    if (url.hostname !== STAGING_ALIAS || response.status() < 400 || !["script", "stylesheet"].includes(type)) return null;
+    if (url.hostname !== targetHost || response.status() < 400 || !["script", "stylesheet"].includes(type)) return null;
     return `http${response.status() < 500 ? "4xx" : "5xx"}${type === "script" ? "Script" : "Stylesheet"}`;
   } catch { return null; }
 }
 
-export function classifyCriticalResourceRequestFailure(request) {
+export function classifyCriticalResourceRequestFailure(request, targetHost = STAGING_ALIAS) {
   try {
     const type = request.resourceType();
-    if (new URL(request.url()).hostname !== STAGING_ALIAS || !["script", "stylesheet"].includes(type)) return null;
+    if (new URL(request.url()).hostname !== targetHost || !["script", "stylesheet"].includes(type)) return null;
     const aborted = classifyCriticalResourceFailureKind(request) === "ABORTED";
     return `${aborted ? "aborted" : "network"}${type === "script" ? "Script" : "Stylesheet"}`;
   } catch { return null; }
@@ -142,10 +162,10 @@ export function isFailedCriticalResourceRequest(request) {
 }
 
 /** Permit only known same-host browser telemetry and the mount-time attribution reset as local no-ops. */
-export function classifyBrowserRequest(request) {
+export function classifyBrowserRequest(request, targetHost = STAGING_ALIAS) {
   let url;
   try { url = new URL(request.url()); } catch { return "EXTERNAL"; }
-  if (url.protocol !== "https:" || url.hostname !== STAGING_ALIAS) return "EXTERNAL";
+  if (url.protocol !== "https:" || url.hostname !== targetHost || url.port || url.username || url.password) return "EXTERNAL";
   if (["GET", "HEAD"].includes(request.method())) return "READ";
   if (request.method() === "POST" && url.pathname === "/monitoring") return "SENTRY_TUNNEL";
   if (request.method() === "POST" && url.search === "" && url.pathname === "/api/security/csp-report") return "CSP_REPORT";
@@ -174,10 +194,10 @@ export function appNavigationSelectorForViewport(viewportId) {
 }
 
 /** Persist only a fixed category; redirected URLs may contain private query data. */
-export function classifyFinalPath(url, expectedPath) {
+export function classifyFinalPath(url, expectedPath, targetHost = STAGING_ALIAS) {
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== "https:" || parsed.hostname !== STAGING_ALIAS) return "OFF_HOST";
+    if (parsed.protocol !== "https:" || parsed.hostname !== targetHost || parsed.port || parsed.username || parsed.password) return "OFF_HOST";
     if (parsed.pathname === expectedPath) return "EXPECTED";
     if (/^\/(?:login|mfa)(?:\/|$)/u.test(parsed.pathname)) return "AUTH_REDIRECT";
     return "OTHER_SAME_HOST";
@@ -274,6 +294,13 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
     return report;
   }
   report.deploymentHost = env.CELEBRATEDEAL_DEPLOYMENT_HOST;
+  const immutablePreview = env.CELEBRATEDEAL_BROWSER_SURFACE === "immutable_preview";
+  const targetHost = immutablePreview ? env.CELEBRATEDEAL_DEPLOYMENT_HOST : STAGING_ALIAS;
+  report.surface = immutablePreview ? "immutable_preview" : "fixed_alias";
+  report.targetHost = targetHost;
+  report.previewBinding = "NOT_VERIFIED";
+  // A Preview result must never be mistaken for acceptance of the fixed alias.
+  if (immutablePreview) report.schemaVersion = "celebratedeal-staging-preview-browser-smoke/v1";
   // Recheck immutable Preview lineage at execution time; an alias may have moved.
   const verifyLineage = dependencies.verifyLineage ?? verifyMvpPayUniLineage;
   let lineageVerified = false;
@@ -283,16 +310,19 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
     return report;
   }
   report.lineage = "VERIFIED";
-  const verifyAlias = dependencies.verifyAlias ?? verifyStagingAliasBinding;
+  const verifyAlias = immutablePreview
+    ? dependencies.verifyPreview ?? (async (binding) => await diagnoseStagingPreviewBinding(binding) === "VERIFIED")
+    : dependencies.verifyAlias ?? verifyStagingAliasBinding;
   let aliasVerified = false;
   try { aliasVerified = await verifyAlias(env); } catch { /* An API failure is not attestation. */ }
   if (!aliasVerified) {
-    report.reason = "ALIAS_NOT_VERIFIED";
+    report.reason = immutablePreview ? "PREVIEW_NOT_VERIFIED" : "ALIAS_NOT_VERIFIED";
     return report;
   }
-  report.aliasBinding = "VERIFIED";
+  if (immutablePreview) report.previewBinding = "VERIFIED";
+  else report.aliasBinding = "VERIFIED";
   // Exercise the URL people actually open. The session endpoint checks the source SHA.
-  const origin = `https://${STAGING_ALIAS}`;
+  const origin = `https://${targetHost}`;
   const { chromium } = dependencies.playwright ?? await import("playwright");
   const browser = await chromium.launch({
     headless: true,
@@ -314,7 +344,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         // Block third-party traffic while the synthetic owner is signed in.
         await context.route("**/*", (route) => {
           const request = route.request();
-          const requestClass = classifyBrowserRequest(request);
+          const requestClass = classifyBrowserRequest(request, targetHost);
           if (requestClass === "EXTERNAL") {
             report.browser.externalRequestsBlocked += 1;
             return route.abort();
@@ -347,8 +377,8 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         });
         // Recheck immediately before each credential-bearing request, including mobile.
         if (!await verifyAlias(env)) {
-          report.aliasBinding = "DRIFT";
-          report.reason = "ALIAS_NOT_VERIFIED";
+          report[immutablePreview ? "previewBinding" : "aliasBinding"] = "DRIFT";
+          report.reason = immutablePreview ? "PREVIEW_NOT_VERIFIED" : "ALIAS_NOT_VERIFIED";
           return report;
         }
         report.browser.executionPhase = "SESSION_ISSUE";
@@ -376,9 +406,9 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         page.on("pageerror", () => { report.browser.pageErrors += 1; });
         // Record only fixed milestones; document URLs and browser errors may contain private data.
         page.on("request", (request) => {
-          if (isDashboardDetailsGet(request)) dashboardDetailsNetwork.requests += 1;
+          if (isDashboardDetailsGet(request, targetHost)) dashboardDetailsNetwork.requests += 1;
           if (navigationProgress && request.resourceType() === "document"
-            && new URL(request.url()).hostname === STAGING_ALIAS) navigationProgress.documentRequestSeen = true;
+            && new URL(request.url()).hostname === targetHost) navigationProgress.documentRequestSeen = true;
         });
         page.on("domcontentloaded", () => {
           if (navigationProgress) navigationProgress.domContentLoadedSeen = true;
@@ -393,31 +423,31 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           };
         };
         page.on("response", (response) => {
-          if (isDashboardDetailsGet(response.request())) {
+          if (isDashboardDetailsGet(response.request(), targetHost)) {
             dashboardDetailsNetwork.responses += 1;
             const status = response.status();
             dashboardDetailsNetwork.lastStatusClass = status >= 500 ? "5XX"
               : status >= 400 ? "4XX" : status >= 300 ? "3XX" : status >= 200 ? "2XX" : "OTHER";
           }
-          if (new URL(response.url()).hostname === STAGING_ALIAS && response.status() >= 500) report.browser.sameHost5xx += 1;
+          if (new URL(response.url()).hostname === targetHost && response.status() >= 500) report.browser.sameHost5xx += 1;
           if (navigationProgress && response.request().resourceType() === "document"
-            && new URL(response.url()).hostname === STAGING_ALIAS) {
+            && new URL(response.url()).hostname === targetHost) {
             const status = response.status();
             navigationProgress.documentResponseClass = status >= 500 ? "5XX"
               : status >= 400 ? "4XX" : status >= 300 ? "3XX" : status >= 200 ? "2XX" : "OTHER";
           }
-          recordCriticalResourceFailure(classifyCriticalResourceResponse(response));
+          recordCriticalResourceFailure(classifyCriticalResourceResponse(response, targetHost));
         });
         page.on("requestfailed", (request) => {
-          if (isDashboardDetailsGet(request)) dashboardDetailsNetwork.failures += 1;
-          const category = classifyCriticalResourceRequestFailure(request);
+          if (isDashboardDetailsGet(request, targetHost)) dashboardDetailsNetwork.failures += 1;
+          const category = classifyCriticalResourceRequestFailure(request, targetHost);
           if (category && report.browser.firstCriticalResourceFailure === null) {
             report.browser.firstCriticalResourceFailureKind = classifyCriticalResourceFailureKind(request);
           }
           recordCriticalResourceFailure(category);
         });
         page.on("requestfinished", (request) => {
-          if (isDashboardDetailsGet(request)) dashboardDetailsNetwork.finished += 1;
+          if (isDashboardDetailsGet(request, targetHost)) dashboardDetailsNetwork.finished += 1;
         });
         for (const route of ROUTES) {
           report.browser.activeRoute = route.id;
@@ -429,7 +459,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           } catch (error) {
             report.browser.navigationFailure = {
               viewport: viewport.id, route: route.id, ...navigationProgress,
-              finalPath: classifyFinalPath(page.url(), route.path),
+              finalPath: classifyFinalPath(page.url(), route.path, targetHost),
               partialDom: route.id === "dashboard" ? await capturePartialNavigation(page) : null,
             };
             throw error;
@@ -470,7 +500,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
           const dashboardDataVisible = dashboardKpisVisible && dashboardDetailsVisible && !dashboardAlertVisible;
           const appNavigationVisible = await visible(page.locator(appNavigationSelectorForViewport(viewport.id)));
           const contentVisible = await visible(page.locator("#main-content"));
-          const finalPath = classifyFinalPath(page.url(), route.path);
+          const finalPath = classifyFinalPath(page.url(), route.path, targetHost);
           report.journeys.push({ viewport: viewport.id, route: route.id, status, finalPath, headingVisible, productVisible, checkoutLinkVisible, dashboardDataVisible, dashboardKpisVisible, dashboardDetailsVisible, dashboardAlertVisible, dashboardFrameworkAlertVisible: dashboardFrameworkAlertCount > 0, dashboardKpiAlertVisible, dashboardDetailsAlertVisible, dashboardRouteErrorVisible, dashboardMainAlertVisible, dashboardReadOperationCount, dashboardDetailsReadOperationCount, dashboardDetailsNetwork: route.id === "dashboard" ? { ...dashboardDetailsNetwork } : null, appNavigationVisible, contentVisible });
           if (route.id === "product_edit") {
             report.browser.executionPhase = "HYDRATION_INTERACTION";
@@ -487,7 +517,7 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
         report.browser.executionPhase = "APP_NAVIGATION";
         await page.locator(`${appNavigationSelectorForViewport(viewport.id)} a[href="/products"]`).click({ timeout: 8_000 });
         await page.waitForURL(`${origin}/products`, { timeout: 8_000 });
-        const navigationPassed = classifyFinalPath(page.url(), "/products") === "EXPECTED"
+        const navigationPassed = classifyFinalPath(page.url(), "/products", targetHost) === "EXPECTED"
           && await visible(page.getByRole("heading", { name: "商品管理", exact: true }));
         if (navigationPassed) report.browser.navigationInteractionsPassed += 1;
       } finally {
@@ -538,6 +568,12 @@ export async function runBrowserSmoke(env = process.env, dependencies = {}) {
 }
 
 async function main() {
+  if (process.argv[2] === "--verify-preview") {
+    const reason = await diagnoseStagingPreviewBinding(process.env);
+    process.stdout.write(`${JSON.stringify({ surface: "immutable_preview", previewBinding: reason === "VERIFIED" ? "VERIFIED" : "NOT_VERIFIED", reason })}\n`);
+    process.exitCode = reason === "VERIFIED" ? 0 : 2;
+    return;
+  }
   if (process.argv[2] === "--verify-alias") {
     const reason = await diagnoseStagingAliasBinding(process.env);
     process.stdout.write(`${JSON.stringify({ aliasBinding: reason === "VERIFIED" ? "VERIFIED" : "NOT_VERIFIED", reason })}\n`);
