@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ load: vi.fn(), csrf: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ requireVendorManager: vi.fn() }));
 vi.mock("@/lib/funnel-operations-service", () => ({
   FunnelOperationsError: class extends Error {},
-  loadFunnelOperationsBundle: mocks.load,
+  loadFunnelOperations: mocks.load,
 }));
 vi.mock("@/lib/csrf", () => ({ CSRF_FIELD_NAME: "csrf", getCsrfToken: mocks.csrf }));
 vi.mock("@/components/landing-pages/funnel-operations-panel", () => ({ FunnelOperationsPanel: () => <div>private editor</div> }));
