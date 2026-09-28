@@ -2,6 +2,8 @@ import path from "node:path";
 import type { FullResult, Reporter, TestCase, TestResult, TestStep } from "@playwright/test/reporter";
 
 const allowedTestPath = /^tests\/e2e\/[A-Za-z0-9_.()[\]/-]+\.spec\.(?:[cm]?[jt]sx?)$/u;
+// Keep shared guard assertion locations without exposing arbitrary helper paths or errors.
+const allowedHelperPaths = new Set(["tests/e2e/helpers/direct-url-guard.ts"]);
 const fixedStatuses = new Set(["failed", "timedout", "flaky"]);
 
 type AnnotationStatus = "failed" | "timedout" | "flaky";
@@ -9,7 +11,7 @@ type AnnotationStatus = "failed" | "timedout" | "flaky";
 function sanitizedTestPath(value: unknown) {
   if (typeof value !== "string" || value.length === 0) return null;
   const relative = path.relative(process.cwd(), path.resolve(value)).split(path.sep).join("/");
-  return allowedTestPath.test(relative) ? relative : null;
+  return allowedTestPath.test(relative) || allowedHelperPaths.has(relative) ? relative : null;
 }
 
 function sanitizedLine(value: unknown) {
