@@ -15,6 +15,6 @@ Chrome 文件頁自動點選及 Git worktree 權限已恢復。PayUni Token／IP
 
 ## 交接
 
-本輪主代理整合與實作；core_browser_path 僅唯讀分析，astra_plan 完成新增 Preview 驗證模式的獨立 Critical review（No findings）。AI Team Pro 路由實作 Luna high、Critical review 在既有 AGY Opus INVALID_REVIEW 後用 canonical Astra high fallback；實際模型／推理參數均未觀測，不冒稱已切換主模型。程式本機驗證與遠端驗收分開。既有授權涵蓋 codex/* push、全綠受保護 PR merge、非 Production staging 更新。原工作目錄未知變更保留；固定 alias 已切至應用來源 5d5b8146；master 核對基準為 14e23f8e（#348）。舊版 29ba9f6a 保留作回復點。Goal 尚未完成。
+本輪主代理整合與實作；core_browser_path 僅唯讀分析，astra_plan 完成新增 Preview 驗證模式的獨立 Critical review（No findings）。AI Team Pro 路由實作 Luna high、Critical review 在既有 AGY Opus INVALID_REVIEW 後用 canonical Astra high fallback；實際模型／推理參數均未觀測，不冒稱已切換主模型。程式本機驗證與遠端驗收分開。既有授權涵蓋 codex/* push、全綠受保護 PR merge、非 Production staging 更新。原工作目錄未知變更保留；固定 alias 已切至應用來源 5d5b8146；master 核對基準為 43809aaf（#349）。舊版 29ba9f6a 保留作回復點。Goal 尚未完成。
 
-Stream runner 候選已修正獨立 Critical review 的兩項 MINOR（等待 duration metadata、180 秒副作用 deadline）；複審 No findings，離線測試 9/9 與 targeted ESLint 通過。尚未合入／未 live；下一步受保護 PR 全綠後執行單一新合成影片旅程。主代理一個 writer，reviewer 唯讀；requested/effective team ai-team-pro，selected Sol high／Critical fallback Astra high，observed model/effort unknown；depth 1、dispatch budget 4。
+Stream runner #349 已受保護合入 master 43809aaf；已修正獨立 Critical review 的兩項 MINOR（等待 duration metadata、180 秒副作用 deadline）；複審 No findings，離線測試 9/9 與 targeted ESLint 通過。受保護 run 36496147482 已完成單一新合成影片旅程 PASS；建立／上傳各一次、6 次精確狀態讀取、公開 manifest 一次。不要重跑此成功旅程。下一步確認專用非正式 Cloudflare 帳戶或可審查的帳戶／憑證權限隔離證據；使用者尚未回覆是否有專用帳戶。此問題不需要提供任何 Token。主代理一個 writer，reviewer 唯讀；requested/effective team ai-team-pro，selected Sol high／Critical fallback Astra high，observed model/effort unknown；depth 1、dispatch budget 4。
