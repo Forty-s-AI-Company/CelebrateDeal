@@ -63,6 +63,14 @@ test("approved backup blobs remain valid after a later master merge", () => {
     return spawnSync(command, args, options);
   };
   assert.equal(verifyBackupSource(current, wrongBlob), false);
+  // Approving a reviewed payment-only workflow must not trust arbitrary workflows.
+  const unknownWorkflow = (command, args, options) => {
+    if (args[0] === "rev-parse" && args[1].endsWith(":.github/workflows/secure-staging-validation.yml")) {
+      return { status: 0, stdout: `${"e".repeat(40)}\n` };
+    }
+    return spawnSync(command, args, options);
+  };
+  assert.equal(verifyBackupSource(current, unknownWorkflow), false);
 });
 
 test("downloaded ciphertext must match the fixed receipt digest and path", () => {

@@ -12,6 +12,7 @@ const ADMISSION_TOKEN = /^ca1\.[A-Za-z0-9_-]{1,768}\.[A-Za-z0-9_-]{43}$/u;
 const SAFE_IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/u;
 
 export const MVP_PAYUNI_SANDBOX_E2E_SCHEMA = "celebratedeal-mvp-payuni-sandbox-e2e/v2";
+export const MVP_PAYUNI_PAYMENT_ONLY_SCHEMA = "celebratedeal-mvp-payuni-payment-only/v1";
 export const FIXED_PURPOSE = "buyer_order";
 export const FIXED_SUBSCRIPTION_PURPOSE = "platform_subscription";
 export const FIXED_PAYUNI_ENV = "sandbox";
@@ -138,6 +139,11 @@ const FAILURE_CODES = new Set([
   "PAYMENT_FIELDS_REJECTED",
   "PAYMENT_SUBMIT_REJECTED",
   "PAYMENT_CONFIRMATION_AMBIGUOUS",
+  "PAYMENT_VALIDATION_CARD",
+  "PAYMENT_VALIDATION_EXPIRY",
+  "PAYMENT_VALIDATION_CVV",
+  "PAYMENT_VALIDATION_EMAIL",
+  "PAYMENT_VALIDATION_FIELD",
   "RETURN_CALLBACK_UNMAPPED",
   "RETURN_RESULT_UNMAPPED",
   "RETURN_CALLBACK_PROOF_REQUIRED",
@@ -165,6 +171,7 @@ const PAYUNI_PAYMENT_HOST = new URL(PAYUNI_UPP_URL).hostname;
 const REQUEST_TIMEOUT_MS = 30_000;
 const RECEIPT_DIRECTORY = "celebratedeal-secure-receipts";
 const RECEIPT_FILENAME = "wp4-payuni-sandbox-reconciliation-receipt.json";
+const PAYMENT_ONLY_RECEIPT_FILENAME = "wp4-payuni-sandbox-payment-only-receipt.json";
 const RECOVERY_RECEIPT_FILENAME = "wp4-payuni-sandbox-refund-recovery-receipt.json";
 const SUBSCRIPTION_RECEIPT_FILENAME = "wp4-payuni-sandbox-subscription-receipt.json";
 const BUYER_CONTINUATION_RECEIPT_FILENAME = "wp4-payuni-buyer-existing-continuation-receipt.json";
@@ -173,7 +180,7 @@ export const MVP_PAYUNI_BUYER_CONTINUATION_SCHEMA = "celebratedeal-wp4-buyer-exi
 export const BUYER_CONTINUATION_TRANSACTION_SOURCE_SHA = "8497ec1ad66a07b0a286585dc050915c998d0f67";
 const BUYER_PAYMENT_CHECK_FILE = "wp4-payuni-buyer-payment-check-receipt.json";
 const BUYER_CALLBACK_RETRY_FILE = "wp4-payuni-buyer-callback-retry-receipt.json";
-const FIXED_RECEIPT_FILENAMES = new Set([RECEIPT_FILENAME, RECOVERY_RECEIPT_FILENAME, SUBSCRIPTION_RECEIPT_FILENAME, BUYER_PAYMENT_CHECK_FILE, BUYER_CALLBACK_RETRY_FILE, BUYER_CONTINUATION_RECEIPT_FILENAME]);
+const FIXED_RECEIPT_FILENAMES = new Set([RECEIPT_FILENAME, PAYMENT_ONLY_RECEIPT_FILENAME, RECOVERY_RECEIPT_FILENAME, SUBSCRIPTION_RECEIPT_FILENAME, BUYER_PAYMENT_CHECK_FILE, BUYER_CALLBACK_RETRY_FILE, BUYER_CONTINUATION_RECEIPT_FILENAME]);
 const RECOVERY_RECEIPT_KEYS = Object.freeze([
   "schemaVersion",
   "purpose",
@@ -574,12 +581,21 @@ function completedPrefix(receipt) {
 }
 
 export function validateMvpPayUniReceipt(receipt) {
+  return validateBuyerReceipt(receipt, false);
+}
+
+/** Payment acceptance is distinct from the legacy payment-and-refund acceptance. */
+export function validatePaymentOnlyReceipt(receipt) {
+  return validateBuyerReceipt(receipt, true);
+}
+
+function validateBuyerReceipt(receipt, paymentOnly) {
   const errors = [];
   if (!exactKeys(receipt, RECEIPT_KEYS)) errors.push("SCHEMA_KEYS");
   if (!exactKeys(receipt?.checks, CHECK_KEYS)) errors.push("CHECK_KEYS");
   if (!exactKeys(receipt?.sideEffects, Object.keys(SIDE_EFFECT_BUDGET))) errors.push("SIDE_EFFECT_KEYS");
   if (!exactKeys(receipt?.safety, SAFETY_KEYS)) errors.push("SAFETY_KEYS");
-  if (receipt?.schemaVersion !== MVP_PAYUNI_SANDBOX_E2E_SCHEMA || receipt?.purpose !== FIXED_PURPOSE || receipt?.environment !== FIXED_PAYUNI_ENV) errors.push("FIXED_ENUMS");
+  if (receipt?.schemaVersion !== (paymentOnly ? MVP_PAYUNI_PAYMENT_ONLY_SCHEMA : MVP_PAYUNI_SANDBOX_E2E_SCHEMA) || receipt?.purpose !== FIXED_PURPOSE || receipt?.environment !== FIXED_PAYUNI_ENV) errors.push("FIXED_ENUMS");
   if (!SOURCE_SHA.test(receipt?.sourceSha ?? "")) errors.push("SOURCE_SHA");
   if (!new Set(["PASS", "BLOCKED"]).has(receipt?.result)) errors.push("RESULT");
   if (!FAILURE_CODES.has(receipt?.failure)) errors.push("FAILURE");
@@ -588,11 +604,14 @@ export function validateMvpPayUniReceipt(receipt) {
   if (![...CHECK_KEYS].every((key) => typeof receipt?.checks?.[key] === "boolean")) errors.push("CHECK_VALUES");
   if (!completedPrefix(receipt)) errors.push("SEQUENCE");
 
-  const completed = CHECK_KEYS.every((key) => receipt?.checks?.[key] === true);
+  const requiredChecks = paymentOnly ? CHECK_KEYS.filter((key) => !["refundCompleted", "reconciled"].includes(key)) : CHECK_KEYS;
+  if (paymentOnly && (receipt?.checks?.refundCompleted !== false || receipt?.checks?.reconciled !== false
+    || ["refundPosts", "refunds", "reconcilePosts"].some((key) => receipt?.sideEffects?.[key] !== 0))) errors.push("REFUNDS_FORBIDDEN");
+  const completed = requiredChecks.every((key) => receipt?.checks?.[key] === true);
   if (receipt?.result === "PASS") {
     if (!completed || receipt.failure !== "NONE") errors.push("PASS_COMPLETENESS");
     const effects = receipt.sideEffects;
-    const fixedOne = ["fixturePosts", "admissionPosts", "checkoutPosts", "paymentAttemptPosts", "refundPosts", "transactionsCreated", "refunds", "callbackReplays"];
+    const fixedOne = ["fixturePosts", "admissionPosts", "checkoutPosts", "paymentAttemptPosts", "transactionsCreated", "callbackReplays", ...(paymentOnly ? [] : ["refundPosts", "refunds"])];
     const currentExecution = effects.paymentReservationsCreated === 1 && effects.browserPaymentSubmissions === 1 && effects.payments === 1;
     if (fixedOne.some((key) => effects[key] !== 1) || effects.orderProofPosts !== 2 || !currentExecution) errors.push("PASS_EFFECTS");
   } else if (receipt?.failure === "NONE" || completed) {
@@ -1139,6 +1158,16 @@ export async function retryFixedWp4BuyerCallback(input, dependencies = {}) {
   return receipt;
 }
 
+/** Classify only validation failures; a confirmation label can never prove payment success. */
+export function classifyPayUniConfirmation(text) {
+  if (typeof text !== "string" || text.length > 4096 || !/(?:錯誤|不正確|無效|請輸入|必填|invalid|required)/iu.test(text)) return "PAYMENT_CONFIRMATION_AMBIGUOUS";
+  if (/(?:有效期限|到期|expiry|expiration)/iu.test(text)) return "PAYMENT_VALIDATION_EXPIRY";
+  if (/(?:安全碼|檢查碼|CVV|CVC)/iu.test(text)) return "PAYMENT_VALIDATION_CVV";
+  if (/(?:卡號|card\s*number)/iu.test(text)) return "PAYMENT_VALIDATION_CARD";
+  if (/(?:電子郵件|電子信箱|email|e-mail)/iu.test(text)) return "PAYMENT_VALIDATION_EMAIL";
+  return "PAYMENT_VALIDATION_FIELD";
+}
+
 export async function defaultBrowserSubmit(input, dependencies = {}) {
   const { chromium, errors } = dependencies.playwright ?? await import("playwright");
   // The trusted runner already pins every allowlisted A record in /etc/hosts
@@ -1242,7 +1271,14 @@ export async function defaultBrowserSubmit(input, dependencies = {}) {
     const confirmation = page.getByRole("button", { name: "確定", exact: true });
     try {
       await confirmation.waitFor({ state: "visible", timeout: 5_000 });
-      return "PAYMENT_CONFIRMATION_AMBIGUOUS";
+      // Read only the displayed dialog and immediately reduce it to a closed enum.
+      // Never click a second submit/confirmation or persist provider text/card details.
+      let confirmationText = "";
+      try {
+        confirmationText = await confirmation.evaluate((button) =>
+          button.closest('[role="dialog"], .modal, .swal2-popup')?.innerText?.slice(0, 4097) ?? "");
+      } catch { /* Unreadable/unknown dialogs stay ambiguous. */ }
+      return classifyPayUniConfirmation(confirmationText);
     } catch (error) {
       if (!(error instanceof errors.TimeoutError)) throw error;
     }
@@ -1389,9 +1425,21 @@ export async function defaultSubscriptionBrowserSubmit(input, dependencies = {})
  * local variables only and are discarded before the receipt is returned.
  */
 export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
+  return runBuyerPayment(input, dependencies, false);
+}
+
+/** A distinct trusted entry point stops after the paid order and replay proof; never refunds. */
+export async function runMvpPayUniPaymentOnly(input, dependencies = {}) {
+  return runBuyerPayment(input, dependencies, true);
+}
+
+async function runBuyerPayment(input, dependencies, paymentOnly) {
   const invocation = validateInvocation(input);
   const receipt = createReceipt(invocation.ok ? invocation.sourceSha : "0".repeat(40));
+  if (paymentOnly) receipt.schemaVersion = MVP_PAYUNI_PAYMENT_ONLY_SCHEMA;
   if (!invocation.ok) return fail(receipt, invocation.code);
+  // The unresolved historical attempt is never eligible for a new browser submission.
+  if (paymentOnly && invocation.sourceSha === BUYER_PAYMENT_CHECK_SOURCE_SHA) return fail(receipt, "INPUT_REJECTED");
 
   const request = dependencies.request ?? defaultRequest;
   const browserSubmit = dependencies.browserSubmit ?? defaultBrowserSubmit;
@@ -1517,6 +1565,12 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
     }
     receipt.checks.duplicateCallbackVerified = true;
 
+    if (paymentOnly) {
+      receipt.result = "PASS";
+      receipt.failure = "NONE";
+      return validatePaymentOnlyReceipt(receipt).ok ? receipt : fail(receipt, "INTERNAL_REJECTED");
+    }
+
     receipt.sideEffects.refundPosts = 1;
     const refund = responseJson(await request({
       url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-refund"),
@@ -1562,7 +1616,9 @@ export async function runMvpPayUniSandboxE2E(input, dependencies = {}) {
     fail(receipt, error instanceof Error && error.message === "NETWORK_REJECTED" ? "NETWORK_REJECTED" : "INTERNAL_REJECTED");
   }
 
-  return finalizeMvpPayUniReceipt(receipt);
+  return paymentOnly
+    ? (validatePaymentOnlyReceipt(receipt).ok ? receipt : fail(receipt, "INTERNAL_REJECTED"))
+    : finalizeMvpPayUniReceipt(receipt);
 }
 
 function assertSubscriptionSessionResponse(response) {
@@ -1843,6 +1899,18 @@ export async function writeMvpPayUniReceipt(receipt, runnerTemp) {
   return writeFixedReceipt(receipt, runnerTemp, RECEIPT_FILENAME);
 }
 
+export async function writePaymentOnlyReceipt(receipt, runnerTemp) {
+  if (!validatePaymentOnlyReceipt(receipt).ok) throw new Error("RECEIPT_INVALID");
+  return writeFixedReceipt(receipt, runnerTemp, PAYMENT_ONLY_RECEIPT_FILENAME);
+}
+
+export async function validateWrittenPaymentOnlyReceipt(runnerTemp) {
+  try {
+    const { receiptPath } = fixedReceiptPath(runnerTemp, PAYMENT_ONLY_RECEIPT_FILENAME);
+    return validatePaymentOnlyReceipt(JSON.parse(await readFile(receiptPath, "utf8"))).ok;
+  } catch { return false; }
+}
+
 export async function writeBuyerPaymentCheckReceipt(receipt, runnerTemp) {
   if (!validateBuyerPaymentCheckReceipt(receipt).ok) throw new Error("RECEIPT_INVALID");
   return writeFixedReceipt(receipt, runnerTemp, BUYER_PAYMENT_CHECK_FILE);
@@ -1919,6 +1987,19 @@ export async function validateWrittenBuyerExistingContinuationReceipt(runnerTemp
 
 async function main() {
   const runnerTemp = process.env.RUNNER_TEMP;
+  if (process.argv.length === 3 && process.argv[2] === "--validate-payment-only-receipt") {
+    const valid = await validateWrittenPaymentOnlyReceipt(runnerTemp);
+    process.stdout.write(`wp4_payment_only_receipt=${valid ? "PASS" : "BLOCKED"}\n`);
+    process.exitCode = valid ? 0 : 2;
+    return;
+  }
+  if (process.argv.length === 3 && process.argv[2] === "--payment-only") {
+    const receipt = await runMvpPayUniPaymentOnly(readFixedInputs());
+    await writePaymentOnlyReceipt(receipt, runnerTemp);
+    process.stdout.write(`wp4_payment_only=${receipt.result}; failure=${receipt.failure}\n`);
+    process.exitCode = receipt.result === "PASS" ? 0 : 2;
+    return;
+  }
   if (process.argv.length === 3 && process.argv[2] === "--validate-buyer-callback-retry-receipt") {
     const valid = await validateWrittenBuyerCallbackRetryReceipt(runnerTemp);
     process.stdout.write(`wp4_buyer_callback_retry_receipt=${valid ? "PASS" : "BLOCKED"}\n`);
