@@ -1,10 +1,10 @@
 # CelebrateDeal 固定 staging 現況
 
-更新：2026-09-27（Asia/Taipei）。本頁只把對應部署來源的受保護收據標為 PASS；歷史收據不能替新版驗收。指定站點：[celebrate-deal-staging.carry-digital-nomad.in.net](https://celebrate-deal-staging.carry-digital-nomad.in.net)。
+更新：2026-09-28（Asia/Taipei）。本頁只把對應部署來源的受保護收據標為 PASS；歷史收據不能替新版驗收。指定站點：[celebrate-deal-staging.carry-digital-nomad.in.net](https://celebrate-deal-staging.carry-digital-nomad.in.net)。
 
 ## 來源與驗收
 
-live master 為 `2702f4aa0cdba2309934ffd070f77ef1efc3cfeb`。固定站跟隨 `codex/staging-release-20260926` Preview 分支。最新已核對來源為 `1909c71a9c73d399ec1d8dd690ed7848947581c7`，Ready immutable host 為 `celebrate-deal-staging-7rwlta1x5-a25814740s-projects.vercel.app`。此來源包含已合入 master 的 [PR #337](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/337)。[Funnel run 36267066749](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36267066749) 已核對精確來源與固定 alias。[PR #338](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/338) 將慢報表移出 Funnel 管理頁首次渲染；[PR #340](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/340) 將 Dashboard 明細移出初始 HTML 串流。#340 的本機 production build、單元測試、型別、ESLint 及 3 個隔離瀏覽器測試已過：合成明細延遲 5 秒時 `DOMContentLoaded` 約 152ms、`load` 約 174ms。這些修復尚未部署；Vercel Preview 建置額度限制使受保護 PR 未能綠燈合入，下表固定站結論不變。
+live master 為 `2702f4aa0cdba2309934ffd070f77ef1efc3cfeb`。固定站跟隨 `codex/staging-release-20260926` Preview 分支。最新已核對來源為 `1909c71a9c73d399ec1d8dd690ed7848947581c7`，Ready immutable host 為 `celebrate-deal-staging-7rwlta1x5-a25814740s-projects.vercel.app`。此來源包含已合入 master 的 [PR #337](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/337)。[Funnel run 36267066749](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36267066749) 已核對精確來源與固定 alias。[PR #338](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/338) 將慢報表移出 Funnel 管理頁首次渲染；[PR #340](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/340) 將 Dashboard 明細移出初始 HTML 串流。#338、[文件 PR #339](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/339)、#340 的兩組 CI quality 均已通過；#340 的本機 production build 與 3 個隔離瀏覽器測試也通過，合成明細延遲 5 秒時 `DOMContentLoaded` 約 152ms、`load` 約 174ms。三支 PR 的既有 Vercel staging Preview 檢查仍因建置限額失敗，修復尚未合入或部署；須取得新的成功 Preview 檢查才可走受保護合併，下表固定站結論不變。
 
 | 範圍 | 狀態 | 最新可用證據與界線 |
 | --- | --- | --- |
