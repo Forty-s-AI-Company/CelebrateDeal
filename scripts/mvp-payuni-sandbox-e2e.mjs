@@ -996,7 +996,8 @@ export async function recoverExistingWp4BuyerRefund(input, dependencies = {}) {
 
 export const BUYER_PAYMENT_CHECK_SOURCE_SHA = "00099f7e3b3c8a7e923047e1ab72a827fcb78e4c";
 export const BUYER_CALLBACK_RETRY_SOURCE_SHA = "8497ec1ad66a07b0a286585dc050915c998d0f67";
-const buyerCheckStatuses = new Set(["VERIFIED", "MISSING", "AMBIGUOUS", "REFERENCE_UNAVAILABLE", "QUERY_REJECTED", "QUERY_FAILED", "STATE_MISMATCH"]);
+const unreferencedCheckStatuses = new Set(["UNREFERENCED_NOT_FOUND", "UNREFERENCED_FOUND", "UNREFERENCED_QUERY_FAILED"]);
+const buyerCheckStatuses = new Set(["VERIFIED", "MISSING", "AMBIGUOUS", "REFERENCE_UNAVAILABLE", "QUERY_REJECTED", "QUERY_FAILED", "STATE_MISMATCH", ...unreferencedCheckStatuses]);
 const buyerLocalStatuses = new Set(["UNKNOWN", "PENDING", "PAID", "PARTIALLY_REFUNDED", "REFUNDED", "FAILED"]);
 const buyerProviderStatuses = new Set(["UNKNOWN", "PAID", "PARTIALLY_REFUNDED", "REFUNDED"]);
 const buyerReferenceStates = new Set(["UNKNOWN", "AVAILABLE", "ORDER_MISSING", "PROVIDER_MISSING", "BOTH_MISSING"]);
@@ -1010,7 +1011,11 @@ function validBuyerCheckBody(body) {
     || !buyerCallbackStatuses.has(body.callbackStatus) || !buyerCallbackFailures.has(body.callbackFailure)) return false;
   if (body.status === "REFERENCE_UNAVAILABLE" && !["ORDER_MISSING", "PROVIDER_MISSING", "BOTH_MISSING"].includes(body.referenceState)) return false;
   if (["MISSING", "AMBIGUOUS"].includes(body.status) && body.referenceState !== "UNKNOWN") return false;
-  if (!["REFERENCE_UNAVAILABLE", "MISSING", "AMBIGUOUS"].includes(body.status) && body.referenceState !== "AVAILABLE") return false;
+  if (unreferencedCheckStatuses.has(body.status)) {
+    if (body.referenceState !== "PROVIDER_MISSING" || body.localStatus !== "PENDING" || body.queryAttempts !== 1
+      || body.callbackStatus !== "NOT_OBSERVED" || body.callbackFailure !== "NONE"
+      || (body.status === "UNREFERENCED_FOUND") !== (body.providerStatus !== "UNKNOWN")) return false;
+  } else if (!["REFERENCE_UNAVAILABLE", "MISSING", "AMBIGUOUS"].includes(body.status) && body.referenceState !== "AVAILABLE") return false;
   if (["NOT_OBSERVED", "RECEIVED", "PROCESSED"].includes(body.callbackStatus) && body.callbackFailure !== "NONE") return false;
   if (["UNKNOWN", "AMBIGUOUS"].includes(body.callbackStatus) && body.callbackFailure !== "UNKNOWN") return false;
   if (body.callbackStatus === "FAILED" && body.callbackFailure === "NONE") return false;

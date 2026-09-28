@@ -43,6 +43,65 @@ function payUniEnvelope(payload: Record<string, unknown>) {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
+
+describe("unreferenced Sandbox order observation", () => {
+  const transaction = { providerName: "payuni", providerTradeNo: null, orderNumber: "CD-READONLY-001", grossAmountCents: 100, status: "pending" } as PaymentTransaction;
+  function enable() {
+    stubPayUniEnv();
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true");
+  }
+  it("queries only the merchant order and authenticates not-found without a write", async () => {
+    enable();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(payUniEnvelope({ Status: "QUERY03001" })));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(payUniPaymentProvider.queryUnreferencedSandboxPayment?.({ transaction })).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://sandbox-api.payuni.com.tw/api/trade/query");
+    expect(init.redirect).toBe("error");
+    expect(decryptCheckoutPayload(init.body.get("EncryptInfo"))).toEqual({ MerID: "TESTMER", MerTradeNo: "CD-READONLY-001", Timestamp: expect.any(String) });
+    // Existing reconciliation still requires a known provider identity.
+    await expect(payUniPaymentProvider.queryPayment?.({ transaction })).rejects.toMatchObject({ category: "request_contract" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    ["PAYUNI_ENV", "production"], ["VERCEL_ENV", "production"], ["WP4_SANDBOX_EXECUTOR_ENABLED", "false"],
+  ])("rejects %s=%s before network access", async (name, value) => {
+    enable();
+    vi.stubEnv(name, value);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(payUniPaymentProvider.queryUnreferencedSandboxPayment?.({ transaction })).rejects.toMatchObject({ category: "request_contract" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it.each([
+    { status: "paid" }, { providerTradeNo: "known" }, { providerName: "demo" }, { orderNumber: " invalid " }, { grossAmountCents: 0 },
+  ])("rejects invalid transaction identity before network access", async (overrides) => {
+    enable();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(payUniPaymentProvider.queryUnreferencedSandboxPayment?.({ transaction: { ...transaction, ...overrides } })).rejects.toMatchObject({ category: "request_contract" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it("rejects unsigned not-found and authenticated unknown errors", async () => {
+    enable();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ Status: "QUERY03001" })))
+      .mockResolvedValueOnce(new Response(payUniEnvelope({ Status: "UNKNOWN" }))));
+    await expect(payUniPaymentProvider.queryUnreferencedSandboxPayment?.({ transaction })).rejects.toMatchObject({ category: "authentication" });
+    await expect(payUniPaymentProvider.queryUnreferencedSandboxPayment?.({ transaction })).rejects.toMatchObject({ category: "provider_response" });
+  });
+  it.each([
+    ["CD-READONLY-001", "1", true], ["OTHER-ORDER", "1", false], ["CD-READONLY-001", "2", false],
+  ])("validates returned order %s and amount %s", async (orderNumber, amount, valid) => {
+    enable();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({ Status: "SUCCESS", Result: { MerTradeNo: orderNumber, TradeNo: "provider-reference", TradeAmt: amount, RefundStatus: "0", TradeStatus: "1" } }))));
+    const result = payUniPaymentProvider.queryUnreferencedSandboxPayment?.({ transaction });
+    if (valid) await expect(result).resolves.toMatchObject({ orderNumber, grossAmountCents: 100, status: "paid" });
+    else await expect(result).rejects.toMatchObject({ category: "provider_response" });
+  });
 });
 
 describe("PayUni provider", () => {
