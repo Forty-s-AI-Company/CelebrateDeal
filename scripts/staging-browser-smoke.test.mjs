@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyCriticalResourceFailureKind, classifyCriticalResourceRequestFailure, classifyCriticalResourceResponse, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
+import { appNavigationSelectorForViewport, classifyBrowserExecutionFailure, classifyBrowserRequest, classifyCriticalResourceFailureKind, classifyCriticalResourceRequestFailure, classifyCriticalResourceResponse, classifyFinalPath, classifySessionStatus, classifyUnsafeRequestDetail, classifyUnsafeRequestPath, diagnoseStagingAliasBinding, hasActionableDashboardAlert, isCriticalResourceFailure, isDashboardDetailsGet, isFailedCriticalResourceRequest, runBrowserSmoke, validateBrowserSmokeBinding, verifyStagingAliasBinding } from "./staging-browser-smoke.mjs";
 
 const INPUT = {
   CELEBRATEDEAL_SOURCE_SHA: "9193326824b8b6bf774bdfa28e4783a1a1b8f304",
@@ -150,6 +150,16 @@ test("the framework route announcer alone does not hide a real Dashboard alert",
   assert.equal(hasActionableDashboardAlert(2, 1), true);
   assert.equal(hasActionableDashboardAlert(1, 0), true);
   assert.equal(hasActionableDashboardAlert(0, 1), true);
+});
+
+test("Dashboard detail diagnostics match only the staging read endpoint", () => {
+  const request = (url, method = "GET") => ({ url: () => url, method: () => method });
+  const origin = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
+  assert.equal(isDashboardDetailsGet(request(`${origin}/api/dashboard/details`)), true);
+  assert.equal(isDashboardDetailsGet(request(`${origin}/api/dashboard/details?e2eDashboardDetailsDelayMs=5000`)), true);
+  assert.equal(isDashboardDetailsGet(request(`${origin}/api/dashboard/details`, "POST")), false);
+  assert.equal(isDashboardDetailsGet(request(`${origin}/api/dashboard/details-extra`)), false);
+  assert.equal(isDashboardDetailsGet(request("https://other.example.test/api/dashboard/details")), false);
 });
 
 test("a rendered journey remains blocked when an unexpected browser POST occurs", async () => {
