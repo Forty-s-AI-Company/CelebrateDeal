@@ -4,16 +4,16 @@
 
 ## 來源與驗收
 
-本次核對的 live master 為 `18dc11e8cd23c6100a21fcd370ca187a6f6af9c0`。PR #338（Funnel 報表獨立載入）、#339（文件）、#340（Dashboard 明細獨立載入）皆已通過受保護檢查並 squash merge；先前 Vercel 建置限額已解除。固定站跟隨 `codex/staging-release-20260926` Preview 分支，目前來源 `f0c8285763a819e18c0e48dcaa397aa6ab47c62f`，Ready immutable host 為 `celebrate-deal-staging-ssvvrtuvw-a25814740s-projects.vercel.app`。GitHub Deployment `6700980893` 與下列收據確認來源及 alias 一致。本輪未部署 Production。
+本次核對的 live master 為 `ec7b9aad745126182112267c78bf45124cf1bda4`。PR #338（Funnel 報表獨立載入）、#339（文件）、#340（Dashboard 明細獨立載入）、#341（有限診斷）皆已通過受保護檢查並 squash merge。固定站跟隨 `codex/staging-release-20260926` Preview 分支，目前來源為 `29ba9f6a6f389227df85e3fd46b693e6fe523331`，Ready immutable host 為 `celebrate-deal-staging-3cen4xz0d-a25814740s-projects.vercel.app`；GitHub Deployment `6701426702` 與下列受保護收據核對一致。
 
-[PR #341](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/341) 補上 Funnel 編輯器導頁及 Dashboard 明細 GET 的有限、去識別診斷；本機 20 項 runner 測試 PASS，受保護 CI 尚在執行。取得新收據後再依根因修復，不盲目重跑。
+2026-09-28 已確認固定 staging Supabase 資料庫位於 Tokyo（ap-northeast-1），但原 Vercel Functions 位於 iad1。僅將 celebrate-deal-staging 專案的 Functions 設定調整為 Tokyo hnd1，重新部署後 `vercel inspect` 確認 hnd1，固定 alias 指向新版。原 f0c82857 的 [診斷 run 36370972008](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36370972008) 為 desktop 明細 GET 已發出但未回應、mobile 已完成；Tokyo 新版完整核心瀏覽器 PASS。這支持跨區延遲是重要因素，但不代表所有路徑效能均已驗證。本輪未部署 Production。
 
 | 範圍 | 狀態 | 最新可用證據與界線 |
 | --- | --- | --- |
-| master、部署來源與固定 alias | **PASS：來源綁定** | GitHub Deployment 6700980893、browser run 36368967262、R2 run 36368969912 均核對到 `f0c82857`；不代表功能全過 |
-| Dashboard 導頁與關鍵 JS／CSS | **BLOCKED：明細未就緒** | [run 36368967262](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36368967262) 對 `f0c82857` 完成 desktop/mobile 各五頁及兩組導覽／hydration 互動。Dashboard HTML 200、外框與 KPI 可見（6 個讀取操作），兩種 viewport 的明細仍不可見。0 頁面錯誤、同站 5xx、關鍵資源失敗；session 均撤銷。framework alert 是 Next.js route announcer，非應用錯誤；實際 Dashboard alert 為 false。其餘頁面通過不能算整體 PASS |
-| Funnel 建立→模板→儲存→發布→匿名公開頁 | **BLOCKED：編輯器導頁** | [run 36367356009](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36367356009) 對前一來源 `d1fd6a1c` 建立與套用模板成功，已越過 OPERATIONS_NOT_READY；Edit Page 後未在 15 秒內抵達編輯器，EDITOR_UNAVAILABLE。後續儲存／發布／公開頁尚未驗證。0 付款、退款、寄信，session 撤銷；此結果不是目前來源完整驗收 |
-| R2 staging 圖片上傳與公開讀取 | **PASS：目前來源** | [run 36368969912](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36368969912) 對 `f0c82857` 完成合成圖片預簽、PUT、完成回報及公開 GET 各一次；staging bucket 與 r2.dev 均 VERIFIED，0 瀏覽器錯誤／不安全請求，session 撤銷。公開 bucket 只供 staging 合成資料 |
+| master、部署來源與固定 alias | **PASS：來源綁定** | GitHub Deployment 6701426702 與 browser／Funnel／R2 收據均核對到 `29ba9f6a`；不代表所有功能全過 |
+| Dashboard 導頁與關鍵 JS／CSS | **PASS：目前來源** | [run 36371696707](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36371696707) 對 `29ba9f6a` 完成 desktop/mobile 各五頁及兩組導覽／hydration 互動。兩種 viewport 的 KPI（6 讀取）與明細（13 讀取）可見，明細 GET 均 2xx 且完成；0 頁面錯誤、同站 5xx、關鍵資源失敗、不安全請求，session 均撤銷。framework alert 是 Next.js route announcer，非應用錯誤 |
+| Funnel 建立→模板→儲存→發布→匿名公開頁 | **BLOCKED：匿名公開頁** | [run 36371699449](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36371699449) 對 `29ba9f6a` 建立、模板、EDITOR_READY、儲存草稿與發布皆成功；PUBLIC_DESKTOP_FAILED，mobile 未執行。0 頁面錯誤、付款、退款、寄信，session 撤銷。程式要求所屬 SalesProject 已發布，runner 尚未執行專案發布；合成專案即時狀態仍待唯讀核對，不能先當成已證實根因 |
+| R2 staging 圖片上傳與公開讀取 | **PASS：目前來源** | [run 36371701629](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36371701629) 對 `29ba9f6a` 完成合成圖片預簽、PUT、完成回報及公開 GET 各一次；staging bucket 與 r2.dev 均 VERIFIED，0 瀏覽器錯誤／不安全請求，session 撤銷。公開 bucket 只供 staging 合成資料 |
 | Stream 非正式資源範圍 | **未驗證** | [唯讀 provider run 36218278700](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36218278700) 只證明連線可用，回報 `nonProductionScope=unverified`；無法在不讀 Secret 的條件下證明 Vercel 綁定 token 只可存取非正式資源 |
 | PayUni 新版 Sandbox 訂單閉環 | **BLOCKED** | [run 36217020374](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36217020374) 一次 Sandbox 表單提交後結果不明。[唯讀 run 36260940732](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36260940732) 顯示本地 `PENDING`、provider `UNKNOWN`、callback `NOT_OBSERVED`、`PROVIDER_MISSING`，無查單參考值，`queryAttempts=0`。2026-09-28 Chrome 官方 Sandbox 後台仍在登入畫面，未能唯讀對帳；不得重送未明交易或退款。舊版 [run 36142862467](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36142862467) 的成功閉環不等於新版 PASS |
 | PR #210／#211 獨有功能 | **尚未整合** | 兩支舊 PR 仍有衝突及失敗檢查；學員入口、LINE 圖文選單、聯盟入口與商品差異須按功能盤點，見[整合清單](integration-inventory-20260924.md) |
