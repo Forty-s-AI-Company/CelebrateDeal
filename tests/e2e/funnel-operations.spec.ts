@@ -82,7 +82,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   async function saveSettings() {
     const before = await db.landingPage.findUniqueOrThrow({ where: { id: pageId }, select: { revision: true } });
     await panel.getByRole("button", { name: "儲存設定", exact: true }).click();
-    await expect(panel.getByRole("status")).toHaveText("設定已儲存。");
+    await expect(panel.getByRole("status").filter({ hasText: "設定已儲存。" })).toHaveText("設定已儲存。");
     await expect.poll(async () => (await db.landingPage.findUniqueOrThrow({ where: { id: pageId }, select: { revision: true } })).revision).toBe(before.revision + 1);
     const remainingSave = panel.getByRole("button", { name: "儲存設定", exact: true });
     await expect.poll(async () => (await remainingSave.count()) === 0 || await remainingSave.isDisabled()).toBe(true);
@@ -122,7 +122,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
     await panel.getByRole("combobox", { name: /^報表步驟/u }).selectOption({ index: 1 });
     const selectedStep = await panel.getByRole("combobox", { name: /^報表步驟/u }).inputValue();
     await saveSettings();
-    await expect(panel.getByRole("status")).toHaveText("設定已儲存。");
+    await expect(panel.getByRole("status").filter({ hasText: "設定已儲存。" })).toHaveText("設定已儲存。");
     await page.reload();
     await panel.getByRole("button", { name: tab, exact: true }).click();
     await expect(panel.getByLabel("最近天數", { exact: true })).toHaveValue(String(days));
@@ -133,7 +133,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await panel.getByLabel("Control 權重", { exact: true }).fill("60");
   await panel.getByLabel("Variant 權重", { exact: true }).fill("40");
   await saveSettings();
-  await expect(panel.getByRole("status")).toHaveText("設定已儲存。");
+  await expect(panel.getByRole("status").filter({ hasText: "設定已儲存。" })).toHaveText("設定已儲存。");
   await page.reload();
   await panel.getByRole("button", { name: "A/B test", exact: true }).click();
   await expect(panel.getByLabel("Control 權重", { exact: true })).toHaveValue("60");
@@ -146,7 +146,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await panel.getByRole("button", { name: "A/B test", exact: true }).click();
   await panel.getByRole("button", { name: "開始實驗", exact: true }).click();
   await saveSettings();
-  await expect(panel.getByRole("status")).toHaveText("設定已儲存。");
+  await expect(panel.getByRole("status").filter({ hasText: "設定已儲存。" })).toHaveText("設定已儲存。");
   await page.reload();
   await panel.getByRole("button", { name: "A/B test", exact: true }).click();
   await expect(panel.getByLabel("Control 權重", { exact: true })).toBeDisabled();
@@ -242,7 +242,7 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   stage = "deadline-past";
   await panel.getByLabel(/^截止時間（含時區偏移）/u).fill("2000-01-01T00:00:00-05:00");
   await saveSettings();
-  await expect(panel.getByRole("status")).toHaveText("設定已儲存。");
+  await expect(panel.getByRole("status").filter({ hasText: "設定已儲存。" })).toHaveText("設定已儲存。");
   await page.reload();
   await panel.getByRole("button", { name: "Deadline settings", exact: true }).click();
   await expect(panel.getByLabel("啟用截止時間", { exact: true })).toBeChecked();
