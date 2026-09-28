@@ -164,4 +164,6 @@ export type PaymentProviderAdapter = {
   revokePaymentMethodReference?(input: PaymentMethodReferenceRevocationInput): Promise<PaymentMethodReferenceRevocationResult>;
   refundPayment?(input: RefundPaymentInput): Promise<RefundPaymentResult>;
   queryPayment?(input: QueryPaymentInput): Promise<PaymentQueryResult>;
+  /** Preview Sandbox observation only. Null is authenticated not-found, not a terminal payment state. */
+  queryUnreferencedSandboxPayment?(input: QueryPaymentInput): Promise<PaymentQueryResult | null>;
 };

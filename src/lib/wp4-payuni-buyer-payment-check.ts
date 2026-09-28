@@ -9,7 +9,7 @@ import { paymentWebhookFailureMessage, type PaymentWebhookFailureCode } from "@/
 export const WP4_CURRENT_BUYER_PAYMENT_SOURCE_SHA = "00099f7e3b3c8a7e923047e1ab72a827fcb78e4c";
 
 export type BuyerPaymentCheckResult = {
-  status: "VERIFIED" | "MISSING" | "AMBIGUOUS" | "REFERENCE_UNAVAILABLE" | "QUERY_REJECTED" | "QUERY_FAILED" | "STATE_MISMATCH";
+  status: "VERIFIED" | "MISSING" | "AMBIGUOUS" | "REFERENCE_UNAVAILABLE" | "QUERY_REJECTED" | "QUERY_FAILED" | "STATE_MISMATCH" | "UNREFERENCED_NOT_FOUND" | "UNREFERENCED_FOUND" | "UNREFERENCED_QUERY_FAILED";
   localStatus: "UNKNOWN" | "PENDING" | "PAID" | "PARTIALLY_REFUNDED" | "REFUNDED" | "FAILED";
   providerStatus: "UNKNOWN" | "PAID" | "PARTIALLY_REFUNDED" | "REFUNDED";
   referenceState: "UNKNOWN" | "AVAILABLE" | "ORDER_MISSING" | "PROVIDER_MISSING" | "BOTH_MISSING";
@@ -111,6 +111,24 @@ export async function checkWp4PayUniBuyerPayment(db: CheckDb): Promise<BuyerPaym
   const local = localStatus(transaction.status);
   const reference = referenceState(transaction.orderNumber, transaction.providerTradeNo);
   const callback = transaction.orderNumber ? await readCallbackEvidence(db, transaction.orderNumber) : { callbackStatus: "UNKNOWN" as const, callbackFailure: "UNKNOWN" as const };
+  // This fixed synthetic order may never have received a provider reference. Observe it once,
+  // without changing local state or enabling checkout/refund/replay operations.
+  if (reference === "PROVIDER_MISSING" && transaction.providerTradeNo === null
+    && local === "PENDING" && callback.callbackStatus === "NOT_OBSERVED") {
+    const provider = getPaymentProvider("payuni");
+    if (provider.queryUnreferencedSandboxPayment) {
+      try {
+        const snapshot = await provider.queryUnreferencedSandboxPayment({ transaction: transaction as PaymentTransaction });
+        if (snapshot === null) return { status: "UNREFERENCED_NOT_FOUND", localStatus: local, providerStatus: "UNKNOWN", referenceState: reference, queryAttempts: 1, ...callback };
+        if (snapshot.orderNumber !== transaction.orderNumber || snapshot.grossAmountCents !== transaction.grossAmountCents || !snapshot.providerTradeNo) {
+          throw new PaymentQueryProviderError("provider_response");
+        }
+        return { status: "UNREFERENCED_FOUND", localStatus: local, providerStatus: providerStatus(snapshot.status), referenceState: reference, queryAttempts: 1, ...callback };
+      } catch {
+        return { status: "UNREFERENCED_QUERY_FAILED", localStatus: local, providerStatus: "UNKNOWN", referenceState: reference, queryAttempts: 1, ...callback };
+      }
+    }
+  }
   if (reference !== "AVAILABLE") {
     return { status: "REFERENCE_UNAVAILABLE", localStatus: local, providerStatus: "UNKNOWN", referenceState: reference, queryAttempts: 0, ...callback };
   }

@@ -3,8 +3,8 @@ import { PaymentQueryProviderError } from "@/lib/payment-providers/types";
 import { checkWp4PayUniBuyerPayment, WP4_CURRENT_BUYER_PAYMENT_SOURCE_SHA } from "./wp4-payuni-buyer-payment-check";
 import { WP4_SANDBOX_FIXTURE } from "./wp4-sandbox-fixture";
 
-const mocks = vi.hoisted(() => ({ findMany: vi.fn(), webhookFindMany: vi.fn(), queryPayment: vi.fn() }));
-vi.mock("@/lib/payment-providers", () => ({ getPaymentProvider: () => ({ queryPayment: mocks.queryPayment }) }));
+const mocks = vi.hoisted(() => ({ findMany: vi.fn(), webhookFindMany: vi.fn(), queryPayment: vi.fn(), lookup: vi.fn(), lookupEnabled: false }));
+vi.mock("@/lib/payment-providers", () => ({ getPaymentProvider: () => ({ queryPayment: mocks.queryPayment, queryUnreferencedSandboxPayment: mocks.lookupEnabled ? mocks.lookup : undefined }) }));
 
 const db = { paymentTransaction: { findMany: mocks.findMany }, webhookEvent: { findMany: mocks.webhookFindMany } };
 function row(status: string, overrides: Record<string, unknown> = {}) {
@@ -21,12 +21,41 @@ function row(status: string, overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.lookupEnabled = false;
   mocks.findMany.mockResolvedValue([]);
   mocks.webhookFindMany.mockResolvedValue([]);
   mocks.queryPayment.mockResolvedValue({ providerTradeNo: "trade-current", orderNumber: "CD-20260905-ABC123", grossAmountCents: 100, refundedAmountCents: 0, remainingRefundableAmountCents: 100, status: "paid" });
 });
 
 describe("current fixed buyer payment check", () => {
+  it("observes authenticated absence without marking the pending order verified", async () => {
+    mocks.lookupEnabled = true;
+    mocks.lookup.mockResolvedValue(null);
+    mocks.findMany.mockResolvedValue([row("pending", { providerTradeNo: null })]);
+    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toEqual({ status: "UNREFERENCED_NOT_FOUND", localStatus: "PENDING", providerStatus: "UNKNOWN", referenceState: "PROVIDER_MISSING", queryAttempts: 1, callbackStatus: "NOT_OBSERVED", callbackFailure: "NONE" });
+    expect(mocks.lookup).toHaveBeenCalledTimes(1);
+    expect(mocks.queryPayment).not.toHaveBeenCalled();
+  });
+  it("records a found order without repairing its missing local reference", async () => {
+    mocks.lookupEnabled = true;
+    mocks.lookup.mockResolvedValue({ orderNumber: "CD-20260905-ABC123", providerTradeNo: "found-trade", grossAmountCents: 100, status: "paid" });
+    mocks.findMany.mockResolvedValue([row("pending", { providerTradeNo: null })]);
+    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toMatchObject({ status: "UNREFERENCED_FOUND", localStatus: "PENDING", providerStatus: "PAID", queryAttempts: 1 });
+  });
+  it("sanitizes unreferenced lookup failures and rejects mismatched identity", async () => {
+    mocks.lookupEnabled = true;
+    mocks.lookup.mockRejectedValueOnce(new Error("private provider message"))
+      .mockResolvedValueOnce({ orderNumber: "other", providerTradeNo: "trade", grossAmountCents: 100, status: "paid" });
+    mocks.findMany.mockResolvedValue([row("pending", { providerTradeNo: null })]);
+    for (let index = 0; index < 2; index += 1) await expect(checkWp4PayUniBuyerPayment(db)).resolves.toEqual({ status: "UNREFERENCED_QUERY_FAILED", localStatus: "PENDING", providerStatus: "UNKNOWN", referenceState: "PROVIDER_MISSING", queryAttempts: 1, callbackStatus: "NOT_OBSERVED", callbackFailure: "NONE" });
+  });
+  it("does not start unreferenced lookup when a callback was observed", async () => {
+    mocks.lookupEnabled = true;
+    mocks.findMany.mockResolvedValue([row("pending", { providerTradeNo: null })]);
+    mocks.webhookFindMany.mockResolvedValue([{ status: "received", errorMessage: null }]);
+    await expect(checkWp4PayUniBuyerPayment(db)).resolves.toMatchObject({ status: "REFERENCE_UNAVAILABLE", queryAttempts: 0 });
+    expect(mocks.lookup).not.toHaveBeenCalled();
+  });
   it("returns missing without querying", async () => {
     await expect(checkWp4PayUniBuyerPayment(db)).resolves.toEqual({ status: "MISSING", localStatus: "UNKNOWN", providerStatus: "UNKNOWN", referenceState: "UNKNOWN", queryAttempts: 0, callbackStatus: "UNKNOWN", callbackFailure: "UNKNOWN" });
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({

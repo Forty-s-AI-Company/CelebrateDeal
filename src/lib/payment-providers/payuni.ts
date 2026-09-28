@@ -346,6 +346,22 @@ async function queryPayUniTransaction({ transaction }: QueryPaymentInput) {
     throw new PaymentQueryProviderError("request_contract");
   }
 
+  const payload = await fetchPayUniQueryPayload(environment, merchantId, orderNumber);
+  if (optionalPayloadText(payload.Status) !== "SUCCESS") {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  const snapshot = payUniQueryRow(payload, orderNumber);
+  if (
+    snapshot.providerTradeNo !== providerTradeNo
+    || snapshot.grossAmountCents !== transaction.grossAmountCents
+  ) {
+    throw new PaymentQueryProviderError("provider_response");
+  }
+  return snapshot;
+}
+
+/** Shared read-only transport; callers retain their own identity and environment guards. */
+async function fetchPayUniQueryPayload(environment: "sandbox" | "production", merchantId: string, orderNumber: string) {
   let encrypted: string;
   try {
     encrypted = encryptInfo({
@@ -400,16 +416,26 @@ async function queryPayUniTransaction({ transaction }: QueryPaymentInput) {
   } catch {
     throw new PaymentQueryProviderError("authentication");
   }
-  if (optionalPayloadText(payload.Status) !== "SUCCESS") {
-    throw new PaymentQueryProviderError("provider_response");
+  return payload;
+}
+
+/** Observe an unreferenced Sandbox order. Null means authenticated not-found, never permission to retry payment. */
+async function queryUnreferencedPayUniSandboxPayment({ transaction }: QueryPaymentInput) {
+  const merchantId = process.env.PAYUNI_MERCHANT_ID?.trim();
+  const orderNumber = transaction.orderNumber;
+  if (process.env.PAYUNI_ENV !== "sandbox" || process.env.VERCEL_ENV !== "preview"
+    || process.env.WP4_SANDBOX_EXECUTOR_ENABLED !== "true" || !merchantId
+    || transaction.providerName !== "payuni" || transaction.providerTradeNo !== null
+    || transaction.status !== "pending" || !orderNumber || !PAYUNI_ORDER_NUMBER.test(orderNumber)
+    || !Number.isSafeInteger(transaction.grossAmountCents) || transaction.grossAmountCents <= 0) {
+    throw new PaymentQueryProviderError("request_contract");
   }
+  const payload = await fetchPayUniQueryPayload("sandbox", merchantId, orderNumber);
+  // Only the authenticated encrypted status can establish absence; unsigned outer errors cannot.
+  if (optionalPayloadText(payload.Status) === "QUERY03001") return null;
+  if (optionalPayloadText(payload.Status) !== "SUCCESS") throw new PaymentQueryProviderError("provider_response");
   const snapshot = payUniQueryRow(payload, orderNumber);
-  if (
-    snapshot.providerTradeNo !== providerTradeNo
-    || snapshot.grossAmountCents !== transaction.grossAmountCents
-  ) {
-    throw new PaymentQueryProviderError("provider_response");
-  }
+  if (snapshot.grossAmountCents !== transaction.grossAmountCents) throw new PaymentQueryProviderError("provider_response");
   return snapshot;
 }
 
@@ -711,5 +737,8 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
   },
   async queryPayment(input) {
     return queryPayUniTransaction(input);
+  },
+  async queryUnreferencedSandboxPayment(input) {
+    return queryUnreferencedPayUniSandboxPayment(input);
   },
 };

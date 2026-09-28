@@ -106,6 +106,22 @@ test("callback replay fails closed without repeating ambiguous requests or leaki
   assert.equal(validateBuyerCallbackRetryReceipt(denied).ok, true);
 });
 
+test("unreferenced Sandbox observations stay blocked and reject forged verification", async () => {
+  for (const [status, providerStatus] of [["UNREFERENCED_NOT_FOUND", "UNKNOWN"], ["UNREFERENCED_FOUND", "PAID"], ["UNREFERENCED_QUERY_FAILED", "UNKNOWN"]]) {
+    const receipt = await checkExistingWp4BuyerPayment({ sourceSha: "a".repeat(40), previewHost: "fixed-preview.vercel.app", jobSecret: "synthetic" }, {
+      request: async () => ({ status: 200, body: { status, providerStatus, localStatus: "PENDING", referenceState: "PROVIDER_MISSING", queryAttempts: 1, callbackStatus: "NOT_OBSERVED", callbackFailure: "NONE" } }),
+    });
+    assert.equal(receipt.status, status);
+    assert.equal(receipt.result, "BLOCKED");
+    assert.equal(receipt.paymentSubmissions, 0);
+    assert.equal(receipt.refundSubmissions, 0);
+    assert.deepEqual(validateBuyerPaymentCheckReceipt(receipt), { ok: true, errors: [] });
+    for (const patch of [{ result: "PASS" }, { queryAttempts: 0 }, { referenceState: "AVAILABLE" }, { localStatus: "PAID" }, { callbackStatus: "PROCESSED" }, { providerStatus: providerStatus === "UNKNOWN" ? "PAID" : "UNKNOWN" }]) {
+      assert.equal(validateBuyerPaymentCheckReceipt({ ...receipt, ...patch }).ok, false);
+    }
+  }
+});
+
 test("buyer payment check has one fixed read-only request and rejects forged receipts", async () => {
   let calls = 0;
   const receipt = await checkExistingWp4BuyerPayment({ sourceSha: "a".repeat(40), previewHost: "fixed-preview.vercel.app", jobSecret: "synthetic" }, {
