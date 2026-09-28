@@ -103,6 +103,31 @@ describe("SanitizedPlaywrightCiReporter", () => {
     expect(output).not.toContain("secret-token-must-not-appear");
   });
 
+  it("preserves the first allowlisted guard assertion instead of its parent test location", () => {
+    let output = "";
+    const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });
+    const current = testCase({ id: "guard", outcome: "flaky", statuses: ["failed", "passed"] });
+    const helper = path.join(process.cwd(), "tests", "e2e", "helpers", "direct-url-guard.ts");
+    const failed = current.results[0]!;
+    reporter.onStepEnd(current as never, failed as never, {
+      error: { message: "secret-token-must-not-appear" },
+      title: "secret-token-must-not-appear", category: "expect", duration: 2,
+      location: { file: helper, line: 268 },
+    } as never);
+    reporter.onStepEnd(current as never, failed as never, {
+      error: {}, category: "test.step", duration: 581,
+      location: { file: safeFile, line: 14 },
+    } as never);
+    reporter.onTestEnd(current as never);
+    reporter.onEnd({ status: "failed" } as never);
+    expect(output).toContain("file=tests/e2e/helpers/direct-url-guard.ts,line=268");
+    expect(output.match(/class=step_error/gu)).toHaveLength(1);
+    expect(output).not.toContain("secret-token-must-not-appear");
+    for (const file of ["tests/e2e/helpers/credentials.ts", "../tests/e2e/helpers/direct-url-guard.ts", "tests/e2e/helpers/direct-url-guard.ts\nsecret"]) {
+      expect(formatSanitizedPlaywrightAnnotation({ file, line: 1, status: "failed", retry: 0 })).toBeNull();
+    }
+  });
+
   it("does not emit caught step errors for a passing test", () => {
     let output = "";
     const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });
