@@ -119,6 +119,9 @@ jobs:
       - name: External provider evidence contract
         run: node --test scripts/external-provider-evidence.test.mjs scripts/validate-external-provider-evidence.test.mjs
 
+      - name: Bounded staging Stream resource contract
+        run: node --test scripts/staging-stream-resource-smoke.test.mjs
+
       - name: Backup tooling static checks
         shell: pwsh
         run: pwsh -NoProfile -File ops/backup/tests/Test-BackupTooling.ps1

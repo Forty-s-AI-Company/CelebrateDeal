@@ -1,10 +1,10 @@
 # CelebrateDeal 固定 staging 現況
 
-更新：2026-09-28（Asia/Taipei）。只把對應部署來源的受保護收據標為 PASS。指定站點：[固定 staging](https://celebrate-deal-staging.carry-digital-nomad.in.net)。
+更新：2026-09-29（Asia/Taipei）。只把對應部署來源的受保護收據標為 PASS。指定站點：[固定 staging](https://celebrate-deal-staging.carry-digital-nomad.in.net)。
 
 ## 來源
 
-本次核對的 master：`d04595136e4a718f676b2ca40ce82162ab3163ee`（#347）。#347 的 CI 36413628758、36413633208 完整通過，新增不退款的新 Sandbox 訂單閉環 runner；#346 已新增切換前 immutable Preview 驗證。應用程式來源仍是 #345 的 `5d5b814681525427ae8f787a75b7ef27fa64ed29`；後續只改 runner、工作流程與文件。
+本次核對的 master：`14e23f8e483c021390f5df22ca519c8068ee9b6a`（#348）。#348 已受保護合入；應用來源未變。#347 的 CI 36413628758、36413633208 完整通過，新增不退款的新 Sandbox 訂單閉環 runner；#346 已新增切換前 immutable Preview 驗證。應用程式來源仍是 #345 的 `5d5b814681525427ae8f787a75b7ef27fa64ed29`；後續只改 runner、工作流程與文件。
 
 固定站已切至新版 Preview：`codex/staging-release-20260928`，source `5d5b814681525427ae8f787a75b7ef27fa64ed29`，host `celebrate-deal-staging-g1b7eu9um-a25814740s-projects.vercel.app`，Vercel `dpl_HkdbLiibYXna3ewGGhGyPBbxYeCb`，GitHub Deployment `6707080026`（Preview／非 Production／READY）。切換前受保護 run 36409855420 的 immutable_preview 收據 PASS，桌面／手機各五頁、導覽、hydration、Dashboard KPI 與明細均通過，0 關鍵資源失敗。既有登入的 Vercel CLI 已成功指派指定 alias；固定網址 run 36410155519 亦已 PASS，lineage／alias VERIFIED，桌面／手機核心旅程、Dashboard 資料與互動正常，兩個 session 均已撤銷。
 
@@ -25,6 +25,10 @@ staging Functions 已由 iad1 調整至 hnd1，與 staging Supabase Tokyo（ap-n
 | 付款方式綁定能力 | **程式缺口；合成帳戶有效 reference 為 0** | master 的 PayUni adapter 沒有 createPaymentMethodSetupSession／verifyPaymentMethodSetupSignature／normalizePaymentMethodSetupPayload；綁定 action 會判定 provider_setup_unsupported。專案發布要求有效 verified PaymentMethodReference。9 月 28 日 staging 唯讀 SQL 已確認合成 vendor 有效 verified reference 為 0；必須補足 provider 真實能力，不能偽造 verified reference 或移除驗證 |
 | 舊 PR #210／#211 功能 | **尚未整合** | 學員入口、LINE 圖文選單、聯盟入口等依[整合清單](integration-inventory-20260924.md)分批處理，不直接覆蓋 master |
 | Production | **未評定** | 未執行正式部署、正式付款／退款或正式資料操作 |
+
+## 9 月 29 日接續核對
+
+Chrome 公開文件自動點選與 Git worktree 寫入已恢復。官方 UPP／Token 契約確認需要首次交易、持卡人同意、CreditHash 與功能／IP 核准；使用者確認核准狀態不確定／尚未申請。另發現現有 setup action 不支援 form_post，不能只補 adapter。[官方契約及申請待辦](payuni-token-contract-20260929.md)。Stream 單一合成資源 runner 為本機候選，未取得實際執行收據；帳戶／憑證隔離保持未驗證。
 
 ## 完成條件
 
