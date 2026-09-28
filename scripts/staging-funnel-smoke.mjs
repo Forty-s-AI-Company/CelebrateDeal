@@ -21,6 +21,8 @@ function receipt(sourceSha) {
     operationsGetRequests: 0, operationsGetResponses: 0, operationsGetFinished: 0, operationsGetFailures: 0, operationsGetLastStatus: null,
     editorGetRequests: 0, editorGetResponses: 0, editorGetFinished: 0, editorGetFailures: 0, editorGetLastStatus: null,
     editorDialogs: 0, editorNavigation: "NOT_OBSERVED",
+    publicStatus: null, publicRouteMatched: false, publicRendererVisible: false,
+    syntheticProjectStatus: "NOT_OBSERVED",
     pageErrors: 0, blockedWrites: 0, blockedExternal: 0,
     sideEffects: { syntheticSessionCreated: 0, syntheticSessionRevoked: 0, projectCreates: 0, funnelCreates: 0, funnelWrites: 0, paymentSubmissions: 0, refundSubmissions: 0, emailSubmissions: 0 },
   };
@@ -82,6 +84,23 @@ export function classifyFunnelRequest(request, allowedFunnelPath = null) {
 
 async function visible(locator, timeout = 10_000) {
   try { await locator.waitFor({ state: "visible", timeout }); return true; } catch { return false; }
+}
+
+/** Read only the named synthetic project's status; never publish or return IDs. */
+export async function inspectSyntheticProjectStatus(page) {
+  try {
+    const response = await page.goto(`https://${ALIAS}/projects`, { waitUntil: "domcontentloaded", timeout: 20_000 });
+    if (response?.status() !== 200) return "UNAVAILABLE";
+    const heading = page.getByRole("heading", { name: "Staging Synthetic Project", exact: true });
+    if (await heading.count() !== 1) return "MISSING_OR_AMBIGUOUS";
+    // The card contains the title/status row and the management link.
+    const card = heading.locator("xpath=../../..");
+    const draft = await card.getByText("草稿", { exact: true }).count();
+    const published = await card.getByText("已發布", { exact: true }).count();
+    const archived = await card.getByText("已封存", { exact: true }).count();
+    if (draft + published + archived !== 1) return "UNKNOWN";
+    return draft ? "DRAFT" : published ? "PUBLISHED" : "ARCHIVED";
+  } catch { return "UNAVAILABLE"; }
 }
 
 export async function runStagingFunnelSmoke(env = process.env, dependencies = {}) {
@@ -272,9 +291,14 @@ export async function runStagingFunnelSmoke(env = process.env, dependencies = {}
     publicPage.on("pageerror", () => { result.pageErrors += 1; });
     result.stage = "PUBLIC_DESKTOP";
     const publicResponse = await publicPage.goto(`${origin}/lp/${slug}`, { waitUntil: "domcontentloaded", timeout: 20_000 });
-    result.publicDesktop = publicResponse?.status() === 200 && PUBLIC_PATH.test(new URL(publicPage.url()).pathname)
-      && await visible(publicPage.locator("[data-funnel-renderer]"));
-    if (!result.publicDesktop) { result.reason = "PUBLIC_DESKTOP_FAILED"; return result; }
+    result.publicStatus = publicResponse?.status() ?? null;
+    result.publicRouteMatched = PUBLIC_PATH.test(new URL(publicPage.url()).pathname);
+    result.publicRendererVisible = await visible(publicPage.locator("[data-funnel-renderer]"));
+    result.publicDesktop = result.publicStatus === 200 && result.publicRouteMatched && result.publicRendererVisible;
+    if (!result.publicDesktop) {
+      result.syntheticProjectStatus = await inspectSyntheticProjectStatus(page);
+      result.reason = "PUBLIC_DESKTOP_FAILED"; return result;
+    }
     result.stage = "PUBLIC_MOBILE";
     await publicPage.setViewportSize({ width: 390, height: 844 });
     await publicPage.reload({ waitUntil: "domcontentloaded", timeout: 20_000 });

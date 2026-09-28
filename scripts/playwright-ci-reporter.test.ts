@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import SanitizedPlaywrightCiReporter, { formatSanitizedPlaywrightAnnotation } from "./playwright-ci-reporter";
+import SanitizedPlaywrightCiReporter, { classifySyntheticCheckoutError, formatSanitizedPlaywrightAnnotation } from "./playwright-ci-reporter";
 
 const safeFile = path.join(process.cwd(), "tests", "e2e", "smoke.spec.ts");
 
@@ -26,6 +26,31 @@ function testCase(input: {
 }
 
 describe("SanitizedPlaywrightCiReporter", () => {
+  it("classifies only the closed synthetic checkout grammar", () => {
+    expect(classifySyntheticCheckoutError("G748:503:A:T0O0S0G0")).toBe("checkout_http_503 branch=A transactions=0 orders=0 snapshots=0 grants=0");
+    expect(classifySyntheticCheckoutError("G748:COOKIE:MISSING")).toBe("checkout_cookie_missing");
+    for (const message of ["G748:503:A:T0O0S0G0\nsecret", "Error: G748:503:A:T0O0S0G0", "G748:503:SECRET:T0O0S0G0", "G748:503:A:T9999O0S0G0", null]) {
+      expect(classifySyntheticCheckoutError(message)).toBeNull();
+    }
+  });
+
+  it("reports direct throw locations and classified counts without arbitrary text", () => {
+    let output = "";
+    const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });
+    const current = testCase({ id: "direct", outcome: "flaky", statuses: ["failed", "passed"] });
+    Object.assign(current.results[0]!, { errors: [
+      { message: "G748:500:S:T1O1S1G0" },
+      { message: "secret-token-must-not-appear", location: { file: safeFile, line: 99 } },
+      { message: "secret-token-must-not-appear", location: { file: "../secret.spec.ts", line: 2 } },
+    ] });
+    reporter.onTestEnd(current as never);
+    reporter.onEnd({ status: "failed" } as never);
+    expect(output).toContain("class=checkout_http_500 branch=S transactions=1 orders=1 snapshots=1 grants=0");
+    expect(output).toContain("line=99::playwright status=failed retry=0 class=test_error_location");
+    expect(output).not.toContain("secret-token-must-not-appear");
+    expect(output).not.toContain("../secret.spec.ts");
+  });
+
   it("emits only file, line, and fixed failed or timedout status", () => {
     expect(formatSanitizedPlaywrightAnnotation({ file: safeFile, line: 42, status: "failed", retry: 0 }))
       .toBe("::error file=tests/e2e/smoke.spec.ts,line=42::playwright status=failed retry=0");
