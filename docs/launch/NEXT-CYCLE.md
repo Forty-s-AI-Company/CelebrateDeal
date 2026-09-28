@@ -2,7 +2,7 @@
 
 更新：2026-09-28。狀態與精確部署來源以 [CURRENT.md](CURRENT.md) 為準；待做項目不等於已驗收。
 
-整合中：PR #342 更新本輪收據，並新增公開頁 HTTP／renderer、具名合成專案唯讀狀態與 CI 直接例外的有限診斷。前一候選的 CI run 36372127181 全過，但 36372141599 因數位交付測試首次失敗、retry 通過而遭 fail-on-flaky 阻擋；既有註記沒有失敗分支，不可當成已修復。新增診斷不降低測試門檻。PR 全部 required checks 通過後才合併，再使用新版受保護 runner 取得新診斷；尚未執行的結果不能填 PASS。
+PR #342 已全綠合入：CI 36374140856、36374142653 完整通過，未降低 fail-on-flaky 門檻；先前數位交付 flaky 根因仍未確認。最新 Funnel run 36375771768 顯示公開頁 HTTP 200 但 renderer 不可見；不能僅由 200 排除串流 notFound。後續改以 `diagnostic_only=true` 讀取既有已發布合成 Funnel，分類 NOT_FOUND／CLOSED／APPLICATION_ERROR／UNKNOWN，並等待專案清單載入後再查狀態；診斷本身不等於完整旅程 PASS，也不允許建立、發布或付款。新增模式需受保護 PR 合入後才執行。
 
 1. **Funnel 匿名公開頁**：#338／#340／#341 已受保護合入。Tokyo 新版 `29ba9f6a` 的 [run 36371699449](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36371699449) 已完成建立、模板、進入編輯器、儲存與發布，剩 PUBLIC_DESKTOP_FAILED。先唯讀核對合成 SalesProject 是否發布；公開頁程式要求父專案 published，而 runner 未包含此步驟。若缺前置條件，補齊正常合成專案流程，不直接繞過公開條件；若不是，補上公開回應／渲染的有限診斷再查原因。Chrome 曾被擴充功能視窗阻擋，需關閉該介面才能繼續 UI 唯讀核對。
 2. **Dashboard 與 R2 已通過**：staging Functions 已從 iad1 調整為與資料庫同區的 Tokyo hnd1；[browser run 36371696707](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36371696707) desktop/mobile 五頁及互動 **PASS**，KPI／明細均可見且無關鍵資源失敗。[R2 run 36371701629](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36371701629) 合成圖片上傳及公開讀取 **PASS**。後續來源更新時重驗；不要以舊來源替新版驗收。

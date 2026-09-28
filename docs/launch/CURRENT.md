@@ -21,4 +21,6 @@
 
 ## 結論與證據規則
 
+最新增量（2026-09-28）：PR #342 已經兩組完整 CI 通過並合入 master `8b0c84fb0e96f063589a05f14cda2eeca359b27a`。固定站來源仍為 `29ba9f6a`。[診斷 run 36375771768](https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/36375771768) 再次完成建立、模板、編輯、儲存與發布；公開頁 HTTP 200、路徑符合，但 renderer 不可見，因此仍 BLOCKED。具名合成專案查詢為 MISSING_OR_AMBIGUOUS，且 runner 未等待清單串流內容就計數，不能据此推論專案不存在或未發布。HTTP 200 也不能排除串流中的 notFound。下一步以既有合成 Funnel 唯讀診斷分類公開頁，不重建相同測試資料。付款、退款、寄信均為 0，session 已撤銷。
+
 `CORE_STAGING_READY` **尚未成立**。固定站完整核心瀏覽器旅程與新版 PayUni Sandbox 的成功付款、callback、持久化訂單及重複 callback 冪等性都需要新證據，才可將 Goal 標為完成。R2 的 PASS 不涵蓋 Stream。下一步見 [NEXT-CYCLE.md](NEXT-CYCLE.md)；較舊部署、migration 與付款收據保留在 [Goal 執行紀錄](goal-progress-20260924.md) 與 Git 歷史，不作目前版本的 PASS。
