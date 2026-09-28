@@ -5,6 +5,12 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  runMvpPayUniPaymentOnly,
+  validatePaymentOnlyReceipt,
+  writePaymentOnlyReceipt,
+  validateWrittenPaymentOnlyReceipt,
+  MVP_PAYUNI_PAYMENT_ONLY_SCHEMA,
+  classifyPayUniConfirmation,
   retryFixedWp4BuyerCallback,
   validateBuyerCallbackRetryReceipt,
   writeBuyerCallbackRetryReceipt,
@@ -289,6 +295,82 @@ function successfulDependencies(calls = []) {
   };
 }
 
+test("payment-only proves one paid order and duplicate callback without any refund or reconcile", async () => {
+  const calls = [];
+  const receipt = await runMvpPayUniPaymentOnly(validInput, successfulDependencies(calls));
+  assert.equal(receipt.result, "PASS");
+  assert.equal(receipt.schemaVersion, MVP_PAYUNI_PAYMENT_ONLY_SCHEMA);
+  assert.equal(receipt.checks.orderPersisted, true);
+  assert.equal(receipt.checks.duplicateCallbackVerified, true);
+  assert.equal(receipt.sideEffects.orderProofPosts, 2);
+  assert.equal(receipt.sideEffects.callbackReplays, 1);
+  assert.equal(receipt.sideEffects.browserPaymentSubmissions, 1);
+  assert.equal(receipt.sideEffects.payments, 1);
+  assert.equal(receipt.sideEffects.refundPosts, 0);
+  assert.equal(receipt.sideEffects.refunds, 0);
+  assert.equal(receipt.sideEffects.reconcilePosts, 0);
+  assert.equal(calls.some(({ url }) => /refund|reconcile/u.test(url ?? "")), false);
+  assert.deepEqual(validatePaymentOnlyReceipt(receipt), { ok: true, errors: [] });
+  assert.equal(validateMvpPayUniReceipt(receipt).ok, false);
+  const legacy = await runMvpPayUniSandboxE2E(validInput, successfulDependencies());
+  assert.equal(legacy.result, "PASS");
+  assert.equal(legacy.sideEffects.refunds, 1);
+  assert.equal(validatePaymentOnlyReceipt(legacy).ok, false);
+  for (const key of ["refundPosts", "refunds", "reconcilePosts"]) {
+    assert.equal(validatePaymentOnlyReceipt({ ...receipt, sideEffects: { ...receipt.sideEffects, [key]: 1 } }).ok, false);
+  }
+  for (const key of ["returnCallbackMapped", "orderPersisted", "duplicateCallbackVerified"]) {
+    assert.equal(validatePaymentOnlyReceipt({ ...receipt, checks: { ...receipt.checks, [key]: false } }).ok, false);
+  }
+});
+
+test("payment-only stops on ambiguous submission, rejects original source and never retries", async () => {
+  const calls = [];
+  const dependencies = successfulDependencies(calls);
+  let submits = 0;
+  dependencies.browserSubmit = async () => { submits++; return "PAYMENT_CONFIRMATION_AMBIGUOUS"; };
+  const receipt = await runMvpPayUniPaymentOnly(validInput, dependencies);
+  assert.equal(submits, 1);
+  assert.equal(receipt.result, "BLOCKED");
+  assert.equal(receipt.failure, "PAYMENT_CONFIRMATION_AMBIGUOUS");
+  assert.equal(receipt.sideEffects.callbackReplays, 0);
+  assert.equal(receipt.sideEffects.refundPosts, 0);
+  assert.equal(receipt.sideEffects.reconcilePosts, 0);
+  assert.equal(validatePaymentOnlyReceipt(receipt).ok, true);
+  calls.length = 0;
+  const historical = await runMvpPayUniPaymentOnly({ ...validInput, sourceSha: BUYER_PAYMENT_CHECK_SOURCE_SHA }, dependencies);
+  assert.equal(historical.failure, "INPUT_REJECTED");
+  assert.equal(calls.length, 0);
+  assert.equal(submits, 1);
+});
+
+test("payment-only persists only its own validated receipt at a fixed filename", async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), "wp4-payment-only-"));
+  try {
+    const receipt = await runMvpPayUniPaymentOnly(validInput, successfulDependencies());
+    const written = await writePaymentOnlyReceipt(receipt, temp);
+    assert.equal(path.basename(written), "wp4-payuni-sandbox-payment-only-receipt.json");
+    assert.equal(await validateWrittenPaymentOnlyReceipt(temp), true);
+    await assert.rejects(writePaymentOnlyReceipt({ ...receipt, raw: "private" }, temp));
+    await assert.rejects(writePaymentOnlyReceipt(receipt, temp));
+    assert.equal((await readFile(written, "utf8")).includes("signed-synthetic-callback"), false);
+  } finally {
+    assert.equal(path.dirname(path.resolve(temp)), path.resolve(os.tmpdir()));
+    assert.ok(path.basename(temp).startsWith("wp4-payment-only-"));
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test("confirmation text becomes only a bounded failure category, never success", () => {
+  for (const [text, expected] of [["卡號格式不正確", "CARD"], ["請輸入有效期限", "EXPIRY"],
+    ["安全碼無效", "CVV"], ["電子信箱格式錯誤", "EMAIL"], ["持卡人姓名必填", "FIELD"]]) {
+    assert.equal(classifyPayUniConfirmation(text), `PAYMENT_VALIDATION_${expected}`);
+  }
+  for (const text of ["付款成功", "是否確定付款？", "確定", "", undefined, "請輸入".repeat(1500)]) {
+    assert.equal(classifyPayUniConfirmation(text), "PAYMENT_CONFIRMATION_AMBIGUOUS");
+  }
+});
+
 function successfulSubscriptionDependencies(calls = []) {
   let stateReads = 0;
   return {
@@ -324,6 +406,7 @@ function successfulSubscriptionDependencies(calls = []) {
 }
 
 test("buyer browser submission uses a fixed environment and fails closed on confirmation", async () => {
+  let confirmationText = "是否確定付款？";
   let submitted = 0;
   let confirmationClicks = 0;
   let launchOptions;
@@ -338,7 +421,7 @@ test("buyer browser submission uses a fixed environment and fails closed on conf
     getByPlaceholder() { return { async pressSequentially() {}, async fill() {} }; },
     getByRole(_role, options) {
       if (options.name === "確認送出") return { async click() { submitted += 1; } };
-      if (options.name === "確定") return { async waitFor() {}, async click() { confirmationClicks += 1; } };
+      if (options.name === "確定") return { async waitFor() {}, async evaluate() { return confirmationText; }, async click() { confirmationClicks += 1; } };
       throw new Error("unexpected role");
     },
     locator() { return { async check() {} }; },
@@ -370,6 +453,14 @@ test("buyer browser submission uses a fixed environment and fails closed on conf
     ? ["PATH", "SystemRoot", "TEMP", "TMP"].sort()
     : ["HOME", "PATH", "TMPDIR"].sort());
   assert.equal(postOptions.maxRedirects, 0);
+  confirmationText = "電子信箱格式錯誤 private@example.test";
+  const classified = await defaultBrowserSubmit({ previewHost, cardNumber: "4147631000000001", cardExpiry: "1230", cardCvv: "123",
+    formPayload: { MerID: "merchant" }, supportCookie: "celebrate_support_wp4=synthetic", orderNumber: "synthetic-order",
+  }, { playwright: { chromium: { async launch() { return browser; } }, errors: { TimeoutError } } });
+  assert.equal(classified, "PAYMENT_VALIDATION_EMAIL");
+  assert.equal(submitted, 2); // Two independent mocked invocations, one submit each.
+  assert.equal(confirmationClicks, 0);
+  assert.equal(classified.includes("private@example.test"), false);
 });
 
 test("buyer browser captures only the exact signed Return POST after the real 303 callback", async () => {

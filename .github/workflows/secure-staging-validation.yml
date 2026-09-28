@@ -11,6 +11,7 @@ on:
           - wp2-readonly-restore
           - wp4-payuni-sandbox-binding-preflight
           - wp4-payuni-sandbox-reconciliation
+          - wp4-payuni-sandbox-payment-only
           - wp4-payuni-sandbox-refund-recovery
           - wp4-payuni-buyer-payment-check
           - wp4-payuni-buyer-callback-retry
@@ -85,7 +86,7 @@ jobs:
       # execution step below is therefore the only step that can receive the
       # Sandbox test bindings.
       - name: Preload Chromium before WP4 secret injection
-        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-subscription' }}
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-payment-only' || inputs.task == 'wp4-payuni-sandbox-subscription' }}
         run: npx playwright install --with-deps chromium
 
       # The shared contract imports Prisma even for tasks that never query the DB.
@@ -191,7 +192,7 @@ jobs:
           npm run secure:staging:wp2
 
       - name: Validate fixed WP4 dispatch identity before secret injection
-        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-binding-preflight' || inputs.task == 'wp4-payuni-sandbox-subscription' }}
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-payment-only' || inputs.task == 'wp4-payuni-sandbox-binding-preflight' || inputs.task == 'wp4-payuni-sandbox-subscription' }}
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -287,7 +288,7 @@ jobs:
           NODE
 
       - name: Execute fixed WP4 PayUni Sandbox task with bounded egress
-        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-subscription' }}
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-payment-only' || inputs.task == 'wp4-payuni-sandbox-subscription' }}
         id: execute-wp4
         continue-on-error: true
         shell: bash
@@ -368,6 +369,8 @@ jobs:
 
           if [ "$WP4_TASK" = "wp4-payuni-sandbox-subscription" ]; then
             node scripts/mvp-payuni-sandbox-e2e.mjs --subscription
+          elif [ "$WP4_TASK" = "wp4-payuni-sandbox-payment-only" ]; then
+            node scripts/mvp-payuni-sandbox-e2e.mjs --payment-only
           else
             npm run secure:staging:wp4
           fi
@@ -772,6 +775,12 @@ jobs:
           RUNNER_TEMP: ${{ runner.temp }}
         run: node scripts/mvp-payuni-sandbox-e2e.mjs --validate-receipt
 
+      - name: Validate sanitized payment-only receipt
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-payment-only' }}
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --validate-payment-only-receipt
+
       - name: Validate sanitized existing-refund recovery receipt
         if: ${{ inputs.task == 'wp4-payuni-sandbox-refund-recovery' }}
         env:
@@ -812,7 +821,7 @@ jobs:
           retention-days: 30
 
       - name: Upload sanitized WP4 reconciliation receipt only
-        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' }}
+        if: ${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-payment-only' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: secure-staging-${{ inputs.task }}-${{ inputs.source_sha }}
@@ -880,7 +889,7 @@ jobs:
         run: exit 2
 
       - name: Enforce fixed WP4 task success
-        if: ${{ (inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-subscription') && steps.execute-wp4.outcome != 'success' }}
+        if: ${{ (inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-payment-only' || inputs.task == 'wp4-payuni-sandbox-subscription') && steps.execute-wp4.outcome != 'success' }}
         run: exit 2
 
       - name: Enforce fixed existing-refund recovery success

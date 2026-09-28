@@ -9,6 +9,30 @@ import yaml from "js-yaml";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workflowPath = path.join(root, ".github", "workflows", "secure-staging-validation.yml");
 
+test("payment-only task uses protected bounded execution and its separate receipt gate", () => {
+  const workflow = yaml.load(fs.readFileSync(workflowPath, "utf8"));
+  const steps = workflow.jobs["trusted-runner"].steps;
+  const task = "wp4-payuni-sandbox-payment-only";
+  assert.ok(workflow.on.workflow_dispatch.inputs.task.options.includes(task));
+  const lineage = steps.find((step) => step.name === "Validate fixed WP4 dispatch identity before secret injection");
+  const execute = steps.find((step) => step.id === "execute-wp4");
+  const validate = steps.find((step) => step.name === "Validate sanitized payment-only receipt");
+  const upload = steps.find((step) => step.name === "Upload sanitized WP4 reconciliation receipt only");
+  const enforce = steps.find((step) => String(step.if).includes("steps.execute-wp4.outcome"));
+  assert.ok(String(lineage.if).includes(task));
+  assert.ok(String(execute.if).includes(task));
+  assert.ok(steps.indexOf(lineage) < steps.indexOf(execute));
+  assert.equal(Object.hasOwn(lineage.env, "JOB_SECRET"), false);
+  assert.match(execute.run, /elif \[ "\$WP4_TASK" = "wp4-payuni-sandbox-payment-only" \]; then\s+node scripts\/mvp-payuni-sandbox-e2e\.mjs --payment-only/u);
+  assert.equal(validate.if, "${{ inputs.task == 'wp4-payuni-sandbox-payment-only' }}");
+  assert.match(validate.run, /--validate-payment-only-receipt/u);
+  assert.ok(String(upload.if).includes(task));
+  assert.match(upload.with.path, /inputs\.task/u);
+  assert.ok(String(enforce.if).includes(task));
+  assert.ok(steps.indexOf(validate) < steps.indexOf(enforce));
+  assert.ok(steps.indexOf(upload) < steps.indexOf(enforce));
+});
+
 test("master cannot trigger an automatic Vercel deployment", () => {
   const config = JSON.parse(fs.readFileSync(path.join(root, "vercel.json"), "utf8"));
   assert.equal(config.git?.deploymentEnabled?.master, false);
@@ -69,6 +93,7 @@ test("workflow exposes only fixed allowlisted tasks with pinned actions", () => 
     "wp2-readonly-restore",
     "wp4-payuni-sandbox-binding-preflight",
     "wp4-payuni-sandbox-reconciliation",
+    "wp4-payuni-sandbox-payment-only",
     "wp4-payuni-sandbox-refund-recovery",
     "wp4-payuni-buyer-payment-check",
     "wp4-payuni-buyer-callback-retry",
@@ -201,7 +226,7 @@ test("WP4 is protected-master only, Sandbox fixed-host only, and cannot execute 
   assert.match(bindingPreflight.run, /::error title=WP4 Sandbox binding preflight/u);
   assert.doesNotMatch(bindingPreflight.run, /process\.env\s*[).]|Object\.(?:keys|entries)\(process\.env\)/u);
   assert.ok(source.indexOf(dispatchPreflight.name) < source.indexOf(bindingPreflight.name));
-  assert.equal(String(wp4.if), "${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-subscription' }}");
+  assert.equal(String(wp4.if), "${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-payment-only' || inputs.task == 'wp4-payuni-sandbox-subscription' }}");
   assert.deepEqual(Object.keys(wp4.env).sort(), [
     "CELEBRATEDEAL_DEPLOYMENT_HOST",
     "CELEBRATEDEAL_SOURCE_SHA",
@@ -237,7 +262,7 @@ test("existing-refund recovery verifies the current Preview before JOB binding a
   const upload = steps.find((step) => step.name === "Upload sanitized existing-refund recovery receipt only");
   const enforce = steps.find((step) => step.name === "Enforce fixed existing-refund recovery success");
 
-  assert.equal(chromium.if, "${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-subscription' }}");
+  assert.equal(chromium.if, "${{ inputs.task == 'wp4-payuni-sandbox-reconciliation' || inputs.task == 'wp4-payuni-sandbox-payment-only' || inputs.task == 'wp4-payuni-sandbox-subscription' }}");
   assert.equal(lineage.if, "${{ inputs.task == 'wp4-payuni-sandbox-refund-recovery' }}");
   assert.deepEqual(Object.keys(lineage.env).sort(), ["CELEBRATEDEAL_DEPLOYMENT_HOST", "CELEBRATEDEAL_SOURCE_SHA", "GITHUB_TOKEN"]);
   assert.doesNotMatch(lineage.run, /CELEBRATEDEAL_SOURCE_SHA" !=/u);
