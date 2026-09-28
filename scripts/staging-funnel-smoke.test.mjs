@@ -1,7 +1,25 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { classifyFunnelRequest, funnelCreateFeedbackKind, funnelEditorNavigationKind, funnelRouteCategory, runStagingFunnelSmoke } from "./staging-funnel-smoke.mjs";
+import { classifyFunnelRequest, funnelCreateFeedbackKind, funnelEditorNavigationKind, funnelRouteCategory, inspectSyntheticProjectStatus, runStagingFunnelSmoke } from "./staging-funnel-smoke.mjs";
+
+test("project diagnostic reads only the exact synthetic project and rejects ambiguity", async () => {
+  for (const [labels, count, expected] of [[['草稿'], 1, 'DRAFT'], [['已發布'], 1, 'PUBLISHED'], [['已封存'], 1, 'ARCHIVED'], [[], 0, 'MISSING_OR_AMBIGUOUS'], [['草稿'], 2, 'MISSING_OR_AMBIGUOUS'], [['草稿', '已發布'], 1, 'UNKNOWN']]) {
+    const page = {
+      goto: async (url) => {
+        assert.equal(url, 'https://celebrate-deal-staging.carry-digital-nomad.in.net/projects');
+        return { status: () => 200 };
+      },
+      getByRole: (role, options) => {
+        assert.equal(role, 'heading');
+        assert.deepEqual(options, { name: 'Staging Synthetic Project', exact: true });
+        return { count: async () => count, locator: () => ({ getByText: (label) => ({ count: async () => labels.includes(label) ? 1 : 0 }) }) };
+      },
+    };
+    assert.equal(await inspectSyntheticProjectStatus(page), expected);
+  }
+  assert.equal(await inspectSyntheticProjectStatus({ goto: async () => { throw new Error('private diagnostic must not escape'); } }), 'UNAVAILABLE');
+});
 
 function request(url, method = "GET", headers = {}, postData = null) {
   return { url: () => url, method: () => method, headers: () => headers, postData: () => postData };

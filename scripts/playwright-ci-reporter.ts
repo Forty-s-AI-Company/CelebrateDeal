@@ -24,6 +24,15 @@ function sanitizedDuration(value: unknown) {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 3_600_000 ? value : 0;
 }
 
+// Only the synthetic checkout test's closed diagnostic grammar is accepted.
+// Never forward arbitrary exception text, URLs, identifiers, or payloads.
+export function classifySyntheticCheckoutError(value: unknown) {
+  if (typeof value !== "string") return null;
+  if (value === "G748:COOKIE:MISSING") return "checkout_cookie_missing";
+  const match = /^G748:([1-5][0-9]{2}):([APISU]):T([0-9]{1,3})O([0-9]{1,3})S([0-9]{1,3})G([0-9]{1,3})$/u.exec(value);
+  return match ? `checkout_http_${match[1]} branch=${match[2]} transactions=${match[3]} orders=${match[4]} snapshots=${match[5]} grants=${match[6]}` : null;
+}
+
 export function formatSanitizedPlaywrightAnnotation(input: {
   file: unknown;
   line: unknown;
@@ -99,6 +108,19 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
       for (const attempt of test.results) {
         const stepAnnotation = this.failedSteps.get(attempt);
         if (stepAnnotation) this.write(stepAnnotation);
+        // Direct database/explicit throws may not produce a failed Playwright step.
+        for (const error of attempt.errors ?? []) {
+          const classification = classifySyntheticCheckoutError(error.message);
+          const location = error.location;
+          if (!classification && !location) continue;
+          const errorAnnotation = formatSanitizedPlaywrightAnnotation({
+            file: location?.file ?? test.location.file,
+            line: location?.line ?? test.location.line,
+            status: "failed",
+            retry: attempt.retry,
+          });
+          if (errorAnnotation) this.write(`${errorAnnotation} class=${classification ?? "test_error_location"}\n`);
+        }
       }
       const annotation = formatSanitizedPlaywrightAnnotation({
         file: test.location.file,
