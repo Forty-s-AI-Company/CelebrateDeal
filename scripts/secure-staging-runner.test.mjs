@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import os from "node:os";
 import test from "node:test";
+import { BACKUP_MIGRATION_TREE_SHA } from "./staging-backup-recovery-source.mjs";
 
 import {
   BACKUP_SOURCE_SHA,
@@ -41,7 +42,7 @@ function completePassReceipt() {
   receipt.result = "PASS";
   receipt.lineage = { deploymentReads: 2, deploymentMatched: true, sourceMatched: true, preview: true, ready: true, healthStatus: 200, noRedirect: true, deploymentDigest: `sha256:${"a".repeat(64)}` };
   receipt.database = { connectionAttempts: 1, firstTransactionReadOnly: true, identityMatched: true, readQueries: 6, disconnected: true };
-  receipt.migration = { expectedCount: sourceInventory(sha).size, appliedCount: 58, unresolvedFailedCount: 0, rollbackEntryCount: 1, completedCounterpartCount: 1, exactChecksumCount: 57, formatVarianceCount: 1, unknownMismatchCount: 0, status: "BACKUP_READY_MIGRATIONS_PENDING" };
+  receipt.migration = { expectedCount: sourceInventory(sha, undefined, BACKUP_MIGRATION_TREE_SHA).size, appliedCount: 58, unresolvedFailedCount: 0, rollbackEntryCount: 1, completedCounterpartCount: 1, exactChecksumCount: 57, formatVarianceCount: 1, unknownMismatchCount: 0, status: "BACKUP_READY_MIGRATIONS_PENDING" };
   receipt.backup = { attempts: 1, result: "PASS", byteBucket: "1_to_10mib", digest: `sha256:${"b".repeat(64)}` };
   receipt.restore = { attempts: 1, result: "PASS", migrationCount: 58, schemaMatched: true, extensionsMatched: true, aggregateMatched: true, isolated: true };
   receipt.retention = { status: "ENCRYPTED", archiveDigest: `sha256:${"c".repeat(64)}`, recipientDigest: `sha256:${"d".repeat(64)}`, recoverability: "NOT_PROVEN", migrationAuthorization: "BLOCKED" };
@@ -62,7 +63,7 @@ test("only the fixed WP2 task and complete allowlisted bindings are accepted", (
 });
 
 test("backup manifest is read from the fixed RC commit", () => {
-  const manifest = sourceInventory(sha);
+  const manifest = sourceInventory(sha, undefined, BACKUP_MIGRATION_TREE_SHA);
   assert.equal(manifest.size, 79);
   assert.throws(() => sourceInventory("a".repeat(40)), /SOURCE_COMMIT_UNAVAILABLE|SOURCE_MIGRATION_COUNT_INVALID/u);
 });
@@ -391,15 +392,15 @@ test("restore TOC removes only the pre-created public schema entry", () => {
 
 test("sanitized current-source PASS receipt satisfies the full gate", () => {
   const receipt = completePassReceipt();
-  assert.deepEqual(validateReceipt(receipt), { ok: true, errors: [] });
+  assert.deepEqual(validateReceipt(receipt, { pinnedMigrationTreeSha: BACKUP_MIGRATION_TREE_SHA }), { ok: true, errors: [] });
   assert.doesNotMatch(JSON.stringify(receipt), /postgres|https?:|password|token|cookie/iu);
   assert.equal(receipt.migration.status, "BACKUP_READY_MIGRATIONS_PENDING");
   assert.equal(receipt.retention.recoverability, "NOT_PROVEN");
   receipt.retention.migrationAuthorization = "READY";
-  assert.equal(validateReceipt(receipt).errors.includes("RECOVERY_NOT_PROVEN"), true);
+  assert.equal(validateReceipt(receipt, { pinnedMigrationTreeSha: BACKUP_MIGRATION_TREE_SHA }).errors.includes("RECOVERY_NOT_PROVEN"), true);
   receipt.retention.migrationAuthorization = "BLOCKED";
   receipt.migration.status = "UP_TO_DATE";
-  assert.equal(validateReceipt(receipt).errors.includes("PASS_GATE_INCOMPLETE"), true);
+  assert.equal(validateReceipt(receipt, { pinnedMigrationTreeSha: BACKUP_MIGRATION_TREE_SHA }).errors.includes("PASS_GATE_INCOMPLETE"), true);
 });
 
 test("receipt validation rejects extra fields, writes and secret-bearing text", () => {
@@ -407,7 +408,7 @@ test("receipt validation rejects extra fields, writes and secret-bearing text", 
   receipt.database.rawRow = "unexpected";
   receipt.sideEffects.databaseWrites = 1;
   receipt.failureCategory = "https://unexpected.example";
-  const errors = validateReceipt(receipt).errors;
+  const errors = validateReceipt(receipt, { pinnedMigrationTreeSha: BACKUP_MIGRATION_TREE_SHA }).errors;
   assert.equal(errors.includes("SCHEMA_DATABASE"), true);
   assert.equal(errors.includes("FORBIDDEN_SIDE_EFFECTS"), true);
   assert.equal(errors.includes("FORBIDDEN_TEXT"), true);
