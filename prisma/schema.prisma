@@ -129,6 +129,7 @@ model Vendor {
   payoutItems                      PayoutItem[]
   paymentAccounts                  PaymentAccount[]
   paymentMethodReferences          PaymentMethodReference[]
+  paymentMethodSetupIntents         PaymentMethodSetupIntent[]
   paymentTransactions              PaymentTransaction[]
   inventoryReservations            InventoryReservation[]
   refundRecords                    RefundRecord[]
@@ -293,6 +294,7 @@ model VendorMember {
   supportCasesAssigned        SupportCase[]                 @relation("SupportCaseAssignee")
   supportCaseEvents           SupportCaseEvent[]            @relation("SupportCaseEventActor")
   supportRefundsRequested     SupportRefundHandoff[]        @relation("SupportRefundRequestedBy")
+  paymentMethodSetupConsents  PaymentMethodSetupIntent[]
 
   @@unique([vendorId, userId])
   @@unique([vendorId, id])
@@ -1490,6 +1492,32 @@ model PaymentMethodReference {
   @@unique([vendorId, id])
   @@index([vendorId, scopeType, status])
   @@index([vendorId, membershipId, status])
+}
+
+/// Server-owned consent and callback binding for one payment method setup.
+/// The provider nonce is stored only as a digest; no card or provider form data belongs here.
+model PaymentMethodSetupIntent {
+  id            String   @id @default(cuid())
+  vendorId      String
+  providerName  String
+  scopeType     String
+  teamId        String?
+  membershipId  String?
+  nonceHash     String
+  consentActorId String
+  consentVersion String
+  consentedAt   DateTime
+  status        String   @default("pending")
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  providerEventId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  consentActor VendorMember @relation(fields: [vendorId, consentActorId], references: [vendorId, id], onDelete: Restrict)
+
+  @@index([vendorId, status, expiresAt])
 }
 
 model PaymentTransaction {

@@ -9,6 +9,7 @@ import {
   PaymentMethodReferenceValidationError,
   PaymentMethodSetupConflictError,
 } from "@/lib/payment-method-reference";
+import { consumePaymentMethodSetupIntent, PaymentMethodSetupIntentRejectedError } from "@/lib/payment-method-setup-intent";
 
 const SETUP_EVENT_TYPE = "payment_method_setup_verified";
 
@@ -108,13 +109,21 @@ export async function POST(request: Request) {
         eventId: event.eventId,
         vendorId: event.vendorId,
         scopeType: event.scopeType,
+        setupIntentId: event.setupIntentId,
       } as Prisma.InputJsonObject,
       maxRetries: 5,
     },
     update: {},
   });
 
-  if (eventRecord.eventType !== SETUP_EVENT_TYPE) {
+  // A provider event ID is global. A duplicate is safe only for the same
+  // server-owned intent and tenant, even when the new callback is signed.
+  const savedPayload = eventRecord.payload && typeof eventRecord.payload === "object" && !Array.isArray(eventRecord.payload)
+    ? eventRecord.payload as Record<string, unknown>
+    : {};
+  if (eventRecord.eventType !== SETUP_EVENT_TYPE
+    || eventRecord.vendorId !== event.vendorId
+    || savedPayload.setupIntentId !== event.setupIntentId) {
     await writeAuditLog({
       vendorId: event.vendorId,
       actorLabel: `payment-method-webhook:${provider.id}`,
@@ -133,6 +142,7 @@ export async function POST(request: Request) {
 
   try {
     await db.$transaction(async (tx) => {
+      await consumePaymentMethodSetupIntent(tx, event);
       await applyVerifiedPaymentMethodSetup(tx, event);
       await tx.webhookEvent.update({
         where: { id: eventRecord.id },
@@ -140,7 +150,9 @@ export async function POST(request: Request) {
       });
     }, { isolationLevel: "Serializable" });
   } catch (error) {
-    const isRejected = error instanceof PaymentMethodReferenceValidationError || error instanceof PaymentMethodSetupConflictError;
+    const isRejected = error instanceof PaymentMethodReferenceValidationError
+      || error instanceof PaymentMethodSetupConflictError
+      || error instanceof PaymentMethodSetupIntentRejectedError;
     await db.webhookEvent.updateMany({
       where: { id: eventRecord.id, status: { not: "processed" } },
       data: {

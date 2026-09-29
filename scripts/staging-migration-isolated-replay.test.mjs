@@ -6,9 +6,11 @@ import test from "node:test";
 import { PREVIEW_HOST, SOURCE_SHA } from "./staging-migration-compat-preflight.mjs";
 import { canonicalTableCounts, IMAGE, replayArgs, runIsolatedReplay, validateBindings } from "./staging-migration-isolated-replay.mjs";
 
-const names = (await readdir("prisma/migrations", { withFileTypes: true }))
+const allNames = (await readdir("prisma/migrations", { withFileTypes: true }))
   .filter((entry) => entry.isDirectory() && /^\d{12,14}_[a-z0-9_]+$/u.test(entry.name))
   .map((entry) => entry.name).sort();
+// Preserve the fixed source's 21-migration replay when later candidates add SQL.
+const names = allNames.filter((name) => name <= "20260922120000_inventory_reservation_items_snapshot");
 const sqlByName = new Map(await Promise.all(names.slice(-21).map(async (name) => [name, await readFile(`prisma/migrations/${name}/migration.sql`)])));
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const inventory = new Map(names.map((name) => [name, { exact: sqlByName.has(name) ? digest(sqlByName.get(name)) : "a".repeat(64), alternatives: new Set() }]));
@@ -44,6 +46,7 @@ test("invalid binding and container ID fail before any database action", async (
 });
 
 test("synthetic source is restored in network-none tmpfs and all 21 migrations replay", async () => {
+  assert.equal(allNames.length, 80);
   const calls = [];
   const id = "f".repeat(64);
   const fakeCommand = (name, args, options = {}) => {

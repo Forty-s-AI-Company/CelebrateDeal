@@ -13,7 +13,6 @@ import { reconcilePayUniRefund } from "@/lib/payuni-refund-reconciliation";
 const RESULT_MESSAGES = {
   reconciled: "已完成 PayUni Sandbox 退款對帳，待處理退款保留已原子化轉為已處理。",
   already_reconciled: "此交易已完成退款對帳，系統沒有再次查詢後寫入。",
-  provider_not_refunded: "PayUni 查詢結果確認這次退款沒有成立；本機 reservation 已安全釋放，可重新確認資料後再操作。",
   nothing_pending: "目前沒有可執行的 pending reservation；系統未查詢 PayUni，也未變更本機帳務。",
   error: "退款對帳未完成，系統未變更本機帳務。",
 } as const;

@@ -5,9 +5,11 @@ import test from "node:test";
 
 import { auditPendingSql, inspectMigrationHistory } from "./staging-migration-compat-preflight.mjs";
 
-const names = (await readdir("prisma/migrations", { withFileTypes: true }))
+const allNames = (await readdir("prisma/migrations", { withFileTypes: true }))
   .filter((entry) => entry.isDirectory() && /^\d{12,14}_[a-z0-9_]+$/u.test(entry.name))
   .map((entry) => entry.name).sort();
+// This replay contract is pinned to the historical 58/79 source, not the new candidate.
+const names = allNames.filter((name) => name <= "20260922120000_inventory_reservation_items_snapshot");
 const pending = names.slice(-21);
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const sqlByName = new Map(await Promise.all(pending.map(async (name) => [name, await readFile(`prisma/migrations/${name}/migration.sql`)])));
@@ -23,6 +25,7 @@ function changedSql(name, transform) {
 }
 
 test("all 21 exact pending SQL files have no data-dependent baseline constraint", () => {
+  assert.equal(allNames.length, 80);
   assert.equal(names.length, 79);
   assert.equal(pending.length, 21);
   assert.equal(auditPendingSql(inventory, sqlByName), true);
