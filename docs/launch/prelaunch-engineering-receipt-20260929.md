@@ -40,6 +40,7 @@ Requested／effective team：`ai-team-pro`。Canonical router 對 WP1 選 Luna h
 
 - 合成 loopback PostgreSQL 17.10 中套用全部 80 筆 migration。從來源庫產生 `public` schema custom-format dump，還原到 `--network none`、tmpfs 的另一個 disposable PostgreSQL 17 容器；來源與還原庫均為 80 筆已完成 migration、121 張 `public` 資料表，且 `PaymentMethodSetupIntent` 表存在。
 - 隔離恢復時預先在 `public` 安裝 `pg_trgm`、`pgcrypto`，並從 archive TOC 排除已存在的 `public` schema 建立項目。最初直接還原因 schema 已存在及 `public.gin_trgm_ops` 缺失而失敗；修正容器初始化後，`pg_restore --exit-on-error` 成功。只聲稱 **合成應用 schema** 可還原；未宣稱完整 Supabase project、媒體或外部設定恢復。
+- 舊 RC 加密備份收據的 validator 固定驗證來源 commit 的 migration tree；新增第 80 筆 migration 後仍可驗證歷史 79 筆封存，未知 validator blob 仍被拒絕。32 項備份／恢復針對性測試通過；獨立審查確認新版 validator 的執行期依賴仍在既有 blob allowlist 邊界內。
 - 正式 Staging 加密備份恢復 runner 仍缺受保護 Environment 的 staging 專用 age 公鑰／私鑰與有效固定 artifact；因此 `recoverability=PROVEN_ISOLATED` 不能套用至真 Staging，候選 migration 也未獲 Staging 授權。
 
 ## WP6：營運與政策
