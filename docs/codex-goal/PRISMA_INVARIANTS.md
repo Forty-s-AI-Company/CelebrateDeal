@@ -4,14 +4,14 @@
 
 基準 revision：`4ed3b463`
 
-> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；本次候選另於 PostgreSQL 17.10 disposable DB 完整套用 80/80 migration，並將 `public` schema 還原至隔離容器。新驗證不代表 Staging 或 Production 已套用。
+> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前 chain 已增至 81，該歷史收據不代表新 migration、Staging 或 Production 已套用。
 
 ## Inventory 基準
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 120 |
-| Migration directories | 80 |
+| Prisma models | 121 |
+| Migration directories | 81 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -23,7 +23,7 @@
 |---|---:|---|
 | Identity／tenant root | 8 | `Vendor`、`User`、`UserSession`、`UserMfaFactor`、`UserRecoveryCode`、`PasswordResetToken`、`VendorMember`、`TrackingSetting` |
 | Content／live／lead | 23 | `Video`、`VideoArchiveState`、`ImageAsset`、`Product`、`RegistrationForm`、`FormSubmission`、`Live`、`LiveMediaSession`、`LiveProduct`、`LiveViewerSession`、`LiveStudioDraft`、`LiveReminderReconciliationJob`、`LiveChatMessage`、`LiveNotificationRule`、`LiveQuestion`、`LiveInteractionRun`、`LiveInteractionResponse`、`MessageTemplate`、`AnalyticsEvent`、`InteractionRole`、`InteractionScript`、`InteractionEvent`、`Blacklist` |
-| Affiliate／billing／payment／ops | 34 | `Affiliate`、`AffiliateClick`、`BillingPlan`、`VendorSubscription`、`PlatformReferralCode`、`PlatformReferralClick`、`PlatformReferralAttribution`、`PlatformReferralCommission`、`PlatformReferralCommissionLedgerEntry`、`PlatformReferralPayout`、`PlatformReferralPayoutBatch`、`VendorUsageLimit`、`UsageRecord`、`StreamUsageLedgerEntry`、`StreamUsageAllocationEntry`、`StreamUsageReconciliation`、`StreamOperationsAlert`、`Invoice`、`Settlement`、`PayoutBatch`、`PayoutItem`、`PaymentAccount`、`PaymentMethodReference`、`PaymentMethodSetupIntent`、`PaymentTransaction`、`InventoryReservation`、`WebhookEvent`、`RefundRecord`、`AuditLog`、`EmailDelivery`、`EmailSuppression`、`AffiliateCommission`、`AffiliatePayout`、`AffiliateCommissionLedgerEntry` |
+| Affiliate／billing／payment／ops | 35 | `Affiliate`、`AffiliateClick`、`BillingPlan`、`VendorSubscription`、`PlatformReferralCode`、`PlatformReferralClick`、`PlatformReferralAttribution`、`PlatformReferralCommission`、`PlatformReferralCommissionLedgerEntry`、`PlatformReferralPayout`、`PlatformReferralPayoutBatch`、`VendorUsageLimit`、`UsageRecord`、`StreamUsageLedgerEntry`、`StreamUsageAllocationEntry`、`StreamUsageReconciliation`、`StreamOperationsAlert`、`Invoice`、`Settlement`、`PayoutBatch`、`PayoutItem`、`PaymentAccount`、`PaymentMethodReference`、`PaymentMethodSetupIntent`、`PaymentTransaction`、`PayUniLiveProbe`、`InventoryReservation`、`WebhookEvent`、`RefundRecord`、`AuditLog`、`EmailDelivery`、`EmailSuppression`、`AffiliateCommission`、`AffiliatePayout`、`AffiliateCommissionLedgerEntry` |
 | Team Funnel／attribution | 14 | `SalesTeam`、`TeamMembership`、`TeamMembershipRelationship`、`TeamFunnelTemplate`、`TeamFunnelTemplateVersion`、`TeamFunnelTemplateFieldLock`、`TeamFunnelTemplateProductSlot`、`PartnerFunnelPage`、`PartnerFunnelPageShareSetting`、`PartnerLiveShare`、`PartnerProductSlotOverride`、`TeamClickAttribution`、`TeamLeadAttribution`、`TeamConversionAttribution` |
 | Course commerce／revenue share | 3 | `CourseCommissionAllocation`、`CourseCommissionLedgerEntry`、`CoursePayout` |
 | Commerce order／fulfillment | 10 | `CommerceOrder`、`CommerceOrderItem`、`CommerceOrderEvent`、`CommerceOrderRefund`、`ShippingFulfillment`、`CommerceEntitlement`、`ServiceFulfillment`、`VendorDeliveryUrlAllowlist`、`ProductDeliveryConfig`、`CommerceOrderItemDeliverySnapshot` |
@@ -118,6 +118,7 @@
 | `20260911080000_live_interaction_tenant_integrity` | fail-closed run/live and registration/live composite ownership |
 | `20260911020000_presenter_layout` | versioned presenter layout JSON and tenant-scoped private WHIP/WHEP session leases |
 | `20260929170000_payment_method_setup_intent` | consent actor、短效 nonce 摘要、租戶與 membership scope、一次性 callback 消耗 |
+| `20260930094500_payuni_live_probe` | 獨立 PAYUNi 1 元綁卡後第二筆扣款探針的租戶、狀態與訂單唯一性；不等於三方案付款 |
 
 ## 已由資料庫強制的主要 invariants
 
