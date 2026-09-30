@@ -9,11 +9,11 @@
 - [UPP 2.0](https://docs.payuni.com.tw/web/#/7/34) 說明首次約定 Token 需要申請功能及綁定 IP；`CreditToken` 綁定付款人識別，`UseTokenType=1` 允許消費者取消約定，`2` 是記憶卡號，不能混為約定授權。`CreditTokenType` 區分會員共用與單商店；實作應使用單商店範圍並確認官方值。
 - [幕後 Token 交易 1.3](https://docs.payuni.com.tw/web/#/7/522) 要求先以 UPP 或 UNi Embed 完成首次交易及同意綁卡，取得 `CreditHash` 後才進行後續約定授權。開通與幕後授權 IP 需另行申請。交易限制頁的 IP 黑白名單不是這項核准。
 - [官方申請頁](https://docs.payuni.com.tw/web/#/7/245) 提供「07.PAYUNi_信用卡Token API申請書.xlsx」及「05.PAYUNi_幕後功能API申請書.xlsx」。表單要求本人簽章並掃描寄至官方客服；本輪未填寫、簽署或寄送。
-- 使用者於 2026-09-30 補充：Sandbox Token 需要申請，正式環境已有 Token 功能。這是 owner 回覆，尚非供應商核准收據；不能將正式環境的核准套用到 Sandbox，也不在正式環境進行綁卡測試。
+- 使用者於 2026-09-30 提供正式站「PureFit健康管理」的信用卡 Token API 啟用截圖，並轉述第三方文章稱 Sandbox 可自行啟用。截圖只支持該正式商店的畫面狀態；Sandbox「賀成交AI x CelebrateDeal」商店的 Token／約定扣款權限及是否須另行申請仍未查核。不能將正式商店的開關套用到不同環境或商店，也不在正式環境進行綁卡測試。
 
 ## 仍未驗證／BLOCKED
 
-- Sandbox 商店 Token 功能尚待申請／核准，幕後授權 IP 與核准後的適用範圍仍無可核對的供應商收據。
+- Sandbox 商店是否可自行啟用 Token、是否已有約定扣款權限，需先在該商店後台核對；若無權限或設定不明，再向 PAYUNi 確認申請方式。幕後授權 IP 與適用範圍仍無可核對收據。
 - 未在本次讀取的官方契約確認獨立 `Merchant Token` 憑證為必要項；不要將 `CreditToken`、`CreditHash`、商店 API 金鑰及買方 `BuyerToken` 混用。
 - 未確認零元 setup；現有官方流程描述首次交易。不能將已 PASS 的一般付款追認為綁卡，或重跑該付款。
 - 商店預設 Notify／Return 指向另一個 Vercel host，非固定 staging alias。本輪未更動；這不證明前次 runner 的逐筆 callback URL 錯誤，因為 UPP 可帶逐筆 URL。
