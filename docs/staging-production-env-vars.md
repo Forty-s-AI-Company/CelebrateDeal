@@ -1,13 +1,13 @@
 # CelebrateDeal Staging / Production Env Vars 對照表
 
-最後更新：2026-07-21
+最後更新：2026-10-01
 
 ## 1. 使用原則
 
 - 真實 secret 只放 Vercel Environment Variables、GitHub Actions Secrets 或本機 `.env.*.local`。
 - 本 repo 只提交 `.env.example`、`.env.staging.example`、`.env.production.example`。
 - `NEXT_PUBLIC_*` 會進瀏覽器 bundle，不可放 secret。
-- Preview / staging 不可使用 production database 或 production PayUni credentials。
+- Preview / staging 不可使用 production database。經商店權限核對與隔離審查後，指定 staging 才可暫時使用 CelebrateDeal 正式 PAYUNi 商店做真實小額測試。
 
 ## 2. 對照表
 
@@ -43,6 +43,10 @@
 | `NEXT_PUBLIC_POSTHOG_HOST` | PostHog host | PostHog host | PostHog | capture API 200 |
 
 切換順序：先在 Sandbox 部署的 Secret 管理新增完整 `PAYUNI_SANDBOX_*` 三件組，再發布此程式。正式商店沿用 `PAYUNI_MERCHANT_ID`／`PAYUNI_HASH_KEY`／`PAYUNI_HASH_IV`；確認它們屬於 CelebrateDeal 正式商店後，才在目標環境將 `PAYUNI_ENV` 切成 `production`。切換不會自動取得或改寫金鑰。
+
+## 2026-10-01 staging 正式金流測試決定
+
+指定 staging 的目標設定是 `PAYUNI_ENV=production`，使用 CelebrateDeal 正式商店；平台三個方案 Starter、Growth、Team / Pro 的測試月費分別為 NT$1、NT$2、NT$3，正式站維持原價。這是待實作與待驗證的部署目標，**目前不能只修改 Vercel 環境變數就開始方案付款**：程式仍拒絕 Preview + 正式 PAYUNi 的一般 checkout，方案金額仍由資料庫 `BillingPlan.monthlyPriceCents` 決定。必須先完成隔離的 staging 資料庫價格設定、僅允許指定測試商家的方案結帳路徑，以及測試與部署檢查；不得修改正式資料庫的方案價格。現有「首筆 1 元綁卡＋第二筆 1 元扣款」探針是另一條受控流程，不能視為三方案付款已通過。
 
 PayUni 不另外設定 `PAYUNI_NOTIFY_URL`、`PAYUNI_RETURN_URL` 或自訂 webhook secret。每筆 UPP checkout 會從 `NEXT_PUBLIC_APP_URL` 組合 `ReturnURL` 與 `NotifyURL`，回傳則只接受官方 `EncryptInfo`、`HashInfo`、Hash Key 與 Hash IV 驗證。
 
