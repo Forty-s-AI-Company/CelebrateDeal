@@ -9,11 +9,11 @@
 - [UPP 2.0](https://docs.payuni.com.tw/web/#/7/34) 說明首次約定 Token 需要申請功能及綁定 IP；`CreditToken` 綁定付款人識別，`UseTokenType=1` 允許消費者取消約定，`2` 是記憶卡號，不能混為約定授權。`CreditTokenType` 區分會員共用與單商店；實作應使用單商店範圍並確認官方值。
 - [幕後 Token 交易 1.3](https://docs.payuni.com.tw/web/#/7/522) 要求先以 UPP 或 UNi Embed 完成首次交易及同意綁卡，取得 `CreditHash` 後才進行後續約定授權。開通與幕後授權 IP 需另行申請。交易限制頁的 IP 黑白名單不是這項核准。
 - [官方申請頁](https://docs.payuni.com.tw/web/#/7/245) 提供「07.PAYUNi_信用卡Token API申請書.xlsx」及「05.PAYUNi_幕後功能API申請書.xlsx」。表單要求本人簽章並掃描寄至官方客服；本輪未填寫、簽署或寄送。
-- 使用者回覆 Sandbox 的 Token 功能核准狀態為「不確定／尚未申請」。不能標成已核准，也不能推論 Sandbox 自動豁免。
+- 使用者於 2026-09-30 補充：Sandbox Token 需要申請，正式環境已有 Token 功能。這是 owner 回覆，尚非供應商核准收據；不能將正式環境的核准套用到 Sandbox，也不在正式環境進行綁卡測試。
 
 ## 仍未驗證／BLOCKED
 
-- 商店 Token 功能核准、幕後授權 IP、Sandbox 是否另有申請程序，尚無權威證明。
+- Sandbox 商店 Token 功能尚待申請／核准，幕後授權 IP 與核准後的適用範圍仍無可核對的供應商收據。
 - 未在本次讀取的官方契約確認獨立 `Merchant Token` 憑證為必要項；不要將 `CreditToken`、`CreditHash`、商店 API 金鑰及買方 `BuyerToken` 混用。
 - 未確認零元 setup；現有官方流程描述首次交易。不能將已 PASS 的一般付款追認為綁卡，或重跑該付款。
 - 商店預設 Notify／Return 指向另一個 Vercel host，非固定 staging alias。本輪未更動；這不證明前次 runner 的逐筆 callback URL 錯誤，因為 UPP 可帶逐筆 URL。

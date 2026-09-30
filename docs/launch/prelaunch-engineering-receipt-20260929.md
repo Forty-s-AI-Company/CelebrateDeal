@@ -52,7 +52,7 @@ Requested／effective team：`ai-team-pro`。Canonical router 對 WP1 選 Luna h
 
 | 順序 | Owner 需提供的具體決定／收據 | 解除後可執行的安全工作 |
 |---|---|---|
-| 1 | PayUni 官方 UPP／Token 契約版本、Sandbox merchant Token／後台 IP 與 callback 欄位核准證據，不含 Secret 值 | 實作 adapter、簽章 callback、revoke 並以新的 Sandbox 綁卡收據驗證；其後才驗證正常發布 |
+| 1 | 已知 Sandbox Token 需要申請、正式環境已有；請提供 Sandbox 商店申請／核准結果、UPP／Token 契約版本、後台 IP 與 callback 欄位的非敏感證據 | 實作 adapter、簽章 callback、revoke 並以新的 Sandbox 綁卡收據驗證；其後才驗證正常發布 |
 | 2 | Cloudflare Stream 測試帳號／憑證與 Production 隔離的可核對證據 | 僅在隔離確認後做新的非正式環境資源旅程；不讀既有或正式資源 |
 | 3 | 受保護 Staging Environment 的專用 age key pair 配置、可用加密備份 artifact 與 Preview／資料庫隔離收據；Secret 不進文件 | 執行固定隔離恢復 runner、候選 migration 相容性及 rollback gate，再決定是否更新 Staging |
 | 4 | PayUni 對帳可用的去識別 provider snapshot／權限與精確 scope | 只讀比對同一來源的付款、退款、訂單與 ledger；有 MISMATCH／UNKNOWN 即停止 |
