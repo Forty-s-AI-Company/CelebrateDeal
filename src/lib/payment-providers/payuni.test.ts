@@ -8,18 +8,18 @@ const hashKey = "12345678901234567890123456789012";
 const hashIv = "1234567890123456";
 
 function stubPayUniEnv() {
-  vi.stubEnv("PAYUNI_HASH_KEY", hashKey);
-  vi.stubEnv("PAYUNI_HASH_IV", hashIv);
-  vi.stubEnv("PAYUNI_MERCHANT_ID", "TESTMER");
+  vi.stubEnv("PAYUNI_SANDBOX_HASH_KEY", hashKey);
+  vi.stubEnv("PAYUNI_SANDBOX_HASH_IV", hashIv);
+  vi.stubEnv("PAYUNI_SANDBOX_MERCHANT_ID", "TESTMER");
   vi.stubEnv("PAYUNI_ENV", "sandbox");
 }
 
 function stubPayUniProductionEnv() {
   stubPayUniEnv();
   vi.stubEnv("PAYUNI_ENV", "production");
-  vi.stubEnv("PAYUNI_PRODUCTION_HASH_KEY", hashKey);
-  vi.stubEnv("PAYUNI_PRODUCTION_HASH_IV", hashIv);
-  vi.stubEnv("PAYUNI_PRODUCTION_MERCHANT_ID", "TESTMER");
+  vi.stubEnv("PAYUNI_HASH_KEY", hashKey);
+  vi.stubEnv("PAYUNI_HASH_IV", hashIv);
+  vi.stubEnv("PAYUNI_MERCHANT_ID", "TESTMER");
 }
 
 function decryptCheckoutPayload(encryptInfo: string) {
@@ -114,13 +114,13 @@ describe("unreferenced Sandbox order observation", () => {
 
 describe("PayUni provider", () => {
   it("reports checkout readiness only when all required runtime configuration is valid", () => {
-    vi.stubEnv("PAYUNI_MERCHANT_ID", "");
+    vi.stubEnv("PAYUNI_SANDBOX_MERCHANT_ID", "");
     expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
 
     stubPayUniEnv();
     expect(payUniPaymentProvider.checkoutReadiness()).toBe("ready");
 
-    vi.stubEnv("PAYUNI_HASH_KEY", "too-short");
+    vi.stubEnv("PAYUNI_SANDBOX_HASH_KEY", "too-short");
     expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
 
     stubPayUniEnv();

@@ -24,9 +24,9 @@ beforeEach(() => {
   vi.stubEnv("PAYUNI_LIVE_PROBE_ENABLED", "true");
   vi.stubEnv("PAYUNI_LIVE_PROBE_VENDOR_ID", "vendor-1");
   vi.stubEnv("PAYUNI_LIVE_PROBE_MERCHANT_ID", "TESTMER");
-  vi.stubEnv("PAYUNI_PRODUCTION_MERCHANT_ID", "TESTMER");
-  vi.stubEnv("PAYUNI_PRODUCTION_HASH_KEY", "12345678901234567890123456789012");
-  vi.stubEnv("PAYUNI_PRODUCTION_HASH_IV", "1234567890123456");
+  vi.stubEnv("PAYUNI_MERCHANT_ID", "TESTMER");
+  vi.stubEnv("PAYUNI_HASH_KEY", "12345678901234567890123456789012");
+  vi.stubEnv("PAYUNI_HASH_IV", "1234567890123456");
   mocks.probeFindUnique.mockResolvedValue({
     id: "probe-1", vendorId: "vendor-1", status: "scheduled",
     dueAt: new Date(now.getTime() - 60_000),

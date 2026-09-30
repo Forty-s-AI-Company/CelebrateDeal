@@ -24,8 +24,8 @@ describe("payment webhook diagnostics", () => {
   });
 
   it("parses form-encoded PayUni fields and reports missing hash configuration safely", () => {
-    vi.stubEnv("PAYUNI_HASH_KEY", "");
-    vi.stubEnv("PAYUNI_HASH_IV", "");
+    vi.stubEnv("PAYUNI_SANDBOX_HASH_KEY", "");
+    vi.stubEnv("PAYUNI_SANDBOX_HASH_IV", "");
     const result = buildPaymentWebhookDiagnostics("payuni", "EncryptInfo=payload-123&HashInfo=invalid");
 
     expect((result as PayUniDiagnostics).payuni).toMatchObject({
@@ -42,9 +42,9 @@ describe("payment webhook diagnostics", () => {
     ["fail", "EncryptInfo", "0000"],
   ])("classifies PayUni hash verification as %s", (classification, encryptInfo, suppliedHash) => {
     vi.stubEnv("PAYUNI_ENV", "sandbox");
-    vi.stubEnv("PAYUNI_MERCHANT_ID", "TESTMER");
-    vi.stubEnv("PAYUNI_HASH_KEY", key32);
-    vi.stubEnv("PAYUNI_HASH_IV", iv16);
+    vi.stubEnv("PAYUNI_SANDBOX_MERCHANT_ID", "TESTMER");
+    vi.stubEnv("PAYUNI_SANDBOX_HASH_KEY", key32);
+    vi.stubEnv("PAYUNI_SANDBOX_HASH_IV", iv16);
     const expectedHash = createHash("sha256").update(`${key32}${encryptInfo}${iv16}`).digest("hex").toUpperCase();
     const hashInfo = suppliedHash === "expected hash" ? expectedHash : suppliedHash;
 
@@ -55,8 +55,8 @@ describe("payment webhook diagnostics", () => {
   });
 
   it("does not attempt a hash check when PayUni encrypted fields are absent", () => {
-    vi.stubEnv("PAYUNI_HASH_KEY", "synthetic-key");
-    vi.stubEnv("PAYUNI_HASH_IV", "synthetic-iv");
+    vi.stubEnv("PAYUNI_SANDBOX_HASH_KEY", "synthetic-key");
+    vi.stubEnv("PAYUNI_SANDBOX_HASH_IV", "synthetic-iv");
 
     const result = buildPaymentWebhookDiagnostics("payuni", "{}");
 

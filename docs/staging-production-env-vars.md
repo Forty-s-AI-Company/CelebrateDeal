@@ -26,11 +26,9 @@
 | `CLOUDFLARE_STREAM_WEBHOOK_SECRET` | staging webhook secret | production webhook secret | Cloudflare Notifications | 假 secret webhook 會 401 |
 | `PAYMENT_PROVIDER` | `payuni` | `payuni` | app config | preflight pass |
 | `PAYUNI_ENV` | `sandbox`；隔離的一次性正式測試可設 `production` | `production` | 部署設定 | 同時選擇 API 網址與整組商店金鑰 |
-| `PAYUNI_SANDBOX_MERCHANT_ID`、`PAYUNI_SANDBOX_HASH_KEY`、`PAYUNI_SANDBOX_HASH_IV` | Sandbox 商店完整一組 | 可保留供切換 | PAYUNi Sandbox 後台 | 三個值不得與正式站混用；舊 `PAYUNI_MERCHANT_ID`／`PAYUNI_HASH_KEY`／`PAYUNI_HASH_IV` 僅暫時相容 Sandbox |
-| `PAYUNI_PRODUCTION_MERCHANT_ID`、`PAYUNI_PRODUCTION_HASH_KEY`、`PAYUNI_PRODUCTION_HASH_IV` | 僅隔離正式 1 元測試需要 | CelebrateDeal 正式商店完整一組 | PAYUNi 正式後台 | `PAYUNI_ENV=production` 時三個值缺一即拒絕交易，絕不回退舊變數或 Sandbox |
+| `PAYUNI_SANDBOX_MERCHANT_ID`、`PAYUNI_SANDBOX_HASH_KEY`、`PAYUNI_SANDBOX_HASH_IV` | Sandbox 商店完整一組 | 可保留供切換 | PAYUNi Sandbox 後台 | `PAYUNI_ENV=sandbox` 時專用，缺一即拒絕交易 |
+| `PAYUNI_MERCHANT_ID`、`PAYUNI_HASH_KEY`、`PAYUNI_HASH_IV` | 僅隔離正式 1 元測試需要 | CelebrateDeal 正式商店完整一組 | PAYUNi 正式後台 | `PAYUNI_ENV=production` 時專用，缺一即拒絕交易 |
 | PayUni callback 驗證 | 使用所選 Sandbox Hash Key / Hash IV | 使用所選 Production Hash Key / Hash IV | PAYUNi 商店串接設定 | `EncryptInfo` 與 `HashInfo` 驗證通過 |
-
-切換順序：先在目標部署的 Secret 管理設定完整的正式三件組，確認環境檢查通過，再發布會讀取新變數的程式，最後才將 `PAYUNI_ENV` 切成 `production`。若先發布而既有正式站只有舊三件組，結帳、回呼、查詢和退款都會拒絕處理；程式不會改用舊金鑰猜測正式商店。
 | `RESEND_API_KEY` | staging key | production key | Resend dashboard | test email delivered |
 | `EMAIL_FROM` | staging sender | production sender | Resend verified domain | SPF / DKIM / DMARC pass |
 | `SMOKE_TEST_EMAIL` | 單一測試收件信箱 | 單一受控維運信箱（非必要可不啟用 smoke） | 維運設定 | 其他收件人呼叫 test-email 必須回 403 |
@@ -43,6 +41,8 @@
 | `SENTRY_AUTH_TOKEN` | staging upload token | production upload token | Sentry auth token | build can upload source maps |
 | `NEXT_PUBLIC_POSTHOG_KEY` | staging project key | production project key | PostHog | `production_smoke_test` event appears |
 | `NEXT_PUBLIC_POSTHOG_HOST` | PostHog host | PostHog host | PostHog | capture API 200 |
+
+切換順序：先在 Sandbox 部署的 Secret 管理新增完整 `PAYUNI_SANDBOX_*` 三件組，再發布此程式。正式商店沿用 `PAYUNI_MERCHANT_ID`／`PAYUNI_HASH_KEY`／`PAYUNI_HASH_IV`；確認它們屬於 CelebrateDeal 正式商店後，才在目標環境將 `PAYUNI_ENV` 切成 `production`。切換不會自動取得或改寫金鑰。
 
 PayUni 不另外設定 `PAYUNI_NOTIFY_URL`、`PAYUNI_RETURN_URL` 或自訂 webhook secret。每筆 UPP checkout 會從 `NEXT_PUBLIC_APP_URL` 組合 `ReturnURL` 與 `NotifyURL`，回傳則只接受官方 `EncryptInfo`、`HashInfo`、Hash Key 與 Hash IV 驗證。
 

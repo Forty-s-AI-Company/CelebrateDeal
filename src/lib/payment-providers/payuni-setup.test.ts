@@ -15,9 +15,9 @@ const hashIv = "1234567890123456";
 const orderNumber = "pmABCDEFGHIJKLMNOPQRSTUV";
 
 function environment() {
-  vi.stubEnv("PAYUNI_PRODUCTION_HASH_KEY", hashKey);
-  vi.stubEnv("PAYUNI_PRODUCTION_HASH_IV", hashIv);
-  vi.stubEnv("PAYUNI_PRODUCTION_MERCHANT_ID", "TESTMER");
+  vi.stubEnv("PAYUNI_HASH_KEY", hashKey);
+  vi.stubEnv("PAYUNI_HASH_IV", hashIv);
+  vi.stubEnv("PAYUNI_MERCHANT_ID", "TESTMER");
   vi.stubEnv("PAYUNI_ENV", "production");
 }
 
