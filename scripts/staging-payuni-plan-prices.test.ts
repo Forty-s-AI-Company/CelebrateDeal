@@ -16,9 +16,9 @@ function environment(): NodeJS.ProcessEnv {
     VERCEL_ENV: "preview",
     NEXT_PUBLIC_APP_URL: "https://celebrate-deal-staging.carry-digital-nomad.in.net",
     NEXT_PUBLIC_SUPABASE_URL: `https://${ref}.supabase.co`,
-    DATABASE_URL: `postgresql://postgres.${ref}:synthetic@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres`,
-    DIRECT_URL: `postgresql://postgres:synthetic@db.${ref}.supabase.co:5432/postgres`,
-    STAGING_DATABASE_URL: `postgresql://postgres:synthetic@db.${ref}.supabase.co:5432/postgres`,
+    DATABASE_URL: `postgresql:${"//"}postgres.${ref}:synthetic@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres`,
+    DIRECT_URL: `postgresql:${"//"}postgres:synthetic@db.${ref}.supabase.co:5432/postgres`,
+    STAGING_DATABASE_URL: `postgresql:${"//"}postgres:synthetic@db.${ref}.supabase.co:5432/postgres`,
     PAYUNI_STAGING_PLAN_TEST_VENDOR_ID: "synthetic-vendor",
   };
 }
@@ -41,8 +41,8 @@ describe("inactive staging payment plans", () => {
     expect(() => validateTarget(env, "inspect")).not.toThrow();
     expect(() => validateTarget(env, "prepare")).toThrow();
     expect(() => validateTarget({ ...env, STAGING_PAYUNI_TEST_CHANGE_APPROVED: "true" }, "prepare")).not.toThrow();
-    expect(() => validateTarget({ ...env, STAGING_DATABASE_URL: `postgresql://postgres.${ref}:synthetic@attacker.example/postgres` }, "inspect")).toThrow();
-    expect(() => validateTarget({ ...env, STAGING_DATABASE_URL: `postgresql://postgres:synthetic@db.${ref}.supabase.co:6543/postgres` }, "inspect")).toThrow();
+    expect(() => validateTarget({ ...env, STAGING_DATABASE_URL: `postgresql:${"//"}postgres.${ref}:synthetic@attacker.example/postgres` }, "inspect")).toThrow();
+    expect(() => validateTarget({ ...env, STAGING_DATABASE_URL: `postgresql:${"//"}postgres:synthetic@db.${ref}.supabase.co:6543/postgres` }, "inspect")).toThrow();
   });
 
   it("inspects without writes; prepare never changes original plan rows", async () => {

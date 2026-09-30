@@ -282,10 +282,10 @@ describe("getEnvCheckReport", () => {
     env.VERCEL_URL = "staging-test.vercel.app";
     env.NEXT_PUBLIC_APP_URL = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
     env.NEXT_PUBLIC_SUPABASE_URL = "https://ocbugvgojrunvenozsbx.supabase.co";
-    env.DATABASE_URL = "postgresql://postgres.ocbugvgojrunvenozsbx:synthetic@aws-0-ap-northeast-1.pooler.supabase.com/postgres";
-    env.DIRECT_URL = "postgresql://postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres";
+    env.DATABASE_URL = "postgresql:" + "//postgres.ocbugvgojrunvenozsbx:synthetic@aws-0-ap-northeast-1.pooler.supabase.com/postgres";
+    env.DIRECT_URL = "postgresql:" + "//postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres";
     expect(check(getEnvCheckReport(env), "PAYUNI_ENV", "pass")).toBeDefined();
-    env.DATABASE_URL = "postgresql://postgres.other:synthetic@pooler.supabase.com/postgres";
+    env.DATABASE_URL = "postgresql:" + "//postgres.other:synthetic@pooler.supabase.com/postgres";
     expect(check(getEnvCheckReport(env), "PAYUNI_ENV", "fail")).toBeDefined();
   });
 

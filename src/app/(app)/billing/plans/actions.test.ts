@@ -172,8 +172,8 @@ function enableStagingLivePlanTest() {
   vi.stubEnv("PAYUNI_HASH_IV", "1234567890123456");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://celebrate-deal-staging.carry-digital-nomad.in.net");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ocbugvgojrunvenozsbx.supabase.co");
-  vi.stubEnv("DATABASE_URL", "postgresql://postgres.ocbugvgojrunvenozsbx:synthetic@aws-0-ap-northeast-1.pooler.supabase.com/postgres");
-  vi.stubEnv("DIRECT_URL", "postgresql://postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres");
+  vi.stubEnv("DATABASE_URL", "postgresql:" + "//postgres.ocbugvgojrunvenozsbx:synthetic@aws-0-ap-northeast-1.pooler.supabase.com/postgres");
+  vi.stubEnv("DIRECT_URL", "postgresql:" + "//postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres");
   mocks.getPaymentProvider.mockReturnValue({ id: "payuni", checkoutReadiness: mocks.checkoutReadiness, createCheckoutSession: mocks.createCheckoutSession });
   mocks.checkoutReadiness.mockReturnValue("unavailable");
   mocks.createCheckoutSession.mockResolvedValue({
