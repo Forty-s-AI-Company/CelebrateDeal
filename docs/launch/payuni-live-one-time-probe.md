@@ -9,7 +9,7 @@
 ## 開始前
 
 1. 在 **CelebrateDeal 商店**的 PAYUNi 正式後台核對信用卡 Token API 與信用卡幕後授權 API 權限，以及來源 IP 綁定。PureFit 商店畫面不能作為 CelebrateDeal 商店已開通的證據。金鑰及卡片資訊只存於核准的部署 Secret 管理，不貼入文件或對話。
-2. 使用獨立 Preview 資料庫與指定 vendor。先執行本次 Prisma migration，再以 Preview 專屬 Secret 設定 `PAYMENT_PROVIDER=payuni`、`PAYUNI_ENV=production`、`PAYUNI_MERCHANT_ID`、`PAYUNI_HASH_KEY`、`PAYUNI_HASH_IV`、`PAYUNI_LIVE_PROBE_ENABLED=true`、`PAYUNI_LIVE_PROBE_VENDOR_ID`、`PAYUNI_LIVE_PROBE_MERCHANT_ID` 與 `PAYUNI_LIVE_PROBE_JOB_SECRET`。最後兩個 merchant ID 必須與實際 CelebrateDeal 商店 ID 相同。
+2. 使用獨立 Preview 資料庫與指定 vendor。先執行本次 Prisma migration，再以 Preview 專屬 Secret 設定 `PAYMENT_PROVIDER=payuni`、`PAYUNI_ENV=production`、`PAYUNI_PRODUCTION_MERCHANT_ID`、`PAYUNI_PRODUCTION_HASH_KEY`、`PAYUNI_PRODUCTION_HASH_IV`、`PAYUNI_LIVE_PROBE_ENABLED=true`、`PAYUNI_LIVE_PROBE_VENDOR_ID`、`PAYUNI_LIVE_PROBE_MERCHANT_ID` 與 `PAYUNI_LIVE_PROBE_JOB_SECRET`。兩個正式商店 ID 必須與實際 CelebrateDeal 商店 ID 相同。只改 `PAYUNI_ENV` 而未提供正式三件組會拒絕交易。
 3. 確保 PAYUNi 能公開回呼該 Preview 站的 `/api/webhooks/payment-methods` 與 `/api/webhooks/payuni-live-probe`；不可把 Vercel bypass Secret 放在回呼 URL。
 4. GitHub repository variable `PAYUNI_LIVE_PROBE_SCHEDULER_ENABLED=true` 才會啟用每 5 分鐘的排程；Preview 環境設定 `PAYUNI_LIVE_PROBE_URL`、`PAYUNI_LIVE_PROBE_HOST`、`PAYUNI_LIVE_PROBE_JOB_SECRET`。URL 必須是該 Preview 站的 `https://<host>/api/jobs/payuni-live-probe`，host 必須完全一致。排程的檢查時間與實際送款時間可能相差數分鐘。
 

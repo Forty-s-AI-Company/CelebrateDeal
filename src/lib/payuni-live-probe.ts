@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { activePayUniCredentials } from "@/lib/payuni-credentials";
 
 export const PAYUNI_LIVE_PROBE_AMOUNT_CENTS = 100;
 export const PAYUNI_LIVE_PROBE_DELAY_MS = 10 * 60 * 1000;
@@ -7,6 +8,9 @@ export const PAYUNI_LIVE_PROBE_CONSENT_TEXT = "我另行同意這次正式 PAYUN
 
 /** A live charge probe is available to exactly one Preview tenant per deploy. */
 export function payUniLiveProbeAvailable(vendorId: string, env: NodeJS.ProcessEnv = process.env) {
+  const selectedMerchantId = (() => {
+    try { return activePayUniCredentials(env).merchantId; } catch { return null; }
+  })();
   return Boolean(vendorId)
     && env.VERCEL_ENV === "preview"
     && env.PAYUNI_ENV === "production"
@@ -14,7 +18,7 @@ export function payUniLiveProbeAvailable(vendorId: string, env: NodeJS.ProcessEn
     && env.PAYUNI_LIVE_PROBE_ENABLED === "true"
     && env.PAYUNI_LIVE_PROBE_VENDOR_ID === vendorId
     && Boolean(env.PAYUNI_LIVE_PROBE_MERCHANT_ID)
-    && env.PAYUNI_LIVE_PROBE_MERCHANT_ID === env.PAYUNI_MERCHANT_ID;
+    && env.PAYUNI_LIVE_PROBE_MERCHANT_ID === selectedMerchantId;
 }
 
 /** Unique within the real merchant, including across a Preview rebuild. */

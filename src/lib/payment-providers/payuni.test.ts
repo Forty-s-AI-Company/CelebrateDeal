@@ -14,6 +14,14 @@ function stubPayUniEnv() {
   vi.stubEnv("PAYUNI_ENV", "sandbox");
 }
 
+function stubPayUniProductionEnv() {
+  stubPayUniEnv();
+  vi.stubEnv("PAYUNI_ENV", "production");
+  vi.stubEnv("PAYUNI_PRODUCTION_HASH_KEY", hashKey);
+  vi.stubEnv("PAYUNI_PRODUCTION_HASH_IV", hashIv);
+  vi.stubEnv("PAYUNI_PRODUCTION_MERCHANT_ID", "TESTMER");
+}
+
 function decryptCheckoutPayload(encryptInfo: string) {
   const [encrypted, tag] = Buffer.from(encryptInfo, "hex").toString("utf8").split(":::");
   const decipher = createDecipheriv("aes-256-gcm", Buffer.from(hashKey), Buffer.from(hashIv));
@@ -402,8 +410,7 @@ describe("PayUni provider", () => {
   });
 
   it("queries the fixed Production endpoint exactly once and preserves the read-only request contract", async () => {
-    stubPayUniEnv();
-    vi.stubEnv("PAYUNI_ENV", "production");
+    stubPayUniProductionEnv();
     const fetchMock = vi.fn().mockResolvedValue(new Response(payUniEnvelope({
       Status: "SUCCESS",
       Result: JSON.stringify({
@@ -444,8 +451,7 @@ describe("PayUni provider", () => {
     ["gross amount", { TradeNo: "trade-query-346", TradeAmt: "1681" }],
     ["order reference", { MerTradeNo: "different-order", TradeNo: "trade-query-346", TradeAmt: "1680" }],
   ])("fails closed when Production query identity does not match the transaction: %s", async (_label, resultPatch) => {
-    stubPayUniEnv();
-    vi.stubEnv("PAYUNI_ENV", "production");
+    stubPayUniProductionEnv();
     const fetchMock = vi.fn().mockResolvedValue(new Response(payUniEnvelope({
       Status: "SUCCESS",
       Result: JSON.stringify(Object.assign({
@@ -465,8 +471,7 @@ describe("PayUni provider", () => {
   });
 
   it("fails closed before any provider call for a non-PayUni transaction", async () => {
-    stubPayUniEnv();
-    vi.stubEnv("PAYUNI_ENV", "production");
+    stubPayUniProductionEnv();
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 

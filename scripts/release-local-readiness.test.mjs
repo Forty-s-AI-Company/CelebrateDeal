@@ -103,6 +103,12 @@ test("reports every release-critical binding as presence-only metadata", () => {
     "PAYUNI_HASH_KEY",
     "PAYUNI_HASH_IV",
     "PAYUNI_MERCHANT_ID",
+    "PAYUNI_SANDBOX_HASH_KEY",
+    "PAYUNI_SANDBOX_HASH_IV",
+    "PAYUNI_SANDBOX_MERCHANT_ID",
+    "PAYUNI_PRODUCTION_HASH_KEY",
+    "PAYUNI_PRODUCTION_HASH_IV",
+    "PAYUNI_PRODUCTION_MERCHANT_ID",
     "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_STREAM_TOKEN",
     "CLOUDFLARE_STREAM_WEBHOOK_SECRET",
@@ -116,9 +122,21 @@ test("reports every release-critical binding as presence-only metadata", () => {
 
   const sentinel = "release-critical-synthetic-value";
   const availability = environmentAvailability(Object.fromEntries(
-    RELEASE_CRITICAL_ENVIRONMENT_KEYS.map((key) => [key, sentinel]),
+    RELEASE_CRITICAL_ENVIRONMENT_KEYS.map((key) => [key, key === "PAYUNI_ENV" ? "production" : sentinel]),
   ));
-  assert.deepEqual(Object.keys(availability), [...RELEASE_CRITICAL_ENVIRONMENT_KEYS]);
+  assert.deepEqual(Object.keys(availability).filter((key) => key.startsWith("PAYUNI_") && key !== "PAYUNI_ENV"), [
+    "PAYUNI_PRODUCTION_HASH_KEY", "PAYUNI_PRODUCTION_HASH_IV", "PAYUNI_PRODUCTION_MERCHANT_ID",
+  ]);
   assert.equal(Object.values(availability).every((value) => value === true), true);
   assert.equal(JSON.stringify(availability).includes(sentinel), false);
+});
+
+test("release inventory reports the selected PAYUNi key set only", () => {
+  const production = environmentAvailability({
+    PAYUNI_ENV: "production", PAYUNI_PRODUCTION_MERCHANT_ID: "synthetic",
+    PAYUNI_PRODUCTION_HASH_KEY: "synthetic", PAYUNI_PRODUCTION_HASH_IV: "synthetic",
+  });
+  assert.equal(production.PAYUNI_PRODUCTION_MERCHANT_ID, true);
+  assert.equal(Object.hasOwn(production, "PAYUNI_MERCHANT_ID"), false);
+  assert.equal(Object.hasOwn(production, "PAYUNI_SANDBOX_MERCHANT_ID"), false);
 });

@@ -25,10 +25,12 @@
 | `CLOUDFLARE_STREAM_TOKEN` | staging scoped token | production scoped token | Cloudflare API Tokens | 不在 client bundle 出現 |
 | `CLOUDFLARE_STREAM_WEBHOOK_SECRET` | staging webhook secret | production webhook secret | Cloudflare Notifications | 假 secret webhook 會 401 |
 | `PAYMENT_PROVIDER` | `payuni` | `payuni` | app config | preflight pass |
-| `PAYUNI_HASH_KEY` | sandbox key | production key | PayUni dashboard | sandbox paid webhook 可驗簽 |
-| `PAYUNI_HASH_IV` | sandbox IV | production IV | PayUni dashboard | sandbox paid webhook 可驗簽 |
-| `PAYUNI_MERCHANT_ID` | sandbox merchant | production merchant | PayUni dashboard | checkout metadata 正確 |
-| PayUni callback 驗證 | 使用 Sandbox Hash Key / Hash IV | 使用 Production Hash Key / Hash IV | PayUni 商店串接設定 | `EncryptInfo` 與 `HashInfo` 驗證通過 |
+| `PAYUNI_ENV` | `sandbox`；隔離的一次性正式測試可設 `production` | `production` | 部署設定 | 同時選擇 API 網址與整組商店金鑰 |
+| `PAYUNI_SANDBOX_MERCHANT_ID`、`PAYUNI_SANDBOX_HASH_KEY`、`PAYUNI_SANDBOX_HASH_IV` | Sandbox 商店完整一組 | 可保留供切換 | PAYUNi Sandbox 後台 | 三個值不得與正式站混用；舊 `PAYUNI_MERCHANT_ID`／`PAYUNI_HASH_KEY`／`PAYUNI_HASH_IV` 僅暫時相容 Sandbox |
+| `PAYUNI_PRODUCTION_MERCHANT_ID`、`PAYUNI_PRODUCTION_HASH_KEY`、`PAYUNI_PRODUCTION_HASH_IV` | 僅隔離正式 1 元測試需要 | CelebrateDeal 正式商店完整一組 | PAYUNi 正式後台 | `PAYUNI_ENV=production` 時三個值缺一即拒絕交易，絕不回退舊變數或 Sandbox |
+| PayUni callback 驗證 | 使用所選 Sandbox Hash Key / Hash IV | 使用所選 Production Hash Key / Hash IV | PAYUNi 商店串接設定 | `EncryptInfo` 與 `HashInfo` 驗證通過 |
+
+切換順序：先在目標部署的 Secret 管理設定完整的正式三件組，確認環境檢查通過，再發布會讀取新變數的程式，最後才將 `PAYUNI_ENV` 切成 `production`。若先發布而既有正式站只有舊三件組，結帳、回呼、查詢和退款都會拒絕處理；程式不會改用舊金鑰猜測正式商店。
 | `RESEND_API_KEY` | staging key | production key | Resend dashboard | test email delivered |
 | `EMAIL_FROM` | staging sender | production sender | Resend verified domain | SPF / DKIM / DMARC pass |
 | `SMOKE_TEST_EMAIL` | 單一測試收件信箱 | 單一受控維運信箱（非必要可不啟用 smoke） | 維運設定 | 其他收件人呼叫 test-email 必須回 403 |

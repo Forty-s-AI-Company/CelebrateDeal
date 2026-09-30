@@ -15,9 +15,9 @@ const hashIv = "1234567890123456";
 const orderNumber = "pmABCDEFGHIJKLMNOPQRSTUV";
 
 function environment() {
-  vi.stubEnv("PAYUNI_HASH_KEY", hashKey);
-  vi.stubEnv("PAYUNI_HASH_IV", hashIv);
-  vi.stubEnv("PAYUNI_MERCHANT_ID", "TESTMER");
+  vi.stubEnv("PAYUNI_PRODUCTION_HASH_KEY", hashKey);
+  vi.stubEnv("PAYUNI_PRODUCTION_HASH_IV", hashIv);
+  vi.stubEnv("PAYUNI_PRODUCTION_MERCHANT_ID", "TESTMER");
   vi.stubEnv("PAYUNI_ENV", "production");
 }
 
@@ -30,15 +30,15 @@ function decrypt(encryptInfo: string) {
   ]).toString("utf8")));
 }
 
-function signedCallback(payload: Record<string, string>, version = "2.0") {
-  const cipher = createCipheriv("aes-256-gcm", Buffer.from(hashKey), Buffer.from(hashIv));
+function signedCallback(payload: Record<string, string>, version = "2.0", signingKey = hashKey, signingIv = hashIv) {
+  const cipher = createCipheriv("aes-256-gcm", Buffer.from(signingKey), Buffer.from(signingIv));
   const encrypted = Buffer.concat([
     cipher.update(new URLSearchParams(payload).toString(), "utf8"), cipher.final(),
   ]).toString("base64");
   const encryptInfo = Buffer.from(`${encrypted}:::${cipher.getAuthTag().toString("base64")}`).toString("hex");
   return new URLSearchParams({
     MerID: "TESTMER", Version: version, Status: "SUCCESS", EncryptInfo: encryptInfo,
-    HashInfo: createHash("sha256").update(`${hashKey}${encryptInfo}${hashIv}`).digest("hex").toUpperCase(),
+    HashInfo: createHash("sha256").update(`${signingKey}${encryptInfo}${signingIv}`).digest("hex").toUpperCase(),
   }).toString();
 }
 
@@ -97,6 +97,17 @@ describe("PAYUNi one-time CreditHash charge", () => {
 });
 
 describe("PAYUNi official UPP setup contract", () => {
+  it("rejects a Sandbox signed callback while Production credentials are selected", async () => {
+    environment();
+    const body = signedCallback({
+      MerID: "SANDBOXMER", MerTradeNo: orderNumber, TradeNo: "SANDBOX-TRADE",
+      Status: "SUCCESS", TradeStatus: "1", PaymentType: "1", TradeAmt: "1",
+      CreditHash: "sandbox-credit-hash",
+    }, "2.0", "s".repeat(32), "s".repeat(16));
+    expect(await payUniPaymentProvider.verifyPaymentMethodSetupSignature?.(new Request("https://app.test"), body)).toBe(false);
+    expect(dbMocks.findUnique).not.toHaveBeenCalled();
+  });
+
   it("requires an explicit one-dollar, merchant-scoped, cancelable Token setup", async () => {
     environment();
     const session = await payUniPaymentProvider.createPaymentMethodSetupSession?.({

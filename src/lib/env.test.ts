@@ -189,30 +189,31 @@ describe("getEnvCheckReport", () => {
   });
 
   it.each([
-    [envKey("PAYUNI", "HASH", "KEY")],
-    [envKey("PAYUNI", "HASH", "IV")],
-    [envKey("PAYUNI", "MERCHANT", "ID")],
+    [envKey("PAYUNI", "PRODUCTION", "HASH", "KEY")],
+    [envKey("PAYUNI", "PRODUCTION", "HASH", "IV")],
+    [envKey("PAYUNI", "PRODUCTION", "MERCHANT", "ID")],
   ])("requires %s when PayUni is selected", (missingKey) => {
     const env = configuredEnv();
     env[envKey("PAYMENT", "PROVIDER")] = "payuni";
-    env[envKey("PAYUNI", "HASH", "KEY")] = "test-payuni-key-value";
-    env[envKey("PAYUNI", "HASH", "IV")] = "test-payuni-iv-value";
-    env[envKey("PAYUNI", "MERCHANT", "ID")] = "test-merchant-id";
+    env[envKey("PAYUNI", "ENV")] = "production";
+    env[envKey("PAYUNI", "PRODUCTION", "HASH", "KEY")] = "12345678901234567890123456789012";
+    env[envKey("PAYUNI", "PRODUCTION", "HASH", "IV")] = "1234567890123456";
+    env[envKey("PAYUNI", "PRODUCTION", "MERCHANT", "ID")] = "test-merchant-id";
     delete env[missingKey];
 
     const report = getEnvCheckReport(env);
 
     expect(report.ok).toBe(false);
-    expect(check(report, missingKey, "fail")?.message).toBe(`PAYMENT_PROVIDER=payuni 時必須設定 ${missingKey}`);
+    expect(check(report, missingKey, "fail")?.message).toBe(`PAYMENT_PROVIDER=payuni 時必須設定有效的 ${missingKey}`);
   });
 
   it("does not require a non-standard PayUni webhook secret", () => {
     const env = configuredEnv();
     env[envKey("PAYMENT", "PROVIDER")] = "payuni";
     env[envKey("PAYUNI", "ENV")] = "production";
-    env[envKey("PAYUNI", "HASH", "KEY")] = "test-payuni-key-value";
-    env[envKey("PAYUNI", "HASH", "IV")] = "test-payuni-iv-value";
-    env[envKey("PAYUNI", "MERCHANT", "ID")] = "test-merchant-id";
+    env[envKey("PAYUNI", "PRODUCTION", "HASH", "KEY")] = "12345678901234567890123456789012";
+    env[envKey("PAYUNI", "PRODUCTION", "HASH", "IV")] = "1234567890123456";
+    env[envKey("PAYUNI", "PRODUCTION", "MERCHANT", "ID")] = "test-merchant-id";
 
     const report = getEnvCheckReport(env);
 
@@ -223,9 +224,12 @@ describe("getEnvCheckReport", () => {
   it("binds PayUni environment to Preview and Production deployment boundaries", () => {
     const env = configuredEnv();
     env[envKey("PAYMENT", "PROVIDER")] = "payuni";
-    env[envKey("PAYUNI", "HASH", "KEY")] = "test-payuni-key-value";
-    env[envKey("PAYUNI", "HASH", "IV")] = "test-payuni-iv-value";
+    env[envKey("PAYUNI", "HASH", "KEY")] = "12345678901234567890123456789012";
+    env[envKey("PAYUNI", "HASH", "IV")] = "1234567890123456";
     env[envKey("PAYUNI", "MERCHANT", "ID")] = "test-merchant-id";
+    env[envKey("PAYUNI", "PRODUCTION", "HASH", "KEY")] = "12345678901234567890123456789012";
+    env[envKey("PAYUNI", "PRODUCTION", "HASH", "IV")] = "1234567890123456";
+    env[envKey("PAYUNI", "PRODUCTION", "MERCHANT", "ID")] = "test-merchant-id";
     env[envKey("VERCEL", "ENV")] = "preview";
     env[envKey("PAYUNI", "ENV")] = "production";
 
@@ -252,9 +256,9 @@ describe("getEnvCheckReport", () => {
   it("permits Preview to use the live PayUni endpoint only for the exact one-time probe scope", () => {
     const env = configuredEnv();
     env[envKey("PAYMENT", "PROVIDER")] = "payuni";
-    env[envKey("PAYUNI", "HASH", "KEY")] = "test-payuni-key-value";
-    env[envKey("PAYUNI", "HASH", "IV")] = "test-payuni-iv-value";
-    env[envKey("PAYUNI", "MERCHANT", "ID")] = "test-merchant-id";
+    env[envKey("PAYUNI", "PRODUCTION", "HASH", "KEY")] = "12345678901234567890123456789012";
+    env[envKey("PAYUNI", "PRODUCTION", "HASH", "IV")] = "1234567890123456";
+    env[envKey("PAYUNI", "PRODUCTION", "MERCHANT", "ID")] = "test-merchant-id";
     env[envKey("VERCEL", "ENV")] = "preview";
     env[envKey("PAYUNI", "ENV")] = "production";
     env[envKey("PAYUNI", "LIVE", "PROBE", "ENABLED")] = "true";
@@ -377,9 +381,9 @@ describe("getEnvCheckReport", () => {
     env.VERCEL_ENV = "preview";
     env.PAYMENT_PROVIDER = "payuni";
     env.PAYUNI_ENV = "production";
-    env.PAYUNI_MERCHANT_ID = "CELEBRATE_TEST_MERCHANT";
-    env.PAYUNI_HASH_KEY = "synthetic-hash-key-for-preview-test";
-    env.PAYUNI_HASH_IV = "synthetic-iv-test";
+    env.PAYUNI_PRODUCTION_MERCHANT_ID = "CELEBRATE_TEST_MERCHANT";
+    env.PAYUNI_PRODUCTION_HASH_KEY = "12345678901234567890123456789012";
+    env.PAYUNI_PRODUCTION_HASH_IV = "1234567890123456";
     env.PAYUNI_LIVE_PROBE_MERCHANT_ID = "CELEBRATE_TEST_MERCHANT";
     env.PAYUNI_LIVE_PROBE_VENDOR_ID = "vendor-1";
     env.PAYUNI_LIVE_PROBE_ENABLED = "true";

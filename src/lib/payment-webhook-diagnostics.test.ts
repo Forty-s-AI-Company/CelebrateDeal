@@ -8,6 +8,9 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+const key32 = "12345678901234567890123456789012";
+const iv16 = "1234567890123456";
+
 describe("payment webhook diagnostics", () => {
   it("returns only common safe metadata for non-PayUni providers", () => {
     const result = buildPaymentWebhookDiagnostics("demo", JSON.stringify({ secret: "redacted" }));
@@ -35,12 +38,14 @@ describe("payment webhook diagnostics", () => {
   });
 
   it.each([
-    ["pass", "KEY", "IV", "EncryptInfo", "expected hash"],
-    ["fail", "KEY", "IV", "EncryptInfo", "0000"],
-  ])("classifies PayUni hash verification as %s", (classification, key, iv, encryptInfo, suppliedHash) => {
-    vi.stubEnv("PAYUNI_HASH_KEY", key);
-    vi.stubEnv("PAYUNI_HASH_IV", iv);
-    const expectedHash = createHash("sha256").update(`${key}${encryptInfo}${iv}`).digest("hex").toUpperCase();
+    ["pass", "EncryptInfo", "expected hash"],
+    ["fail", "EncryptInfo", "0000"],
+  ])("classifies PayUni hash verification as %s", (classification, encryptInfo, suppliedHash) => {
+    vi.stubEnv("PAYUNI_ENV", "sandbox");
+    vi.stubEnv("PAYUNI_MERCHANT_ID", "TESTMER");
+    vi.stubEnv("PAYUNI_HASH_KEY", key32);
+    vi.stubEnv("PAYUNI_HASH_IV", iv16);
+    const expectedHash = createHash("sha256").update(`${key32}${encryptInfo}${iv16}`).digest("hex").toUpperCase();
     const hashInfo = suppliedHash === "expected hash" ? expectedHash : suppliedHash;
 
     const result = buildPaymentWebhookDiagnostics("payuni", JSON.stringify({ EncryptInfo: encryptInfo, HashInfo: hashInfo }));
