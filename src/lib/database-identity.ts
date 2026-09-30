@@ -31,7 +31,7 @@ function matchesSupabaseUrl(value: string | undefined): boolean {
   return parsed?.protocol === "https:" && parsed.hostname.toLowerCase() === STAGING_SUPABASE_HOST;
 }
 
-function matchesDatabaseUrl(value: string | undefined): boolean {
+export function isStagingDatabaseUrl(value: string | undefined): boolean {
   const parsed = parseUrl(value);
 
   if (!parsed || !["postgres:", "postgresql:"].includes(parsed.protocol)) {
@@ -60,10 +60,10 @@ export function getStagingDatabaseIdentityReport(
   env: EnvironmentValues = process.env,
 ): StagingDatabaseIdentityReport {
   const supabase_url_match = matchesSupabaseUrl(env.NEXT_PUBLIC_SUPABASE_URL);
-  const database_url_match = matchesDatabaseUrl(env.DATABASE_URL);
-  const direct_url_match = matchesDatabaseUrl(env.DIRECT_URL);
+  const database_url_match = isStagingDatabaseUrl(env.DATABASE_URL);
+  const direct_url_match = isStagingDatabaseUrl(env.DIRECT_URL);
   const staging_database_url_match = env.STAGING_DATABASE_URL?.trim()
-    ? matchesDatabaseUrl(env.STAGING_DATABASE_URL)
+    ? isStagingDatabaseUrl(env.STAGING_DATABASE_URL)
     : null;
 
   return {

@@ -1,4 +1,5 @@
 import { Badge, Card, PageHeader } from "@/components/ui";
+import type { BillingPlan } from "@prisma/client";
 import { cookies } from "next/headers";
 import { requireVendorFinance } from "@/lib/auth";
 import { getCsrfToken } from "@/lib/csrf";
@@ -9,12 +10,20 @@ import { allowedPaymentUrl, checkoutSessionFromMetadata, metadataObject } from "
 import { DirectEntryAttributionReset } from "@/components/direct-entry-attribution-reset";
 import { ExternalPaymentForm } from "@/components/external-payment-form";
 import { BillingPlanCheckoutForm } from "@/components/billing-plan-checkout-form";
+import { payUniStagingPlanTestAllowed, PAYUNI_PRODUCTION_UPP_URL } from "@/lib/payuni-staging-plan-test";
 
 type BillingPlansSearchParams = { status?: string | string[]; error?: string | string[]; transactionId?: string | string[]; referral?: string | string[] };
 
 type BillingPlansPageProps = {
   searchParams?: Promise<BillingPlansSearchParams>;
 };
+
+function planVisibility(plans: BillingPlan[], vendorId: string) {
+  const livePreview = process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production";
+  if (!livePreview) return { unavailable: false, plans: plans.filter((plan) => plan.isActive) };
+  const matching = plans.filter((plan) => payUniStagingPlanTestAllowed(vendorId, plan));
+  return { unavailable: matching.length !== 3, plans: matching.length === 3 ? matching : [] };
+}
 
 function queryValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -67,7 +76,7 @@ async function loadPendingPlanCheckout(vendorId: string, transactionId: string |
       paymentMode: "platform",
       status: "pending",
     },
-    select: { id: true, metadata: true },
+    select: { id: true, metadata: true, grossAmountCents: true },
   });
   if (!transaction) return null;
 
@@ -91,9 +100,17 @@ async function loadPendingPlanCheckout(vendorId: string, transactionId: string |
       planId: billingPlanId,
       status: "pending_payment",
     },
-    select: { id: true },
+    select: { id: true, plan: { select: { code: true, monthlyPriceCents: true, isActive: true, description: true } } },
   });
-  return subscription ? checkoutSessionFromMetadata(metadata) : null;
+  if (!subscription) return null;
+  const session = checkoutSessionFromMetadata(metadata);
+  if (process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production") {
+    if (!payUniStagingPlanTestAllowed(vendorId, subscription.plan)
+      || transaction.grossAmountCents !== subscription.plan.monthlyPriceCents
+      || metadata.stagingPayUniPlanPermit !== subscription.plan.description
+      || session?.formAction !== PAYUNI_PRODUCTION_UPP_URL) return null;
+  }
+  return session;
 }
 
 export default async function BillingPlansPage({ searchParams }: BillingPlansPageProps) {
@@ -104,9 +121,15 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
   const transactionId = queryValue(query.transactionId);
   const referralContextRequested = queryValue(query.referral) === "1";
   const referralPresentationPromise = loadPlatformReferralPresentation(referralContextRequested);
+  const livePreview = process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production";
   const [plans, currentSubscription, pendingCheckout, csrfToken, referralPresentation] = await Promise.all([
     getDb().billingPlan.findMany({
-      where: { isActive: true },
+      where: livePreview ? {
+        OR: [
+          { isActive: true },
+          { isActive: false, code: { in: ["staging-payuni-starter", "staging-payuni-growth", "staging-payuni-team-pro"] } },
+        ],
+      } : { isActive: true },
       orderBy: { monthlyPriceCents: "asc" },
     }),
     getDb().vendorSubscription.findFirst({
@@ -118,6 +141,8 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
     canManageBilling ? getCsrfToken() : Promise.resolve(""),
     referralPresentationPromise,
   ]);
+  // Show no purchasable plans until all three database prices are exact.
+  const visible = planVisibility(plans, vendor.id);
   const status = queryValue(query.status);
   const error = queryValue(query.error);
   const checkout = pendingCheckout;
@@ -176,6 +201,11 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
           平台方案付款會建立一筆綁定方案的 pending 交易；收到可信 paid callback 前，不會啟用新方案。
         </p>
       </Card>
+      {visible.unavailable ? (
+        <p role="alert" className="mb-4 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-800">
+          此測試站的正式金流方案尚未完成隔離設定，暫不開放方案付款。
+        </p>
+      ) : null}
       <Card className="mb-4 border-violet-200 bg-violet-50/60">
         <p className="text-sm font-semibold text-violet-950">平台推薦歸因</p>
         {referralPresentation.status === "recorded" ? (
@@ -195,14 +225,14 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
         </p>
       </Card>
       <div className="grid gap-4 lg:grid-cols-3">
-        {plans.map((plan) => (
+        {visible.plans.map((plan) => (
           <Card key={plan.id} className="grid gap-4 bg-gradient-to-br from-white to-slate-50">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-slate-950">{plan.name}</h2>
-                <p className="mt-1 text-sm text-slate-500">{plan.description}</p>
+                <p className="mt-1 text-sm text-slate-500">{plan.isActive ? plan.description : "僅供指定測試商家驗證正式金流的短期方案。"}</p>
               </div>
-              <Badge tone={plan.isActive ? "blue" : "gray"}>{plan.code}</Badge>
+              <Badge tone={plan.isActive ? "blue" : "gray"}>{plan.isActive ? plan.code : plan.code.replace("staging-payuni-", "")}</Badge>
             </div>
             <p className="text-3xl font-bold text-slate-950">{formatCurrency(plan.monthlyPriceCents)}</p>
             <div className="grid gap-2 text-sm text-slate-600">

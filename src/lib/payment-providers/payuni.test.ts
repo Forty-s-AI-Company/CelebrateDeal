@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PaymentTransaction, Product, Vendor } from "@prisma/client";
+import type { BillingPlan, PaymentTransaction, Product, Vendor } from "@prisma/client";
 import { payUniPaymentProvider } from "@/lib/payment-providers/payuni";
 import { buildPayUniSandboxWebhookFixture } from "@/lib/payment-providers/payuni-fixtures";
 
@@ -139,6 +139,38 @@ describe("PayUni provider", () => {
       description: "Ordinary checkout",
       appUrl: "https://staging.example.test",
       returnAppUrl: "https://staging.example.test",
+    })).rejects.toThrow("General PayUni checkout is disabled");
+  });
+
+  it("allows only the scoped 2 TWD staging plan through the production UPP", async () => {
+    stubPayUniProductionEnv();
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    vi.stubEnv("PAYUNI_STAGING_PLAN_TEST_ENABLED", "true");
+    vi.stubEnv("PAYUNI_STAGING_PLAN_TEST_VENDOR_ID", "synthetic-vendor");
+    vi.stubEnv("VERCEL_URL", "staging-test.vercel.app");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://celebrate-deal-staging.carry-digital-nomad.in.net");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ocbugvgojrunvenozsbx.supabase.co");
+    vi.stubEnv("DATABASE_URL", "postgresql://postgres.ocbugvgojrunvenozsbx:synthetic@aws-0-ap-northeast-1.pooler.supabase.com/postgres");
+    vi.stubEnv("DIRECT_URL", "postgresql://postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres");
+    const billingPlan = { id: "growth-id", code: "staging-payuni-growth", name: "Growth", monthlyPriceCents: 200, isActive: false, description: `staging-payuni-plan-v1:${JSON.stringify({ deploymentHost: "staging-test.vercel.app", merchantId: "TESTMER", vendorId: "synthetic-vendor", expiresAt: "2099-01-01T00:00:00.000Z" })}` } as BillingPlan;
+    const transaction = {
+      id: "tx-growth", vendorId: "synthetic-vendor", orderNumber: "CD-TEST-002",
+      providerName: "payuni", paymentMode: "platform", status: "pending", currency: "TWD",
+      grossAmountCents: 200,
+      metadata: { billingPurpose: "platform_subscription_checkout", platformSubscriptionId: "sub-growth", billingPlanId: "growth-id", billingPlanCode: "staging-payuni-growth", stagingPayUniPlanPermit: billingPlan.description },
+    } as unknown as PaymentTransaction;
+    const vendor = { id: "synthetic-vendor" } as Vendor;
+    expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
+    const session = await payUniPaymentProvider.createCheckoutSession?.({
+      transaction, billingPlan, vendor,
+      appUrl: "https://celebrate-deal-staging.carry-digital-nomad.in.net",
+    });
+    expect(session?.formAction).toBe("https://api.payuni.com.tw/api/upp");
+    expect(decryptCheckoutPayload(session?.formPayload?.EncryptInfo ?? "")).toMatchObject({ TradeAmt: "2" });
+    await expect(payUniPaymentProvider.createCheckoutSession?.({
+      transaction: { ...transaction, grossAmountCents: 300 }, billingPlan, vendor,
+      appUrl: "https://celebrate-deal-staging.carry-digital-nomad.in.net",
     })).rejects.toThrow("General PayUni checkout is disabled");
   });
 

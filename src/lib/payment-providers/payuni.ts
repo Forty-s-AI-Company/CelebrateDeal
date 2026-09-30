@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from "n
 import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
 import { getDb } from "@/lib/db";
 import { activePayUniCredentials } from "@/lib/payuni-credentials";
+import { payUniStagingPlanSessionAllowed } from "@/lib/payuni-staging-plan-test";
 import { payUniSetupNonce } from "@/lib/payuni-setup-correlation";
 import {
   PaymentQueryProviderError,
@@ -750,8 +751,9 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       return "unavailable";
     }
   },
-  async createCheckoutSession({ transaction, product, billingPlan, description, appUrl, returnAppUrl }) {
-    if (process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production") {
+  async createCheckoutSession({ transaction, product, billingPlan, description, vendor, appUrl, returnAppUrl }) {
+    if (process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production"
+      && (product || description || !payUniStagingPlanSessionAllowed(vendor.id, billingPlan, transaction))) {
       throw new Error("General PayUni checkout is disabled in live-probe Preview.");
     }
     const merchantId = activePayUniCredentials().merchantId;

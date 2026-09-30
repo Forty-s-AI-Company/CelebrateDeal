@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isValidSentryEnvironment } from "@/lib/sentry-environment";
 import { payUniLiveProbeAvailable } from "@/lib/payuni-live-probe";
+import { payUniStagingPlanTestScope } from "@/lib/payuni-staging-plan-test";
 import { payUniCredentialKeys } from "@/lib/payuni-credentials";
 import { MINIMUM_ENCRYPTION_SECRET_BYTES } from "@/lib/sensitive-data";
 import {
@@ -135,7 +136,8 @@ function payUniEnvironmentDeploymentCheck(
   const configured = secretPresent(env.PAYUNI_ENV);
   const value = env.PAYUNI_ENV?.trim().toLowerCase();
   const expected = env.VERCEL_ENV === "preview"
-    ? payUniLiveProbeAvailable(env.PAYUNI_LIVE_PROBE_VENDOR_ID ?? "", env) ? "production" : "sandbox"
+    ? payUniLiveProbeAvailable(env.PAYUNI_LIVE_PROBE_VENDOR_ID ?? "", env)
+      || payUniStagingPlanTestScope(env) ? "production" : "sandbox"
     : env.VERCEL_ENV === "production" || env.NODE_ENV === "production"
       ? "production"
       : undefined;

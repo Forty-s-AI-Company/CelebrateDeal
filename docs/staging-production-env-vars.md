@@ -46,7 +46,7 @@
 
 ## 2026-10-01 staging 正式金流測試決定
 
-指定 staging 的目標設定是 `PAYUNI_ENV=production`，使用 CelebrateDeal 正式商店；平台三個方案 Starter、Growth、Team / Pro 的測試月費分別為 NT$1、NT$2、NT$3，正式站維持原價。這是待實作與待驗證的部署目標，**目前不能只修改 Vercel 環境變數就開始方案付款**：程式仍拒絕 Preview + 正式 PAYUNi 的一般 checkout，方案金額仍由資料庫 `BillingPlan.monthlyPriceCents` 決定。必須先完成隔離的 staging 資料庫價格設定、僅允許指定測試商家的方案結帳路徑，以及測試與部署檢查；不得修改正式資料庫的方案價格。現有「首筆 1 元綁卡＋第二筆 1 元扣款」探針是另一條受控流程，不能視為三方案付款已通過。
+指定 staging 的目標設定是 `PAYUNI_ENV=production`，使用 CelebrateDeal 正式商店；平台三個方案 Starter、Growth、Team / Pro 的測試月費分別為 NT$1、NT$2、NT$3，正式站維持原價。受控程式路徑仍在草稿 PR #351；固定 staging 尚未切換。測試價格存於三筆獨立且停用的 staging 專用方案，原本三筆方案與正式站資料不改。`PAYUNI_STAGING_PLAN_TEST_ENABLED=true` 只在已審查的 Preview 部署使用；程式還會核對 staging 資料庫、指定商家、CelebrateDeal 商店代號及短效資料庫許可綁定的唯一部署 URL。一般商品／發票結帳與退款仍封鎖。完整順序見 [三方案正式金流 staging runbook](launch/payuni-staging-live-plan-test.md)。現有「首筆 1 元綁卡＋第二筆 1 元扣款」探針是另一條受控流程，不能視為三方案付款已通過。
 
 PayUni 不另外設定 `PAYUNI_NOTIFY_URL`、`PAYUNI_RETURN_URL` 或自訂 webhook secret。每筆 UPP checkout 會從 `NEXT_PUBLIC_APP_URL` 組合 `ReturnURL` 與 `NotifyURL`，回傳則只接受官方 `EncryptInfo`、`HashInfo`、Hash Key 與 Hash IV 驗證。
 
