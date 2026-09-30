@@ -10,6 +10,7 @@ import {
   PaymentMethodSetupConflictError,
 } from "@/lib/payment-method-reference";
 import { consumePaymentMethodSetupIntent, PaymentMethodSetupIntentRejectedError } from "@/lib/payment-method-setup-intent";
+import { PAYUNI_LIVE_PROBE_AMOUNT_CENTS, PAYUNI_LIVE_PROBE_DELAY_MS } from "@/lib/payuni-live-probe";
 
 const SETUP_EVENT_TYPE = "payment_method_setup_verified";
 
@@ -144,6 +145,38 @@ export async function POST(request: Request) {
     await db.$transaction(async (tx) => {
       await consumePaymentMethodSetupIntent(tx, event);
       await applyVerifiedPaymentMethodSetup(tx, event);
+      if (provider.id === "payuni") {
+        const probe = await tx.payUniLiveProbe.findUnique({
+          where: { setupIntentId: event.setupIntentId },
+          select: { id: true, vendorId: true, status: true, firstAmountCents: true, secondAmountCents: true },
+        });
+        if (probe) {
+          if (probe.vendorId !== event.vendorId || probe.status !== "awaiting_setup"
+            || probe.firstAmountCents !== PAYUNI_LIVE_PROBE_AMOUNT_CENTS
+            || probe.secondAmountCents !== PAYUNI_LIVE_PROBE_AMOUNT_CENTS) {
+            throw new PaymentMethodSetupConflictError();
+          }
+          const reference = await tx.paymentMethodReference.findUnique({
+            where: {
+              vendorId_providerName_providerPaymentMethodRef: {
+                vendorId: event.vendorId,
+                providerName: "payuni",
+                providerPaymentMethodRef: event.providerPaymentMethodRef,
+              },
+            },
+            select: { id: true, status: true },
+          });
+          if (!reference || reference.status !== "verified") throw new PaymentMethodSetupConflictError();
+          await tx.payUniLiveProbe.update({
+            where: { id: probe.id },
+            data: {
+              status: "scheduled",
+              paymentMethodReferenceId: reference.id,
+              dueAt: new Date(Date.now() + PAYUNI_LIVE_PROBE_DELAY_MS),
+            },
+          });
+        }
+      }
       await tx.webhookEvent.update({
         where: { id: eventRecord.id },
         data: { status: "processed", processedAt: new Date(), errorMessage: null },

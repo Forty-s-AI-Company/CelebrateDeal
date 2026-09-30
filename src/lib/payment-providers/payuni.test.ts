@@ -120,6 +120,20 @@ describe("PayUni provider", () => {
     expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
   });
 
+  it("blocks ordinary checkout on a Preview connected to the live merchant", async () => {
+    stubPayUniEnv();
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("PAYUNI_ENV", "production");
+    expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
+    await expect(payUniPaymentProvider.createCheckoutSession?.({
+      transaction: { id: "tx_1", orderNumber: "CD-TEST-001", grossAmountCents: 199000 } as PaymentTransaction,
+      vendor: { id: "vendor-1" } as Vendor,
+      description: "Ordinary checkout",
+      appUrl: "https://staging.example.test",
+      returnAppUrl: "https://staging.example.test",
+    })).rejects.toThrow("General PayUni checkout is disabled");
+  });
+
   it("builds a server-side checkout form payload with PayUni fields", async () => {
     stubPayUniEnv();
     const transaction = {

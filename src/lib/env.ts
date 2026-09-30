@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isValidSentryEnvironment } from "@/lib/sentry-environment";
+import { payUniLiveProbeAvailable } from "@/lib/payuni-live-probe";
 import { MINIMUM_ENCRYPTION_SECRET_BYTES } from "@/lib/sensitive-data";
 import {
   LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH,
@@ -130,7 +131,7 @@ function payUniEnvironmentDeploymentCheck(
   const configured = secretPresent(env.PAYUNI_ENV);
   const value = env.PAYUNI_ENV?.trim().toLowerCase();
   const expected = env.VERCEL_ENV === "preview"
-    ? "sandbox"
+    ? payUniLiveProbeAvailable(env.PAYUNI_LIVE_PROBE_VENDOR_ID ?? "", env) ? "production" : "sandbox"
     : env.VERCEL_ENV === "production" || env.NODE_ENV === "production"
       ? "production"
       : undefined;

@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => ({
   eventUpsert: vi.fn(),
   eventUpdate: vi.fn(),
   eventUpdateMany: vi.fn(),
+  probeFindUnique: vi.fn(),
+  probeUpdate: vi.fn(),
+  referenceFindUnique: vi.fn(),
   transaction: vi.fn(),
 }));
 
@@ -42,6 +45,8 @@ function request(provider = "payuni", body = "signed-body") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.applyVerifiedPaymentMethodSetup.mockReset();
+  mocks.consumeIntent.mockReset();
   vi.stubEnv("PAYMENT_PROVIDER", "payuni");
   vi.stubEnv("NODE_ENV", "test");
   mocks.readTextBody.mockResolvedValue("signed-body");
@@ -60,9 +65,13 @@ beforeEach(() => {
   mocks.eventUpsert.mockResolvedValue({ id: "webhook-event-1", status: "received", eventType: "payment_method_setup_verified", vendorId: "vendor-1", payload: { setupIntentId: "intent-1" } });
   mocks.eventUpdate.mockResolvedValue(undefined);
   mocks.eventUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.probeFindUnique.mockResolvedValue(null);
+  mocks.probeUpdate.mockResolvedValue(undefined);
+  mocks.referenceFindUnique.mockResolvedValue({ id: "reference-1", status: "verified" });
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => unknown) => callback({
     paymentMethodSetupIntent: {},
-    paymentMethodReference: {},
+    paymentMethodReference: { findUnique: mocks.referenceFindUnique },
+    payUniLiveProbe: { findUnique: mocks.probeFindUnique, update: mocks.probeUpdate },
     vendor: {},
     teamMembership: {},
     webhookEvent: { update: mocks.eventUpdate },
@@ -143,6 +152,19 @@ describe("POST /api/webhooks/payment-methods", () => {
     await expect(response.json()).resolves.toEqual({ error: "Payment method setup processing failed", code: "payment_method_setup_rejected" });
     expect(mocks.eventUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: "failed", errorMessage: "payment_method_setup_rejected" }),
+    }));
+  });
+
+  it("schedules only the consented one-time live probe after a verified setup", async () => {
+    mocks.probeFindUnique.mockResolvedValue({
+      id: "probe-1", vendorId: "vendor-1", status: "awaiting_setup",
+      firstAmountCents: 100, secondAmountCents: 100,
+    });
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(mocks.probeUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "probe-1" },
+      data: expect.objectContaining({ status: "scheduled", paymentMethodReferenceId: "reference-1", dueAt: expect.any(Date) }),
     }));
   });
 

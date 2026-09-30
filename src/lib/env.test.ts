@@ -249,6 +249,22 @@ describe("getEnvCheckReport", () => {
     expect(check(report, envKey("PAYUNI", "ENV"), "pass")).toBeDefined();
   });
 
+  it("permits Preview to use the live PayUni endpoint only for the exact one-time probe scope", () => {
+    const env = configuredEnv();
+    env[envKey("PAYMENT", "PROVIDER")] = "payuni";
+    env[envKey("PAYUNI", "HASH", "KEY")] = "test-payuni-key-value";
+    env[envKey("PAYUNI", "HASH", "IV")] = "test-payuni-iv-value";
+    env[envKey("PAYUNI", "MERCHANT", "ID")] = "test-merchant-id";
+    env[envKey("VERCEL", "ENV")] = "preview";
+    env[envKey("PAYUNI", "ENV")] = "production";
+    env[envKey("PAYUNI", "LIVE", "PROBE", "ENABLED")] = "true";
+    env[envKey("PAYUNI", "LIVE", "PROBE", "VENDOR", "ID")] = "vendor-1";
+    env[envKey("PAYUNI", "LIVE", "PROBE", "MERCHANT", "ID")] = "test-merchant-id";
+    expect(check(getEnvCheckReport(env), envKey("PAYUNI", "ENV"), "pass")).toBeDefined();
+    env[envKey("PAYUNI", "LIVE", "PROBE", "MERCHANT", "ID")] = "other-merchant";
+    expect(check(getEnvCheckReport(env), envKey("PAYUNI", "ENV"), "fail")).toBeDefined();
+  });
+
   it.each(["ecpay-like", "platform-ecpay"])("requires the ECPay webhook verification value for %s", (provider) => {
     const env = configuredEnv();
     env[envKey("PAYMENT", "PROVIDER")] = provider;
@@ -354,6 +370,24 @@ describe("getEnvCheckReport", () => {
     expect(report.ok).toBe(false);
     expect(check(report, envKey("CSRF", "SECRET"), "fail")).toBeDefined();
     expect(check(report, envKey("RATE", "LIMIT", "PROVIDER"), "fail")).toBeDefined();
+  });
+
+  it("allows live PAYUNi only for the designated Preview merchant probe", () => {
+    const env = configuredEnv();
+    env.VERCEL_ENV = "preview";
+    env.PAYMENT_PROVIDER = "payuni";
+    env.PAYUNI_ENV = "production";
+    env.PAYUNI_MERCHANT_ID = "CELEBRATE_TEST_MERCHANT";
+    env.PAYUNI_HASH_KEY = "synthetic-hash-key-for-preview-test";
+    env.PAYUNI_HASH_IV = "synthetic-iv-test";
+    env.PAYUNI_LIVE_PROBE_MERCHANT_ID = "CELEBRATE_TEST_MERCHANT";
+    env.PAYUNI_LIVE_PROBE_VENDOR_ID = "vendor-1";
+    env.PAYUNI_LIVE_PROBE_ENABLED = "true";
+    const allowed = getEnvCheckReport(env);
+    expect(allowed.ok).toBe(true);
+    expect(check(allowed, "PAYUNI_ENV", "pass")).toBeDefined();
+    env.PAYUNI_LIVE_PROBE_MERCHANT_ID = "OTHER_MERCHANT";
+    expect(check(getEnvCheckReport(env), "PAYUNI_ENV", "fail")).toBeDefined();
   });
 
   it("keeps local development usable while warning about an implicit memory limiter", () => {

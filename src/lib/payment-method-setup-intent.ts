@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import type { PaymentMethodSetupVerificationInput } from "@/lib/payment-method-reference";
+import { newPayUniSetupOrderNumber, payUniSetupNonce } from "@/lib/payuni-setup-correlation";
 
 export const PAYMENT_METHOD_SETUP_CONSENT_VERSION = "payment-method-setup/v1";
 export const PAYMENT_METHOD_SETUP_TTL_MS = 15 * 60 * 1000;
@@ -51,7 +52,7 @@ function nonceDigest(nonce: string) {
 /** Creates one short-lived server-owned consent record before provider handoff. */
 export async function createPaymentMethodSetupIntent(
   db: CreateDb,
-  input: SetupScope & { consentActorId: string; consentAccepted: boolean; now?: Date },
+  input: SetupScope & { consentActorId: string; consentAccepted: boolean; payUniCorrelation?: boolean; now?: Date },
 ) {
   if (!input.consentAccepted) throw new PaymentMethodSetupIntentRejectedError();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.consentActorId)) throw new PaymentMethodSetupIntentRejectedError();
@@ -61,9 +62,16 @@ export async function createPaymentMethodSetupIntent(
     throw new PaymentMethodSetupIntentRejectedError();
   }
   const now = input.now ?? new Date();
-  const nonce = randomBytes(32).toString("base64url");
+  // PAYUNi returns only MerTradeNo in its signed setup result. A bounded order
+  // ID and domain-separated nonce allow us to reconstruct the original proof.
+  const payUniOrderNumber = input.payUniCorrelation ? newPayUniSetupOrderNumber() : null;
+  if (payUniOrderNumber && input.providerName !== "payuni") throw new PaymentMethodSetupIntentRejectedError();
+  const nonce = payUniOrderNumber
+    ? payUniSetupNonce(payUniOrderNumber)
+    : randomBytes(32).toString("base64url");
   const intent = await db.paymentMethodSetupIntent.create({
     data: {
+      ...(payUniOrderNumber ? { id: payUniOrderNumber } : {}),
       vendorId: input.vendorId,
       providerName: input.providerName,
       scopeType: input.scopeType,

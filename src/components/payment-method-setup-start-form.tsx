@@ -6,13 +6,15 @@ import { FormSubmitButton } from "@/components/form-submit-button";
 
 type Props = {
   scopeType: "VENDOR" | "MEMBERSHIP";
+  providerId: string;
+  liveProbeAvailable?: boolean;
   teamId?: string;
   membershipId?: string;
   csrfField: ReactNode;
 };
 
 /** The returned provider form exists only in this browser handoff, never in a URL or database. */
-export function PaymentMethodSetupStartForm({ scopeType, teamId, membershipId, csrfField }: Props) {
+export function PaymentMethodSetupStartForm({ scopeType, providerId, liveProbeAvailable = false, teamId, membershipId, csrfField }: Props) {
   const [handoff, action] = useActionState(startPaymentMethodSetupStateAction, null);
   const isVendor = scopeType === "VENDOR";
 
@@ -26,9 +28,16 @@ export function PaymentMethodSetupStartForm({ scopeType, teamId, membershipId, c
         <label className="flex max-w-md gap-2 text-sm text-slate-700">
           <input type="checkbox" name="setupConsent" value="yes" required className="mt-1" />
           <span>{isVendor
-            ? "我同意將此付款方式綁定到目前商店，供後續經授權的方案與用量扣款使用；首次設定可能需要在金流頁完成交易。"
-            : "我同意僅為此成員綁定付款方式，供後續經授權的扣款使用；首次設定可能需要在金流頁完成交易。"}</span>
+            ? "我同意將此付款方式綁定到目前商店，供後續經授權的方案與用量扣款使用。"
+            : "我同意僅為此成員綁定付款方式，供後續經授權的扣款使用。"}
+            {providerId === "payuni" ? "PAYUNi 首次設定會發起 1 元交易。" : "首次設定可能需要在金流頁完成交易。"}</span>
         </label>
+        {liveProbeAvailable ? (
+          <label className="flex max-w-md gap-2 text-sm text-slate-700">
+            <input type="checkbox" name="oneTimeProbeConsent" value="yes" required className="mt-1" />
+            <span>我另行同意這次正式 PAYUNi 驗證：完成首次 1 元綁卡交易後，約 10 分鐘再以同一卡片發起一次 1 元扣款；系統不會自動重試第二筆扣款。</span>
+          </label>
+        ) : null}
         <FormSubmitButton
           pendingChildren="建立中…"
           pendingMessage="正在建立付款方式驗證 session，請勿重複送出。"

@@ -7,6 +7,7 @@ import { getDb } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import { formatDateTime } from "@/lib/format";
 import { hasPaymentMethodSetupCapability } from "@/lib/payment-method-setup";
+import { payUniLiveProbeAvailable } from "@/lib/payuni-live-probe";
 import { revokePaymentMethodReferenceAction } from "@/app/actions/payment-method-actions";
 
 type PaymentMethodsSearchParams = { error?: string | string[]; status?: string | string[] };
@@ -19,12 +20,13 @@ function queryValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function providerSetupState() {
+function providerSetupState(vendorId: string) {
   try {
     const provider = getPaymentProvider(process.env.PAYMENT_PROVIDER ?? "demo");
     return {
       id: provider.id,
-      available: hasPaymentMethodSetupCapability(provider),
+      available: hasPaymentMethodSetupCapability(provider)
+        && (provider.id !== "payuni" || process.env.PAYUNI_ENV !== "production" || payUniLiveProbeAvailable(vendorId)),
     };
   } catch {
     return { id: "未設定", available: false };
@@ -112,7 +114,7 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
   const params = searchParams ? await searchParams : {};
   const message = errorMessage(queryValue(params.error));
   const status = statusMessage(queryValue(params.status));
-  const provider = providerSetupState();
+  const provider = providerSetupState(vendor.id);
   const membershipNames = new Map(
     memberships.map((membership) => [membership.id, `${membership.team.name} · ${membership.vendorMember.user.name}`]),
   );
@@ -151,7 +153,7 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
             <p className="mt-1 text-sm text-slate-500">用於商店層級的平台方案、用量與扣款流程。設定完成前，相關流程會安全停止。</p>
           </div>
           {provider.available ? (
-            <PaymentMethodSetupStartForm scopeType="VENDOR" csrfField={<CsrfField />} />
+            <PaymentMethodSetupStartForm scopeType="VENDOR" providerId={provider.id} liveProbeAvailable={payUniLiveProbeAvailable(vendor.id)} csrfField={<CsrfField />} />
           ) : (
             <p role="status" className="rounded-md bg-orange-50 px-3 py-2 text-sm font-medium text-orange-800">
               目前沒有可用的安全設定流程
@@ -176,6 +178,7 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
                 {provider.available ? (
                   <PaymentMethodSetupStartForm
                     scopeType="MEMBERSHIP"
+                    providerId={provider.id}
                     teamId={membership.teamId}
                     membershipId={membership.id}
                     csrfField={<CsrfField />}
