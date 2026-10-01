@@ -2,6 +2,15 @@
 
 狀態：程式候選；固定 staging 尚未切換，測試方案尚未寫入 staging 資料庫，尚未付款。此流程與「1 元綁卡＋10 分鐘後第二筆 1 元扣款」探針分開。
 
+## 2026-10-02 執行收據與剩餘閘門
+
+- 已從 Supabase staging 專案 `ocbugvgojrunvenozsbx` 製作加密的 roles、public schema、public data 邏輯備份。本機 archive 雜湊已核對；在無網路、無對外連接埠的一次性 PostgreSQL 容器還原成功。來源與還原後皆為 79 筆已套用的 Prisma migration、120 張 public 表、1542 個 public 欄位；所有表的列數摘要一致。這證明 public 應用資料可還原，**不涵蓋** Supabase Auth、Storage 物件與平台設定。
+- Owner 確認 Google Drive 中看得到三個 `.age` 與 `manifest.json`，並確認 age 私鑰已存入密碼管理器。這兩項為 owner 回報；本次沒有從雲端重新下載、也沒有從密碼管理器取回私鑰演練。
+- PR #351 目前 commit `0d7e32cc`：兩個 quality check 及 `celebrate-deal-staging` Preview 部署通過；另一個 `celebrate-deal` Vercel Preview 失敗，故不能將整個 PR 標為檢查全通過。固定 staging alias 尚未切換。
+- staging 資料庫仍是 79 筆已套用 migration；候選程式另有 `20260929170000_payment_method_setup_intent` 與 `20260930094500_payuni_live_probe` 兩筆尚待套用。未修改 staging 資料列或價格，正式資料庫未動。
+- 只查 Vercel **變數名稱、類型與範圍**：`celebrate-deal-staging` 專案的三個正式 PAYUNi 變數仍同時覆蓋 Production 與所有 Preview，尚未限縮指定 branch；`PAYUNI_STAGING_PLAN_TEST_VENDOR_ID` 未設定。既有 Preview 變數多為不可讀的 Secret，CLI 本機注入只得到空值，不能據此宣稱連線錯誤或驗證資料隔離。部署執行期仍須以只輸出布林結果的受控檢查核對資料庫、Auth、Storage、固定網域及 PAYUNi 商店歸屬。
+- `PAYUNI_STAGING_PLAN_TEST_ENABLED` 的 Preview 變數存在；Owner 回報其值為 `false`，本次沒有讀取該 Secret。以上閘門未完成前維持關閉，也不執行 `--prepare`、`--enable` 或 alias 切換。
+
 ## 測試範圍與價格
 
 - 固定網站：`https://celebrate-deal-staging.carry-digital-nomad.in.net`，Vercel `celebrate-deal-staging` 專案的 Preview 部署。
