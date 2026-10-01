@@ -5,8 +5,8 @@
 ## 測試範圍與價格
 
 - 固定網站：`https://celebrate-deal-staging.carry-digital-nomad.in.net`，Vercel `celebrate-deal-staging` 專案的 Preview 部署。
-- 資料庫：Supabase staging project ref `ocbugvgojrunvenozsbx`。必須核對應用、Auth、Storage、資料庫均不指向 Production，且有可用回復點。
-- 金流：`PAYUNI_ENV=production`，只用 CelebrateDeal 正式商店。不可拿 PureFit 商店截圖或金鑰作為 CelebrateDeal 的證據。
+- 資料庫：Supabase staging project ref `ocbugvgojrunvenozsbx`，Production project ref `awigitueyqdqaqwbjdgu`（owner 於 2026-10-01 提供）。兩個 ref 不同只是第一項證據；仍須核對應用、Auth、Storage、資料庫實際連線，並建立可用回復點。
+- 金流：`PAYUNI_ENV=production`，只用 owner 確認的 PureFit 正式商店，商店代號 `HTCU1130301000101`。部署前仍須由該商店後台核對權限與 Vercel 設定歸屬；不得讀取或輸出 Hash Key／Hash IV。
 - 測試方案是三筆**獨立且 `isActive=false`** 的資料列：`staging-payuni-starter` NT$1、`staging-payuni-growth` NT$2、`staging-payuni-team-pro` NT$3。原本 `starter`、`growth`、`team-pro` 資料列及 production seed 完全不改。舊部署仍只查 `isActive=true`，不能販售測試方案。
 - 新部署只對資料庫許可中指定的單一商家、PAYUNi 商店與 immutable deployment URL 開放三筆測試方案。一般商品、發票結帳和退款的 Preview 正式金流保護仍生效。付款回呼依既有簽章、訂單號、交易金額和幣別核對。
 
@@ -16,12 +16,13 @@
 2. 以唯讀方式核對 staging 應用、資料庫、Auth、Storage 身分，核對 migration 狀態與回復點時間。`STAGING_DATABASE_URL`、`DATABASE_URL`、`DIRECT_URL` 和 `NEXT_PUBLIC_SUPABASE_URL` 必須都指向同一 staging Supabase 專案。不輸出連線字串或 Secret。
 3. 由 CelebrateDeal 的 PAYUNi 正式商店後台獨立核對「商店代號」和 Token／幕後授權權限。只有後台確認的代號才能交給下面的資料庫許可；不要用另一個 Preview 環境變數冒充獨立證據。不得提供金鑰、Token、卡號或客戶資料。
 4. 確認唯一測試商家 ID、目前訂閱及所有待付款交易。任何未明狀態先人工對帳；切換方案時不允許把仍可付款的舊表單悄悄取代。
+5. Staging 為 Supabase Free Plan，沒有平台自動備份。受控 runner 應先從**已核對的 staging 連線**製作加密邏輯備份，驗證 archive 完整性，並在一次性 PostgreSQL 中演練還原、留存 sanitized receipt 與回復點時間。不得使用歷史 PR 的備份演練結果冒充本次回復點，也不得將明文備份上傳 artifact。邏輯備份不涵蓋 Supabase Auth／Storage 等平台設定時，須另記錄限制與復原方法；回復演練未通過前不得執行 `--prepare`。
 
 ## Vercel 變數名稱與適用範圍
 
-在 **`celebrate-deal-staging` 專案的指定 Preview branch scope** 設定：`PAYMENT_PROVIDER=payuni`、`PAYUNI_ENV=production`、`PAYUNI_MERCHANT_ID`、`PAYUNI_HASH_KEY`、`PAYUNI_HASH_IV`、`PAYUNI_STAGING_PLAN_TEST_ENABLED=true`。`PAYUNI_LIVE_PROBE_ENABLED` 必須不為 `true`。`NEXT_PUBLIC_APP_URL`、`NEXT_PUBLIC_SUPABASE_URL`、`DATABASE_URL`、`DIRECT_URL` 應維持 staging 綁定。Vercel 提供的 `VERCEL_URL` 必須是部署專屬 URL。三個正式商店金鑰值不可寫入文件、PR 或日誌。
+在 **`celebrate-deal-staging` 專案的指定 Preview branch scope** 設定：`PAYMENT_PROVIDER=payuni`、`PAYUNI_ENV=production`、`PAYUNI_MERCHANT_ID`、`PAYUNI_HASH_KEY`、`PAYUNI_HASH_IV`。`PAYUNI_STAGING_PLAN_TEST_ENABLED` 在隔離、回復演練與審查完成前維持 `false`；最後啟用時才設為 `true` 並建立新部署。`PAYUNI_LIVE_PROBE_ENABLED` 必須不為 `true`。`NEXT_PUBLIC_APP_URL`、`NEXT_PUBLIC_SUPABASE_URL`、`DATABASE_URL`、`DIRECT_URL` 應維持 staging 綁定。Vercel 提供的 `VERCEL_URL` 必須是部署專屬 URL。三個正式商店金鑰值不可寫入文件、PR 或日誌。
 
-截至 2026-10-01 的**名稱與範圍**檢查：staging Preview 有 `PAYUNI_ENV`、`PAYUNI_SANDBOX_*`、`DATABASE_URL`、`DIRECT_URL`、`NEXT_PUBLIC_SUPABASE_URL` 等名稱；未見 `PAYUNI_MERCHANT_ID`、`PAYUNI_HASH_KEY`、`PAYUNI_HASH_IV`、`PAYUNI_STAGING_PLAN_TEST_ENABLED`。這不是商店歸屬或值正確性的證據。正式站 `celebrate-deal` Production 有前三個正式金鑰名稱，但不能據此假設它們已設定於 staging Preview。只在上述隔離及審查完成後由 Vercel Secret provider 設定，不複製值到本地。
+截至 2026-10-01 的**名稱與範圍**檢查：staging Preview 已見 `PAYUNI_MERCHANT_ID`、`PAYUNI_HASH_KEY`、`PAYUNI_HASH_IV`，但三者均未限制 Git 分支，且同時套用 staging Vercel 專案的 Production 範圍；須由 owner 在平台內限縮。`PAYUNI_STAGING_PLAN_TEST_ENABLED` 已見於所有 Preview，owner 回報值為 `false`；本次只核對名稱與適用環境，沒有讀取值。`PAYUNI_ENV`、`PAYMENT_PROVIDER` 的有效值也仍須由 owner 在 Vercel 後台確認。這些都不是商店歸屬或資料庫隔離證據。
 
 ## 準備、啟用與復原
 
