@@ -162,6 +162,8 @@ afterEach(() => vi.unstubAllEnvs());
 
 function enableStagingLivePlanTest() {
   vi.stubEnv("VERCEL_ENV", "preview");
+  vi.stubEnv("VERCEL_PROJECT_ID", "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn");
+  vi.stubEnv("VERCEL_GIT_COMMIT_REF", "codex/prelaunch-engineering-20260929");
   vi.stubEnv("PAYUNI_ENV", "production");
   vi.stubEnv("PAYMENT_PROVIDER", "payuni");
   vi.stubEnv("PAYUNI_STAGING_PLAN_TEST_ENABLED", "true");
@@ -174,6 +176,7 @@ function enableStagingLivePlanTest() {
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ocbugvgojrunvenozsbx.supabase.co");
   vi.stubEnv("DATABASE_URL", "postgresql:" + "//postgres.ocbugvgojrunvenozsbx:synthetic@aws-0-ap-northeast-1.pooler.supabase.com/postgres");
   vi.stubEnv("DIRECT_URL", "postgresql:" + "//postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres");
+  vi.stubEnv("STAGING_DATABASE_URL", "postgresql:" + "//postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres");
   mocks.getPaymentProvider.mockReturnValue({ id: "payuni", checkoutReadiness: mocks.checkoutReadiness, createCheckoutSession: mocks.createCheckoutSession });
   mocks.checkoutReadiness.mockReturnValue("unavailable");
   mocks.createCheckoutSession.mockResolvedValue({

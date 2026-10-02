@@ -95,6 +95,16 @@ export function getStagingPreviewBuildIdentityCheck(env: EnvironmentValues = pro
   };
 }
 
+/** Allow the isolated candidate to build before its payment flag and DB permit are enabled. */
+export function isStagingPayUniPreviewCandidate(env: EnvironmentValues = process.env) {
+  return env.VERCEL_PROJECT_ID === STAGING_VERCEL_PROJECT_ID
+    && env.VERCEL_ENV === "preview"
+    && env.VERCEL_GIT_COMMIT_REF === STAGING_PAYMENT_TEST_BRANCH
+    && env.PAYMENT_PROVIDER === "payuni"
+    && env.PAYUNI_LIVE_PROBE_ENABLED !== "true"
+    && getStagingPreviewBuildIdentityCheck(env).passed;
+}
+
 /** Payment-only Preview must have no credentials that can modify Cloudflare media. */
 export function getStagingPreviewMediaIsolationCheck(env: EnvironmentValues = process.env) {
   if (env.VERCEL_PROJECT_ID !== STAGING_VERCEL_PROJECT_ID || env.VERCEL_ENV !== "preview") {

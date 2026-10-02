@@ -1,5 +1,5 @@
 import type { BillingPlan, PaymentTransaction } from "@prisma/client";
-import { getStagingDatabaseIdentityReport } from "@/lib/database-identity";
+import { getStagingDatabaseIdentityReport, isStagingPayUniPreviewCandidate } from "@/lib/database-identity";
 import { activePayUniCredentials } from "@/lib/payuni-credentials";
 
 // These inactive plans exist only in the staging database. Old deployments
@@ -35,6 +35,7 @@ function parsePermit(description: string | null): Permit | null {
 export function payUniStagingPlanTestScope(env: NodeJS.ProcessEnv = process.env) {
   const identity = getStagingDatabaseIdentityReport(env);
   return env.VERCEL_ENV === "preview"
+    && isStagingPayUniPreviewCandidate(env)
     && env.PAYUNI_ENV === "production"
     && env.PAYMENT_PROVIDER === "payuni"
     && env.PAYUNI_STAGING_PLAN_TEST_ENABLED === "true"

@@ -1,5 +1,5 @@
 import { Prisma, PrismaClient } from "@prisma/client";
-import { getStagingDatabaseIdentityReport, isStagingDatabaseUrl } from "../src/lib/database-identity";
+import { getStagingDatabaseIdentityReport, isStagingDatabaseUrl, isStagingPayUniPreviewCandidate } from "../src/lib/database-identity";
 import {
   PAYUNI_STAGING_APP_ORIGIN,
   PAYUNI_STAGING_PLAN_PERMIT_PREFIX,
@@ -44,7 +44,8 @@ export function validateTarget(env: NodeJS.ProcessEnv, mode: Mode) {
   if (mode === "enable") {
     const host = env.PAYUNI_STAGING_PLAN_TEST_DEPLOYMENT_HOST ?? "";
     const merchantId = env.PAYUNI_STAGING_PLAN_TEST_MERCHANT_ID ?? "";
-    if (!/^[-a-z0-9.]+\.vercel\.app$/.test(host)
+    if (!isStagingPayUniPreviewCandidate(env)
+      || !/^[-a-z0-9.]+\.vercel\.app$/.test(host)
       || !/^[A-Za-z0-9_-]{4,64}$/.test(merchantId)) {
       throw new Error("A reviewed deployment host and merchant ID are required.");
     }

@@ -10,6 +10,7 @@
 - staging 資料庫仍是 79 筆已套用 migration；候選程式另有 `20260929170000_payment_method_setup_intent` 與 `20260930094500_payuni_live_probe` 兩筆尚待套用。未修改 staging 資料列或價格，正式資料庫未動。
 - 只查 Vercel **變數名稱、類型與範圍**：`celebrate-deal-staging` 專案的三個正式 PAYUNi Secret 已透過 Vercel API 只提交 target 與 gitBranch 欄位，限縮為 `codex/prelaunch-engineering-20260929` 分支的 Preview；隨後逐筆核對三者皆為 Preview／該分支／sensitive。`PAYUNI_STAGING_PLAN_TEST_VENDOR_ID` 尚未設定。既有其他 Preview 變數多為不可讀的 Secret，CLI 本機注入只得到空值，不能據此宣稱連線錯誤或驗證資料隔離。部署執行期仍須以只輸出布林結果的受控檢查核對資料庫、Auth、Storage、固定網域及 PAYUNi 商店歸屬。
 - `PAYUNI_STAGING_PLAN_TEST_ENABLED` 的 Preview 變數存在；Owner 回報其值為 `false`，本次沒有讀取該 Secret。以上閘門未完成前維持關閉，也不執行 `--prepare`、`--enable` 或 alias 切換。
+- 指定 Preview 分支已新增 `PAYUNI_ENV=production`、`PAYMENT_PROVIDER=payuni`、`PAYUNI_STAGING_PLAN_TEST_ENABLED=false` 與 `PAYUNI_LIVE_PROBE_ENABLED=false` 的分支覆蓋。一次新部署的 preflight 因舊程式仍要求旗標關閉時必須使用 Sandbox 而安全失敗；候選修正只在精確 staging Vercel 專案、測試分支與四項 staging 資料身分通過時允許正式商店設定先建置，付款入口仍要求旗標及資料庫短效許可。修正提交後須以新 SHA 重建及核對，不得沿用失敗部署的狀態。
 - 候選程式加入 staging Vercel Preview 建置時的 `STAGING_PREVIEW_DATA_IDENTITY` 閘門，只判斷固定網址與四個 Supabase staging URL，輸出 PASS／FAIL，不記錄連線內容。Vercel staging 專案 metadata 顯示系統環境變數自動注入已開啟；commit `ecfc53a4` 的 immutable Preview deployment `dpl_28hSHMU8h6gWrSuXiZzge2CMuYyi` 實際建置輸出 PASS，`/api/health` 回傳 HTTP 200、資料庫連線成功。此證據只屬於該部署，固定 staging alias 未切換。應用登入使用 Prisma 資料庫，媒體使用 Cloudflare R2／Stream；此閘門不證明 R2／Stream 資源隔離。獨立審查已核對並關閉系統變數可能未注入的 finding。
 - 在 `--network none`、無對外連接埠的一次性 PostgreSQL，從同一組加密備份再次還原 public schema/data，按順序套用兩筆候選 migration SQL 均成功；新表為空、預期外鍵存在。容器已停止並自動移除。這是 SQL 相容性演練，不是線上 staging migration，也沒有寫入線上 Prisma migration history。
 - 該部署的 PAYUNi preflight 仍選用 Sandbox 三件組；三個正式 Secret 的分支範圍已修好，但 `PAYUNI_ENV=production`、受控旗標及指定測試商家尚未啟用。Owner 重新登入 Supabase CLI 後，指定 profile 已列出 staging ref `ocbugvgojrunvenozsbx`（linked）與不同的 production ref `awigitueyqdqaqwbjdgu`（未 linked）。透過 linked staging 的唯讀 SQL 再查：79 筆已套用 migration、0 筆失敗；setup intent 與 live probe 兩筆候選 migration 均未套用。原 `starter`／`growth`／`team-pro` 價格依序仍為 248000／598000／128000 cents，均啟用；三筆 `staging-payuni-*` 測試方案不存在。舊測試信箱 `zeroyuanbrothers@gmail.com` 在 staging 的 `User` 表沒有相符帳號；目前 staging 有 3 個使用者、2 個商家與 2 筆商家成員關係，仍須確認唯一測試商家，不能猜測或指定其他商家。上述為 2026-10-02 線上唯讀快照，未改動資料。
@@ -23,6 +24,7 @@
 - 金流：`PAYUNI_ENV=production`，只用 owner 確認的 PureFit 正式商店，商店代號 `HTCU1130301000101`。部署前仍須由該商店後台核對權限與 Vercel 設定歸屬；不得讀取或輸出 Hash Key／Hash IV。
 - 測試方案是三筆**獨立且 `isActive=false`** 的資料列：`staging-payuni-starter` NT$1、`staging-payuni-growth` NT$2、`staging-payuni-team-pro` NT$3。原本 `starter`、`growth`、`team-pro` 資料列及 production seed 完全不改。舊部署仍只查 `isActive=true`，不能販售測試方案。
 - 新部署只對資料庫許可中指定的單一商家、PAYUNi 商店與 immutable deployment URL 開放三筆測試方案。一般商品、發票結帳和退款的 Preview 正式金流保護仍生效。付款回呼依既有簽章、訂單號、交易金額和幣別核對。
+- 啟用條件同時要求 Vercel project ID `prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn` 與 git branch `codex/prelaunch-engineering-20260929`；`--enable` runner 也必須提供這兩項核對值。執行前仍要由 Vercel deployment metadata 獨立確認 permit 指向的 host 屬於該專案、分支與已審查 SHA。
 
 ## 部署前證據
 
@@ -49,7 +51,7 @@
 1. `npx tsx scripts/staging-payuni-plan-prices.ts --inspect`：唯讀確認原方案價格、測試方案狀態。工具會要求固定 staging 網域與四個 staging 資料庫身分欄位一致。
 2. 取得隔離與回復點證據後，在受控 runner 設 `STAGING_PAYUNI_TEST_CHANGE_APPROVED=true`，執行 `--prepare`。它只複製三筆原方案的額度與費率、建立 `isActive=false` 的 NT$1／2／3 測試列；不更新原方案。再 `--inspect` 驗證。
 3. 部署已通過檢查的 Preview commit，先確認網站沒有測試付款入口。以部署專屬 `VERCEL_URL`、指定測試商家 ID、經後台核對的 CelebrateDeal 商店代號，在受控 runner 執行 `--enable`。此步只將短效資料庫許可寫入三筆測試列；許可兩小時到期，且綁定唯一 immutable deployment URL。
-4. 唯讀檢查指定商家看到 NT$1／2／3、其他商家看不到測試入口；原價方案與其他商家不受影響。檢查一般商品／發票與退款仍被封鎖。先盤點舊 staging Preview 專屬 URL 是否仍可公開使用共享 Stream 憑證，並限制或停用需要處置的部署；再核對 fixed staging alias 指向已審查的新部署，才能更新 alias。若舊部署尚未處置，只能說新付款測試部署無 Stream 憑證，不得宣稱整個 staging 媒體已隔離。
+4. 唯讀檢查指定商家看到 NT$1／2／3、其他商家看不到測試入口；原價方案與其他商家不受影響。檢查一般商品／發票與退款仍被封鎖。先盤點舊 staging Preview 專屬 URL 是否仍可公開使用共享 Stream 憑證，並限制或停用需要處置的部署；再核對 fixed staging alias 指向已審查的新部署，才能更新 alias。staging 專案的 Vercel Firewall 已先發布一條 `environment=preview AND host ends with .vercel.app` 的 **Log** 規則，固定自訂網域不相符；Log 只供觀察，不能算限制。切換前須將此規則改為 Deny 並發布，確認至少一個舊 Preview host 回 403、固定 staging 網域仍可正常連線，再更新 alias；回復時可將規則改回 Log 或停用。若舊部署尚未處置，只能說新付款測試部署無 Stream 憑證，不得宣稱整個 staging 媒體已隔離。
 5. 此任務不提交付款表單、不綁卡。後續另獲真實交易授權時，每筆需核對 PAYUNi 正式後台、可信回呼、交易金額和訂閱狀態；未明結果不得重送。
 
 停止時**先執行 `--disable`** 清除資料庫許可，所有同版舊 Preview URL 立即停止建立或顯示新測試付款表單。再移除固定 alias、停用相關舊部署、將 Vercel Preview 旗標關閉並重新部署。環境變數變更不會回溯既有部署，單靠改旗標不構成撤銷。已交給瀏覽器或 PAYUNi 的表單無法撤回，須逐筆核對 pending／paid／failed 和延遲回呼；需要退款時依獨立正式金流程序由人工處理，Preview 退款 API 仍封鎖。對帳完成後，依人工核准的訂閱流程結束測試商家的 active 測試訂閱或改回正常方案，再以月結模擬確認不再產生非預期測試帳單。測試方案列維持停用且保留交易歷史，月結仍讀取它們的 NT$1／2／3 價格，避免訂閱帳務被復原操作改價。

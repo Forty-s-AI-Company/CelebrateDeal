@@ -145,6 +145,8 @@ describe("PayUni provider", () => {
   it("allows only the scoped 2 TWD staging plan through the production UPP", async () => {
     stubPayUniProductionEnv();
     vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VERCEL_PROJECT_ID", "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn");
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "codex/prelaunch-engineering-20260929");
     vi.stubEnv("PAYMENT_PROVIDER", "payuni");
     vi.stubEnv("PAYUNI_STAGING_PLAN_TEST_ENABLED", "true");
     vi.stubEnv("PAYUNI_STAGING_PLAN_TEST_VENDOR_ID", "synthetic-vendor");
@@ -153,6 +155,7 @@ describe("PayUni provider", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ocbugvgojrunvenozsbx.supabase.co");
     vi.stubEnv("DATABASE_URL", "postgresql:" + "//postgres.ocbugvgojrunvenozsbx:synthetic@aws-0-ap-northeast-1.pooler.supabase.com/postgres");
     vi.stubEnv("DIRECT_URL", "postgresql:" + "//postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres");
+    vi.stubEnv("STAGING_DATABASE_URL", "postgresql:" + "//postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres");
     const billingPlan = { id: "growth-id", code: "staging-payuni-growth", name: "Growth", monthlyPriceCents: 200, isActive: false, description: `staging-payuni-plan-v1:${JSON.stringify({ deploymentHost: "staging-test.vercel.app", merchantId: "TESTMER", vendorId: "synthetic-vendor", expiresAt: "2099-01-01T00:00:00.000Z" })}` } as BillingPlan;
     const transaction = {
       id: "tx-growth", vendorId: "synthetic-vendor", orderNumber: "CD-TEST-002",

@@ -14,6 +14,9 @@ function environment(): NodeJS.ProcessEnv {
   return {
     NODE_ENV: "test",
     VERCEL_ENV: "preview",
+    VERCEL_PROJECT_ID: "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn",
+    VERCEL_GIT_COMMIT_REF: "codex/prelaunch-engineering-20260929",
+    PAYMENT_PROVIDER: "payuni",
     NEXT_PUBLIC_APP_URL: "https://celebrate-deal-staging.carry-digital-nomad.in.net",
     NEXT_PUBLIC_SUPABASE_URL: `https://${ref}.supabase.co`,
     DATABASE_URL: `postgresql:${"//"}postgres.${ref}:synthetic@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres`,
@@ -59,6 +62,8 @@ describe("inactive staging payment plans", () => {
   it("binds activation to a deployment and revokes it without changing prices", async () => {
     const env = { ...environment(), PAYUNI_STAGING_PLAN_TEST_DEPLOYMENT_HOST: "staging-abc.vercel.app", PAYUNI_STAGING_PLAN_TEST_MERCHANT_ID: "SYNTHETIC-MERCHANT", STAGING_PAYUNI_TEST_CHANGE_APPROVED: "true" };
     expect(() => validateTarget(env, "enable")).not.toThrow();
+    expect(() => validateTarget({ ...env, VERCEL_PROJECT_ID: "prj_other" }, "enable")).toThrow();
+    expect(() => validateTarget({ ...env, VERCEL_GIT_COMMIT_REF: "other-branch" }, "enable")).toThrow();
     const { db, tx } = fakeDb();
     await runStagingPlanPriceChange(db, env, "enable");
     expect(tx.billingPlan.update.mock.calls).toHaveLength(3);

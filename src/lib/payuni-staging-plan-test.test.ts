@@ -21,6 +21,8 @@ function environment(): NodeJS.ProcessEnv {
   return {
     NODE_ENV: "test",
     VERCEL_ENV: "preview",
+    VERCEL_PROJECT_ID: "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn",
+    VERCEL_GIT_COMMIT_REF: "codex/prelaunch-engineering-20260929",
     VERCEL_URL: deploymentHost,
     PAYMENT_PROVIDER: "payuni",
     PAYUNI_ENV: "production",
@@ -32,6 +34,7 @@ function environment(): NodeJS.ProcessEnv {
     NEXT_PUBLIC_SUPABASE_URL: `https://${ref}.supabase.co`,
     DATABASE_URL: `postgresql:${"//"}postgres.${ref}:synthetic@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres`,
     DIRECT_URL: `postgresql:${"//"}postgres:synthetic@db.${ref}.supabase.co:5432/postgres`,
+    STAGING_DATABASE_URL: `postgresql:${"//"}postgres:synthetic@db.${ref}.supabase.co:5432/postgres`,
   };
 }
 
@@ -57,6 +60,7 @@ describe("staging live plan scope", () => {
 
   it.each([
     ["VERCEL_ENV", "production"], ["PAYUNI_ENV", "sandbox"], ["PAYMENT_PROVIDER", "demo"],
+    ["VERCEL_PROJECT_ID", "prj_other"], ["VERCEL_GIT_COMMIT_REF", "other-branch"],
     ["PAYUNI_STAGING_PLAN_TEST_ENABLED", "false"], ["VERCEL_URL", "old-deployment.vercel.app"],
     ["NEXT_PUBLIC_APP_URL", "https://another.example.test"],
     ["DATABASE_URL", `postgresql:${"//"}postgres.${ref}:synthetic@attacker.example:5432/postgres`],

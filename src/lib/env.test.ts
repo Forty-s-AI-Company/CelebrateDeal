@@ -273,6 +273,8 @@ describe("getEnvCheckReport", () => {
     const env = configuredEnv();
     env.PAYMENT_PROVIDER = "payuni";
     env.VERCEL_ENV = "preview";
+    env.VERCEL_PROJECT_ID = "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn";
+    env.VERCEL_GIT_COMMIT_REF = "codex/prelaunch-engineering-20260929";
     env.PAYUNI_ENV = "production";
     env.PAYUNI_MERCHANT_ID = "SYNTHETIC-MERCHANT";
     env.PAYUNI_HASH_KEY = "12345678901234567890123456789012";
@@ -284,9 +286,32 @@ describe("getEnvCheckReport", () => {
     env.NEXT_PUBLIC_SUPABASE_URL = "https://ocbugvgojrunvenozsbx.supabase.co";
     env.DATABASE_URL = "postgresql:" + "//postgres.ocbugvgojrunvenozsbx:synthetic@aws-0-ap-northeast-1.pooler.supabase.com/postgres";
     env.DIRECT_URL = "postgresql:" + "//postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres";
+    env.STAGING_DATABASE_URL = env.DIRECT_URL;
     expect(check(getEnvCheckReport(env), "PAYUNI_ENV", "pass")).toBeDefined();
     env.DATABASE_URL = "postgresql:" + "//postgres.other:synthetic@pooler.supabase.com/postgres";
     expect(check(getEnvCheckReport(env), "PAYUNI_ENV", "fail")).toBeDefined();
+  });
+
+  it("builds the exact isolated staging candidate while the plan payment flag stays off", () => {
+    const env = configuredEnv();
+    env.VERCEL_PROJECT_ID = "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn";
+    env.VERCEL_GIT_COMMIT_REF = "codex/prelaunch-engineering-20260929";
+    env.VERCEL_ENV = "preview";
+    env.PAYMENT_PROVIDER = "payuni";
+    env.PAYUNI_ENV = "production";
+    env.PAYUNI_STAGING_PLAN_TEST_ENABLED = "false";
+    env.PAYUNI_MERCHANT_ID = "SYNTHETIC-MERCHANT";
+    env.PAYUNI_HASH_KEY = "12345678901234567890123456789012";
+    env.PAYUNI_HASH_IV = "1234567890123456";
+    env.NEXT_PUBLIC_APP_URL = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
+    env.NEXT_PUBLIC_SUPABASE_URL = "https://ocbugvgojrunvenozsbx.supabase.co";
+    env.DATABASE_URL = "postgresql://postgres.ocbugvgojrunvenozsbx:synthetic@aws-0-ap-northeast-1.pooler.supabase.com/postgres";
+    env.DIRECT_URL = "postgresql://postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres";
+    env.STAGING_DATABASE_URL = env.DIRECT_URL;
+    expect(check(getEnvCheckReport(env), "PAYUNI_ENV", "pass")).toBeDefined();
+    for (const [key, value] of [["VERCEL_PROJECT_ID", "prj_other"], ["VERCEL_GIT_COMMIT_REF", "other-branch"], ["NEXT_PUBLIC_SUPABASE_URL", "https://other.supabase.co"], ["PAYUNI_LIVE_PROBE_ENABLED", "true"]] as const) {
+      expect(check(getEnvCheckReport({ ...env, [key]: value }), "PAYUNI_ENV", "fail")).toBeDefined();
+    }
   });
 
   it.each(["ecpay-like", "platform-ecpay"])("requires the ECPay webhook verification value for %s", (provider) => {
