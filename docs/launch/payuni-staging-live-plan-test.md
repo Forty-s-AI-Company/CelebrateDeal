@@ -8,7 +8,7 @@
 - Owner 確認 Google Drive 中看得到三個 `.age` 與 `manifest.json`，並確認 age 私鑰已存入密碼管理器。這兩項為 owner 回報；本次沒有從雲端重新下載、也沒有從密碼管理器取回私鑰演練。
 - PR #351 的程式候選基準 commit `0d7e32cc`：該版兩個 quality check 及 `celebrate-deal-staging` Preview 部署通過；另一個 `celebrate-deal` Vercel Preview 失敗，故不能將整個 PR 標為檢查全通過。後續文件提交的檢查須依最新 PR 狀態判讀。固定 staging alias 尚未切換。
 - staging 資料庫仍是 79 筆已套用 migration；候選程式另有 `20260929170000_payment_method_setup_intent` 與 `20260930094500_payuni_live_probe` 兩筆尚待套用。未修改 staging 資料列或價格，正式資料庫未動。
-- 只查 Vercel **變數名稱、類型與範圍**：`celebrate-deal-staging` 專案的三個正式 PAYUNi 變數仍同時覆蓋 Production 與所有 Preview，尚未限縮指定 branch；`PAYUNI_STAGING_PLAN_TEST_VENDOR_ID` 未設定。既有 Preview 變數多為不可讀的 Secret，CLI 本機注入只得到空值，不能據此宣稱連線錯誤或驗證資料隔離。部署執行期仍須以只輸出布林結果的受控檢查核對資料庫、Auth、Storage、固定網域及 PAYUNi 商店歸屬。
+- 只查 Vercel **變數名稱、類型與範圍**：`celebrate-deal-staging` 專案的三個正式 PAYUNi Secret 已透過 Vercel API 只提交 target 與 gitBranch 欄位，限縮為 `codex/prelaunch-engineering-20260929` 分支的 Preview；隨後逐筆核對三者皆為 Preview／該分支／sensitive。`PAYUNI_STAGING_PLAN_TEST_VENDOR_ID` 尚未設定。既有其他 Preview 變數多為不可讀的 Secret，CLI 本機注入只得到空值，不能據此宣稱連線錯誤或驗證資料隔離。部署執行期仍須以只輸出布林結果的受控檢查核對資料庫、Auth、Storage、固定網域及 PAYUNi 商店歸屬。
 - `PAYUNI_STAGING_PLAN_TEST_ENABLED` 的 Preview 變數存在；Owner 回報其值為 `false`，本次沒有讀取該 Secret。以上閘門未完成前維持關閉，也不執行 `--prepare`、`--enable` 或 alias 切換。
 
 ## 測試範圍與價格
@@ -31,7 +31,7 @@
 
 在 **`celebrate-deal-staging` 專案的指定 Preview branch scope** 設定：`PAYMENT_PROVIDER=payuni`、`PAYUNI_ENV=production`、`PAYUNI_MERCHANT_ID`、`PAYUNI_HASH_KEY`、`PAYUNI_HASH_IV`。`PAYUNI_STAGING_PLAN_TEST_ENABLED` 在隔離、回復演練與審查完成前維持 `false`；最後啟用時才設為 `true` 並建立新部署。`PAYUNI_LIVE_PROBE_ENABLED` 必須不為 `true`。`NEXT_PUBLIC_APP_URL`、`NEXT_PUBLIC_SUPABASE_URL`、`DATABASE_URL`、`DIRECT_URL` 應維持 staging 綁定。Vercel 提供的 `VERCEL_URL` 必須是部署專屬 URL。三個正式商店金鑰值不可寫入文件、PR 或日誌。
 
-截至 2026-10-01 的**名稱與範圍**檢查：staging Preview 已見 `PAYUNI_MERCHANT_ID`、`PAYUNI_HASH_KEY`、`PAYUNI_HASH_IV`，但三者均未限制 Git 分支，且同時套用 staging Vercel 專案的 Production 範圍；須由 owner 在平台內限縮。`PAYUNI_STAGING_PLAN_TEST_ENABLED` 已見於所有 Preview，owner 回報值為 `false`；本次只核對名稱與適用環境，沒有讀取值。`PAYUNI_ENV`、`PAYMENT_PROVIDER` 的有效值也仍須由 owner 在 Vercel 後台確認。這些都不是商店歸屬或資料庫隔離證據。
+截至 2026-10-02 的**名稱與範圍**檢查：staging 專案的 `PAYUNI_MERCHANT_ID`、`PAYUNI_HASH_KEY`、`PAYUNI_HASH_IV` 已限縮為指定 Preview 分支；沒有讀取金鑰值，既有部署不會回溯更新。`PAYUNI_STAGING_PLAN_TEST_ENABLED` 已見於所有 Preview，owner 回報值為 `false`；本次沒有讀取值。`PAYUNI_ENV`、`PAYMENT_PROVIDER` 的有效值仍須透過部署執行期受控核對。這些設定範圍本身不是商店歸屬或資料庫隔離證據。
 
 ## 準備、啟用與復原
 
