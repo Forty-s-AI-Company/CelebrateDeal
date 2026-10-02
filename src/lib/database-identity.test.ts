@@ -77,7 +77,7 @@ describe("getStagingPreviewBuildIdentityCheck", () => {
 
   it("accepts only the exact staging application and all four staging bindings", () => {
     expect(getStagingPreviewBuildIdentityCheck(stagingPreview)).toEqual({ applicable: true, passed: true });
-    expect(getStagingPreviewBuildIdentityCheck({ ...stagingPreview, DIRECT_URL: "postgresql://postgres:fixture@db.awigitueyqdqaqwbjdgu.supabase.co:5432/postgres" }))
+    expect(getStagingPreviewBuildIdentityCheck({ ...stagingPreview, DIRECT_URL: "postgresql://postgres:fixture@db.awigitueyqdqaqwbjdgu.supabase.co:5432/postgres" })) // secret-scan: allow-test-fixture
       .toEqual({ applicable: true, passed: false });
     expect(getStagingPreviewBuildIdentityCheck({ ...stagingPreview, NEXT_PUBLIC_APP_URL: "https://other.example" }))
       .toEqual({ applicable: true, passed: false });
