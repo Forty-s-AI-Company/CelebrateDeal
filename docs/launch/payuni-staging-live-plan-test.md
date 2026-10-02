@@ -13,6 +13,7 @@
 - 候選程式加入 staging Vercel Preview 建置時的 `STAGING_PREVIEW_DATA_IDENTITY` 閘門，只判斷固定網址與四個 Supabase staging URL，輸出 PASS／FAIL，不記錄連線內容。Vercel staging 專案 metadata 顯示系統環境變數自動注入已開啟；commit `ecfc53a4` 的 immutable Preview deployment `dpl_28hSHMU8h6gWrSuXiZzge2CMuYyi` 實際建置輸出 PASS，`/api/health` 回傳 HTTP 200、資料庫連線成功。此證據只屬於該部署，固定 staging alias 未切換。應用登入使用 Prisma 資料庫，媒體使用 Cloudflare R2／Stream；此閘門不證明 R2／Stream 資源隔離。獨立審查已核對並關閉系統變數可能未注入的 finding。
 - 在 `--network none`、無對外連接埠的一次性 PostgreSQL，從同一組加密備份再次還原 public schema/data，按順序套用兩筆候選 migration SQL 均成功；新表為空、預期外鍵存在。容器已停止並自動移除。這是 SQL 相容性演練，不是線上 staging migration，也沒有寫入線上 Prisma migration history。
 - 該部署的 PAYUNi preflight 仍選用 Sandbox 三件組；三個正式 Secret 的分支範圍已修好，但 `PAYUNI_ENV=production`、受控旗標及指定測試商家尚未啟用。Owner 重新登入 Supabase CLI 後，指定 profile 已列出 staging ref `ocbugvgojrunvenozsbx`（linked）與不同的 production ref `awigitueyqdqaqwbjdgu`（未 linked）。透過 linked staging 的唯讀 SQL 再查：79 筆已套用 migration、0 筆失敗；setup intent 與 live probe 兩筆候選 migration 均未套用。原 `starter`／`growth`／`team-pro` 價格依序仍為 248000／598000／128000 cents，均啟用；三筆 `staging-payuni-*` 測試方案不存在。舊測試信箱 `zeroyuanbrothers@gmail.com` 在 staging 的 `User` 表沒有相符帳號；目前 staging 有 3 個使用者、2 個商家與 2 筆商家成員關係，仍須確認唯一測試商家，不能猜測或指定其他商家。上述為 2026-10-02 線上唯讀快照，未改動資料。
+- 網站目前沒有自行註冊頁，既有商家成員邀請會加入既有商家，不能建立獨立測試商家。候選工具 `scripts/staging-payuni-test-vendor.ts` 只在固定 staging 網域、四項 staging DB 身分、直接連線、付款旗標為 `false` 及獨立變更閘門通過後，建立一個專用商家及 owner 帳號；不寄信、不設定已知密碼、不修改現有帳號。正式執行尚待隔離、回復點與 review；建立後由帳號持有人在 staging 密碼重設頁自行取得一次性連結，登入完成後再唯讀核對該商家 ID。
 
 ## 測試範圍與價格
 
@@ -39,6 +40,8 @@
 ## 準備、啟用與復原
 
 使用受控 CI Environment／平台 Secret provider 注入 staging 資料庫連線；不要讀取 `.env*` 或列舉 Secret Store。執行工具時只輸出代碼和金額。
+
+在方案準備前，先於隔離與回復點確認後以受控 runner 設 `STAGING_PAYUNI_TEST_VENDOR_CHANGE_APPROVED=true`、`STAGING_PAYUNI_TEST_ACCOUNT_EMAIL=zeroyuanbrothers@gmail.com`、可選的 `STAGING_PAYUNI_TEST_ACCOUNT_NAME`，且保持 `PAYUNI_STAGING_PLAN_TEST_ENABLED=false`，執行 `npx tsx scripts/staging-payuni-test-vendor.ts`。工具只接受 owner 已指定的上述信箱，其他地址直接拒絕；若需換信箱，先取得新的 owner 指示並審查程式變更。重跑或撞到既有同名商家／帳號也會拒絕；不會發信或回傳密碼。建立前須先確認 staging 的重設郵件設定與寄送能力；使用者在固定 staging 站的 `/password-reset/request` 自行設定密碼。若郵件未送達，專用帳號因未知隨機密碼仍無法登入：保持付款旗標關閉、不要設定測試商家 ID、不要重跑建立工具；先修復寄信設定，再由帳號持有人重新要求重設連結。唯讀查詢確認新帳號只有一個專用商家 owner 成員關係、沒有原有訂閱或待付款交易後，才把其商家 ID 設為指定 Preview 分支的 `PAYUNI_STAGING_PLAN_TEST_VENDOR_ID`。不要將帳號密碼、重設連結或資料庫連線輸出到日誌。
 
 1. `npx tsx scripts/staging-payuni-plan-prices.ts --inspect`：唯讀確認原方案價格、測試方案狀態。工具會要求固定 staging 網域與四個 staging 資料庫身分欄位一致。
 2. 取得隔離與回復點證據後，在受控 runner 設 `STAGING_PAYUNI_TEST_CHANGE_APPROVED=true`，執行 `--prepare`。它只複製三筆原方案的額度與費率、建立 `isActive=false` 的 NT$1／2／3 測試列；不更新原方案。再 `--inspect` 驗證。
