@@ -121,6 +121,13 @@ describe("getStagingPreviewMediaIsolationCheck", () => {
       .toEqual({ applicable: true, passed: true });
   });
 
+  it("requires absent media credentials on the dedicated test branch before enabling payment", () => {
+    expect(getStagingPreviewMediaIsolationCheck({ ...stagingPreview, VERCEL_GIT_COMMIT_REF: "codex/prelaunch-engineering-20260929" }))
+      .toEqual({ applicable: true, passed: false });
+    expect(getStagingPreviewMediaIsolationCheck({ ...stagingPreview, VERCEL_GIT_COMMIT_REF: "codex/prelaunch-engineering-20260929", CLOUDFLARE_R2_ACCESS_KEY_ID: undefined, CLOUDFLARE_R2_SECRET_ACCESS_KEY: undefined, CLOUDFLARE_ACCOUNT_ID: undefined, CLOUDFLARE_STREAM_TOKEN: undefined, CLOUDFLARE_STREAM_WEBHOOK_SECRET: undefined }))
+      .toEqual({ applicable: true, passed: true });
+  });
+
   it("does not affect another Vercel project", () => {
     expect(getStagingPreviewMediaIsolationCheck({ ...stagingPreview, VERCEL_PROJECT_ID: "prj_other" }))
       .toEqual({ applicable: false, passed: true });
