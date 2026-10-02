@@ -4,6 +4,7 @@ const STAGING_DATABASE_HOST = `db.${STAGING_SUPABASE_PROJECT_REF}.supabase.co`;
 const STAGING_POOLER_USERNAME = `postgres.${STAGING_SUPABASE_PROJECT_REF}`;
 const STAGING_VERCEL_PROJECT_ID = "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn";
 const STAGING_APP_ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
+const STAGING_R2_BUCKET = "celebrate-deal-staging";
 
 export type StagingDatabaseIdentityReport = {
   supabase_url_match: boolean;
@@ -90,5 +91,23 @@ export function getStagingPreviewBuildIdentityCheck(env: EnvironmentValues = pro
     applicable: true,
     passed: env.NEXT_PUBLIC_APP_URL === STAGING_APP_ORIGIN
       && getStagingDatabaseIdentityReport(env).all_passed,
+  };
+}
+
+/** Payment-only Preview must have no credentials that can modify Cloudflare media. */
+export function getStagingPreviewMediaIsolationCheck(env: EnvironmentValues = process.env) {
+  if (env.VERCEL_PROJECT_ID !== STAGING_VERCEL_PROJECT_ID || env.VERCEL_ENV !== "preview") {
+    return { applicable: false, passed: true };
+  }
+  return {
+    applicable: true,
+    passed: env.CLOUDFLARE_R2_BUCKET === STAGING_R2_BUCKET
+      && (env.PAYUNI_STAGING_PLAN_TEST_ENABLED !== "true" || (
+        !env.CLOUDFLARE_R2_ACCESS_KEY_ID?.trim()
+        && !env.CLOUDFLARE_R2_SECRET_ACCESS_KEY?.trim()
+        && !env.CLOUDFLARE_ACCOUNT_ID?.trim()
+        && !env.CLOUDFLARE_STREAM_TOKEN?.trim()
+        && !env.CLOUDFLARE_STREAM_WEBHOOK_SECRET?.trim()
+      )),
   };
 }

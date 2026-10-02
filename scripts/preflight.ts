@@ -1,6 +1,6 @@
 import { config } from "dotenv";
 import { getEnvCheckReport } from "../src/lib/env";
-import { getStagingPreviewBuildIdentityCheck } from "../src/lib/database-identity";
+import { getStagingPreviewBuildIdentityCheck, getStagingPreviewMediaIsolationCheck } from "../src/lib/database-identity";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -28,4 +28,13 @@ const stagingIdentity = getStagingPreviewBuildIdentityCheck(process.env);
 if (stagingIdentity.applicable) {
   console.log(`[${stagingIdentity.passed ? "PASS" : "FAIL"}] STAGING_PREVIEW_DATA_IDENTITY`);
   if (!stagingIdentity.passed) process.exitCode = 1;
+}
+
+
+// A live-money plan test cannot inherit write access to shared Stream media.
+// This logs only PASS/FAIL; bucket names and credentials never enter build logs.
+const stagingMedia = getStagingPreviewMediaIsolationCheck(process.env);
+if (stagingMedia.applicable) {
+  console.log(`[${stagingMedia.passed ? "PASS" : "FAIL"}] STAGING_PREVIEW_MEDIA_ISOLATION`);
+  if (!stagingMedia.passed) process.exitCode = 1;
 }

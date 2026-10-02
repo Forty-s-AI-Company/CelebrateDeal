@@ -14,6 +14,7 @@
 - 在 `--network none`、無對外連接埠的一次性 PostgreSQL，從同一組加密備份再次還原 public schema/data，按順序套用兩筆候選 migration SQL 均成功；新表為空、預期外鍵存在。容器已停止並自動移除。這是 SQL 相容性演練，不是線上 staging migration，也沒有寫入線上 Prisma migration history。
 - 該部署的 PAYUNi preflight 仍選用 Sandbox 三件組；三個正式 Secret 的分支範圍已修好，但 `PAYUNI_ENV=production`、受控旗標及指定測試商家尚未啟用。Owner 重新登入 Supabase CLI 後，指定 profile 已列出 staging ref `ocbugvgojrunvenozsbx`（linked）與不同的 production ref `awigitueyqdqaqwbjdgu`（未 linked）。透過 linked staging 的唯讀 SQL 再查：79 筆已套用 migration、0 筆失敗；setup intent 與 live probe 兩筆候選 migration 均未套用。原 `starter`／`growth`／`team-pro` 價格依序仍為 248000／598000／128000 cents，均啟用；三筆 `staging-payuni-*` 測試方案不存在。舊測試信箱 `zeroyuanbrothers@gmail.com` 在 staging 的 `User` 表沒有相符帳號；目前 staging 有 3 個使用者、2 個商家與 2 筆商家成員關係，仍須確認唯一測試商家，不能猜測或指定其他商家。上述為 2026-10-02 線上唯讀快照，未改動資料。
 - 網站目前沒有自行註冊頁，既有商家成員邀請會加入既有商家，不能建立獨立測試商家。候選工具 `scripts/staging-payuni-test-vendor.ts` 只在固定 staging 網域、四項 staging DB 身分、直接連線、付款旗標為 `false` 及獨立變更閘門通過後，建立一個專用商家及 owner 帳號；不寄信、不設定已知密碼、不修改現有帳號。正式執行尚待隔離、回復點與 review；建立後由帳號持有人在 staging 密碼重設頁自行取得一次性連結，登入完成後再唯讀核對該商家 ID。
+- Cloudflare 後台可見 `celebrate-deal-staging` 與 `celebrate-deal` 兩個獨立 R2 bucket，以及一筆標示給 staging bucket、權限為物件讀寫的 R2 Token；但目前可登入的 Cloudflare 帳戶只有一個。Vercel staging Preview 有 R2 與 Stream 變數名稱，未讀取任何憑證值，因此仍未證明部署實際使用上述 bucket 限定 Token。候選建置閘門 `STAGING_PREVIEW_MEDIA_ISOLATION` 要求 staging Preview 的 R2 bucket 名稱精確等於 `celebrate-deal-staging`；當 1／2／3 元正式金流旗標為 `true` 時，還要求 R2 的 `CLOUDFLARE_R2_ACCESS_KEY_ID`、`CLOUDFLARE_R2_SECRET_ACCESS_KEY` 和 Stream 的 `CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_STREAM_TOKEN`、`CLOUDFLARE_STREAM_WEBHOOK_SECRET` 全部不注入該部署。既有 production preflight 要求 Stream 三件組同時存在或同時不存在。這只保障**新付款測試部署**不持有 Cloudflare 媒體操作憑證，並非證明完整媒體 staging 資源隔離。現有五個憑證變數須在真正啟用測試前以可復原的 Vercel 分支範圍調整移出指定 Preview 分支；調整前先記錄 Secret ID、原範圍與回復方式，不讀取值。唯讀盤點目前有 28 個 Ready 的 staging Preview 部署；**舊 immutable Preview URL 不會因變數變更或 alias 切換而失效**。切換前須確認其中仍可公開存取且持有共享媒體憑證的舊部署已限制存取或依核准程序停用。完成前不得宣稱整個 staging 專案的媒體已隔離。
 
 ## 測試範圍與價格
 
@@ -35,6 +36,8 @@
 
 在 **`celebrate-deal-staging` 專案的指定 Preview branch scope** 設定：`PAYMENT_PROVIDER=payuni`、`PAYUNI_ENV=production`、`PAYUNI_MERCHANT_ID`、`PAYUNI_HASH_KEY`、`PAYUNI_HASH_IV`。`PAYUNI_STAGING_PLAN_TEST_ENABLED` 在隔離、回復演練與審查完成前維持 `false`；最後啟用時才設為 `true` 並建立新部署。`PAYUNI_LIVE_PROBE_ENABLED` 必須不為 `true`。`NEXT_PUBLIC_APP_URL`、`NEXT_PUBLIC_SUPABASE_URL`、`DATABASE_URL`、`DIRECT_URL` 應維持 staging 綁定。Vercel 提供的 `VERCEL_URL` 必須是部署專屬 URL。三個正式商店金鑰值不可寫入文件、PR 或日誌。
 
+付款測試部署另須有 `CLOUDFLARE_R2_BUCKET=celebrate-deal-staging`，且 **R2 兩個存取憑證與 Stream 三件組均不得注入**；候選建置閘門會在旗標啟用時拒絕任何一項殘留。付款測試不執行媒體上傳、播放或刪除，因此不依賴尚未核對的 R2 Token 綁定。完整媒體 staging 測試仍須另外核對 R2 Token 歸屬並建立 Stream 隔離資源。
+
 截至 2026-10-02 的**名稱與範圍**檢查：staging 專案的 `PAYUNI_MERCHANT_ID`、`PAYUNI_HASH_KEY`、`PAYUNI_HASH_IV` 已限縮為指定 Preview 分支；沒有讀取金鑰值，既有部署不會回溯更新。`PAYUNI_STAGING_PLAN_TEST_ENABLED` 已見於所有 Preview，owner 回報值為 `false`；本次沒有讀取值。`PAYUNI_ENV`、`PAYMENT_PROVIDER` 的有效值仍須透過部署執行期受控核對。這些設定範圍本身不是商店歸屬或資料庫隔離證據。
 
 ## 準備、啟用與復原
@@ -46,7 +49,7 @@
 1. `npx tsx scripts/staging-payuni-plan-prices.ts --inspect`：唯讀確認原方案價格、測試方案狀態。工具會要求固定 staging 網域與四個 staging 資料庫身分欄位一致。
 2. 取得隔離與回復點證據後，在受控 runner 設 `STAGING_PAYUNI_TEST_CHANGE_APPROVED=true`，執行 `--prepare`。它只複製三筆原方案的額度與費率、建立 `isActive=false` 的 NT$1／2／3 測試列；不更新原方案。再 `--inspect` 驗證。
 3. 部署已通過檢查的 Preview commit，先確認網站沒有測試付款入口。以部署專屬 `VERCEL_URL`、指定測試商家 ID、經後台核對的 CelebrateDeal 商店代號，在受控 runner 執行 `--enable`。此步只將短效資料庫許可寫入三筆測試列；許可兩小時到期，且綁定唯一 immutable deployment URL。
-4. 唯讀檢查指定商家看到 NT$1／2／3、其他商家看不到測試入口；原價方案與其他商家不受影響。檢查一般商品／發票與退款仍被封鎖。核對 fixed staging alias 指向已審查部署後，才能更新 alias。
+4. 唯讀檢查指定商家看到 NT$1／2／3、其他商家看不到測試入口；原價方案與其他商家不受影響。檢查一般商品／發票與退款仍被封鎖。先盤點舊 staging Preview 專屬 URL 是否仍可公開使用共享 Stream 憑證，並限制或停用需要處置的部署；再核對 fixed staging alias 指向已審查的新部署，才能更新 alias。若舊部署尚未處置，只能說新付款測試部署無 Stream 憑證，不得宣稱整個 staging 媒體已隔離。
 5. 此任務不提交付款表單、不綁卡。後續另獲真實交易授權時，每筆需核對 PAYUNi 正式後台、可信回呼、交易金額和訂閱狀態；未明結果不得重送。
 
 停止時**先執行 `--disable`** 清除資料庫許可，所有同版舊 Preview URL 立即停止建立或顯示新測試付款表單。再移除固定 alias、停用相關舊部署、將 Vercel Preview 旗標關閉並重新部署。環境變數變更不會回溯既有部署，單靠改旗標不構成撤銷。已交給瀏覽器或 PAYUNi 的表單無法撤回，須逐筆核對 pending／paid／failed 和延遲回呼；需要退款時依獨立正式金流程序由人工處理，Preview 退款 API 仍封鎖。對帳完成後，依人工核准的訂閱流程結束測試商家的 active 測試訂閱或改回正常方案，再以月結模擬確認不再產生非預期測試帳單。測試方案列維持停用且保留交易歷史，月結仍讀取它們的 NT$1／2／3 價格，避免訂閱帳務被復原操作改價。

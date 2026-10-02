@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getStagingDatabaseIdentityReport, getStagingPreviewBuildIdentityCheck } from "./database-identity";
+import { getStagingDatabaseIdentityReport, getStagingPreviewBuildIdentityCheck, getStagingPreviewMediaIsolationCheck } from "./database-identity";
 
 const validEnvironment = {
   NEXT_PUBLIC_SUPABASE_URL: "https://ocbugvgojrunvenozsbx.supabase.co",
@@ -85,6 +85,44 @@ describe("getStagingPreviewBuildIdentityCheck", () => {
 
   it("does not apply the staging guard to a different Vercel project", () => {
     expect(getStagingPreviewBuildIdentityCheck({ ...stagingPreview, VERCEL_PROJECT_ID: "prj_other" }))
+      .toEqual({ applicable: false, passed: true });
+  });
+});
+
+describe("getStagingPreviewMediaIsolationCheck", () => {
+  const stagingPreview = {
+    VERCEL_PROJECT_ID: "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn",
+    VERCEL_ENV: "preview",
+    CLOUDFLARE_R2_BUCKET: "celebrate-deal-staging",
+    CLOUDFLARE_R2_ACCESS_KEY_ID: "synthetic-r2-key-id",
+    CLOUDFLARE_R2_SECRET_ACCESS_KEY: "synthetic-r2-secret",
+    CLOUDFLARE_ACCOUNT_ID: "synthetic-account",
+    CLOUDFLARE_STREAM_TOKEN: "synthetic-shared-stream-token",
+    CLOUDFLARE_STREAM_WEBHOOK_SECRET: "synthetic-webhook-secret",
+    PAYUNI_STAGING_PLAN_TEST_ENABLED: "false",
+  };
+
+  it("requires the dedicated bucket on every staging Preview build", () => {
+    expect(getStagingPreviewMediaIsolationCheck(stagingPreview)).toEqual({ applicable: true, passed: true });
+    expect(getStagingPreviewMediaIsolationCheck({ ...stagingPreview, CLOUDFLARE_R2_BUCKET: "celebrate-deal" }))
+      .toEqual({ applicable: true, passed: false });
+  });
+
+  it("requires R2 credentials and all three Stream bindings to be absent for the live-money plan test", () => {
+    expect(getStagingPreviewMediaIsolationCheck({ ...stagingPreview, PAYUNI_STAGING_PLAN_TEST_ENABLED: "true" }))
+      .toEqual({ applicable: true, passed: false });
+    expect(getStagingPreviewMediaIsolationCheck({ ...stagingPreview, PAYUNI_STAGING_PLAN_TEST_ENABLED: "true", CLOUDFLARE_STREAM_TOKEN: undefined }))
+      .toEqual({ applicable: true, passed: false });
+    expect(getStagingPreviewMediaIsolationCheck({ ...stagingPreview, PAYUNI_STAGING_PLAN_TEST_ENABLED: "true", CLOUDFLARE_ACCOUNT_ID: undefined, CLOUDFLARE_STREAM_TOKEN: undefined, CLOUDFLARE_STREAM_WEBHOOK_SECRET: undefined }))
+      .toEqual({ applicable: true, passed: false });
+    expect(getStagingPreviewMediaIsolationCheck({ ...stagingPreview, PAYUNI_STAGING_PLAN_TEST_ENABLED: "true", CLOUDFLARE_R2_ACCESS_KEY_ID: undefined, CLOUDFLARE_ACCOUNT_ID: undefined, CLOUDFLARE_STREAM_TOKEN: undefined, CLOUDFLARE_STREAM_WEBHOOK_SECRET: undefined }))
+      .toEqual({ applicable: true, passed: false });
+    expect(getStagingPreviewMediaIsolationCheck({ ...stagingPreview, PAYUNI_STAGING_PLAN_TEST_ENABLED: "true", CLOUDFLARE_R2_ACCESS_KEY_ID: undefined, CLOUDFLARE_R2_SECRET_ACCESS_KEY: undefined, CLOUDFLARE_ACCOUNT_ID: undefined, CLOUDFLARE_STREAM_TOKEN: undefined, CLOUDFLARE_STREAM_WEBHOOK_SECRET: undefined }))
+      .toEqual({ applicable: true, passed: true });
+  });
+
+  it("does not affect another Vercel project", () => {
+    expect(getStagingPreviewMediaIsolationCheck({ ...stagingPreview, VERCEL_PROJECT_ID: "prj_other" }))
       .toEqual({ applicable: false, passed: true });
   });
 });
