@@ -2,6 +2,8 @@ const STAGING_SUPABASE_PROJECT_REF = "ocbugvgojrunvenozsbx";
 const STAGING_SUPABASE_HOST = `${STAGING_SUPABASE_PROJECT_REF}.supabase.co`;
 const STAGING_DATABASE_HOST = `db.${STAGING_SUPABASE_PROJECT_REF}.supabase.co`;
 const STAGING_POOLER_USERNAME = `postgres.${STAGING_SUPABASE_PROJECT_REF}`;
+const STAGING_VERCEL_PROJECT_ID = "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn";
+const STAGING_APP_ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 
 export type StagingDatabaseIdentityReport = {
   supabase_url_match: boolean;
@@ -76,5 +78,17 @@ export function getStagingDatabaseIdentityReport(
       database_url_match &&
       direct_url_match &&
       staging_database_url_match === true,
+  };
+}
+
+/** Fail the fixed staging Preview build if any application connection points elsewhere. */
+export function getStagingPreviewBuildIdentityCheck(env: EnvironmentValues = process.env) {
+  if (env.VERCEL_PROJECT_ID !== STAGING_VERCEL_PROJECT_ID || env.VERCEL_ENV !== "preview") {
+    return { applicable: false, passed: true };
+  }
+  return {
+    applicable: true,
+    passed: env.NEXT_PUBLIC_APP_URL === STAGING_APP_ORIGIN
+      && getStagingDatabaseIdentityReport(env).all_passed,
   };
 }

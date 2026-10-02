@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getStagingDatabaseIdentityReport } from "./database-identity";
+import { getStagingDatabaseIdentityReport, getStagingPreviewBuildIdentityCheck } from "./database-identity";
 
 const validEnvironment = {
   NEXT_PUBLIC_SUPABASE_URL: "https://ocbugvgojrunvenozsbx.supabase.co",
@@ -64,5 +64,27 @@ describe("getStagingDatabaseIdentityReport", () => {
     expect(report.database_url_match).toBe(false);
     expect(report.direct_url_match).toBe(false);
     expect(report.all_passed).toBe(false);
+  });
+});
+
+describe("getStagingPreviewBuildIdentityCheck", () => {
+  const stagingPreview = {
+    ...validEnvironment,
+    VERCEL_PROJECT_ID: "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn",
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_APP_URL: "https://celebrate-deal-staging.carry-digital-nomad.in.net",
+  };
+
+  it("accepts only the exact staging application and all four staging bindings", () => {
+    expect(getStagingPreviewBuildIdentityCheck(stagingPreview)).toEqual({ applicable: true, passed: true });
+    expect(getStagingPreviewBuildIdentityCheck({ ...stagingPreview, DIRECT_URL: "postgresql://postgres:fixture@db.awigitueyqdqaqwbjdgu.supabase.co:5432/postgres" }))
+      .toEqual({ applicable: true, passed: false });
+    expect(getStagingPreviewBuildIdentityCheck({ ...stagingPreview, NEXT_PUBLIC_APP_URL: "https://other.example" }))
+      .toEqual({ applicable: true, passed: false });
+  });
+
+  it("does not apply the staging guard to a different Vercel project", () => {
+    expect(getStagingPreviewBuildIdentityCheck({ ...stagingPreview, VERCEL_PROJECT_ID: "prj_other" }))
+      .toEqual({ applicable: false, passed: true });
   });
 });
