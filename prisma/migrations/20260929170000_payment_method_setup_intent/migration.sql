@@ -22,6 +22,9 @@ CREATE TABLE "PaymentMethodSetupIntent" (
 CREATE INDEX "PaymentMethodSetupIntent_vendorId_status_expiresAt_idx"
     ON "PaymentMethodSetupIntent"("vendorId", "status", "expiresAt");
 
+-- Server-side Prisma owns this table. Keep direct Data API access default-deny.
+ALTER TABLE "PaymentMethodSetupIntent" ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE "PaymentMethodSetupIntent"
     ADD CONSTRAINT "PaymentMethodSetupIntent_vendorId_fkey"
     FOREIGN KEY ("vendorId") REFERENCES "Vendor"("id") ON DELETE CASCADE ON UPDATE CASCADE;

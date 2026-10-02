@@ -2,7 +2,18 @@
 
 狀態：程式候選；固定 staging 尚未切換，測試方案尚未寫入 staging 資料庫，尚未付款。此流程與「1 元綁卡＋10 分鐘後第二筆 1 元扣款」探針分開。
 
-## 2026-10-02 執行收據與剩餘閘門
+## 2026-10-03 最新檢查
+
+- 候選 source `7ac9121cd10962a8d1e1604fb9d52ea4b660c3b8`，staging Preview deployment `dpl_GbzeUVN7Rbury9RKRgU3Ss3egm3L`，host `celebrate-deal-staging-3cbi4axvk-a25814740s-projects.vercel.app` 已 Ready。建置的 `PAYUNI_ENV`、`STAGING_PREVIEW_DATA_IDENTITY`、`STAGING_PREVIEW_MEDIA_ISOLATION` 三項 PASS；`/api/health` 為 database ok。未登入 `/billing/plans` 內容為登入導向、沒有 PAYUNi 表單；這不是已登入方案旅程或付款證據。
+- PR #351 先前兩個 quality run 的失敗根因為 `env.test.ts` 合成外部資料庫 URL 觸發 Secret 掃描；已改為既有的分段合成 fixture，不降低 scanner 規則。Secret scan 與相關 42 個單元測試通過。該 SHA 的 quality runs `37075627934`、`37075624219` 均成功，兩個 Vercel 專案 Preview 亦成功；新 runner 或 migration 變更仍須取得新 SHA 的檢查結果。
+- staging WAF rule `rule_log_generated_staging_preview_hosts_HJx9RW` 已發布為 `preview AND host not-in [固定 staging host, 上述唯一候選 host] => deny`。固定站與候選首頁 200；舊 q2twvn3z2 immutable host、分支 alias、rollback 自訂網域皆 403；固定站與候選 `/api/webhooks/payments` HEAD 405。此專案 Ready Production deployment 清單為空。固定 alias 仍指向 `dpl_HkdbLiibYXna3ewGGhGyPBbxYeCb`／`5d5b814681525427ae8f787a75b7ef27fa64ed29`，尚未切換。
+- 指定 CLI profile 的 linked staging 已可執行 Management API 唯讀 SQL；79 筆完成 migration、0 筆未完成，專用帳號、商家與三筆測試方案仍不存在。唯讀交易確認 SERIALIZABLE 與 read-only 均生效；`postgres` 在 public 的新表 default privileges 沒有給 `anon`／`authenticated`／`service_role` 權限。這不取代新表的 RLS 防禦與 migration 審查。
+- 正式 PAYUNi 後台仍等待 owner 登入，尚未獨立核對 PureFit 代號與功能權限。Secret 值未讀取。付款旗標維持關閉；沒有線上資料寫入、真實付款、綁卡、退款或寄信。
+- 固定 Management API prepare／migration 工具已完成獨立 Critical 複審，無 findings；10 項 targeted tests、TypeScript、ESLint、Secret scan 通過。以合成資料建立完整 79 migrations 的拋棄式 PostgreSQL 17，驗證套用後 81 筆／兩表 RLS／空表、重跑拒絕、重複 migration 名稱拒絕、後段故障時兩表及 history 全數回滾，Prisma migrate status／deploy 亦成功。使用專用 Docker bridge、僅綁定 127.0.0.1，完成後清除容器、網路及暫存檔；此為合成 schema 測試，並非對真實備份的還原演練。
+- 執行前再次唯讀檢查時，Supabase profile 回傳 403；projects list 只列另外兩個專案，已排除繼承的 Supabase／DB 環境覆蓋，仍看不到指定 staging。因此尚未執行任何線上 migration／fixture 寫入；owner 須恢復該 profile 的 staging 專案存取，接續時重新核對身分與歷史，不能沿用較早成功的 CLI 登入證據。
+- AI Team：requested/effective `ai-team-pro`；實作與 CI 診斷 selected Sol high，獨立 Critical review 使用既有 Astra high fallback（`critical_review_no_equivalent`），observed model/effort unknown。單一 writer、最多一個 helper、depth 1、每個 work package dispatch cap 4；主代理整合 migration 工具與證據。必要 review 已完成，整體 Goal 尚未驗收，最新來源仍須 CI 與線上 staging gates。
+
+## 2026-10-02 歷史執行收據與剩餘閘門
 
 - 已從 Supabase staging 專案 `ocbugvgojrunvenozsbx` 製作加密的 roles、public schema、public data 邏輯備份。本機 archive 雜湊已核對；在無網路、無對外連接埠的一次性 PostgreSQL 容器還原成功。來源與還原後皆為 79 筆已套用的 Prisma migration、120 張 public 表、1542 個 public 欄位；所有表的列數摘要一致。這證明 public 應用資料可還原，**不涵蓋** Supabase Auth、Storage 物件與平台設定。
 - Owner 確認 Google Drive 中看得到三個 `.age` 與 `manifest.json`，並確認 age 私鑰已存入密碼管理器。這兩項為 owner 回報；本次沒有從雲端重新下載、也沒有從密碼管理器取回私鑰演練。
@@ -10,7 +21,7 @@
 - staging 資料庫仍是 79 筆已套用 migration；候選程式另有 `20260929170000_payment_method_setup_intent` 與 `20260930094500_payuni_live_probe` 兩筆尚待套用。未修改 staging 資料列或價格，正式資料庫未動。
 - 只查 Vercel **變數名稱、類型與範圍**：`celebrate-deal-staging` 專案的三個正式 PAYUNi Secret 已透過 Vercel API 只提交 target 與 gitBranch 欄位，限縮為 `codex/prelaunch-engineering-20260929` 分支的 Preview；隨後逐筆核對三者皆為 Preview／該分支／sensitive。`PAYUNI_STAGING_PLAN_TEST_VENDOR_ID` 尚未設定。既有其他 Preview 變數多為不可讀的 Secret，CLI 本機注入只得到空值，不能據此宣稱連線錯誤或驗證資料隔離。部署執行期仍須以只輸出布林結果的受控檢查核對資料庫、Auth、Storage、固定網域及 PAYUNi 商店歸屬。
 - `PAYUNI_STAGING_PLAN_TEST_ENABLED` 的 Preview 變數存在；Owner 回報其值為 `false`，本次沒有讀取該 Secret。以上閘門未完成前維持關閉，也不執行 `--prepare`、`--enable` 或 alias 切換。
-- 指定 Preview 分支已新增 `PAYUNI_ENV=production`、`PAYMENT_PROVIDER=payuni`、`PAYUNI_STAGING_PLAN_TEST_ENABLED=false` 與 `PAYUNI_LIVE_PROBE_ENABLED=false` 的分支覆蓋。一次新部署的 preflight 因舊程式仍要求旗標關閉時必須使用 Sandbox 而安全失敗；候選修正只在精確 staging Vercel 專案、測試分支與四項 staging 資料身分通過時允許正式商店設定先建置，付款入口仍要求旗標及資料庫短效許可。修正提交後須以新 SHA 重建及核對，不得沿用失敗部署的狀態。
+- 指定 Preview 分支已新增 `PAYUNI_ENV=production`、`PAYMENT_PROVIDER=payuni`、`PAYUNI_STAGING_PLAN_TEST_ENABLED=false` 與 `PAYUNI_LIVE_PROBE_ENABLED=false` 的分支覆蓋。一次新部署的 preflight 因舊程式仍要求旗標關閉時必須使用 Sandbox 而安全失敗；候選修正只在精確 staging Vercel 專案、測試分支與四項 staging 資料身分通過時允許正式商店設定先建置，付款入口仍要求旗標及資料庫短效許可。修正已送 PR #351，仍須以最新 SHA 重建及核對，不得沿用失敗部署的狀態。
 - 候選程式加入 staging Vercel Preview 建置時的 `STAGING_PREVIEW_DATA_IDENTITY` 閘門，只判斷固定網址與四個 Supabase staging URL，輸出 PASS／FAIL，不記錄連線內容。Vercel staging 專案 metadata 顯示系統環境變數自動注入已開啟；commit `ecfc53a4` 的 immutable Preview deployment `dpl_28hSHMU8h6gWrSuXiZzge2CMuYyi` 實際建置輸出 PASS，`/api/health` 回傳 HTTP 200、資料庫連線成功。此證據只屬於該部署，固定 staging alias 未切換。應用登入使用 Prisma 資料庫，媒體使用 Cloudflare R2／Stream；此閘門不證明 R2／Stream 資源隔離。獨立審查已核對並關閉系統變數可能未注入的 finding。
 - 在 `--network none`、無對外連接埠的一次性 PostgreSQL，從同一組加密備份再次還原 public schema/data，按順序套用兩筆候選 migration SQL 均成功；新表為空、預期外鍵存在。容器已停止並自動移除。這是 SQL 相容性演練，不是線上 staging migration，也沒有寫入線上 Prisma migration history。
 - 該部署的 PAYUNi preflight 仍選用 Sandbox 三件組；三個正式 Secret 的分支範圍已修好，但 `PAYUNI_ENV=production`、受控旗標及指定測試商家尚未啟用。Owner 重新登入 Supabase CLI 後，指定 profile 已列出 staging ref `ocbugvgojrunvenozsbx`（linked）與不同的 production ref `awigitueyqdqaqwbjdgu`（未 linked）。透過 linked staging 的唯讀 SQL 再查：79 筆已套用 migration、0 筆失敗；setup intent 與 live probe 兩筆候選 migration 均未套用。原 `starter`／`growth`／`team-pro` 價格依序仍為 248000／598000／128000 cents，均啟用；三筆 `staging-payuni-*` 測試方案不存在。舊測試信箱 `zeroyuanbrothers@gmail.com` 在 staging 的 `User` 表沒有相符帳號；目前 staging 有 3 個使用者、2 個商家與 2 筆商家成員關係，仍須確認唯一測試商家，不能猜測或指定其他商家。上述為 2026-10-02 線上唯讀快照，未改動資料。
@@ -46,14 +57,25 @@
 
 使用受控 CI Environment／平台 Secret provider 注入 staging 資料庫連線；不要讀取 `.env*` 或列舉 Secret Store。執行工具時只輸出代碼和金額。
 
+### 已登入 CLI 的固定 staging 替代工具
+
+本機無法安全注入 Prisma 連線時，可使用已登入的 Supabase CLI 2.108.0、固定 profile `celebratedeal-staging-20261002` 與已核對 linked ref 的 main workspace。以下工具透過 `db query --linked` 的 Management API 操作，不讀取 CLI 憑證或 `.env*`。必須先完成同一來源的檢查、隔離、回復點與獨立審查；本機環境布林值只是操作閘門，不能冒充遠端證據。
+
+- `scripts/staging-payuni-management-prepare.ts --prepare`：同時要求兩個既有變更閘門、固定帳號 email、Preview 專案／分支／網址及 `PAYUNI_STAGING_PLAN_TEST_ENABLED=false`。一次 SERIALIZABLE 交易建立 Vendor、User、TrackingSetting、VendorMember、AuditLog 各一筆及三筆停用方案；沒有 enable、寄信或付款。與原 Prisma vendor/plan prepare 工具是替代關係，不可兩套都跑。
+- `scripts/staging-payuni-management-migrate.ts --apply`：另外要求 `STAGING_PAYUNI_MIGRATION_CHANGE_APPROVED=true`。只接受兩筆固定 SHA 的尚未套用 migration，完整比對 79 筆唯一已完成 migration 的名稱／checksum，確認沒有未完成紀錄或既有目標表，才在同一交易套用 DDL、記錄兩筆 Prisma history 並核對 81 筆／RLS／空表／Data API 無直接權限。這不是 `prisma migrate deploy`；歷史紀錄只在精確 DDL 成功時同交易落地，不可單獨手動標為 applied。
+
+兩工具的暫存 SQL 皆先套 Windows owner-only ACL，再寫入及執行，最後清除。**逾時、連線中斷或清理失敗屬於結果未知，不可因 CLI failure 盲目重跑。** 先唯讀核對：prepare 的完整八筆、owner 關聯、測試價格 100／200／300 cents、isActive=false、permit null；migration 的 79／81 筆歷史、兩個名稱／checksum、兩表及 RLS。完整成功則記錄成功狀態並處理本機殘留檔，不再執行；完整未寫入且原因已修復才可重新評估執行。任何部分狀態或非預期金額皆停止變更、保持付款關閉，保留 sanitized evidence 進一步診斷。清理失敗時只移除已核對由該次工具建立的精確檔案與空目錄，不掃描或清除其他資料。
+
 在方案準備前，先於隔離與回復點確認後以受控 runner 設 `STAGING_PAYUNI_TEST_VENDOR_CHANGE_APPROVED=true`、`STAGING_PAYUNI_TEST_ACCOUNT_EMAIL=zeroyuanbrothers@gmail.com`、可選的 `STAGING_PAYUNI_TEST_ACCOUNT_NAME`，且保持 `PAYUNI_STAGING_PLAN_TEST_ENABLED=false`，執行 `npx tsx scripts/staging-payuni-test-vendor.ts`。工具只接受 owner 已指定的上述信箱，其他地址直接拒絕；若需換信箱，先取得新的 owner 指示並審查程式變更。重跑或撞到既有同名商家／帳號也會拒絕；不會發信或回傳密碼。建立前須先確認 staging 的重設郵件設定與寄送能力；使用者在固定 staging 站的 `/password-reset/request` 自行設定密碼。若郵件未送達，專用帳號因未知隨機密碼仍無法登入：保持付款旗標關閉、不要設定測試商家 ID、不要重跑建立工具；先修復寄信設定，再由帳號持有人重新要求重設連結。唯讀查詢確認新帳號只有一個專用商家 owner 成員關係、沒有原有訂閱或待付款交易後，才把其商家 ID 設為指定 Preview 分支的 `PAYUNI_STAGING_PLAN_TEST_VENDOR_ID`。不要將帳號密碼、重設連結或資料庫連線輸出到日誌。
 
 1. `npx tsx scripts/staging-payuni-plan-prices.ts --inspect`：唯讀確認原方案價格、測試方案狀態。工具會要求固定 staging 網域與四個 staging 資料庫身分欄位一致。
 2. 取得隔離與回復點證據後，在受控 runner 設 `STAGING_PAYUNI_TEST_CHANGE_APPROVED=true`，執行 `--prepare`。它只複製三筆原方案的額度與費率、建立 `isActive=false` 的 NT$1／2／3 測試列；不更新原方案。再 `--inspect` 驗證。
 3. 部署已通過檢查的 Preview commit，先確認網站沒有測試付款入口。以部署專屬 `VERCEL_URL`、指定測試商家 ID、經後台核對的 CelebrateDeal 商店代號，在受控 runner 執行 `--enable`。此步只將短效資料庫許可寫入三筆測試列；許可兩小時到期，且綁定唯一 immutable deployment URL。
-4. 唯讀檢查指定商家看到 NT$1／2／3、其他商家看不到測試入口；原價方案與其他商家不受影響。檢查一般商品／發票與退款仍被封鎖。先盤點舊 staging Preview 專屬 URL 是否仍可公開使用共享 Stream 憑證，並限制或停用需要處置的部署；再核對 fixed staging alias 指向已審查的新部署，才能更新 alias。staging 專案的 Vercel Firewall 已先發布一條 `environment=preview AND host ends with .vercel.app` 的 **Log** 規則，固定自訂網域不相符；Log 只供觀察，不能算限制。切換前須將此規則改為 Deny 並發布，確認至少一個舊 Preview host 回 403、固定 staging 網域仍可正常連線，再更新 alias；回復時可將規則改回 Log 或停用。若舊部署尚未處置，只能說新付款測試部署無 Stream 憑證，不得宣稱整個 staging 媒體已隔離。
+4. 唯讀檢查指定商家看到 NT$1／2／3、其他商家看不到測試入口；原價方案與其他商家不受影響。檢查一般商品／發票與退款仍被封鎖。staging 專案 WAF 須使用 `environment=preview AND host not-in [固定 staging host, 唯一候選 host] => deny`，同時限制舊 immutable、branch alias 及 rollback 自訂網域。候選例外只用於切換前檢查；記錄 deployment ID、完整 SHA、branch、建置身分/媒體隔離 PASS 與兩付款旗標關閉證據。例外會允許該 host 全站流量，不等同技術上的唯讀權限。確認固定 host、候選可達，舊 immutable、branch alias、rollback host 皆回 403，才切換固定 alias；切換後移除候選例外並再次驗證生成網址 403。復原維持 Deny，只調整已驗證安全的精確 host／alias，不可改回 Log 或停用而重新公開舊部署。
 5. 此任務不提交付款表單、不綁卡。後續另獲真實交易授權時，每筆需核對 PAYUNi 正式後台、可信回呼、交易金額和訂閱狀態；未明結果不得重送。
 
-停止時**先執行 `--disable`** 清除資料庫許可，所有同版舊 Preview URL 立即停止建立或顯示新測試付款表單。再移除固定 alias、停用相關舊部署、將 Vercel Preview 旗標關閉並重新部署。環境變數變更不會回溯既有部署，單靠改旗標不構成撤銷。已交給瀏覽器或 PAYUNi 的表單無法撤回，須逐筆核對 pending／paid／failed 和延遲回呼；需要退款時依獨立正式金流程序由人工處理，Preview 退款 API 仍封鎖。對帳完成後，依人工核准的訂閱流程結束測試商家的 active 測試訂閱或改回正常方案，再以月結模擬確認不再產生非預期測試帳單。測試方案列維持停用且保留交易歷史，月結仍讀取它們的 NT$1／2／3 價格，避免訂閱帳務被復原操作改價。
+停止時**先執行 `--disable`** 清除資料庫許可，所有同版舊 Preview URL 立即停止建立或顯示新測試付款表單。關閉 Vercel Preview 旗標並重新部署，同時保留固定 staging alias 指向相容且使用正確商店設定的回呼處理部署，直到 pending 與延遲回呼完成對帳。以 HEAD 核對 `/api/webhooks/payments` 回應用層 405，首頁 200 不足以證明回呼可達。環境變數變更不會回溯既有部署，單靠改旗標不構成撤銷。已交給瀏覽器或 PAYUNi 的表單無法撤回，須逐筆核對 pending／paid／failed 和延遲回呼；需要退款時依獨立正式金流程序由人工處理，Preview 退款 API 仍封鎖。對帳完成後，依人工核准的訂閱流程結束測試商家的 active 測試訂閱或改回正常方案，再以月結模擬確認不再產生非預期測試帳單。測試方案列維持停用且保留交易歷史，月結仍讀取它們的 NT$1／2／3 價格，避免訂閱帳務被復原操作改價。
+
+本次可沿用已演練的 2026-10-01 加密備份作為回復點；日期本身不構成重做備份的理由。新增前先確認 migration 狀態、測試資料尚不存在並記錄新增範圍；優先以交易回滾、撤銷許可及停用新增資料復原，相容的新空表可保留。整庫還原會丟失備份後其他合法變更，不作為例行復原。若改為更新/刪除既有資料或無法界定影響範圍，才需重新建立對應回復點。
 
 正式站部署、正式資料庫、正式付款／綁卡／退款均不屬於本次操作。

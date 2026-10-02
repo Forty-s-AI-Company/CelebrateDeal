@@ -27,5 +27,8 @@ CREATE UNIQUE INDEX "PayUniLiveProbe_setupIntentId_key" ON "PayUniLiveProbe"("se
 CREATE UNIQUE INDEX "PayUniLiveProbe_secondOrderNumber_key" ON "PayUniLiveProbe"("secondOrderNumber");
 CREATE INDEX "PayUniLiveProbe_status_dueAt_idx" ON "PayUniLiveProbe"("status", "dueAt");
 
+-- Server-side Prisma owns this table. No browser-facing RLS policies are needed.
+ALTER TABLE "PayUniLiveProbe" ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE "PayUniLiveProbe" ADD CONSTRAINT "PayUniLiveProbe_vendorId_fkey"
     FOREIGN KEY ("vendorId") REFERENCES "Vendor"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
