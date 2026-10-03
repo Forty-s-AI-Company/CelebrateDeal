@@ -40,7 +40,7 @@ describe("/admin/support-cases route", () => {
 
   it("states clearly that the queue does not execute a provider refund", async () => {
     const html = renderToStaticMarkup(await AdminSupportCasesPage());
-    expect(html).toContain("真正退款仍走既有 provider reservation／MFA／reconciliation 流程");
+    expect(html).toContain("真正退款仍走既有 provider reservation／reconciliation 流程，已啟用 MFA 的帳號仍需完成驗證");
     expect(html).toContain("目前沒有退款交接");
   });
 });

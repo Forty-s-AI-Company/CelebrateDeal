@@ -1,8 +1,16 @@
 # PAYUNi staging 三方案正式金流測試
 
-狀態：程式候選；固定 staging 尚未切換，測試方案尚未寫入 staging 資料庫，尚未付款。此流程與「1 元綁卡＋10 分鐘後第二筆 1 元扣款」探針分開。
+狀態：固定 staging 已切換、專用帳號與測試方案已建立，尚未由代理發起付款。MFA 改為自願的候選更新中，舊兩小時測試許可已撤銷；新版本驗證後再重新綁定許可。此流程與「1 元綁卡＋10 分鐘後第二筆 1 元扣款」探針分開。
 
-## 2026-10-03 最新檢查
+## 2026-10-03 已執行的 staging 更新
+
+- Supabase CLI profile 已恢復 `ocbugvgojrunvenozsbx` 存取。79 筆歷史 checksum 唯讀 precheck 通過後，固定 migration 工具成功套用兩筆，實際核對 81 筆完成／0 筆未完成、兩張新表 RLS 開啟且空表。
+- 固定 prepare 工具成功建立專用 User／Vendor／TrackingSetting／VendorMember／AuditLog 各一筆及三筆停用方案；owner 關係唯一。測試價格 100／200／300 cents；原價仍為 248000／598000／1280000 cents。當次查核訂閱及交易皆 0；未查詢正式資料庫。
+- Chrome 的 PAYUNi 正式後台已核對 PureFit健康管理、商店 `HTCU1130301000101`，Token 與幕後授權皆啟用；沒有讀取金鑰。專用帳號已登入 dashboard，但方案頁被舊 MFA 強制設定 gate 阻擋，不能把 dashboard 成功當成方案旅程成功。
+- `86df67d01161bd8644a7ce7f1b3fb9b5a48e29aa` 的兩組 quality `37079897483`／`37079900302` 與兩個 Preview 都成功。指定 Preview 分支付款旗標和 vendor 綁定設定後，以相同來源建立 `dpl_zA6xDM6vxPHrxRHvxwktM6iA3ePG`，固定 staging 已切至此部署；三項 preflight、資料庫健康與 callback HEAD 405 通過。候選 generated URL、branch alias 與 rollback host 維持 403。
+- Owner 已決定所有角色的 MFA 自願，詳見 [MFA 政策](../admin-mfa-hardening-plan.md)。修改期間已執行 `--disable` 撤銷原許可；即使 Preview 旗標為 true，沒有有效 DB permit 仍不能進行三方案測試。新版本需重新取得同一來源 CI、獨立審查及登入後方案畫面證據。
+
+## 2026-10-03 較早的檢查紀錄（以下阻擋已由上述結果更新）
 
 - 候選 source `7ac9121cd10962a8d1e1604fb9d52ea4b660c3b8`，staging Preview deployment `dpl_GbzeUVN7Rbury9RKRgU3Ss3egm3L`，host `celebrate-deal-staging-3cbi4axvk-a25814740s-projects.vercel.app` 已 Ready。建置的 `PAYUNI_ENV`、`STAGING_PREVIEW_DATA_IDENTITY`、`STAGING_PREVIEW_MEDIA_ISOLATION` 三項 PASS；`/api/health` 為 database ok。未登入 `/billing/plans` 內容為登入導向、沒有 PAYUNi 表單；這不是已登入方案旅程或付款證據。
 - PR #351 先前兩個 quality run 的失敗根因為 `env.test.ts` 合成外部資料庫 URL 觸發 Secret 掃描；已改為既有的分段合成 fixture，不降低 scanner 規則。Secret scan 與相關 42 個單元測試通過。該 SHA 的 quality runs `37075627934`、`37075624219` 均成功，兩個 Vercel 專案 Preview 亦成功；新 runner 或 migration 變更仍須取得新 SHA 的檢查結果。

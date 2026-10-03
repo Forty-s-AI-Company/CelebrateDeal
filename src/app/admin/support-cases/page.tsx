@@ -19,7 +19,7 @@ export default async function AdminSupportCasesPage() {
 
   return (
     <>
-      <PageHeader title="退款客服交接" description="平台財務只在這裡檢視商家請求；真正退款仍走既有 provider reservation／MFA／reconciliation 流程。" />
+      <PageHeader title="退款客服交接" description="平台財務只在這裡檢視商家請求；真正退款仍走既有 provider reservation／reconciliation 流程，已啟用 MFA 的帳號仍需完成驗證。" />
       {handoffs.length === 0 ? <EmptyState title="目前沒有退款交接" description="商家從 tenant-scoped 客服案件送出後，請求會顯示在這裡。" /> : (
         <div className="grid gap-3">
           {handoffs.map((handoff) => (

@@ -50,11 +50,9 @@ async function login(page: Page, email: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
-  // Finance-capable accounts may be sent to the mandatory local MFA step
-  // immediately after a successful password login. That is still an
-  // authenticated session; the test marks only its synthetic session verified
-  // before testing a finance route.
-  await expect(page).toHaveURL(/\/(?:dashboard|admin\/billing\/dashboard|mfa\/(?:setup|verify))$/);
+  // Synthetic accounts have no enrolled factor, so login reaches the role's
+  // home page. This matrix still tests role and tenant guards independently.
+  await expect(page).toHaveURL(/\/(?:dashboard|admin\/billing\/dashboard)$/);
 }
 
 async function signedInPage(browser: Browser, email: string) {

@@ -108,7 +108,7 @@ describe("AppShell role navigation", () => {
     expect(links).not.toContain("/billing/course-payouts");
   });
 
-  it("shows only platform operations to a platform administrator", () => {
+  it("shows platform operations and voluntary MFA setup to a platform administrator", () => {
     const links = linksFor(null, true);
 
     expect(links).toEqual([
@@ -117,6 +117,7 @@ describe("AppShell role navigation", () => {
       "/admin/billing/webhooks",
       "/admin/support-cases",
       "/admin/cloudflare/videos",
+      "/mfa/setup",
     ]);
   });
 
