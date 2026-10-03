@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertPermitEnvironment, buildPermitSql, runPermit } from "./staging-payuni-management-permit";
+import { assertPermitEnvironment, buildPermitSql, permitChildFailure, runPermit } from "./staging-payuni-management-permit";
 
 const vendorId = "00000000-0000-4000-8000-000000000001";
 const host = "celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app";
@@ -24,6 +24,17 @@ function environment(): NodeJS.ProcessEnv {
 }
 
 describe("fixed staging PAYUNi Management API permit", () => {
+  it("distinguishes database guards from authentication without leaking child output", () => {
+    expect(permitChildFailure({ stderr: "ERROR: PERMIT_TEST_PLANS_INVALID (SQLSTATE P0001) sensitive SQL" })).toBe("PERMIT_TEST_PLANS_INVALID");
+    expect(permitChildFailure({ stdout: "PERMIT_PENDING_PAYMENT_EXISTS" })).toBe("PERMIT_PENDING_PAYMENT_EXISTS");
+    expect(permitChildFailure({ stderr: "401 Unauthorized credential=do-not-expose" })).toBe("PERMIT_CLI_AUTH_FAILED");
+    expect(permitChildFailure({ stderr: "SQLSTATE 40001 private database details" })).toBe("PERMIT_DATABASE_BUSY");
+    expect(permitChildFailure({ error: { code: "ENOENT" } })).toBe("PERMIT_CLI_NOT_FOUND");
+    expect(permitChildFailure({ error: { code: "ETIMEDOUT" } })).toBe("PERMIT_CLI_TIMEOUT");
+    for (const stderr of ["secret-do-not-expose", "PERMIT_UNKNOWN_PRIVATE_VALUE", "PREFIX_PERMIT_TEST_PLANS_INVALID_SUFFIX"]) {
+      expect(permitChildFailure({ stderr })).toBe("PERMIT_CHILD_FAILED");
+    }
+  });
   it("rejects an unreviewed target, branch alias, merchant or live probe before invoking CLI", () => {
     const env = environment();
     expect(() => assertPermitEnvironment(env, "enable")).not.toThrow();

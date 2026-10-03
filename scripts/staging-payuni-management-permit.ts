@@ -154,13 +154,37 @@ $staging_payuni_permit$;
 COMMIT;`;
 }
 
+// CLI failures may contain SQL or credentials. Only return fixed classifications,
+// never the child output or an arbitrary error code extracted from it.
+export function permitChildFailure(result: { error?: unknown; stdout?: string | null; stderr?: string | null }) {
+  const errorCode = result.error && typeof result.error === "object" && "code" in result.error
+    ? result.error.code : undefined;
+  if (errorCode === "ENOENT") return "PERMIT_CLI_NOT_FOUND";
+  if (errorCode === "ETIMEDOUT") return "PERMIT_CLI_TIMEOUT";
+  const output = `${result.stderr ?? ""}\n${result.stdout ?? ""}`;
+  const guards = [
+    "PERMIT_PENDING_PAYMENT_EXISTS", "PERMIT_TEST_PLANS_INVALID", "PERMIT_ORIGINAL_PLANS_INVALID",
+    "PERMIT_VENDOR_IDENTITY_INVALID", "PERMIT_VENDOR_MEMBERSHIP_INVALID", "PERMIT_OWNER_MEMBERSHIP_INVALID",
+    "PERMIT_ISOLATION_INVALID", "PERMIT_ENABLE_COUNT_INVALID", "PERMIT_ENABLE_VERIFICATION_FAILED",
+    "PERMIT_DISABLE_COUNT_INVALID", "PERMIT_DISABLE_VERIFICATION_FAILED",
+  ];
+  for (const code of guards) {
+    if (new RegExp(`\\b${code}\\b`, "u").test(output)) return code;
+  }
+  if (/unauthorized|forbidden|\b(?:401|403)\b|access token.*(?:missing|invalid|not provided)/iu.test(output)) {
+    return "PERMIT_CLI_AUTH_FAILED";
+  }
+  if (/SQLSTATE[ :]+(?:40001|40P01|55P03|57014)\b/iu.test(output)) return "PERMIT_DATABASE_BUSY";
+  return "PERMIT_CHILD_FAILED";
+}
+
 function checkedChild(command: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv) {
   const result = spawnSync(command, args, {
     cwd, env, shell: false, windowsHide: true, encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"], timeout: 30_000, maxBuffer: 1024 * 1024,
   });
   // SQL and CLI output stay in memory and are never copied to console/logs.
-  if (result.error || result.status !== 0) throw new Error("PERMIT_CHILD_FAILED");
+  if (result.error || result.status !== 0) throw new Error(permitChildFailure(result));
   return result.stdout.trim();
 }
 
