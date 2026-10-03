@@ -25,7 +25,7 @@ const PLATFORM_SUBSCRIPTION_SUPERSEDED_STATUS = "payment_superseded";
 
 export type PlatformPlanCheckoutResult =
   | { kind: "redirect"; path: string }
-  | { kind: "checkout"; transactionId: string; referral: boolean };
+  | { kind: "checkout"; transactionId: string; referral: boolean; checkoutSession?: Prisma.InputJsonValue };
 
 export function platformPlanCheckoutPath(result: PlatformPlanCheckoutResult) {
   if (result.kind === "redirect") return result.path;
@@ -417,6 +417,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
           kind: "checkout",
           transactionId: result.transaction.id,
           referral: Boolean(referralClickId),
+          checkoutSession: metadataObject(result.transaction.metadata).checkoutSession as Prisma.InputJsonValue,
         };
       }
 
@@ -481,6 +482,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
         kind: "checkout",
         transactionId: result.transaction.id,
         referral: Boolean(referralClickId),
+        checkoutSession: checkoutSessionMetadata(checkoutSession),
       };
     } catch (error) {
       if (!isSerializationConflict(error)) {

@@ -37,6 +37,18 @@ beforeEach(() => {
 });
 
 describe("POST /api/billing/plans/select", () => {
+  it("hands the authenticated selection directly to a sanitized provider POST form", async () => {
+    mocks.createPlatformPlanCheckout.mockResolvedValueOnce({
+      kind: "checkout", transactionId: "synthetic-transaction", referral: false,
+      checkoutSession: { provider: "payuni", mode: "form_post", formAction: "https://api.payuni.com.tw/api/upp", formPayload: { MerID: "synthetic", Version: "2.0", EncryptInfo: "synthetic-encrypted", HashInfo: "synthetic-hash" } },
+    });
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(await response.text()).toContain('method="post" action="https://api.payuni.com.tw/api/upp"');
+    expect(mocks.createPlatformPlanCheckout).toHaveBeenCalledWith(expect.any(FormData));
+  });
   it("returns the shared checkout result as a native 303", async () => {
     const response = await POST(request());
 

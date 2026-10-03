@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { platformPaymentHandoffResponse } from "@/lib/platform-payment-handoff";
 import { readFormDataBody } from "@/lib/api-security";
 import {
   createPlatformPlanCheckout,
@@ -58,6 +59,11 @@ export async function POST(request: Request) {
     // Keep the native transport on the same tenant-scoped mutation core as the
     // Server Action. Only the transport owns the 303 response.
     const result = await createPlatformPlanCheckout(formData);
+    // Only the authenticated, CSRF-checked selection POST can initiate an automatic handoff.
+    if (result.kind === "checkout") {
+      const handoff = platformPaymentHandoffResponse(result.checkoutSession);
+      if (handoff) return handoff;
+    }
     return nativeRedirect(platformPlanCheckoutPath(result));
   } catch (error) {
     const destination = redirectPathFromError(error, request);
