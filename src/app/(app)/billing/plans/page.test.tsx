@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   requireVendorFinance: vi.fn(),
   getCsrfToken: vi.fn(),
   paymentTransactionFindFirst: vi.fn(),
+  paymentTransactionCount: vi.fn(),
   platformReferralClickFindUnique: vi.fn(),
   cookies: vi.fn(),
 }));
@@ -15,7 +16,7 @@ vi.mock("@/lib/db", () => ({
   getDb: () => ({
     billingPlan: { findMany: mocks.findMany },
     vendorSubscription: { findFirst: mocks.subscriptionFindFirst },
-    paymentTransaction: { findFirst: mocks.paymentTransactionFindFirst },
+    paymentTransaction: { findFirst: mocks.paymentTransactionFindFirst, count: mocks.paymentTransactionCount },
     platformReferralClick: { findUnique: mocks.platformReferralClickFindUnique },
   }),
 }));
@@ -73,6 +74,7 @@ beforeEach(() => {
   );
   mocks.subscriptionFindFirst.mockResolvedValue(null);
   mocks.paymentTransactionFindFirst.mockResolvedValue(null);
+  mocks.paymentTransactionCount.mockResolvedValue(0);
   mocks.platformReferralClickFindUnique.mockResolvedValue(null);
   mocks.cookies.mockResolvedValue({ get: () => undefined });
   mocks.getCsrfToken.mockResolvedValue("csrf-test-token");
@@ -104,6 +106,31 @@ function enableLiveStagingPlans() {
 }
 
 describe("/billing/plans route", () => {
+  it("reports unresolved local checkouts only to the tenant owner without exposing or sending a form", async () => {
+    enableLiveStagingPlans();
+    mocks.paymentTransactionCount.mockResolvedValue(1);
+    const html = renderToStaticMarkup(await BillingPlansPage({}));
+    expect(html).toContain("不代表 PAYUNi 已收到交易或付款成功");
+    expect(html).not.toContain('action="https://api.payuni.com.tw/api/upp"');
+    expect(mocks.paymentTransactionCount).toHaveBeenCalledWith({ where: {
+      vendorId: "vendor-current", providerName: "payuni", paymentMode: "platform", status: "pending",
+    } });
+    mocks.paymentTransactionCount.mockClear();
+    mocks.requireVendorFinance.mockResolvedValue({ vendor: { id: "vendor-current" }, member: { role: "finance" } });
+    expect(renderToStaticMarkup(await BillingPlansPage({}))).not.toContain("尚有待確認的 PAYUNi 付款紀錄");
+    expect(mocks.paymentTransactionCount).not.toHaveBeenCalled();
+  });
+  it("does not attribute a general concurrency conflict to a payment when none is pending", async () => {
+    enableLiveStagingPlans();
+    const query = { searchParams: Promise.resolve({ error: "conflict" }) };
+    const noPending = renderToStaticMarkup(await BillingPlansPage(query));
+    expect(noPending).toContain("方案更新發生衝突");
+    expect(noPending).not.toContain("舊 PAYUNi 付款結果");
+    mocks.paymentTransactionCount.mockResolvedValue(1);
+    const pending = renderToStaticMarkup(await BillingPlansPage(query));
+    expect(pending).toContain("舊 PAYUNi 付款結果尚未確認");
+    expect(pending).not.toContain("方案更新發生衝突");
+  });
   it("shows 1, 2 and 3 TWD only when all scoped staging prices are ready", async () => {
     enableLiveStagingPlans();
     const description = `staging-payuni-plan-v1:${JSON.stringify({ deploymentHost: "staging-test.vercel.app", merchantId: "TESTMER", vendorId: "vendor-current", expiresAt: "2099-01-01T00:00:00.000Z" })}`;
@@ -116,10 +143,10 @@ describe("/billing/plans route", () => {
     expect(ready).toContain("$1");
     expect(ready).toContain("$2");
     expect(ready).toContain("$3");
-    expect(ready).not.toContain("尚未完成隔離設定");
+    expect(ready).not.toContain("設定尚未通過檢查");
     mocks.findMany.mockResolvedValue([{ ...plans[0], code: "starter", monthlyPriceCents: 248000 }]);
     const blocked = renderToStaticMarkup(await BillingPlansPage({}));
-    expect(blocked).toContain("尚未完成隔離設定");
+    expect(blocked).toContain("設定尚未通過檢查");
     expect(blocked).not.toContain("$2,480");
   });
 

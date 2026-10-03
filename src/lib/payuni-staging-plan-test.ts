@@ -63,6 +63,21 @@ export function payUniStagingPlanTestAllowed(vendorId: string, plan: TestPlan, e
   }
 }
 
+/** Explain a closed test window without exposing credentials or changing authorization. */
+export function payUniStagingPlanTestAvailability(vendorId: string, plans: TestPlan[], env: NodeJS.ProcessEnv = process.env) {
+  const tests = plans.filter((plan) => Object.hasOwn(PAYUNI_STAGING_PLAN_PRICES_CENTS, plan.code));
+  if (tests.length === 3 && new Set(tests.map((plan) => plan.code)).size === 3
+    && tests.every((plan) => payUniStagingPlanTestAllowed(vendorId, plan, env))) return "ready";
+  if (!payUniStagingPlanTestScope(env) || tests.length !== 3) return "configuration";
+  const permits = tests.map((plan) => parsePermit(plan.description));
+  if (permits.some((permit) => !permit)) return "missing_permit";
+  // Another tenant's permit remains opaque.
+  if (permits.some((permit) => permit!.vendorId !== vendorId)) return "configuration";
+  if (permits.some((permit) => Date.parse(permit!.expiresAt) <= Date.now())) return "expired_permit";
+  if (permits.some((permit) => permit!.deploymentHost !== env.VERCEL_URL)) return "deployment_changed";
+  return "configuration";
+}
+
 /** A forged provider call cannot turn a product or stale order into a plan test. */
 export function payUniStagingPlanSessionAllowed(
   vendorId: string,

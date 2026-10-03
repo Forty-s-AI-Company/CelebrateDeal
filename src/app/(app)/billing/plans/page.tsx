@@ -10,7 +10,7 @@ import { allowedPaymentUrl, checkoutSessionFromMetadata, metadataObject } from "
 import { DirectEntryAttributionReset } from "@/components/direct-entry-attribution-reset";
 import { ExternalPaymentForm } from "@/components/external-payment-form";
 import { BillingPlanCheckoutForm } from "@/components/billing-plan-checkout-form";
-import { payUniStagingPlanTestAllowed, PAYUNI_PRODUCTION_UPP_URL } from "@/lib/payuni-staging-plan-test";
+import { payUniStagingPlanTestAllowed, payUniStagingPlanTestAvailability, PAYUNI_PRODUCTION_UPP_URL } from "@/lib/payuni-staging-plan-test";
 
 type BillingPlansSearchParams = { status?: string | string[]; error?: string | string[]; transactionId?: string | string[]; referral?: string | string[] };
 
@@ -27,6 +27,31 @@ function planVisibility(plans: BillingPlan[], vendorId: string) {
 
 function queryValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function testAvailabilityMessage(availability: ReturnType<typeof payUniStagingPlanTestAvailability> | null) {
+  switch (availability) {
+    case "expired_permit": return "正式金流測試許可已到期，暫不開放方案付款。";
+    case "deployment_changed": return "網站已更新，正式金流測試許可尚未綁定目前版本，暫不開放方案付款。";
+    case "missing_permit": return "正式金流測試許可尚未啟用，暫不開放方案付款。";
+    default: return "此測試站的正式金流方案設定尚未通過檢查，暫不開放方案付款。";
+  }
+}
+
+function checkoutErrorMessage(error: string, unresolvedLivePayment: boolean) {
+  if (error === "unavailable") return "方案不存在或已停止銷售，請重新整理後再選擇。";
+  if (error === "provider_not_configured") return "平台付款服務尚未完成設定，方案尚未啟用，請聯絡客服。";
+  if (error === "checkout") return "付款頁建立失敗，方案尚未啟用，請稍後再試。";
+  if (error === "conflict" && unresolvedLivePayment) return "舊 PAYUNi 付款結果尚未確認，請先核對該筆結果，避免重複付款。";
+  return "方案更新發生衝突，請稍後再試。";
+}
+
+async function unresolvedStagingCheckoutCount(livePreview: boolean, owner: boolean, vendorId: string) {
+  if (!livePreview || !owner) return 0;
+  // A local pending row does not establish that PAYUNi received a payment.
+  return getDb().paymentTransaction.count({
+    where: { vendorId, providerName: "payuni", paymentMode: "platform", status: "pending" },
+  });
 }
 
 type PlatformReferralPresentation = {
@@ -122,7 +147,7 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
   const referralContextRequested = queryValue(query.referral) === "1";
   const referralPresentationPromise = loadPlatformReferralPresentation(referralContextRequested);
   const livePreview = process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production";
-  const [plans, currentSubscription, pendingCheckout, csrfToken, referralPresentation] = await Promise.all([
+  const [plans, currentSubscription, pendingCheckout, csrfToken, referralPresentation, unresolvedCount] = await Promise.all([
     getDb().billingPlan.findMany({
       where: livePreview ? {
         OR: [
@@ -140,9 +165,11 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
     loadPendingPlanCheckout(vendor.id, transactionId, canManageBilling),
     canManageBilling ? getCsrfToken() : Promise.resolve(""),
     referralPresentationPromise,
+    unresolvedStagingCheckoutCount(livePreview, canManageBilling, vendor.id),
   ]);
   // Show no purchasable plans until all three database prices are exact.
   const visible = planVisibility(plans, vendor.id);
+  const testAvailability = livePreview ? payUniStagingPlanTestAvailability(vendor.id, plans) : null;
   const status = queryValue(query.status);
   const error = queryValue(query.error);
   const checkout = pendingCheckout;
@@ -185,13 +212,7 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
       ) : null}
       {error ? (
         <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
-          {error === "unavailable"
-            ? "方案不存在或已停止銷售，請重新整理後再選擇。"
-            : error === "provider_not_configured"
-              ? "平台付款服務尚未完成設定，方案尚未啟用，請聯絡客服。"
-              : error === "checkout"
-                ? "付款頁建立失敗，方案尚未啟用，請稍後再試。"
-                : "方案更新發生衝突，請稍後再試。"}
+          {checkoutErrorMessage(error, livePreview && unresolvedCount > 0)}
         </p>
       ) : null}
       <Card className="mb-4 bg-blue-50/60">
@@ -203,7 +224,13 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
       </Card>
       {visible.unavailable ? (
         <p role="alert" className="mb-4 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-800">
-          此測試站的正式金流方案尚未完成隔離設定，暫不開放方案付款。
+          {testAvailabilityMessage(testAvailability)}
+        </p>
+      ) : null}
+      {unresolvedCount > 0 ? (
+        <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          尚有待確認的 PAYUNi 付款紀錄。這是系統內的結帳紀錄，不代表 PAYUNi 已收到交易或付款成功。
+          請先核對原付款結果；系統會保留紀錄，不會自動取消、重送或建立替代付款。
         </p>
       ) : null}
       <Card className="mb-4 border-violet-200 bg-violet-50/60">

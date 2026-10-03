@@ -3,6 +3,7 @@ import type { PaymentTransaction } from "@prisma/client";
 import {
   payUniStagingPlanSessionAllowed,
   payUniStagingPlanTestAllowed,
+  payUniStagingPlanTestAvailability,
   payUniStagingPlanTestScope,
   PAYUNI_STAGING_APP_ORIGIN,
   PAYUNI_STAGING_PLAN_PERMIT_PREFIX,
@@ -46,6 +47,19 @@ const transaction = {
 } as unknown as PaymentTransaction;
 
 describe("staging live plan scope", () => {
+  it("explains expired and deployment-bound permits without enabling checkout", () => {
+    const env = environment();
+    const tests = Object.entries({ "staging-payuni-starter": 100, "staging-payuni-growth": 200, "staging-payuni-team-pro": 300 })
+      .map(([code, monthlyPriceCents]) => ({ ...plan, code, monthlyPriceCents }));
+    expect(payUniStagingPlanTestAvailability("synthetic-vendor", tests, env)).toBe("ready");
+    const expired = tests.map((test) => ({ ...test, description: permit.replace("2099-01-01", "2000-01-01") }));
+    expect(payUniStagingPlanTestAvailability("synthetic-vendor", expired, env)).toBe("expired_permit");
+    expect(expired.every((test) => !payUniStagingPlanTestAllowed("synthetic-vendor", test, env))).toBe(true);
+    expect(payUniStagingPlanTestAvailability("synthetic-vendor", tests, { ...env, VERCEL_URL: "new.vercel.app" })).toBe("deployment_changed");
+    expect(payUniStagingPlanTestAvailability("synthetic-vendor", tests.map((test) => ({ ...test, description: null })), env)).toBe("missing_permit");
+    expect(payUniStagingPlanTestAvailability("other-vendor", expired, env)).toBe("configuration");
+    expect(payUniStagingPlanTestAvailability("synthetic-vendor", tests, { ...env, PAYUNI_STAGING_PLAN_TEST_ENABLED: "false" })).toBe("configuration");
+  });
   it("accepts only the inactive test plan, designated vendor and bound deployment", () => {
     const env = environment();
     expect(payUniStagingPlanTestScope(env)).toBe(true);
