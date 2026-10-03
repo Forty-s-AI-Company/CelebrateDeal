@@ -31,6 +31,9 @@ export const RELEASE_CRITICAL_ENVIRONMENT_KEYS = Object.freeze([
   "PAYUNI_HASH_KEY",
   "PAYUNI_HASH_IV",
   "PAYUNI_MERCHANT_ID",
+  "PAYUNI_SANDBOX_HASH_KEY",
+  "PAYUNI_SANDBOX_HASH_IV",
+  "PAYUNI_SANDBOX_MERCHANT_ID",
   "RATE_LIMIT_PROVIDER",
   "UPSTASH_REDIS_REST_URL",
   "UPSTASH_REDIS_REST_TOKEN",
@@ -100,8 +103,17 @@ async function collectFiles(root, current = root) {
 }
 
 export function environmentAvailability(source = process.env) {
+  const production = ["PAYUNI_HASH_KEY", "PAYUNI_HASH_IV", "PAYUNI_MERCHANT_ID"];
+  const sandbox = ["PAYUNI_SANDBOX_HASH_KEY", "PAYUNI_SANDBOX_HASH_IV", "PAYUNI_SANDBOX_MERCHANT_ID"];
+  const allPayUniCredentials = new Set([...sandbox, ...production]);
+  const selected = source.PAYUNI_ENV === "production"
+    ? production
+    : source.PAYUNI_ENV === "sandbox"
+      ? sandbox
+      : [];
+  const keys = [...RELEASE_CRITICAL_ENVIRONMENT_KEYS.filter((key) => !allPayUniCredentials.has(key)), ...selected];
   return Object.freeze(Object.fromEntries(
-    RELEASE_CRITICAL_ENVIRONMENT_KEYS.map((key) => [key, Boolean(String(source[key] ?? "").trim())]),
+    keys.map((key) => [key, Boolean(String(source[key] ?? "").trim())]),
   ));
 }
 

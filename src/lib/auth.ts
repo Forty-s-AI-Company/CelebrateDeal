@@ -60,13 +60,6 @@ function isFinanceRole(role?: string | null) {
   return Boolean(role && FINANCE_ROLES.includes(role as (typeof FINANCE_ROLES)[number]));
 }
 
-function requiresAdminMfa(input: {
-  isPlatformAdmin: boolean;
-  memberRole?: string | null;
-}) {
-  return input.isPlatformAdmin || isFinanceRole(input.memberRole);
-}
-
 function safeMfaNextPath(value: string, fallback = "/billing/usage") {
   return value.startsWith("/") && !value.startsWith("//") && !value.includes("\\")
     ? value
@@ -182,7 +175,7 @@ export async function revokeCurrentSession() {
   }
 }
 
-export async function getCurrentAuth() {
+export async function getCurrentAuth(options: { allowUnverifiedMfa?: boolean } = {}) {
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_COOKIE)?.value;
 
@@ -211,6 +204,13 @@ export async function getCurrentAuth() {
     return null;
   }
 
+  // A factor exists only after enrollment's TOTP confirmation. Pending setup
+  // lives in a separate cookie and must never block an account. Direct API
+  // callers receive no authenticated actor until an enabled factor is verified.
+  if (session.user.mfaFactor && !session.mfaVerifiedAt && !options.allowUnverifiedMfa) {
+    return null;
+  }
+
   const selectedMembership = chooseVendor(session.user, session.vendorId);
   const vendor = selectedMembership?.vendor ?? null;
 
@@ -220,10 +220,6 @@ export async function getCurrentAuth() {
     vendor,
     member: selectedMembership,
     isPlatformAdmin: isPlatformAdmin(session.user),
-    requiresAdminMfa: requiresAdminMfa({
-      isPlatformAdmin: isPlatformAdmin(session.user),
-      memberRole: selectedMembership?.role,
-    }),
     isMfaVerified: Boolean(session.mfaVerifiedAt),
   };
 }
@@ -233,16 +229,21 @@ export async function getCurrentVendor() {
   return auth?.vendor ?? null;
 }
 
-export async function requireAuth() {
-  const auth = await getCurrentAuth();
+export async function requireAuth(options: { allowUnverifiedMfa?: boolean; nextPath?: string } = {}) {
+  const auth = await getCurrentAuth({ allowUnverifiedMfa: true });
   if (!auth) {
     redirect("/login");
+  }
+  if (auth.user.mfaFactor && !auth.isMfaVerified && !options.allowUnverifiedMfa) {
+    const fallback = auth.isPlatformAdmin ? "/admin/billing/dashboard" : "/dashboard";
+    const next = safeMfaNextPath(options.nextPath ?? fallback, fallback);
+    redirect(`/mfa/verify?next=${encodeURIComponent(next)}`);
   }
   return auth;
 }
 
-export async function requireVendorContext() {
-  const auth = await requireAuth();
+export async function requireVendorContext(nextPath?: string, fallbackPath = "/dashboard") {
+  const auth = await requireAuth({ nextPath: nextPath ? safeMfaNextPath(nextPath, fallbackPath) : undefined });
   if (!auth.vendor) {
     redirect(auth.isPlatformAdmin ? "/admin/billing/dashboard" : "/login?error=no_vendor");
   }
@@ -257,8 +258,8 @@ export async function requireVendor() {
   return (await requireVendorContext()).vendor;
 }
 
-export async function requireVendorManagerContext() {
-  const { auth, vendor } = await requireVendorContext();
+export async function requireVendorManagerContext(nextPath?: string) {
+  const { auth, vendor } = await requireVendorContext(nextPath, "/orders");
   const role = auth.member?.role;
   if (
     !auth.member
@@ -275,8 +276,8 @@ export async function requireVendorManager() {
   return (await requireVendorManagerContext()).vendor;
 }
 
-export async function requireVendorSupportContext() {
-  const { auth, vendor } = await requireVendorContext();
+export async function requireVendorSupportContext(nextPath?: string) {
+  const { auth, vendor } = await requireVendorContext(nextPath, "/support-cases");
   const role = auth.member?.role;
   if (
     !auth.member
@@ -290,16 +291,7 @@ export async function requireVendorSupportContext() {
 }
 
 export async function requireVendorSupportMfa(nextPath = "/support-cases") {
-  const { auth, vendor } = await requireVendorSupportContext();
-
-  if (!auth.user.mfaFactor) {
-    redirect("/mfa/setup");
-  }
-
-  if (!auth.isMfaVerified) {
-    const safeNext = safeMfaNextPath(nextPath, "/support-cases");
-    redirect(`/mfa/verify?next=${encodeURIComponent(safeNext)}`);
-  }
+  const { auth, vendor } = await requireVendorSupportContext(nextPath);
 
   return {
     auth,
@@ -310,16 +302,7 @@ export async function requireVendorSupportMfa(nextPath = "/support-cases") {
 }
 
 export async function requireVendorManagerMfa(nextPath = "/orders") {
-  const { auth, vendor } = await requireVendorManagerContext();
-
-  if (!auth.user.mfaFactor) {
-    redirect("/mfa/setup");
-  }
-
-  if (!auth.isMfaVerified) {
-    const safeNext = safeMfaNextPath(nextPath, "/orders");
-    redirect(`/mfa/verify?next=${encodeURIComponent(safeNext)}`);
-  }
+  const { auth, vendor } = await requireVendorManagerContext(nextPath);
 
   return {
     auth,
@@ -330,23 +313,13 @@ export async function requireVendorManagerMfa(nextPath = "/orders") {
 }
 
 export async function requireFinanceAdmin() {
-  const auth = await requireAuth();
+  const auth = await requireAuth({ nextPath: "/admin/billing/dashboard" });
 
   // `/admin`、退款、月結、出款與 webhook 重送都是平台層級操作。
   // 商家 owner/admin/accountant 另有 tenant-scoped `/billing` 畫面，不能因
   // 角色名稱含財務權限就取得跨商家的平台後台資料。
   if (!auth.isPlatformAdmin) {
     redirect("/dashboard");
-  }
-
-  if (auth.requiresAdminMfa) {
-    if (!auth.user.mfaFactor) {
-      redirect("/mfa/setup");
-    }
-
-    if (!auth.isMfaVerified) {
-      redirect("/mfa/verify?next=%2Fadmin%2Fbilling%2Fdashboard");
-    }
   }
 
   return {
@@ -358,7 +331,7 @@ export async function requireFinanceAdmin() {
 }
 
 export async function requireVendorFinance(nextPath = "/billing/usage") {
-  const { auth, vendor } = await requireVendorContext();
+  const { auth, vendor } = await requireVendorContext(nextPath, "/billing/usage");
   const member = auth.member;
 
   if (
@@ -367,15 +340,6 @@ export async function requireVendorFinance(nextPath = "/billing/usage") {
     || !isFinanceRole(member.role)
   ) {
     redirect("/dashboard?error=insufficient_role");
-  }
-
-  if (!auth.user.mfaFactor) {
-    redirect("/mfa/setup");
-  }
-
-  if (!auth.isMfaVerified) {
-    const safeNext = safeMfaNextPath(nextPath);
-    redirect(`/mfa/verify?next=${encodeURIComponent(safeNext)}`);
   }
 
   return {
@@ -435,10 +399,6 @@ export async function authenticateUser(email: string, password: string) {
     vendor: membership?.vendor ?? null,
     member: membership,
     isPlatformAdmin: isPlatformAdmin(user),
-    requiresAdminMfa: requiresAdminMfa({
-      isPlatformAdmin: isPlatformAdmin(user),
-      memberRole: membership?.role,
-    }),
   };
 }
 

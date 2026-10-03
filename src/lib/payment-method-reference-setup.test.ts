@@ -20,7 +20,9 @@ beforeEach(() => {
 });
 
 const base = {
-  providerName: "payuni",
+    providerName: "payuni",
+    setupIntentId: "intent-1",
+    setupNonce: "synthetic-nonce",
   eventId: "setup-event-1",
   vendorId: "vendor-1",
   scopeType: "VENDOR" as const,

@@ -1,0 +1,223 @@
+import { spawnSync } from "node:child_process";
+import { closeSync, mkdtempSync, openSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+  assertLinkedStagingProject,
+  currentUserSid,
+  restrictToCurrentUser,
+  sanitizedCliEnvironment,
+} from "./staging-payuni-management-prepare";
+import {
+  PAYUNI_STAGING_APP_ORIGIN,
+  PAYUNI_STAGING_PLAN_PERMIT_PREFIX,
+  PAYUNI_STAGING_PLAN_PRICES_CENTS,
+} from "../src/lib/payuni-staging-plan-test";
+
+// This command only binds or revokes the three fixed staging test plans. The
+// linked project, CLI profile, merchant and deployment hostname are fixed.
+const MAIN_WORKSPACE = "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal";
+const STAGING_PROFILE = "celebratedeal-staging-20261002";
+const STAGING_PROJECT_REF = "ocbugvgojrunvenozsbx";
+const STAGING_PROJECT_ID = "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn";
+const STAGING_BRANCH = "codex/prelaunch-engineering-20260929";
+const TEST_EMAIL = "zeroyuanbrothers@gmail.com";
+const TEST_SLUG = "payuni-plan-test";
+const MERCHANT_ID = "HTCU1130301000101";
+const HOST_PATTERN = /^celebrate-deal-staging-[a-z0-9]{6,32}-a25814740s-projects\.vercel\.app$/u;
+const VENDOR_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/u;
+const CODES = Object.keys(PAYUNI_STAGING_PLAN_PRICES_CENTS) as Array<keyof typeof PAYUNI_STAGING_PLAN_PRICES_CENTS>;
+
+type PermitMode = "enable" | "disable";
+
+function literal(value: string) {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function codesSql() {
+  return CODES.map(literal).join(", ");
+}
+
+export function assertPermitEnvironment(env: NodeJS.ProcessEnv, mode: PermitMode) {
+  if (env.STAGING_PAYUNI_TEST_CHANGE_APPROVED !== "true") throw new Error("PERMIT_CHANGE_NOT_APPROVED");
+  // Emergency revocation remains available if the deployment, merchant or
+  // unrelated runtime flags drift. The linked staging target is checked later.
+  if (mode === "disable") return;
+  const vendorId = env.PAYUNI_STAGING_PLAN_TEST_VENDOR_ID ?? "";
+  const host = env.PAYUNI_STAGING_PLAN_TEST_DEPLOYMENT_HOST ?? "";
+  if (env.VERCEL_ENV !== "preview"
+    || env.VERCEL_PROJECT_ID !== STAGING_PROJECT_ID
+    || env.VERCEL_GIT_COMMIT_REF !== STAGING_BRANCH
+    || env.NEXT_PUBLIC_APP_URL !== PAYUNI_STAGING_APP_ORIGIN
+    || env.NEXT_PUBLIC_SUPABASE_URL !== `https://${STAGING_PROJECT_REF}.supabase.co`
+    || env.PAYMENT_PROVIDER !== "payuni"
+    || env.PAYUNI_ENV !== "production"
+    || env.PAYUNI_LIVE_PROBE_ENABLED === "true"
+    || env.PAYUNI_STAGING_PLAN_TEST_MERCHANT_ID !== MERCHANT_ID
+    || !VENDOR_ID_PATTERN.test(vendorId)
+    || !HOST_PATTERN.test(host)) {
+    throw new Error("PERMIT_ENABLE_TARGET_INVALID");
+  }
+}
+
+export function buildPermitSql(mode: PermitMode, input?: { vendorId: string; host: string; merchantId: string }) {
+  if (mode === "enable" && (!input || !VENDOR_ID_PATTERN.test(input.vendorId)
+    || !HOST_PATTERN.test(input.host) || input.merchantId !== MERCHANT_ID)) {
+    throw new Error("PERMIT_ENABLE_TARGET_INVALID");
+  }
+  const expectedPlans = CODES.map((code) => `(${literal(code)}, ${PAYUNI_STAGING_PLAN_PRICES_CENTS[code]})`).join(", ");
+  const prefix = `BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+SET LOCAL lock_timeout = '3s';
+SET LOCAL statement_timeout = '20s';
+DO $staging_payuni_permit$
+DECLARE
+  matched integer;
+  affected integer;
+  permit_text text;
+BEGIN
+  PERFORM pg_catalog.pg_advisory_xact_lock(351, 20261003);
+  IF current_setting('transaction_isolation') <> 'serializable' THEN
+    RAISE EXCEPTION 'PERMIT_ISOLATION_INVALID';
+  END IF;`;
+
+  if (mode === "disable") {
+    return `${prefix}
+  SELECT count(*) INTO matched FROM public."BillingPlan"
+    WHERE "code" IN (${codesSql()}) AND ("description" IS NOT NULL OR "isActive" = true);
+  UPDATE public."BillingPlan" SET "description" = NULL, "isActive" = false, "updatedAt" = CURRENT_TIMESTAMP
+    WHERE "code" IN (${codesSql()}) AND ("description" IS NOT NULL OR "isActive" = true);
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  IF affected <> matched THEN RAISE EXCEPTION 'PERMIT_DISABLE_COUNT_INVALID'; END IF;
+  SELECT count(*) INTO matched FROM public."BillingPlan"
+    WHERE "code" IN (${codesSql()}) AND ("description" IS NOT NULL OR "isActive" = true);
+  IF matched <> 0 THEN RAISE EXCEPTION 'PERMIT_DISABLE_VERIFICATION_FAILED'; END IF;
+END
+$staging_payuni_permit$;
+COMMIT;`;
+  }
+
+  const target = input!;
+  return `${prefix}
+  -- Require the dedicated owner to have exactly one active membership in
+  -- exactly one vendor. Unique email/slug constraints protect both identities.
+  SELECT count(*) INTO matched FROM public."Vendor" AS vendor
+    JOIN public."VendorMember" AS member ON member."vendorId" = vendor."id"
+    JOIN public."User" AS owner ON owner."id" = member."userId"
+    WHERE vendor."id" = ${literal(target.vendorId)}
+      AND vendor."slug" = ${literal(TEST_SLUG)} AND vendor."email" = ${literal(TEST_EMAIL)}
+      AND owner."email" = ${literal(TEST_EMAIL)}
+      AND member."role" = 'owner' AND member."status" = 'active';
+  IF matched <> 1 THEN RAISE EXCEPTION 'PERMIT_VENDOR_IDENTITY_INVALID'; END IF;
+  SELECT count(*) INTO matched FROM public."VendorMember"
+    WHERE "vendorId" = ${literal(target.vendorId)};
+  IF matched <> 1 THEN RAISE EXCEPTION 'PERMIT_VENDOR_MEMBERSHIP_INVALID'; END IF;
+  SELECT count(*) INTO matched FROM public."VendorMember"
+    WHERE "userId" = (SELECT "id" FROM public."User" WHERE "email" = ${literal(TEST_EMAIL)});
+  IF matched <> 1 THEN RAISE EXCEPTION 'PERMIT_OWNER_MEMBERSHIP_INVALID'; END IF;
+
+  PERFORM 1 FROM public."BillingPlan" WHERE "code" IN (${codesSql()}) FOR UPDATE;
+  SELECT count(*) INTO matched FROM public."BillingPlan" AS plan
+    JOIN (VALUES ${expectedPlans}) AS expected(code, cents)
+      ON expected.code = plan."code"
+    WHERE plan."monthlyPriceCents" = expected.cents
+      AND plan."isActive" = false AND plan."description" IS NULL;
+  IF matched <> 3 THEN RAISE EXCEPTION 'PERMIT_TEST_PLANS_INVALID'; END IF;
+  SELECT count(*) INTO matched FROM public."BillingPlan"
+    WHERE "code" IN ('starter', 'growth', 'team-pro') AND "isActive" = true;
+  IF matched <> 3 THEN RAISE EXCEPTION 'PERMIT_ORIGINAL_PLANS_INVALID'; END IF;
+  SELECT count(*) INTO matched FROM public."PaymentTransaction"
+    WHERE "vendorId" = ${literal(target.vendorId)} AND "providerName" = 'payuni'
+      AND "paymentMode" = 'platform' AND "status" = 'pending';
+  IF matched <> 0 THEN RAISE EXCEPTION 'PERMIT_PENDING_PAYMENT_EXISTS'; END IF;
+
+  -- Construct the runtime permit in the DB so all three rows receive one
+  -- identical expiry based on the same database transaction timestamp.
+  permit_text := ${literal(PAYUNI_STAGING_PLAN_PERMIT_PREFIX)} || pg_catalog.jsonb_build_object(
+    'deploymentHost', ${literal(target.host)},
+    'merchantId', ${literal(target.merchantId)},
+    'vendorId', ${literal(target.vendorId)},
+    'expiresAt', CURRENT_TIMESTAMP + interval '2 hours'
+  )::text;
+  UPDATE public."BillingPlan" SET "description" = permit_text,
+    "isActive" = false, "updatedAt" = CURRENT_TIMESTAMP
+    WHERE "code" IN (${codesSql()}) AND "description" IS NULL AND "isActive" = false;
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  IF affected <> 3 THEN RAISE EXCEPTION 'PERMIT_ENABLE_COUNT_INVALID'; END IF;
+  SELECT count(*) INTO matched FROM public."BillingPlan" AS plan
+    JOIN (VALUES ${expectedPlans}) AS expected(code, cents)
+      ON expected.code = plan."code"
+    WHERE plan."monthlyPriceCents" = expected.cents
+      AND plan."isActive" = false AND plan."description" = permit_text;
+  IF matched <> 3 THEN RAISE EXCEPTION 'PERMIT_ENABLE_VERIFICATION_FAILED'; END IF;
+END
+$staging_payuni_permit$;
+COMMIT;`;
+}
+
+function checkedChild(command: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv) {
+  const result = spawnSync(command, args, {
+    cwd, env, shell: false, windowsHide: true, encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"], timeout: 30_000, maxBuffer: 1024 * 1024,
+  });
+  // SQL and CLI output stay in memory and are never copied to console/logs.
+  if (result.error || result.status !== 0) throw new Error("PERMIT_CHILD_FAILED");
+  return result.stdout.trim();
+}
+
+export function runPermit(args: string[], env: NodeJS.ProcessEnv = process.env) {
+  if (args.length !== 1 || (args[0] !== "--enable" && args[0] !== "--disable")) {
+    throw new Error("PERMIT_MODE_INVALID");
+  }
+  const mode: PermitMode = args[0] === "--enable" ? "enable" : "disable";
+  assertPermitEnvironment(env, mode);
+  assertLinkedStagingProject();
+  if (process.platform !== "win32") throw new Error("PERMIT_PLATFORM_INVALID");
+  const safeCliEnv = sanitizedCliEnvironment(env);
+  if (checkedChild("supabase.exe", ["--version"], MAIN_WORKSPACE, safeCliEnv) !== "2.108.0") {
+    throw new Error("PERMIT_CLI_VERSION_INVALID");
+  }
+  const sql = mode === "enable"
+    ? buildPermitSql("enable", {
+      vendorId: env.PAYUNI_STAGING_PLAN_TEST_VENDOR_ID!,
+      host: env.PAYUNI_STAGING_PLAN_TEST_DEPLOYMENT_HOST!,
+      merchantId: env.PAYUNI_STAGING_PLAN_TEST_MERCHANT_ID!,
+    })
+    : buildPermitSql("disable");
+
+  const sid = currentUserSid();
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "celebratedeal-staging-permit-"));
+  const sqlFile = path.join(tempDir, "permit.sql");
+  let createdFile = false;
+  let operationError: unknown;
+  try {
+    restrictToCurrentUser(tempDir, sid, true);
+    closeSync(openSync(sqlFile, "wx", 0o600));
+    createdFile = true;
+    restrictToCurrentUser(sqlFile, sid, false);
+    writeFileSync(sqlFile, sql, { encoding: "utf8", flag: "w" });
+    checkedChild("supabase.exe", ["--workdir", MAIN_WORKSPACE, "db", "query", "--linked",
+      "--profile", STAGING_PROFILE, "--file", sqlFile], MAIN_WORKSPACE, safeCliEnv);
+  } catch (error) {
+    operationError = error;
+  } finally {
+    try {
+      if (createdFile) unlinkSync(sqlFile);
+      rmdirSync(tempDir);
+    } catch {
+      throw new Error("PERMIT_TEMP_CLEANUP_FAILED");
+    }
+  }
+  if (operationError) throw operationError;
+}
+
+if (process.argv[1]?.endsWith("staging-payuni-management-permit.ts")) {
+  try {
+    runPermit(process.argv.slice(2));
+    process.stdout.write("STAGING_PAYUNI_PERMIT_OK\n");
+  } catch (error) {
+    const code = error instanceof Error && /^PERMIT_[A-Z_]+$|^LINKED_PROJECT_INVALID$/u.test(error.message)
+      ? error.message : "STAGING_PAYUNI_PERMIT_FAILED";
+    process.stderr.write(`${code}\n`);
+    process.exitCode = 1;
+  }
+}

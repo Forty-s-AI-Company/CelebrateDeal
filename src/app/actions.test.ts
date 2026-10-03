@@ -5689,7 +5689,7 @@ describe("COV-04 login success attribution", () => {
     }));
   });
 
-  it("routes a platform administrator without MFA to setup and preserves the success audit", async () => {
+  it("routes a platform administrator without MFA to the admin dashboard and preserves the success audit", async () => {
     mocks.authenticateUser.mockResolvedValue({
       user: { id: "admin-1", email: "admin@example.com", platformRole: "platform_admin", mfaFactor: null },
       vendor: null,
@@ -5697,7 +5697,7 @@ describe("COV-04 login success attribution", () => {
       isPlatformAdmin: true,
     });
 
-    await expect(loginAction(loginFormData("admin@example.com"))).rejects.toThrow("redirect:/mfa/setup");
+    await expect(loginAction(loginFormData("admin@example.com"))).rejects.toThrow("redirect:/admin/billing/dashboard");
     expect(mocks.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({
       action: "login_success",
       actorLabel: "platform_admin",
@@ -5725,6 +5725,18 @@ describe("COV-04 login success attribution", () => {
       action: "login_success",
       actorLabel: "platform_admin",
     }));
+  });
+
+  it("routes a vendor with enabled MFA to verification before the dashboard", async () => {
+    mocks.authenticateUser.mockResolvedValue({
+      user: { id: "owner-1", email: "owner@example.com", platformRole: "none", mfaFactor: { id: "factor-1" } },
+      vendor: { id: "vendor-1" },
+      member: { role: "owner" },
+      isPlatformAdmin: false,
+    });
+
+    await expect(loginAction(loginFormData("owner@example.com"))).rejects.toThrow("redirect:/mfa/verify?next=%2Fdashboard");
+    expect(mocks.createUserSession).toHaveBeenCalledWith(expect.objectContaining({ vendorId: "vendor-1" }));
   });
 });
 

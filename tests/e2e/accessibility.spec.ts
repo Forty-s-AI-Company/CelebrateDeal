@@ -415,8 +415,13 @@ test("platform-admin MFA and static operations routes have no blocking axe viola
   await page.getByLabel("Email").fill(fixture.adminEmail);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
-  await expect(page).toHaveURL(/\/mfa\/setup$/);
-  await waitForStableRoute(page, "/mfa/setup");
+  await expect(page).toHaveURL(/\/admin\/billing\/dashboard$/);
+  await waitForStableRoute(page, "/admin/billing/dashboard");
+  await expectNoBlockingAxeViolations(page);
+
+  // Platform administrators may choose to enroll, then future sessions must
+  // complete the challenge before any authenticated admin page is available.
+  await gotoStableRoute(page, "/mfa/setup");
   await expectNoBlockingAxeViolations(page);
 
   await page.getByRole("button", { name: "開始建立 TOTP" }).click();
@@ -441,7 +446,7 @@ test("platform-admin MFA and static operations routes have no blocking axe viola
   await waitForStableRoute(page, "/mfa/verify?next=%2Fadmin%2Fbilling%2Fdashboard");
   await expectNoBlockingAxeViolations(page);
   await page.getByLabel("驗證碼").fill(totpCodeForTimestamp(totpSeed!));
-  await page.getByRole("button", { name: "確認並進入後台" }).click();
+  await page.getByRole("button", { name: "確認並繼續" }).click();
   await expect(page).toHaveURL(/\/admin\/billing\/dashboard/);
   await waitForStableRoute(page, "/admin/billing/dashboard");
 

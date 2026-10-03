@@ -7,6 +7,8 @@ const REPOSITORY = "Forty-s-AI-Company/CelebrateDeal";
 const BACKUP_WORKFLOW = ".github/workflows/secure-staging-validation.yml";
 const MINIMUM_BACKUP_COMMIT = "e13084f37edf9669f47c02351e646972201ae211";
 const SOURCE_SHA = "9193326824b8b6bf774bdfa28e4783a1a1b8f304";
+// Immutable migration tree for the retained RC backup, independent of newer HEAD migrations.
+export const BACKUP_MIGRATION_TREE_SHA = "8204bf3ce05a309035f55b2f90aaffb18aed05c8";
 const ARCHIVE_ARTIFACT = `secure-staging-encrypted-backup-${SOURCE_SHA}`;
 const RECEIPT_ARTIFACT = `secure-staging-wp2-readonly-restore-${SOURCE_SHA}`;
 const SAFE_SHA = /^[a-f0-9]{40}$/u;
@@ -19,7 +21,10 @@ const APPROVED_BACKUP_BLOBS = Object.freeze({
     "797805d471f245ce58130ad0a878650ab0bd453e", // #347: payment-only task; WP2 source, secrets, backup and artifacts unchanged.
   ],
   "scripts/staging-retained-backup.mjs": ["acf26bf628903feef3d549e4500b5c478e7e4312"],
-  "scripts/validate-staging-retained-backup.mjs": ["8c1a8cdc551264b2121a9b075725eaa5770701e4"],
+  "scripts/validate-staging-retained-backup.mjs": [
+    "8c1a8cdc551264b2121a9b075725eaa5770701e4", // Original fixed-source validator.
+    "feb77db2dcca594828c45968383031fe2c984359", // Retained RC receipt stays pinned after later migrations.
+  ],
   "scripts/secure-staging-runner.mjs": [
     "50839ab6d2cf96b2c8a6a1d9870a9f29b2065555", // #288
     "8b14996eeca4e1616743fb6c168991287c626b28", // #290

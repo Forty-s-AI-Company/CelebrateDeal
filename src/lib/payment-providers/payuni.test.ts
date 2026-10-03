@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PaymentTransaction, Product, Vendor } from "@prisma/client";
+import type { BillingPlan, PaymentTransaction, Product, Vendor } from "@prisma/client";
 import { payUniPaymentProvider } from "@/lib/payment-providers/payuni";
 import { buildPayUniSandboxWebhookFixture } from "@/lib/payment-providers/payuni-fixtures";
 
@@ -8,10 +8,18 @@ const hashKey = "12345678901234567890123456789012";
 const hashIv = "1234567890123456";
 
 function stubPayUniEnv() {
+  vi.stubEnv("PAYUNI_SANDBOX_HASH_KEY", hashKey);
+  vi.stubEnv("PAYUNI_SANDBOX_HASH_IV", hashIv);
+  vi.stubEnv("PAYUNI_SANDBOX_MERCHANT_ID", "TESTMER");
+  vi.stubEnv("PAYUNI_ENV", "sandbox");
+}
+
+function stubPayUniProductionEnv() {
+  stubPayUniEnv();
+  vi.stubEnv("PAYUNI_ENV", "production");
   vi.stubEnv("PAYUNI_HASH_KEY", hashKey);
   vi.stubEnv("PAYUNI_HASH_IV", hashIv);
   vi.stubEnv("PAYUNI_MERCHANT_ID", "TESTMER");
-  vi.stubEnv("PAYUNI_ENV", "sandbox");
 }
 
 function decryptCheckoutPayload(encryptInfo: string) {
@@ -106,18 +114,67 @@ describe("unreferenced Sandbox order observation", () => {
 
 describe("PayUni provider", () => {
   it("reports checkout readiness only when all required runtime configuration is valid", () => {
-    vi.stubEnv("PAYUNI_MERCHANT_ID", "");
+    vi.stubEnv("PAYUNI_SANDBOX_MERCHANT_ID", "");
     expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
 
     stubPayUniEnv();
     expect(payUniPaymentProvider.checkoutReadiness()).toBe("ready");
 
-    vi.stubEnv("PAYUNI_HASH_KEY", "too-short");
+    vi.stubEnv("PAYUNI_SANDBOX_HASH_KEY", "too-short");
     expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
 
     stubPayUniEnv();
     vi.stubEnv("PAYUNI_ENV", "invalid");
     expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
+  });
+
+  it("blocks ordinary checkout on a Preview connected to the live merchant", async () => {
+    stubPayUniEnv();
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("PAYUNI_ENV", "production");
+    expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
+    await expect(payUniPaymentProvider.createCheckoutSession?.({
+      transaction: { id: "tx_1", orderNumber: "CD-TEST-001", grossAmountCents: 199000 } as PaymentTransaction,
+      vendor: { id: "vendor-1" } as Vendor,
+      description: "Ordinary checkout",
+      appUrl: "https://staging.example.test",
+      returnAppUrl: "https://staging.example.test",
+    })).rejects.toThrow("General PayUni checkout is disabled");
+  });
+
+  it("allows only the scoped 2 TWD staging plan through the production UPP", async () => {
+    stubPayUniProductionEnv();
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VERCEL_PROJECT_ID", "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn");
+    vi.stubEnv("VERCEL_GIT_COMMIT_REF", "codex/prelaunch-engineering-20260929");
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    vi.stubEnv("PAYUNI_STAGING_PLAN_TEST_ENABLED", "true");
+    vi.stubEnv("PAYUNI_STAGING_PLAN_TEST_VENDOR_ID", "synthetic-vendor");
+    vi.stubEnv("VERCEL_URL", "staging-test.vercel.app");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://celebrate-deal-staging.carry-digital-nomad.in.net");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ocbugvgojrunvenozsbx.supabase.co");
+    vi.stubEnv("DATABASE_URL", "postgresql:" + "//postgres.ocbugvgojrunvenozsbx:synthetic@aws-0-ap-northeast-1.pooler.supabase.com/postgres");
+    vi.stubEnv("DIRECT_URL", "postgresql:" + "//postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres");
+    vi.stubEnv("STAGING_DATABASE_URL", "postgresql:" + "//postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres");
+    const billingPlan = { id: "growth-id", code: "staging-payuni-growth", name: "Growth", monthlyPriceCents: 200, isActive: false, description: `staging-payuni-plan-v1:${JSON.stringify({ deploymentHost: "staging-test.vercel.app", merchantId: "TESTMER", vendorId: "synthetic-vendor", expiresAt: "2099-01-01T00:00:00.000Z" })}` } as BillingPlan;
+    const transaction = {
+      id: "tx-growth", vendorId: "synthetic-vendor", orderNumber: "CD-TEST-002",
+      providerName: "payuni", paymentMode: "platform", status: "pending", currency: "TWD",
+      grossAmountCents: 200,
+      metadata: { billingPurpose: "platform_subscription_checkout", platformSubscriptionId: "sub-growth", billingPlanId: "growth-id", billingPlanCode: "staging-payuni-growth", stagingPayUniPlanPermit: billingPlan.description },
+    } as unknown as PaymentTransaction;
+    const vendor = { id: "synthetic-vendor" } as Vendor;
+    expect(payUniPaymentProvider.checkoutReadiness()).toBe("unavailable");
+    const session = await payUniPaymentProvider.createCheckoutSession?.({
+      transaction, billingPlan, vendor,
+      appUrl: "https://celebrate-deal-staging.carry-digital-nomad.in.net",
+    });
+    expect(session?.formAction).toBe("https://api.payuni.com.tw/api/upp");
+    expect(decryptCheckoutPayload(session?.formPayload?.EncryptInfo ?? "")).toMatchObject({ TradeAmt: "2" });
+    await expect(payUniPaymentProvider.createCheckoutSession?.({
+      transaction: { ...transaction, grossAmountCents: 300 }, billingPlan, vendor,
+      appUrl: "https://celebrate-deal-staging.carry-digital-nomad.in.net",
+    })).rejects.toThrow("General PayUni checkout is disabled");
   });
 
   it("builds a server-side checkout form payload with PayUni fields", async () => {
@@ -388,8 +445,7 @@ describe("PayUni provider", () => {
   });
 
   it("queries the fixed Production endpoint exactly once and preserves the read-only request contract", async () => {
-    stubPayUniEnv();
-    vi.stubEnv("PAYUNI_ENV", "production");
+    stubPayUniProductionEnv();
     const fetchMock = vi.fn().mockResolvedValue(new Response(payUniEnvelope({
       Status: "SUCCESS",
       Result: JSON.stringify({
@@ -430,8 +486,7 @@ describe("PayUni provider", () => {
     ["gross amount", { TradeNo: "trade-query-346", TradeAmt: "1681" }],
     ["order reference", { MerTradeNo: "different-order", TradeNo: "trade-query-346", TradeAmt: "1680" }],
   ])("fails closed when Production query identity does not match the transaction: %s", async (_label, resultPatch) => {
-    stubPayUniEnv();
-    vi.stubEnv("PAYUNI_ENV", "production");
+    stubPayUniProductionEnv();
     const fetchMock = vi.fn().mockResolvedValue(new Response(payUniEnvelope({
       Status: "SUCCESS",
       Result: JSON.stringify(Object.assign({
@@ -451,8 +506,7 @@ describe("PayUni provider", () => {
   });
 
   it("fails closed before any provider call for a non-PayUni transaction", async () => {
-    stubPayUniEnv();
-    vi.stubEnv("PAYUNI_ENV", "production");
+    stubPayUniProductionEnv();
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 

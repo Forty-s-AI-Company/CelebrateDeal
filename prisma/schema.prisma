@@ -129,6 +129,8 @@ model Vendor {
   payoutItems                      PayoutItem[]
   paymentAccounts                  PaymentAccount[]
   paymentMethodReferences          PaymentMethodReference[]
+  paymentMethodSetupIntents         PaymentMethodSetupIntent[]
+  payUniLiveProbe                   PayUniLiveProbe?
   paymentTransactions              PaymentTransaction[]
   inventoryReservations            InventoryReservation[]
   refundRecords                    RefundRecord[]
@@ -293,6 +295,7 @@ model VendorMember {
   supportCasesAssigned        SupportCase[]                 @relation("SupportCaseAssignee")
   supportCaseEvents           SupportCaseEvent[]            @relation("SupportCaseEventActor")
   supportRefundsRequested     SupportRefundHandoff[]        @relation("SupportRefundRequestedBy")
+  paymentMethodSetupConsents  PaymentMethodSetupIntent[]
 
   @@unique([vendorId, userId])
   @@unique([vendorId, id])
@@ -1490,6 +1493,60 @@ model PaymentMethodReference {
   @@unique([vendorId, id])
   @@index([vendorId, scopeType, status])
   @@index([vendorId, membershipId, status])
+}
+
+/// Server-owned consent and callback binding for one payment method setup.
+/// The provider nonce is stored only as a digest; no card or provider form data belongs here.
+model PaymentMethodSetupIntent {
+  id            String   @id @default(cuid())
+  vendorId      String
+  providerName  String
+  scopeType     String
+  teamId        String?
+  membershipId  String?
+  nonceHash     String
+  consentActorId String
+  consentVersion String
+  consentedAt   DateTime
+  status        String   @default("pending")
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  providerEventId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  consentActor VendorMember @relation(fields: [vendorId, consentActorId], references: [vendorId, id], onDelete: Restrict)
+
+  @@index([vendorId, status, expiresAt])
+}
+
+/// One explicitly consented, one-time production-gateway verification on an
+/// isolated Preview tenant. The unique vendor key prevents another live run.
+model PayUniLiveProbe {
+  id                       String   @id @default(cuid())
+  vendorId                 String   @unique
+  setupIntentId            String   @unique
+  paymentMethodReferenceId String?
+  secondOrderNumber        String   @unique
+  consentActorId           String
+  consentVersion           String
+  consentText              String
+  consentedAt              DateTime
+  firstAmountCents         Int      @default(100)
+  secondAmountCents        Int      @default(100)
+  status                   String   @default("awaiting_setup")
+  dueAt                    DateTime?
+  attemptedAt              DateTime?
+  completedAt              DateTime?
+  providerTradeNo          String?
+  failureCode              String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+
+  @@index([status, dueAt])
 }
 
 model PaymentTransaction {

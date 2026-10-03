@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type BillingPlan, type PaymentTransaction } from "@prisma/client";
 import { cookies } from "next/headers";
 import { auditSnapshot, requestAuditMeta } from "@/lib/audit";
 import { requireVendorOwnerFinance } from "@/lib/auth";
@@ -16,6 +16,7 @@ import {
   PLATFORM_REFERRAL_COOKIE,
 } from "@/lib/platform-referral";
 import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
+import { payUniStagingPlanTestAllowed, PAYUNI_PRODUCTION_UPP_URL } from "@/lib/payuni-staging-plan-test";
 
 const PLAN_CHANGE_MAX_ATTEMPTS = 3;
 const DEFAULT_BILLING_PAYMENT_MODE = "platform";
@@ -24,7 +25,7 @@ const PLATFORM_SUBSCRIPTION_SUPERSEDED_STATUS = "payment_superseded";
 
 export type PlatformPlanCheckoutResult =
   | { kind: "redirect"; path: string }
-  | { kind: "checkout"; transactionId: string; referral: boolean };
+  | { kind: "checkout"; transactionId: string; referral: boolean; checkoutSession?: Prisma.InputJsonValue };
 
 export function platformPlanCheckoutPath(result: PlatformPlanCheckoutResult) {
   if (result.kind === "redirect") return result.path;
@@ -60,6 +61,63 @@ function hasStoredCheckoutSession(value: unknown) {
   return typeof checkoutSession.provider === "string"
     && typeof checkoutSession.mode === "string"
     && typeof checkoutSession.nextAction === "string";
+}
+
+function hasScopedLiveCheckoutSession(value: unknown) {
+  const session = metadataObject(metadataObject(value).checkoutSession);
+  return session.provider === "payuni"
+    && session.mode === "form_post"
+    && session.formAction === PAYUNI_PRODUCTION_UPP_URL
+    && session.formMethod === "POST";
+}
+
+function canReusePlanCheckout(input: {
+  plan: BillingPlan;
+  transaction: PaymentTransaction;
+  subscription: { vendorId: string; planId: string; status: string } | null;
+  vendorId: string;
+  stagingLivePlan: boolean;
+}) {
+  const metadata = metadataObject(input.transaction.metadata);
+  const previewLivePayUni = process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production";
+  return (!previewLivePayUni || input.stagingLivePlan)
+    && input.subscription?.vendorId === input.vendorId
+    && input.subscription.planId === input.plan.id
+    && input.subscription.status === "pending_payment"
+    && billingPlanIdFromMetadata(metadata) === input.plan.id
+    && input.transaction.grossAmountCents === input.plan.monthlyPriceCents
+    && hasStoredCheckoutSession(metadata)
+    && (!input.stagingLivePlan || (hasScopedLiveCheckoutSession(metadata)
+      && metadata.stagingPayUniPlanPermit === input.plan.description));
+}
+
+function isStagingLivePlan(providerId: string, vendorId: string, plan: BillingPlan) {
+  return providerId === "payuni" && payUniStagingPlanTestAllowed(vendorId, plan);
+}
+
+function planCheckoutReady(provider: ReturnType<typeof getPaymentProvider>, vendorId: string, plan: BillingPlan) {
+  return isStagingLivePlan(provider.id, vendorId, plan)
+    || checkoutReadinessAllowsNewTransaction(provider.checkoutReadiness(), process.env.NODE_ENV, isExplicitLocalE2eRuntime());
+}
+
+async function hasConflictingPendingLivePayUniPayment(tx: Prisma.TransactionClient, vendorId: string, planId: string) {
+  const key = platformPlanCheckoutIdempotencyKey(vendorId, planId);
+  const pendingOtherPlan = await tx.paymentTransaction.findFirst({
+    where: {
+      vendorId, providerName: "payuni", paymentMode: "platform", status: "pending",
+      checkoutIdempotencyKey: { not: key },
+    },
+    select: { id: true },
+  });
+  const pendingWithoutKey = await tx.paymentTransaction.findFirst({
+    where: { vendorId, providerName: "payuni", paymentMode: "platform", status: "pending", checkoutIdempotencyKey: null },
+    select: { id: true },
+  });
+  const pendingOtherSubscription = await tx.vendorSubscription.findFirst({
+    where: { vendorId, status: "pending_payment", planId: { not: planId } },
+    select: { id: true },
+  });
+  return Boolean(pendingOtherPlan || pendingWithoutKey || pendingOtherSubscription);
 }
 
 function formText(formData: FormData, key: string) {
@@ -152,10 +210,17 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
       const result = await getDb().$transaction(async (tx) => {
         // Prices, quotas and the vendor owner are always read server-side.
         // Client fields other than planId never influence the transaction.
-        const plan = await tx.billingPlan.findFirst({
-          where: { id: planId, isActive: true },
-        });
+        const plan = await tx.billingPlan.findFirst({ where: { id: planId } });
         if (!plan) return { outcome: "unavailable" as const };
+        const stagingLivePlan = isStagingLivePlan(provider.id, vendor.id, plan);
+        // Test plans stay inactive so older Preview deployments cannot sell them.
+        if (!plan.isActive && !stagingLivePlan) return { outcome: "unavailable" as const };
+
+        if (process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production") {
+          // A superseded PAYUNi form can still be paid externally. Never
+          // replace an unresolved form with another live plan checkout.
+          if (await hasConflictingPendingLivePayUniPayment(tx, vendor.id, plan.id)) return { outcome: "conflict" as const };
+        }
 
         const activeSubscriptions = await tx.vendorSubscription.findMany({
           where: { vendorId: vendor.id, status: "active" },
@@ -197,14 +262,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
                   include: { plan: true },
                 })
               : null;
-            if (
-              existingSubscription
-              && existingSubscription.vendorId === vendor.id
-              && existingSubscription.planId === plan.id
-              && existingSubscription.status === "pending_payment"
-              && billingPlanIdFromMetadata(existingMetadata) === plan.id
-              && hasStoredCheckoutSession(existingMetadata)
-            ) {
+            if (canReusePlanCheckout({ plan, transaction: existingCheckout, subscription: existingSubscription, vendorId: vendor.id, stagingLivePlan })) {
               return {
                 outcome: "reuse" as const,
                 plan,
@@ -229,11 +287,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
 
         if (requiresPayment) {
           try {
-            if (!checkoutReadinessAllowsNewTransaction(
-              provider.checkoutReadiness(),
-              process.env.NODE_ENV,
-              isExplicitLocalE2eRuntime(),
-            )) {
+            if (!planCheckoutReady(provider, vendor.id, plan)) {
               return { outcome: "provider_unavailable" as const };
             }
           } catch {
@@ -311,6 +365,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
                   platformSubscriptionId: subscription.id,
                   billingPlanId: plan.id,
                   billingPlanCode: plan.code,
+                  ...(stagingLivePlan ? { stagingPayUniPlanPermit: plan.description } : {}),
                   ...(wp4SourceBoundTransactionMetadata("platform_subscription", { planId: plan.id }) ?? {}),
                 } as Prisma.InputJsonObject,
               },
@@ -362,6 +417,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
           kind: "checkout",
           transactionId: result.transaction.id,
           referral: Boolean(referralClickId),
+          checkoutSession: metadataObject(result.transaction.metadata).checkoutSession as Prisma.InputJsonValue,
         };
       }
 
@@ -385,7 +441,8 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
               nextAction: "provider_checkout_adapter_pending",
               externalRequired: true,
             };
-        if (!checkoutSessionHasUsableDestination(checkoutSession, provider.checkoutReadiness())) {
+        const stagingLivePlan = isStagingLivePlan(provider.id, vendor.id, result.plan);
+        if (!checkoutSessionHasUsableDestination(checkoutSession, stagingLivePlan ? "ready" : provider.checkoutReadiness())) {
           throw new Error("Payment provider returned no usable checkout destination.");
         }
       } catch {
@@ -405,6 +462,9 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
               platformSubscriptionId: result.subscription.id,
               billingPlanId: result.plan.id,
               billingPlanCode: result.plan.code,
+              ...(metadataObject(result.transaction.metadata).stagingPayUniPlanPermit === result.plan.description
+                ? { stagingPayUniPlanPermit: result.plan.description }
+                : {}),
               ...(wp4SourceBoundTransactionMetadata("platform_subscription", { planId: result.plan.id }) ?? {}),
               checkoutSession: checkoutSessionMetadata(checkoutSession),
             } as Prisma.InputJsonObject,
@@ -422,6 +482,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
         kind: "checkout",
         transactionId: result.transaction.id,
         referral: Boolean(referralClickId),
+        checkoutSession: checkoutSessionMetadata(checkoutSession),
       };
     } catch (error) {
       if (!isSerializationConflict(error)) {
