@@ -1,10 +1,10 @@
 import { MfaReturnField } from "@/components/mfa-return-field";
 import { safeMfaReturnPath, withMfaReturnPath } from "@/lib/mfa-return-path";
-import { isPasswordResetSmokeEnabled } from "@/lib/password-reset-smoke-policy";
 import { cookies } from "next/headers";
 import Image from "next/image";
 import Link from "next/link";
 import QRCode from "qrcode";
+import { CheckCircle2, ChevronRight, KeyRound, LockKeyhole, ShieldCheck, Smartphone } from "lucide-react";
 import {
   sendPasswordResetSmokeAction,
 } from "@/app/actions";
@@ -14,6 +14,7 @@ import { MfaEnrollmentForm } from "@/components/mfa-enrollment-form";
 import { Badge, Card } from "@/components/ui";
 import { requireAuth } from "@/lib/auth";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
+import { isPasswordResetSmokeEnabled } from "@/lib/password-reset-smoke-policy";
 
 const errorMessages: Record<string, string> = {
   mfa_code: "TOTP 驗證碼不正確。",
@@ -34,6 +35,10 @@ const updatedMessages: Record<string, string> = {
   password_reset_smoke: "已寄出 password reset 測試信到目前帳號 Email。",
 };
 
+function isOrdersReturn(value: string | undefined) {
+  return value === "/orders" || Boolean(value?.startsWith("/orders/"));
+}
+
 export default async function MfaSetupPage({
   searchParams,
 }: {
@@ -41,7 +46,9 @@ export default async function MfaSetupPage({
 }) {
   const params = await searchParams;
   const nextPath = safeMfaReturnPath(params.next);
+  const returningToOrders = isOrdersReturn(nextPath);
   const auth = await requireAuth();
+  const showPasswordResetSmoke = isPasswordResetSmokeEnabled();
   const cookieStore = await cookies();
   const parsedPendingMfa = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
   const pendingMfa = parsedPendingMfa?.userId === auth.user.id ? parsedPendingMfa : null;
@@ -58,35 +65,53 @@ export default async function MfaSetupPage({
   const activeRecoveryCodeCount = auth.user.recoveryCodes.filter((code) => !code.usedAt).length;
 
   return (
-    <main className="grid min-h-screen place-items-center bg-background px-4 py-10">
-      <section className="w-full max-w-2xl">
-        <div className="mb-6">
-          <p className="text-sm font-semibold text-primary">CelebrateDeal</p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-950">設定多因子驗證</h1>
-          <p className="mt-2 text-sm text-slate-600">MFA 由你自行決定是否啟用；啟用後，每次新登入都需要驗證。</p>
+    <main className="min-h-screen bg-slate-100 px-4 py-8 sm:px-6 lg:py-12">
+      <section className="mx-auto w-full max-w-5xl">
+        <header className="mb-7 flex items-center justify-between gap-4">
+          <Link href="/dashboard" className="inline-flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-white/70">
+            <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-200"><ShieldCheck className="size-5" aria-hidden="true" /></span>
+            <span><span className="block text-sm font-bold tracking-tight text-slate-950">CelebrateDeal</span><span className="block text-[11px] font-medium text-slate-600">Security Center</span></span>
+          </Link>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm"><LockKeyhole className="size-3.5 text-blue-600" aria-hidden="true" />安全設定</span>
+        </header>
+
+        <div className="mb-7 max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Two-factor authentication</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">保護你的管理工作區</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600">啟用 TOTP 可加強登入保護；敏感管理操作會要求雙重驗證。請準備驗證器 App，並妥善保存備援碼。</p>
         </div>
+        {returningToOrders ? (
+          <Card className="mb-6 border-blue-200 bg-blue-50/70 p-4 shadow-none">
+            <p className="font-semibold text-slate-950">為什麼現在需要設定？</p>
+            <p className="mt-1 text-sm leading-6 text-slate-700">訂單包含買家與履約資訊，因此管理者需先完成雙重驗證。依序掃描 QR Code、輸入 6 位數驗證碼，再保存備援碼；通常約 2–3 分鐘，完成後會返回「訂單與履約」。</p>
+          </Card>
+        ) : null}
         {params.updated ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
         {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "設定失敗。"}</p> : null}
 
-        <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-          <Card>
+        <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
+          <Card className="rounded-2xl border-slate-200 p-6 shadow-[0_10px_30px_rgba(15,23,42,0.06)] sm:p-7">
             <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-950">TOTP 設定</h2>
+              <div className="flex gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-600"><Smartphone className="size-5" aria-hidden="true" /></span>
+                <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">步驟 1／2</p>
+                <h2 className="mt-1 text-lg font-semibold text-slate-950">設定驗證器 App</h2>
                 <p className="mt-1 text-sm text-slate-600">可使用 Google Authenticator、1Password、Authy 或其他支援 TOTP 的 App。</p>
+                </div>
               </div>
-              <Badge tone={auth.user.mfaFactor ? "green" : "blue"}>{auth.user.mfaFactor ? "已啟用" : "可自行啟用"}</Badge>
+              <Badge tone={auth.user.mfaFactor ? "green" : "orange"}>{auth.user.mfaFactor ? "已啟用" : "尚未啟用"}</Badge>
             </div>
 
             {auth.user.mfaFactor ? (
-              <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-900">
-                MFA 已啟用，目前 session {auth.isMfaVerified ? "已完成二次驗證" : "尚未完成二次驗證"}。
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-900">
+                <div className="flex gap-2"><CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span>MFA 已啟用，目前 session {auth.isMfaVerified ? "已完成二次驗證" : "尚未完成二次驗證"}。</span></div>
                 <br />
                 可用 recovery codes：{activeRecoveryCodeCount}。完成 recovery code 保存後，前往 <Link href={withMfaReturnPath("/mfa/verify", nextPath)} className="font-semibold underline">二次驗證頁</Link>。
               </div>
             ) : pendingMfa ? (
               <div className="grid gap-4">
-                <div className="grid justify-items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/70 p-4 text-center">
+                <div className="grid justify-items-center gap-3 rounded-xl border border-blue-100 bg-blue-50/70 p-5 text-center">
                   <p className="text-sm font-semibold text-slate-900">使用驗證器 App 掃描 QR Code</p>
                   {mfaQrCode ? (
                     <Image
@@ -95,12 +120,12 @@ export default async function MfaSetupPage({
                       width={224}
                       height={224}
                       unoptimized
-                      className="rounded-md bg-white p-2"
+                      className="rounded-xl bg-white p-2 shadow-sm"
                     />
                   ) : null}
                   <p className="text-xs text-slate-600">掃描後，請輸入 App 顯示的 6 位數驗證碼完成啟用。</p>
                 </div>
-                <details className="rounded-lg border border-border bg-white p-4 text-left">
+                <details className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-left">
                   <summary className="cursor-pointer text-sm font-semibold text-slate-700">無法掃描 QR Code？顯示手動密鑰</summary>
                   <p className="mt-3 font-mono text-sm text-slate-700">{pendingMfa.secret}</p>
                 </details>
@@ -108,7 +133,7 @@ export default async function MfaSetupPage({
                   <CsrfField />
                   <MfaReturnField nextPath={nextPath} />
                   <FormSubmitButton
-                    className="text-sm font-semibold text-primary underline underline-offset-4"
+                  className="inline-flex min-h-10 items-center text-sm font-semibold text-blue-600 underline underline-offset-4"
                     pendingChildren="重新建立中…"
                     pendingMessage="正在建立新的 TOTP 設定。"
                   >
@@ -120,9 +145,9 @@ export default async function MfaSetupPage({
             ) : (
               <form action="/api/settings/security/mfa/start" method="post" className="grid gap-3">
                 <CsrfField />
-                  <MfaReturnField nextPath={nextPath} />
+                <MfaReturnField nextPath={nextPath} />
                 <FormSubmitButton
-                  className="h-11 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
+                  className="h-11 rounded-xl bg-blue-600 text-sm font-semibold text-white shadow-sm shadow-blue-200 transition hover:bg-blue-700"
                   pendingChildren="建立中…"
                   pendingMessage="正在建立 TOTP 設定。"
                 >
@@ -132,11 +157,11 @@ export default async function MfaSetupPage({
             )}
           </Card>
 
-          <Card>
-            <h2 className="mb-3 text-lg font-semibold text-slate-950">Recovery Codes</h2>
+          <Card className="rounded-2xl border-slate-200 p-6 shadow-[0_10px_30px_rgba(15,23,42,0.06)]">
+            <div className="flex gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-violet-50 text-violet-600"><KeyRound className="size-5" aria-hidden="true" /></span><div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">備援存取</p><h2 className="mt-1 text-lg font-semibold text-slate-950">Recovery Codes</h2></div></div>
             {recoveryCodes?.length ? (
               <>
-                <div className="grid gap-2 rounded-lg border border-blue-100 bg-blue-50/70 p-4">
+                <div className="mt-5 grid gap-2 rounded-xl border border-blue-100 bg-blue-50/70 p-4">
                   {recoveryCodes.map((code: string) => (
                     <div key={code} className="font-mono text-sm font-semibold text-slate-800">{code}</div>
                   ))}
@@ -145,7 +170,7 @@ export default async function MfaSetupPage({
                   <CsrfField />
                   <MfaReturnField nextPath={nextPath} />
                   <FormSubmitButton
-                    className="h-10 w-full rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
+                    className="h-10 w-full rounded-xl bg-blue-600 text-sm font-semibold text-white hover:bg-blue-700"
                     pendingChildren="確認中…"
                     pendingMessage="正在確認保存狀態。"
                   >
@@ -155,7 +180,7 @@ export default async function MfaSetupPage({
               </>
             ) : (
               <div className="grid gap-3">
-                <div className="rounded-lg border border-border bg-slate-50 p-4 text-sm text-slate-600">
+                <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
                   啟用後會顯示一次 recovery codes。資料庫只保存 hash，不保存明碼。
                 </div>
                 {auth.user.mfaFactor ? (
@@ -166,7 +191,7 @@ export default async function MfaSetupPage({
                       <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required className="h-11 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456" />
                     </label>
                     <FormSubmitButton
-                      className="h-11 w-full rounded-md border border-orange-200 bg-white text-sm font-semibold text-orange-800 hover:bg-orange-50"
+                      className="h-11 w-full rounded-xl border border-orange-200 bg-white text-sm font-semibold text-orange-800 hover:bg-orange-50"
                       pendingChildren="重新產生中…"
                       pendingMessage="正在重新產生 recovery codes。"
                       confirmMessage="重新產生後，舊 recovery codes 會立即失效。確定繼續？"
@@ -180,15 +205,15 @@ export default async function MfaSetupPage({
           </Card>
         </div>
 
-        {isPasswordResetSmokeEnabled() ? <Card className="mt-5">
-          <h2 className="text-lg font-semibold text-slate-950">Password reset email smoke</h2>
+        {showPasswordResetSmoke ? <Card className="mt-6 rounded-2xl border-slate-200 bg-white/80 p-6 shadow-sm">
+          <div className="flex items-center gap-2"><ChevronRight className="size-4 text-slate-400" aria-hidden="true" /><h2 className="text-base font-semibold text-slate-950">Password reset email smoke</h2></div>
           <p className="mt-1 text-sm text-slate-600">
             僅寄送到環境設定的測試收件人，驗證 Resend、reset link、token TTL 與 session revoke 流程。
           </p>
           <form action={sendPasswordResetSmokeAction} className="mt-4">
             <CsrfField />
             <FormSubmitButton
-              className="h-11 rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-dark"
+              className="h-11 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800"
               pendingChildren="寄送中…"
               pendingMessage="正在寄送測試信，請稍候。"
             >
