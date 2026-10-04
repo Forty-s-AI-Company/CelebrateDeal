@@ -42,5 +42,16 @@
     "Foreign tenant viewer cannot claim",
     "Expired viewer cannot claim",
     "Replay cannot create a second claim or cookie"
-  ]
+  ],
+  "ui_recovery": {
+    "component": "src/components/live-advanced-interactions.tsx",
+    "state": "RESTORED_NOT_WIRED",
+    "eslint": "PASS",
+    "remaining": [
+      "Pass normalized public advanced metadata from viewer page",
+      "Mount only for admitted playable live and reset on tenant/live identity change",
+      "Remove fictitious participant names from winner animation",
+      "Review stale polling responses and component browser tests"
+    ]
+  }
 }
