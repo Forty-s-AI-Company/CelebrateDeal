@@ -1,6 +1,6 @@
 # 全部分支參照處置（2026-10-04）
 
-基準：`bdbae2f53491afd518b97ee597e117d6a585b55c`。本輪未合併 PR。local／origin 同名可能指向不同提交，因此逐筆保留；數量不能當作獨立功能數。
+此文件保留發布前的處置 snapshot，基準為 `bdbae2f53491afd518b97ee597e117d6a585b55c`；截至該 snapshot 尚未合併 PR。權限恢復後的 #351 合併與其他交付進度見 [未來處理報告](branch-integration-future-work.md)。local／origin 同名可能指向不同提交，因此逐筆保留；數量不能當作獨立功能數。
 
 已合併證據驗證 PR merge commit 可達 master，且本地／遠端分支 head 等於或早於該 PR head。patch 等價只證明歷史內容，不保證功能未被後續版本移除。
 

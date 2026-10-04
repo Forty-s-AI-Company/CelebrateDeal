@@ -1,6 +1,6 @@
 # 分支待核對清單（2026-10-04）
 
-基準：本機快取 origin/master bdbae2f5。fetch 受權限阻擋，未保證遠端最新。
+此文件保留權限恢復前的初始唯讀盤點。當時基準為本機快取 origin/master bdbae2f5，fetch 受阻；這不是目前發布狀態。權限現已恢復，#351 已合併；最新結果見 [未來處理報告](branch-integration-future-work.md) 與 [發布紀錄](branch-integration-publication-20261004.json)。
 下列只表示 commit ancestry 未包含，不能排除 squash/cherry-pick 或其他整合已納入內容。
 
 ## 本機分支
