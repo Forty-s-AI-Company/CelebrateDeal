@@ -95,7 +95,9 @@
         "src/lib/payment-webhooks.ts",
         "tests/e2e/smoke.spec.ts"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
@@ -131,7 +133,9 @@
         "src/lib/payment-webhooks.ts",
         "tests/e2e/smoke.spec.ts"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "1ff1b5135f723c2da1e4509625284c376d8cf83e",
@@ -167,7 +171,9 @@
         "src/lib/payment-webhooks.ts",
         "tests/e2e/smoke.spec.ts"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "227c102b7f49221a9d0fea17536ce2ed9e82312c",
@@ -203,7 +209,9 @@
         "src/lib/payment-webhooks.ts",
         "tests/e2e/smoke.spec.ts"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "2401481ce4ea07b1bb7448c62be0db589b73c85e",
@@ -234,7 +242,9 @@
         "src/components/vendor-member-deactivation-confirmation.test.tsx",
         "src/components/vendor-member-deactivation-confirmation.tsx"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "2c419848945be94d6afec4dd9a0073f6a3ab142f",
@@ -268,7 +278,9 @@
         "src/app/actions.test.ts",
         "src/components/live-stepper-form.test.tsx"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "30230f4ab63c65481324a128ff1369deee073c83",
@@ -297,7 +309,9 @@
         "src/components/vendor-member-deactivation-confirmation.test.tsx",
         "src/components/vendor-member-deactivation-confirmation.tsx"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "35d8f59341bcb776e548c69fe874a3f4d1fe2528",
@@ -454,7 +468,9 @@
         "vercel.json",
         "vitest.config.ts"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
@@ -483,7 +499,9 @@
         "src/components/vendor-member-deactivation-confirmation.test.tsx",
         "src/components/vendor-member-deactivation-confirmation.tsx"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "39b8dedf2ea140bc264088c9d1843d99196586ff",
@@ -514,7 +532,9 @@
         "src/components/vendor-member-deactivation-confirmation.test.tsx",
         "src/components/vendor-member-deactivation-confirmation.tsx"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "3ace54c10b581285a297c5e95e677178314e1c52",
@@ -537,7 +557,9 @@
         "src/components/vendor-member-deactivation-confirmation.test.tsx",
         "src/components/vendor-member-deactivation-confirmation.tsx"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "3e6bf78b2850373e1989b51666cd129798a93b70",
@@ -1707,7 +1729,9 @@
         "src/components/vendor-member-deactivation-confirmation.test.tsx",
         "src/components/vendor-member-deactivation-confirmation.tsx"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "638707f9f043498136107b38968e49a0c38e9133",
@@ -1734,7 +1758,9 @@
         "src/components/vendor-member-deactivation-confirmation.test.tsx",
         "src/components/vendor-member-deactivation-confirmation.tsx"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
@@ -1765,7 +1791,9 @@
         "src/components/vendor-member-deactivation-confirmation.test.tsx",
         "src/components/vendor-member-deactivation-confirmation.tsx"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "6c25a938041304a86617648e299815526131f0fd",
@@ -1846,7 +1874,9 @@
         "scripts/payuni-sandbox-external-qa.mjs",
         "src/components/live-stepper-form.test.tsx"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "8605600797576dd2db003948f30358d1f2a7af78",
@@ -2281,7 +2311,9 @@
         "src/components/vendor-member-deactivation-confirmation.tsx",
         "tests/e2e/smoke.spec.ts"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "b447582b0ef45bf920ddc5196801048ce787489e",
@@ -4368,7 +4400,9 @@
         "src/components/vendor-member-deactivation-confirmation.test.tsx",
         "src/components/vendor-member-deactivation-confirmation.tsx"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "bf45235f8b10fa1fded2da0a4c079e5b883cfef0",
@@ -5161,7 +5195,9 @@
         "src/lib/payment-webhooks.ts",
         "tests/e2e/smoke.spec.ts"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "e1f38be324e349969a657be376aa1602e804c2dd",
@@ -6066,7 +6102,9 @@
         "src/components/vendor-member-deactivation-confirmation.test.tsx",
         "src/components/vendor-member-deactivation-confirmation.tsx"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。",
+      "common_layer_evidence": "branch-integration-sandbox-common-layer-20261004.json",
+      "common_layer_status": "PARTIAL_RECONCILED_ENV_TEMPLATE_AND_REFUND_AUTOMATION_DEFERRED"
     },
     {
       "head": "f669d5b502cebcabbc4d25db50dbdd980d283c71",

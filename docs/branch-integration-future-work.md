@@ -152,3 +152,9 @@ Puck 0.22 起由 useInjectUiCss 自動注入編輯器樣式；已查核安裝套
 PR #355 的 head `24d9c7c76d6273329e2aff0b27ae9299da04d364` 已於 `2026-10-04T15:14:26Z` 經 protected squash merge，master 為 `c071b2d655b0d875fa9d616920c5a554d462dbe6`。PR CI `37210769933` 與 push CI `37210766776` 成功，canonical gate READY、0 blockers；master tree `d68ee61105387d56172e66b7425e58c31a96697d` 與驗收版本相同。交付表單防重送與重試、指定公開場次的 404 保護、管理者一頁式網站導覽，及上一批整合報告。
 
 下一批已完整回收歷史 staging R2 binding attestation 的 4 檔，原 bytes 不變；合成契約 4/4 與 ESLint PASS，尚未呼叫外部 provider。#211 的 library/UI 九檔取捨與 50/50 targeted tests 見 branch-integration-pr211-library-decisions-20261004.json；staging target_url 原 leaf 意圖已有證據，但 eac0a343 全部分支仍未結案。原 120 筆 dirty 與 118 檔 hash 再次核對未變。
+
+## Sandbox QA 共用層核對
+
+19 個歷史 head 的六個共用路徑收斂為五個 runner 版本。已核對原付款／callback／query／timeout-cleanup 意圖、宣告結構、package scripts/dependencies 與 vNext policy 取代關係；付款及交接收據 33 個 Vitest tests PASS，沒有外部付款／退款。`.env.example` 只記錄 blob metadata，未讀內容。
+
+現行正常 runner 成功時輸出 `PENDING_REFUND`，退款、資料庫狀態及冪等仍為 `pending-chrome`。已修正 QA 文件，不能以付款成功或逾時清理退款冒充完整 QA PASS。來源 `35d8f59341bc` 的 `refundThroughCelebrateDeal`、`waitForRefundPersistence`、`refundPersistencePassed`、`latestRefundableCheckout` 尚未遷移為新的固定 staging 交接消費流程；後續需驗證角色／CSRF、非 Production 綁定、單筆 processed RefundRecord 與重複退款拒絕。保留原分支，未將這 19 個 head 標成完整替代。詳見 branch-integration-sandbox-common-layer-20261004.json。
