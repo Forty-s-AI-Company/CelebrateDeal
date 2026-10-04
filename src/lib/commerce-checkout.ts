@@ -37,6 +37,11 @@ export const CommerceCheckoutAdmissionResponseSchema = z.object({
   admissionToken: z.string().regex(/^ca1\.[A-Za-z0-9_-]{1,768}\.[A-Za-z0-9_-]{43}$/u).max(900),
   idempotencyKey: z.string().uuid(),
   expiresAt: z.string().datetime({ offset: true }),
+  offer: z.object({
+    priceCents: z.number().int().safe().positive(),
+    currency: z.string().regex(/^[A-Z]{3}$/u),
+    hash: z.string().regex(/^[a-f0-9]{64}$/u),
+  }).strict().optional(),
 }).strict();
 
 export const CommerceCheckoutResponseSchema = z.object({
@@ -104,12 +109,13 @@ export function isAllowedCheckoutDestination(value: string, currentOrigin: strin
 export async function readCheckoutErrorCode(response: Pick<Response, "json">) {
   try {
     const body: unknown = await response.json();
-    return body && typeof body === "object" && "code" in body && body.code === "LIVE_VOUCHER_ALREADY_USED"
-      ? "LIVE_VOUCHER_ALREADY_USED" : undefined;
+    return body && typeof body === "object" && "code" in body && (body.code === "LIVE_VOUCHER_ALREADY_USED" || body.code === "FLASH_SALE_UNAVAILABLE")
+      ? body.code : undefined;
   } catch { return undefined; }
 }
 
 export function checkoutErrorMessage(status: number, code?: string) {
+  if (status === 409 && code === "FLASH_SALE_UNAVAILABLE") return "快閃優惠已變更、結束或綁定先前訂單。請先確認原訂單狀態；若尚未建立訂單，請返回直播重新確認優惠。";
   if (status === 409 && code === "LIVE_VOUCHER_ALREADY_USED") return "優惠券已綁定先前訂單。請先確認原訂單付款狀態，或聯絡商家協助；重新整理不會解除綁定。";
   if (status === 400) return "請確認聯絡與收件資料是否完整。";
   if (status === 404) return "這個商品目前無法購買。";

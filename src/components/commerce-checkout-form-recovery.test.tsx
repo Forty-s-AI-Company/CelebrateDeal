@@ -35,6 +35,27 @@ afterEach(async () => {
 });
 
 describe("pending checkout recovery", () => {
+  it("displays the signed offer and waits for a second confirmation before checkout", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ admissionToken, idempotencyKey: key, expiresAt: "2027-01-01T00:00:00.000Z", offer: { priceCents: 1000, currency: "TWD", hash: "a".repeat(64) } }) })
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ code: "FLASH_SALE_UNAVAILABLE", error: "raw diagnostics" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => { root.render(<CommerceCheckoutForm vendorId="vendor-1" productId="product-1" productName="商品" fulfillmentType="digital" priceCents={2000} />); });
+    const form = container.querySelector("form")!;
+    form.querySelector<HTMLInputElement>('[name="buyerName"]')!.value = "測試買家";
+    form.querySelector<HTMLInputElement>('[name="buyerEmail"]')!.value = "buyer@example.test";
+    await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("確認優惠並前往付款");
+    expect(container.querySelector("strong.text-xl")?.textContent).toContain("10");
+    await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/payments/checkout");
+    expect(container.textContent).toContain("快閃優惠已變更");
+    expect(container.textContent).not.toContain("raw diagnostics");
+    expect(container.querySelector("strong.text-xl")?.textContent).toContain("20");
+  });
+
   it("shows the voucher-specific failure and retains checkout identity for a normal checkout", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ admissionToken, idempotencyKey: key, expiresAt: "2027-01-01T00:00:00.000Z" }) })

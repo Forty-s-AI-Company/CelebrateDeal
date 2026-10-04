@@ -10,6 +10,11 @@ import { FLASH_SALE_COOKIE } from "./live-flash-sale";
 import { CHECKOUT_ADMISSION_COOKIE } from "@/lib/checkout-admission";
 import { POST as admitCheckout } from "@/app/api/payments/checkout/admission/route";
 import { POST as checkout } from "@/app/api/payments/checkout/route";
+import { processPaymentWebhook, PaymentWebhookPayload } from "@/lib/payment-webhooks";
+
+// 隔離外部寄信與發票；保留真實付款事件、訂單及庫存處理。
+vi.mock("@/lib/commerce-order-email", () => ({ ensureCommerceOrderPaidDelivery: vi.fn() }));
+vi.mock("@/lib/taiwan-electronic-invoice", () => ({ reconcileElectronicInvoiceAfterPayment: vi.fn() }));
 
 const vendors: string[] = [];
 beforeEach(() => vi.stubEnv("CSRF_SECRET", "synthetic-flash-sale-db-secret-over-thirty-two-bytes"));
@@ -66,6 +71,26 @@ describe("flash sale authoritative price and reservation", () => {
       expect(await f.db.commerceOrder.findFirstOrThrow({ where: { vendorId: f.vendor.id } })).toMatchObject({ totalAmountCents: 1000, subtotalAmountCents: 2000 });
       expect(await f.db.commerceOrderItem.findFirstOrThrow({ where: { vendorId: f.vendor.id } })).toMatchObject({ nonSensitiveSnapshot: { discountAmountCents: 1000 } });
       expect(await f.db.liveInteractionResponse.count({ where: { runId: f.run.id, usedOrderId: { not: null } } })).toBe(1);
+      // 未確認付款時不可用新 key 避開核銷；確認 paid 後則可原價再購。
+      expect((await admitCheckout(request("/api/payments/checkout/admission", f.scope, saleCookie))).status).toBe(409);
+      const order = await f.db.commerceOrder.findFirstOrThrow({ where: { vendorId: f.vendor.id } });
+      await f.db.commerceOrder.update({ where: { id: order.id }, data: { status: "payment_failed" } });
+      expect((await admitCheckout(request("/api/payments/checkout/admission", f.scope, saleCookie))).status).toBe(409);
+      const payment = await f.db.paymentTransaction.findFirstOrThrow({ where: { vendorId: f.vendor.id } });
+      await processPaymentWebhook(PaymentWebhookPayload.parse({ provider: "demo", eventId: randomUUID(), eventType: "paid", vendorId: f.vendor.id, orderNumber: payment.orderNumber!, grossAmountCents: 1000, currency: "TWD" }));
+      const newAdmission = await admitCheckout(request("/api/payments/checkout/admission", f.scope, saleCookie));
+      expect(newAdmission.status).toBe(200);
+      const newAuthorized = await newAdmission.json();
+      expect(newAuthorized.offer).toBeUndefined();
+      const newSession = newAdmission.cookies.get(CHECKOUT_ADMISSION_COOKIE)!;
+      const repurchase = await checkout(request("/api/payments/checkout", {
+        ...f.scope, admissionToken: newAuthorized.admissionToken, idempotencyKey: newAuthorized.idempotencyKey,
+        buyer: { name: "Synthetic buyer", email: "buyer@example.test", phone: "0912345678" },
+        shipping: { recipientName: "Synthetic buyer", phone: "0912345678", countryCode: "TW", postalCode: "100", administrativeArea: "台北市", locality: "中正區", addressLine1: "合成測試路 1 號" },
+      }, `${newSession.name}=${newSession.value}; ${saleCookie}`));
+      expect(repurchase.status).toBe(200);
+      expect(await f.db.paymentTransaction.findFirstOrThrow({ where: { vendorId: f.vendor.id, checkoutIdempotencyKey: newAuthorized.idempotencyKey } })).toMatchObject({ grossAmountCents: 2000 });
+      expect(await f.db.liveInteractionResponse.count({ where: { runId: f.run.id, usedOrderId: order.id } })).toBe(1);
     } else {
       expect(response.status).toBe(409);
       expect(await response.json()).toMatchObject({ code: "FLASH_SALE_UNAVAILABLE" });

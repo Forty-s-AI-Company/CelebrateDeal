@@ -68,6 +68,15 @@ export async function resolveFlashSaleQuote(
   if (!claim) throw new FlashSaleUnavailableError();
   // 其他商家或商品的舊 Cookie 不得影響本次購買。
   if (claim.vendorId !== input.vendorId || claim.productId !== input.productId) return null;
+  if (claim.usedOrderId && claim.eventType === "flash_sale" && claim.run.eventType === "flash_sale") {
+    // 已確認付款後允許一般再購；仍保留原名額核銷，付款不明時不釋放。
+    const settled = await db.commerceOrder.findFirst({
+      where: { id: claim.usedOrderId, vendorId: input.vendorId, paidAt: { not: null }, status: { in: ["paid", "partially_refunded", "refunded"] } },
+      select: { id: true },
+    });
+    if (settled) return null;
+    throw new FlashSaleUnavailableError();
+  }
   const now = input.now ?? new Date();
   const run = claim.run;
   if (claim.eventType !== "flash_sale" || run.eventType !== "flash_sale"

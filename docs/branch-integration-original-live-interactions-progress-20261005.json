@@ -335,5 +335,29 @@
       "Handle offer-unavailable error and existing-order recovery in UI; browser tests",
       "Complete provider failure recovery policy and protected exact-head acceptance"
     ]
+  },
+  "flash_sale_confirmation_checkpoint": {
+    "status": "VALIDATED_COMPONENT_AND_API_NOT_BROWSER",
+    "implemented": [
+      "Strict admission response accepts bounded server offer",
+      "UI displays server price/currency and requires a second submit before payment creation",
+      "Offer-unavailable response uses allowlisted message; prior offer cleared on rejected checkout",
+      "Used sale claim permits normal repurchase only with same-tenant confirmed paid order; pending/failed remains blocked and consumed claim preserved"
+    ],
+    "validation": {
+      "passed": 31,
+      "failed": 0,
+      "receipt": ".ai-team/tmp/flash-sale-confirmation-results.json",
+      "scope": "17 real DB tests plus checkout component/recovery/domain unit tests; real payment-event processing then new admission and full-price repurchase",
+      "eslint": "PASS",
+      "typescript": "PASS"
+    },
+    "review": "Requested existing independent reviewer to verify paid-repurchase fix and UI confirmation",
+    "remaining": [
+      "Actual viewer flash-sale claim issuance",
+      "Authoritative live-card display of price/currency",
+      "Full browser flow and provider-failure recovery",
+      "Exact-head CI and canonical acceptance before protected merge"
+    ]
   }
 }

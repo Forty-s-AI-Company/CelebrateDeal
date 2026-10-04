@@ -179,6 +179,36 @@ function checkoutInvoice(formData: FormData) {
   return { type: "personal", carrier: text("invoiceCarrier"), ...(text("invoiceCarrierNumber") ? { carrierNumber: text("invoiceCarrierNumber") } : {}) };
 }
 
+function CheckoutTotal({ priceCents, currency, offer, bumpPrice }: {
+  priceCents?: number; currency: string; offer: { priceCents: number; currency: string } | null; bumpPrice: number;
+}) {
+  if (typeof priceCents !== "number" && !offer) return null;
+  return <div className="flex items-center justify-between rounded-xl bg-slate-950 px-5 py-4 text-white" aria-live="polite">
+    <span className="font-semibold">本次結帳總額</span>
+    <strong className="text-xl">{formatCheckoutPrice((offer?.priceCents ?? priceCents ?? 0) + bumpPrice, offer?.currency ?? currency)}</strong>
+  </div>;
+}
+
+function checkoutSubmitLabel(phase: CheckoutPhase, hasOffer: boolean, productName: string) {
+  if (phase === "submitting") return "正在建立訂單…";
+  if (phase === "redirecting") return "正在前往付款…";
+  if (phase === "success") return "訂單已建立";
+  return hasOffer ? "確認優惠並前往付款" : `購買「${productName}」`;
+}
+
+function checkoutCustomAnswersPayload(answers: Record<string, string | boolean>) {
+  return Object.keys(answers).length > 0 ? { customCheckoutAnswers: answers } : {};
+}
+
+function CheckoutPaymentNotice() {
+  return <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
+    <p id="checkout-payment-notice" className="flex items-start gap-2 font-semibold">
+      <LockKeyhole className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
+      CelebrateDeal 不會在這裡要求或保存卡號、有效期限與安全碼；下一步才會前往金流商的安全付款頁。
+    </p>
+  </div>;
+}
+
 export function CommerceCheckoutForm({
   vendorId,
   productId,
@@ -196,6 +226,7 @@ export function CommerceCheckoutForm({
   const [canCheckout, setCanCheckout] = useState(!recoveryOnly);
   const [orderBumpSelected, setOrderBumpSelected] = useState(initialOrderBumpSelected);
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1);
+  const [confirmedOffer, setConfirmedOffer] = useState<{ priceCents: number; currency: string } | null>(null);
   const contactStep = formMode === "two_step" && checkoutStep === 1;
   const admission = useRef<{ admissionToken: string; idempotencyKey: string } | null>(null);
   const statusRef = useRef<HTMLParagraphElement>(null);
@@ -314,7 +345,7 @@ export function CommerceCheckoutForm({
         });
         if (!admissionResponse.ok) {
           setPhase("error");
-          setMessage(checkoutErrorMessage(admissionResponse.status));
+          setMessage(checkoutErrorMessage(admissionResponse.status, await readCheckoutErrorCode(admissionResponse)));
           return;
         }
         const parsedAdmission = CommerceCheckoutAdmissionResponseSchema.safeParse(await admissionResponse.json());
@@ -328,6 +359,13 @@ export function CommerceCheckoutForm({
           admissionToken: parsedAdmission.data.admissionToken,
           idempotencyKey: parsedAdmission.data.idempotencyKey,
         };
+        if (parsedAdmission.data.offer) {
+          // 先顯示伺服器簽署的優惠價；第二次確認才建立訂單，不自動改價送出。
+          setConfirmedOffer(parsedAdmission.data.offer);
+          setPhase("idle");
+          setMessage("已確認快閃優惠，請核對下方結帳總額，再按確認優惠並前往付款。");
+          return;
+        }
       }
 
       const response = await fetch("/api/payments/checkout", {
@@ -344,7 +382,7 @@ export function CommerceCheckoutForm({
           buyer,
           shipping,
           invoice,
-          ...(customCheckoutFields.length > 0 ? { customCheckoutAnswers } : {}),
+          ...checkoutCustomAnswersPayload(customCheckoutAnswers),
           ...(orderBumpSelected && orderBump ? {
             orderBump: {
               ...(orderBump.productId ? { productId: orderBump.productId } : {}),
@@ -360,6 +398,7 @@ export function CommerceCheckoutForm({
         const errorCode = await readCheckoutErrorCode(response);
         if (shouldDiscardCheckoutAdmission(response.status, errorCode)) {
           admission.current = null;
+          setConfirmedOffer(null);
           // A recovery mismatch can be corrected by the buyer. Keep the saved
           // key so the next submission still targets the original order.
           if (!recoveryOnly) clearPersistedCheckoutIdentity();
@@ -452,19 +491,9 @@ export function CommerceCheckoutForm({
 
       <CheckoutOrderBump offer={orderBump} selected={orderBumpSelected} disabled={fieldsDisabled} currency={currency} onChange={setOrderBumpSelected} />
 
-      {typeof priceCents === "number" ? (
-        <div className="flex items-center justify-between rounded-xl bg-slate-950 px-5 py-4 text-white" aria-live="polite">
-          <span className="font-semibold">本次結帳總額</span>
-          <strong className="text-xl">{formatCheckoutPrice(priceCents + (orderBumpSelected ? orderBump?.priceCents ?? 0 : 0), currency)}</strong>
-        </div>
-      ) : null}
+      <CheckoutTotal priceCents={priceCents} currency={currency} offer={confirmedOffer} bumpPrice={orderBumpSelected ? orderBump?.priceCents ?? 0 : 0} />
 
-      <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
-        <p id="checkout-payment-notice" className="flex items-start gap-2 font-semibold">
-          <LockKeyhole className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
-          CelebrateDeal 不會在這裡要求或保存卡號、有效期限與安全碼；下一步才會前往金流商的安全付款頁。
-        </p>
-      </div>
+      <CheckoutPaymentNotice />
 
       <label className="flex items-start gap-3 text-sm leading-6 text-slate-700">
         <input type="checkbox" name="policyAcknowledgement" required className="mt-1 h-4 w-4 accent-blue-600" disabled={fieldsDisabled} />
@@ -485,7 +514,7 @@ export function CommerceCheckoutForm({
         className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-base font-bold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isPending ? <LoaderCircle className="animate-spin" size={20} aria-hidden="true" /> : <PackageCheck size={20} aria-hidden="true" />}
-        {phase === "submitting" ? "正在建立訂單…" : phase === "redirecting" ? "正在前往付款…" : phase === "success" ? "訂單已建立" : `購買「${productName}」`}
+        {checkoutSubmitLabel(phase, Boolean(confirmedOffer), productName)}
       </button>
       </fieldset>
 
