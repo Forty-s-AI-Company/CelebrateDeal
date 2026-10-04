@@ -1,9 +1,11 @@
 import { LineOfficialAccountForm } from "@/components/line-official-account-form";
+import { LineRichMenuStudio } from "@/components/line-rich-menu-studio";
 import { PageHeader } from "@/components/ui";
 import { requireVendorOwner } from "@/lib/auth";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
+import { LineRichMenuSchema } from "@/lib/line-rich-menu";
 
 function maskIdentityId(identityId: string) {
   if (identityId.length <= 8) return `***${identityId.slice(-4)}`;
@@ -18,13 +20,18 @@ const triggerLabels: Record<string, string> = {
 
 export default async function LineSettingsPage() {
   const auth = await requireVendorOwner();
-  const [csrfToken, account] = await Promise.all([
+  const [csrfToken, account, draft] = await Promise.all([
     getCsrfToken(),
     getDb().lineOfficialAccount.findUnique({
       where: { vendorId: auth.vendor.id },
       select: { id: true, status: true, connectedAt: true, lastValidatedAt: true },
     }),
+    getDb().lineRichMenuDraft.findUnique({
+      where: { vendorId: auth.vendor.id },
+      select: { id: true, revision: true, menu: true },
+    }),
   ]);
+  const parsedMenu = draft ? LineRichMenuSchema.safeParse(draft.menu) : null;
   const deliveries = account
     ? await getDb().lineDelivery.findMany({
         where: { vendorId: auth.vendor.id, lineOfficialAccountId: account.id },
@@ -51,6 +58,10 @@ export default async function LineSettingsPage() {
         webhookUrl={webhookUrl}
         lastValidatedAt={account?.lastValidatedAt?.toLocaleString("zh-TW") ?? null}
       />
+      {draft && !parsedMenu?.success ? <p role="alert">選單草稿格式無法載入，請聯絡管理員協助處理；原始草稿已保留。</p> : <LineRichMenuStudio
+        csrfToken={csrfToken}
+        existing={draft && parsedMenu?.success ? { id: draft.id, revision: draft.revision, menu: parsedMenu.data } : null}
+      />}
       <section className="rounded-lg border border-border bg-white p-5 shadow-sm">
         <div className="mb-4">
           <h2 className="text-lg font-semibold">推播紀錄</h2>

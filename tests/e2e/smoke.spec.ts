@@ -701,6 +701,44 @@ test("login page renders and accepts seeded owner", async ({ page }) => {
   await expect(page).toHaveURL(/\/dashboard/);
 });
 
+test("owner can edit LINE menu drafts, reject stale tabs, and recreate after deletion", async ({ page, context }) => {
+  test.setTimeout(60_000);
+  await loginSeededOwner(page);
+  await page.goto("/settings/line");
+  const studio = page.getByRole("region", { name: "LINE 圖文選單草稿" });
+  await studio.getByRole("button", { name: "載入極簡 4 格範本" }).click();
+  await studio.getByLabel("選單名稱", { exact: true }).fill("合併驗證草稿");
+  await studio.getByRole("button", { name: "儲存草稿", exact: true }).click();
+  await expect(studio.getByRole("status")).toHaveText("草稿已儲存。");
+  await expect(studio.locator('input[name="revision"]')).toHaveValue("1");
+  const firstId = await studio.locator('input[name="id"]').inputValue();
+  expect(firstId).not.toBe("");
+
+  const stale = await context.newPage();
+  try {
+    await stale.goto("/settings/line");
+    const staleStudio = stale.getByRole("region", { name: "LINE 圖文選單草稿" });
+    await expect(staleStudio.locator('input[name="revision"]')).toHaveValue("1");
+    await studio.getByLabel("選單名稱", { exact: true }).fill("更新後的草稿");
+    await studio.getByRole("button", { name: "儲存草稿", exact: true }).click();
+    await expect(studio.locator('input[name="revision"]')).toHaveValue("2");
+    await staleStudio.getByLabel("選單名稱", { exact: true }).fill("過期分頁內容");
+    await staleStudio.getByRole("button", { name: "儲存草稿", exact: true }).click();
+    await expect(staleStudio.getByRole("alert")).toContainText("草稿已在其他分頁更新或刪除");
+    await page.reload();
+    await expect(studio.getByLabel("選單名稱", { exact: true })).toHaveValue("更新後的草稿");
+    await studio.getByRole("button", { name: "刪除草稿", exact: true }).click();
+    await expect(studio.getByRole("status")).toContainText("草稿已刪除");
+    await expect(studio.locator('input[name="revision"]')).toHaveValue("0");
+    await studio.getByRole("button", { name: "儲存草稿", exact: true }).click();
+    await expect(studio.locator('input[name="revision"]')).toHaveValue("1");
+    expect(await studio.locator('input[name="id"]').inputValue()).not.toBe(firstId);
+    expect(await db.lineRichMenuDraft.findUnique({ where: { vendorId: seed.vendorId } })).toMatchObject({ revision: 1 });
+  } finally {
+    await stale.close();
+  }
+});
+
 test("dashboard onboarding checklist provides concrete next-step links", async ({ page }) => {
   await loginSeededOwner(page);
   const checklist = page.getByRole("heading", { name: "Onboarding checklist" }).locator("..");

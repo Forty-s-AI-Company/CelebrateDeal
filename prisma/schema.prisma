@@ -170,6 +170,7 @@ model Vendor {
   liveChatMessages                 LiveChatMessage[]
   liveNotificationRules            LiveNotificationRule[]
   emailSuppressions                EmailSuppression[]
+  lineRichMenuDraft                 LineRichMenuDraft?
   lineOfficialAccount              LineOfficialAccount?
   lineUserIdentities               LineUserIdentity[]
   lineLoginStates                  LineLoginState[]
@@ -3532,4 +3533,16 @@ model LandingPageVersion {
   @@unique([vendorId, pageId, id])
   @@unique([vendorId, pageId, version])
   @@index([vendorId, pageId, createdAt])
+}
+
+// Drafts are tenant-owned configuration, separate from any external publication state.
+model LineRichMenuDraft {
+  id        String   @id @default(cuid())
+  vendorId  String   @unique
+  menu      Json
+  revision  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 }
