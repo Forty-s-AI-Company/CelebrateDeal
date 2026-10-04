@@ -110,12 +110,14 @@ function ActiveLiveAdvancedInteractions({
   currentSeconds,
   events,
   enabled,
+  onCheckout,
 }: {
   vendorId: string;
   liveId: string;
   currentSeconds: number;
   events: AdvancedEvent[];
   enabled: boolean;
+  onCheckout?: (productId: string) => void | Promise<void>;
 }) {
   const [admissionLost, setAdmissionLost] = useState(false);
   const [run, setRun] = useState<PublicRun | null>(null);
@@ -211,6 +213,7 @@ function ActiveLiveAdvancedInteractions({
       const payload = await interactionRequest({ action: "respond", vendorId, liveId, runId: run.id, value, ...(displayName.trim() ? { displayName: displayName.trim() } : {}) }, signal);
       if (signal.aborted) return;
       if (payload.run) setRun(payload.run);
+      if (run.metadata.kind === "flash_sale") await onCheckout?.(run.metadata.productId);
       setMessage(
         run.eventType === "flash_voucher"
           ? "紅包已放進你的結帳，購買時會自動折抵。"
@@ -275,8 +278,12 @@ function ActiveLiveAdvancedInteractions({
           </div>
           <button
             type="button"
-            disabled={closed || isSubmitting}
-            onClick={() => void respond("view_deal")}
+            disabled={closed || isSubmitting || !onCheckout}
+            onClick={() => {
+              if (run.metadata.kind !== "flash_sale") return;
+              if (run.responded) void onCheckout?.(run.metadata.productId);
+              else void respond("view_deal");
+            }}
             className="min-h-12 rounded-2xl bg-red-600 px-5 text-lg font-black text-white shadow-lg shadow-red-200 disabled:opacity-50 hover:bg-red-700 transition"
           >
             立即搶購特惠方案

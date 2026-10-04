@@ -36,9 +36,9 @@
     "purchased_identity": "Use verified signed chat session claim, no raw-cookie fallback; reviewer confirmed signature/cookie lifecycle. True verify-route then checkout then draw integration still pending. Single-browser registration replacement/expiry remains a capability limitation; evaluate buyer support grant fallback if needed.",
     "stale_submission": "Fixed with run/event-scoped AbortController; browser regression PASS desktop/mobile; independent recheck pending",
     "unbound_product_voucher": "Independent review closed implementation MAJOR; refreshed DB receipt confirms 11 PASS",
-    "flash_sale_checkout": "OPEN: inspect and connect actual checkout navigation and truthful offer price/stock semantics",
-    "open_failure_polling": "Fixed: failed scheduled open falls back to manual GET/spotlight; desktop/mobile Chromium PASS; independent recheck pending",
-    "api_401_ui": "Fixed: GET/open/respond/question 401 revokes local interaction display; effect stops polling, hides private state and offers page reload for admission. GET401 real component desktop/mobile regression PASS; independent recheck pending"
+    "flash_sale_checkout": "Checkout callback connected to existing admitted bound-product navigation; desktop/mobile controlled component callback PASS. MAJOR remains open for actual pricing, currency and stock guarantees plus end-to-end checkout validation.",
+    "open_failure_polling": "Independent review closed; 409 fallback browser regression PASS",
+    "api_401_ui": "Independent review closed; 401 revoke/display/poll regression PASS"
   },
   "database_verified": [
     "Concurrent last-voucher requests produce one200 and one409, exactly one response and one cookie",
@@ -91,7 +91,7 @@
       ],
       "tsc": "PASS",
       "eslint": "PASS",
-      "scenarios": 4
+      "scenarios": 6
     }
   },
   "product_binding_validation": {

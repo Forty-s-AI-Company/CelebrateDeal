@@ -1715,6 +1715,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
         liveId={live.id}
         currentSeconds={currentSeconds}
         events={live.interactionEvents}
+        onCheckout={externalNavigation.trackProduct}
         enabled={canUseLiveAdvancedInteractions(isPlayableRuntime, admissionStatus, live.admissionRequired)}
       />
       <DirectEntryAttributionReset enabled={isPlayableRuntime} />
