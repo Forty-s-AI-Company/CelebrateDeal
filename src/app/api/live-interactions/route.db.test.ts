@@ -10,9 +10,12 @@ import { hashLiveViewerToken, LIVE_VIEWER_SESSION_COOKIE } from "@/lib/live-quot
 
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
 // 只驗證註冊身分與資料庫狀態，不排程或寄送郵件。
+vi.mock("@/lib/commerce-order-email", () => ({ ensureCommerceOrderPaidDelivery: vi.fn() }));
+vi.mock("@/lib/taiwan-electronic-invoice", () => ({ reconcileElectronicInvoiceAfterPayment: vi.fn() }));
 vi.mock("@/lib/email-delivery", () => ({ ensureRegistrationConfirmationDelivery: vi.fn(), ensureLiveReminderDelivery: vi.fn() }));
 import { POST } from "./route";
 import { POST as checkout } from "../payments/checkout/route";
+import { processPaymentWebhook, PaymentWebhookPayload } from "@/lib/payment-webhooks";
 import { issueCheckoutAdmission, CHECKOUT_ADMISSION_COOKIE } from "@/lib/checkout-admission";
 import { POST as verifyRegistration } from "../form-submissions/verify/route";
 
@@ -74,9 +77,13 @@ describe("advanced interactions isolated PostgreSQL", () => {
     expect(payment.metadata).toMatchObject({ formSubmissionId: submission.id, sourceLiveId: run.liveId });
     expect(checkoutResponse.cookies.has(FORM_SUBMISSION_CHAT_SESSION_COOKIE)).toBe(false);
     expect((await enter(identity)).status).toBe(403);
-    // 真實 checkout/reservation/order 已建立；paid transition 暫用合成狀態，後續補 webhook。
-    await db.paymentTransaction.update({ where: { id: payment.id }, data: { status: "paid" } });
-    await db.commerceOrder.updateMany({ where: { primaryPaymentTransactionId: payment.id }, data: { status: "paid", paidAt: new Date(), paidAmountCents: 1000 } });
+    // 執行真實付款事件 domain；本測試不包含外部 provider 簽章 transport。
+    await processPaymentWebhook(PaymentWebhookPayload.parse({
+      provider: "demo", eventId: randomUUID(), eventType: "paid", vendorId: run.vendorId,
+      orderNumber: payment.orderNumber!, grossAmountCents: 1000, currency: "TWD",
+    }));
+    expect((await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } })).status).toBe("paid");
+    expect((await db.inventoryReservation.findUniqueOrThrow({ where: { paymentTransactionId: payment.id } })).status).toBe("committed");
     expect((await enter(`celebratedeal_form_submission=${submission.id}`)).status).toBe(403);
     expect((await enter(`${identity}tampered`)).status).toBe(403);
     expect((await enter(identity)).status).toBe(200);

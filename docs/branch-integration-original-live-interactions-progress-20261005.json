@@ -193,11 +193,12 @@
       "Valid issued cookie plus same-live bound product paid order fixture accepts and records verified submission id",
       "Actual checkout API with real signed admission, demo local provider, reservation/order persistence",
       "Checkout stores verified registration/live metadata and preserves signed session",
-      "Pending checkout does not qualify for purchased draw"
+      "Pending checkout does not qualify for purchased draw",
+      "Real processPaymentWebhook paid domain commits order and inventory before draw qualification"
     ],
-    "isolation": "Synthetic PostgreSQL; real verification, cryptography, checkout, reservation and order services; local demo provider; email enqueue and rate limiter mocked",
+    "isolation": "Synthetic PostgreSQL; real verification, signed admission, checkout/reservation/order and payment webhook domain; local demo provider; rate limiter, mail enqueue/paid delivery and invoice external side effects mocked",
     "limitations": [
-      "Paid status still advanced directly in synthetic database; real payment webhook transition pending",
+      "External provider signature transport not covered",
       "Full browser workflow pending"
     ],
     "eslint": "PASS",
@@ -211,5 +212,12 @@
     "eslint": "PASS",
     "tsc": "PASS",
     "remaining": "Independent review and full verification->real checkout->payment->draw browser/database chain"
+  },
+  "draft_ci": {
+    "head": "345402de2d857f42d09bcd90775df3c9641b4c02",
+    "run": 37234634199,
+    "status": "FAILED",
+    "step": "Unit tests and coverage thresholds",
+    "diagnosis": "Pending; GitHub annotations only report exit1 without specific test failure"
   }
 }
