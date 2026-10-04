@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   groupResponses: vi.fn(),
   createResponse: vi.fn(),
   findRegistration: vi.fn(),
+  verifyRegistrationSession: vi.fn(),
   findPaidTransaction: vi.fn(),
   findLive: vi.fn(),
   findSpotlight: vi.fn(),
@@ -45,6 +46,10 @@ vi.mock("@/lib/live-quota-admission", async (original) => ({
   hasActiveLiveViewerSession: mocks.activeViewer,
 }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+vi.mock("@/lib/form-submission-chat-session", () => ({
+  FORM_SUBMISSION_CHAT_SESSION_COOKIE: "celebratedeal_form_submission_chat_session",
+  verifyFormSubmissionChatSessionToken: mocks.verifyRegistrationSession,
+}));
 vi.mock("@/lib/sensitive-data", () => ({ decryptSensitiveValue: vi.fn(() => "CD-WIN-ABCD-1234") }));
 
 import { GET, POST } from "./route";
@@ -59,6 +64,7 @@ function request(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.verifyRegistrationSession.mockReset().mockReturnValue({ submissionId: "submission-1" });
   mocks.findTransactionRun.mockReset().mockResolvedValue({ id: "run-1" });
   mocks.activeViewer.mockResolvedValue(true);
   mocks.upsertRun.mockResolvedValue({ id: "run-1" });
@@ -81,6 +87,19 @@ beforeEach(() => {
 });
 
 describe("live interaction public contract", () => {
+  it.each(["celebratedeal_form_submission=submission-1", "celebratedeal_form_submission_chat_session=invalid"])("rejects purchased entry without a valid signed identity: %s", async (cookie) => {
+    mocks.verifyRegistrationSession.mockReturnValue(null);
+    mocks.findRun.mockResolvedValue({ id: "run-purchased", vendorId: "vendor-1", liveId: "live-1", eventType: "lucky_draw", status: "active", endsAt: new Date(Date.now() + 60_000), configuration: { kind: "lucky_draw", durationSec: 60, slogan: "", eligibility: "purchased" } });
+    const response = await POST(new Request("https://app.example.test/api/live-interactions", {
+      method: "POST", headers: { origin: "https://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web", cookie },
+      body: JSON.stringify({ action: "respond", vendorId: "vendor-1", liveId: "live-1", runId: "run-purchased", value: "entry" }),
+    }));
+    expect(response.status).toBe(403);
+    expect(mocks.findRegistration).not.toHaveBeenCalled();
+    expect(mocks.findPaidTransaction).not.toHaveBeenCalled();
+    expect(mocks.createResponse).not.toHaveBeenCalled();
+  });
+
   it.each(["changed", "serialization"])("rejects a response when the transactional run check encounters %s", async (failure) => {
     const updatedAt = new Date();
     mocks.findRun.mockResolvedValue({
@@ -179,7 +198,7 @@ describe("live interaction public contract", () => {
       method: "POST",
       headers: {
         origin: "https://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web",
-        cookie: "celebratedeal_form_submission=submission-1",
+        cookie: "celebratedeal_form_submission_chat_session=synthetic-signed-session",
       },
       body: JSON.stringify({ action: "respond", vendorId: "vendor-1", liveId: "live-1", runId: "run-purchased", value: "entry" }),
     }));
@@ -233,7 +252,7 @@ describe("live interaction public contract", () => {
       method: "POST",
       headers: {
         origin: "https://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web",
-        cookie: "celebratedeal_form_submission=submission-1",
+        cookie: "celebratedeal_form_submission_chat_session=synthetic-signed-session",
       },
       body: JSON.stringify({ action: "respond", vendorId: "vendor-1", liveId: "live-1", runId: "run-purchased", value: "entry" }),
     }));

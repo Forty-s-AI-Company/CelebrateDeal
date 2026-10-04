@@ -14,13 +14,14 @@
     }
   ],
   "validation": {
-    "unit_passed": 14,
+    "unit_passed": 16,
     "unit_failed": 0,
-    "typecheck": "PASS after transaction revalidation",
+    "typecheck": "PASS",
     "eslint": "PASS",
     "database": "PENDING",
     "browser": "PENDING",
-    "independent_review": "PENDING"
+    "independent_review": "PENDING",
+    "identity_helper_tests_passed": 4
   },
   "remaining": [
     "Review viewer/tenant boundaries, winner privacy and canonical runtime checks",
@@ -31,6 +32,6 @@
   "production": "Not operated",
   "review_findings": {
     "run_close_race": "Transaction now rechecks run version, scope, active state and time window; independent rereview and real DB concurrency test pending",
-    "purchased_identity": "Reviewer investigating checkout clearing form-submission cookie; keep unresolved until actual purchase identity path verified"
+    "purchased_identity": "Use verified signed chat session claim, no raw-cookie fallback; reviewer confirmed signature/cookie lifecycle. True verify-route then checkout then draw integration still pending. Single-browser registration replacement/expiry remains a capability limitation; evaluate buyer support grant fallback if needed."
   }
 }

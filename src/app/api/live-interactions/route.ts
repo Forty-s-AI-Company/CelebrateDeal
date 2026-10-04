@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { requireSameOriginRequest, readJsonBody } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
+import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import { normalizeInteractionEventDraft, type AdvancedInteractionMetadata } from "@/lib/interaction-event";
 import {
   createInteractionBearer,
@@ -48,8 +49,6 @@ const AskQuestionRequest = z.object({
   displayName: z.string().optional(),
 }).strict();
 const RequestBody = z.discriminatedUnion("action", [OpenRequest, RespondRequest, AskQuestionRequest]);
-const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
-const FORM_SUBMISSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/u;
 
 function requestCookie(request: Request, name: string) {
   for (const segment of (request.headers.get("cookie") ?? "").split(";").slice(0, 100)) {
@@ -68,8 +67,11 @@ async function verifiedPurchasedDrawRegistration(
   request: Request,
   input: { vendorId: string; liveId: string },
 ) {
-  const formSubmissionId = requestCookie(request, FORM_SUBMISSION_COOKIE);
-  if (!formSubmissionId || !FORM_SUBMISSION_ID_PATTERN.test(formSubmissionId)) return null;
+  // Checkout consumes its attribution cookie; the verified signed session survives it.
+  const token = requestCookie(request, FORM_SUBMISSION_CHAT_SESSION_COOKIE);
+  const claim = token ? verifyFormSubmissionChatSessionToken(token) : null;
+  if (!claim) return null;
+  const formSubmissionId = claim.submissionId;
 
   const registration = await tx.formSubmission.findFirst({
     where: {
