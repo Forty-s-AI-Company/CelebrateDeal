@@ -318,6 +318,14 @@ function invalidInteractionValueResponse(metadata: AdvancedInteractionMetadata, 
   return null;
 }
 
+function changedInteractionResponse(error: unknown) {
+  const serializationConflict = typeof error === "object" && error !== null && "code" in error && error.code === "P2034";
+  const changedRun = error instanceof Error && error.message === "INTERACTION_CHANGED";
+  return serializationConflict || changedRun
+    ? NextResponse.json({ error: "Interaction changed or closed; refresh and retry" }, { status: 409 })
+    : null;
+}
+
 export async function POST(request: Request) {
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
   if (sameOrigin) return sameOrigin;
@@ -363,6 +371,12 @@ export async function POST(request: Request) {
   let bearer: string | null = null;
   try {
     await getDb().$transaction(async (tx) => {
+      // Recheck the exact run version inside the serializable transaction before accepting a response.
+      const currentRun = await tx.liveInteractionRun.findFirst({
+        where: { id: run.id, vendorId: run.vendorId, liveId: run.liveId, updatedAt: run.updatedAt, status: "active", startsAt: { lte: new Date() }, endsAt: { gt: new Date() } },
+        select: { id: true },
+      });
+      if (!currentRun) throw new Error("INTERACTION_CHANGED");
       const purchasedRegistrationId = metadata.kind === "lucky_draw" && metadata.eligibility === "purchased"
         ? await verifiedPurchasedDrawRegistration(tx, request, { vendorId: run.vendorId, liveId: run.liveId })
         : null;
@@ -393,6 +407,8 @@ export async function POST(request: Request) {
       });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (error) {
+    const changedResponse = changedInteractionResponse(error);
+    if (changedResponse) return changedResponse;
     if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
       return NextResponse.json({ error: "Already responded" }, { status: 409 });
     }

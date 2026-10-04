@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   findEvent: vi.fn(),
   upsertRun: vi.fn(),
   findRun: vi.fn(),
+  findTransactionRun: vi.fn(),
   findRunWithResponses: vi.fn(),
   findManualRuns: vi.fn(),
   activeViewer: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock("@/lib/db", () => ({ getDb: () => ({
   live: { findFirst: mocks.findLive },
   liveQuestion: { findFirst: mocks.findSpotlight, count: mocks.countQuestions, create: mocks.createQuestion },
   $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+    liveInteractionRun: { findFirst: mocks.findTransactionRun },
     formSubmission: { findFirst: mocks.findRegistration },
     paymentTransaction: { findFirst: mocks.findPaidTransaction },
     liveQuestion: { count: mocks.countQuestions, create: mocks.createQuestion },
@@ -57,6 +59,7 @@ function request(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.findTransactionRun.mockReset().mockResolvedValue({ id: "run-1" });
   mocks.activeViewer.mockResolvedValue(true);
   mocks.upsertRun.mockResolvedValue({ id: "run-1" });
   mocks.countResponses.mockResolvedValue(1);
@@ -78,6 +81,21 @@ beforeEach(() => {
 });
 
 describe("live interaction public contract", () => {
+  it.each(["changed", "serialization"])("rejects a response when the transactional run check encounters %s", async (failure) => {
+    const updatedAt = new Date();
+    mocks.findRun.mockResolvedValue({
+      id: "run-poll", vendorId: "vendor-1", liveId: "live-1", eventType: "poll", status: "active", updatedAt,
+      endsAt: new Date(Date.now() + 60_000),
+      configuration: { kind: "poll", durationSec: 60, question: "Pick", options: [{ id: "option-1", label: "A" }, { id: "option-2", label: "B" }] },
+    });
+    if (failure === "changed") mocks.findTransactionRun.mockResolvedValue(null);
+    else mocks.findTransactionRun.mockRejectedValue({ code: "P2034" });
+    const response = await POST(request({ action: "respond", vendorId: "vendor-1", liveId: "live-1", runId: "run-poll", value: "option-1" }));
+    expect(response.status).toBe(409);
+    expect(mocks.createResponse).not.toHaveBeenCalled();
+    expect(mocks.findTransactionRun).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: "run-poll", vendorId: "vendor-1", liveId: "live-1", updatedAt, status: "active", startsAt: { lte: expect.any(Date) }, endsAt: { gt: expect.any(Date) } }) }));
+  });
+
   it("opens only a published event bound to the admitted live and returns aggregate poll results", async () => {
     const playbackStartedAt = new Date(Date.now() - 40_000);
     mocks.findEvent.mockResolvedValue({

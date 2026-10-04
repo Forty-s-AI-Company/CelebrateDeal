@@ -14,9 +14,9 @@
     }
   ],
   "validation": {
-    "unit_passed": 12,
+    "unit_passed": 14,
     "unit_failed": 0,
-    "typecheck": "PASS",
+    "typecheck": "PASS after transaction revalidation",
     "eslint": "PASS",
     "database": "PENDING",
     "browser": "PENDING",
@@ -28,5 +28,9 @@
     "Recover advanced UI and wire current playback without regressing existing behavior",
     "Independent review, protected PR CI and canonical acceptance"
   ],
-  "production": "Not operated"
+  "production": "Not operated",
+  "review_findings": {
+    "run_close_race": "Transaction now rechecks run version, scope, active state and time window; independent rereview and real DB concurrency test pending",
+    "purchased_identity": "Reviewer investigating checkout clearing form-submission cookie; keep unresolved until actual purchase identity path verified"
+  }
 }
