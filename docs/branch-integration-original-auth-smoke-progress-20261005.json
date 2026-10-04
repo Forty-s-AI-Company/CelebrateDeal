@@ -1,0 +1,64 @@
+{
+  "state": "LOCAL_CHECKS_AND_INDEPENDENT_REVIEW_PASS_PENDING_PARENT_CI",
+  "branch": "codex/integrate-original-auth-smoke-20261005",
+  "base": "a139b9d96227563fd28926c803c6c92efa44fde9",
+  "source": "Preserved original working tree smoke policy; targeted port into current auth and page implementations",
+  "checks": {
+    "targeted_vitest": {
+      "files": 2,
+      "tests": 328,
+      "status": "PASS"
+    },
+    "typecheck": "PASS",
+    "targeted_eslint": "PASS",
+    "diff_check": "PASS"
+  },
+  "review": {
+    "required": true,
+    "agent": "/root/portal_review_fallback",
+    "state": "COMPLETED",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "findings": [],
+    "scope": "Six candidate files; CSRF/auth before environment gate; guard before token/rate-limit/mail; shared UI policy; no unrelated auth regression",
+    "limitations": "Read-only review; no actual page rendering or mail operation"
+  },
+  "preserved": [
+    "CSRF and authentication before environment gate",
+    "current optional MFA for all roles and dedicated recovery-code transaction",
+    "current membership management and pending submit states",
+    "existing allowlist and rate limit after environment gate"
+  ],
+  "remaining_original_auth_deltas": [
+    "Registration action must be separately assessed; not copied blindly",
+    "Original redirect and MFA differences require semantic reconciliation; current hardened code retained",
+    "Original layout differences require independent content assessment"
+  ],
+  "files": [
+    {
+      "path": "src/lib/password-reset-smoke-policy.ts",
+      "sha256": "cf1ab7f20a9ccaf452c63c0e203dd55450dcfa31731415ebb8ae84cbecbb96f6"
+    },
+    {
+      "path": "src/lib/password-reset-smoke-policy.test.ts",
+      "sha256": "5c52162e3ae5a825fa829e8b1b302dcd88313fbd9277af4fc7844fbf0b4ace64"
+    },
+    {
+      "path": "src/app/actions/auth-security-actions.ts",
+      "sha256": "b294a36c053a766b7831cdd6142162a98864a28e250749d235e1be2c4821b848"
+    },
+    {
+      "path": "src/app/actions.test.ts",
+      "sha256": "be4dcd7f912c70733d5a0691def6bdb8a0aa3886cbfbb40b7cf5658d247afe5e"
+    },
+    {
+      "path": "src/app/(app)/settings/security/page.tsx",
+      "sha256": "17952e23d0a6de561321068af3b5a7f5780ab9a6359e4783ebcbf085329758ab"
+    },
+    {
+      "path": "src/app/mfa/setup/page.tsx",
+      "sha256": "eb6399c22bb7ec34c890e7d46e106366a0616c648c9ed96cd2ad3933001d1c1a"
+    }
+  ],
+  "production_operations": false
+}
