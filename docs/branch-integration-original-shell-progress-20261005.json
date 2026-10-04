@@ -291,5 +291,17 @@
   "full_lint": {
     "errors": 0,
     "warnings": 3
+  },
+  "ci_architecture_fix": {
+    "failed_head": "fd6460ff43374e036d1b4cf5710bddaf4d300250",
+    "cause": "Legacy root server action 2516 lines exceeds existing 2500 ceiling; 4314 tests passed and 1 architecture test failed",
+    "fix": "Extract unchanged live transition table and status parser into src/lib/live-status-transition.ts",
+    "root_lines": 2489,
+    "assertion_threshold_changed": false,
+    "unit_tests_passed": 332,
+    "database_tests_passed": 11,
+    "typecheck": "PASS",
+    "eslint": "PASS",
+    "independent_delta_review": "REQUESTED"
   }
 }
