@@ -22,6 +22,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveLiveRuntime } from "@/lib/live-runtime-state";
 import { decryptSensitiveValue } from "@/lib/sensitive-data";
 import { normalizeLiveQuestionBody, normalizeLiveQuestionDisplayName } from "@/lib/live-question";
+import { FLASH_SALE_COOKIE, FlashSaleUnavailableError, resolveFlashSaleQuote, resolveFlashSaleTerms } from "@/lib/live-flash-sale";
 
 const Identifier = z.string().trim().min(1).max(128);
 const OpenRequest = z.object({
@@ -146,6 +147,13 @@ async function projectRun(runId: string, participantHash: string) {
   if (!run) return null;
   const metadata = configuration(run.configuration);
   if (!metadata) return null;
+  const sale = metadata.kind === "flash_sale" ? await resolveFlashSaleTerms(getDb(), {
+    vendorId: run.vendorId, liveId: run.liveId, productId: metadata.productId, title: run.title, configuration: run.configuration,
+  }).catch((error: unknown) => {
+    if (error instanceof FlashSaleUnavailableError) return null;
+    throw error;
+  }) : null;
+  if (metadata.kind === "flash_sale" && !sale) return null;
   const [responseCount, ownResponse, pollCounts, winnerResponse] = await Promise.all([
     getDb().liveInteractionResponse.count({ where: { runId } }),
     getDb().liveInteractionResponse.findUnique({
@@ -192,6 +200,7 @@ async function projectRun(runId: string, participantHash: string) {
     startsAt: run.startsAt.toISOString(),
     endsAt: run.endsAt.toISOString(),
     metadata,
+    sale,
     responseCount,
     responded: Boolean(ownResponse),
     ownValue: ownResponse?.value ?? null,
@@ -419,6 +428,7 @@ export async function POST(request: Request) {
         if (claimed >= metadata.maxClaims) throw new Error("VOUCHER_SOLD_OUT");
         bearer = createInteractionBearer();
       }
+      if (metadata.kind === "flash_sale") bearer = createInteractionBearer();
       await tx.liveInteractionResponse.create({
         data: {
           vendorId: run.vendorId,
@@ -431,13 +441,16 @@ export async function POST(request: Request) {
           ...(purchasedRegistrationId ? { formSubmissionId: purchasedRegistrationId } : {}),
           ...(bearer ? {
             claimTokenHash: hashInteractionBearer(bearer),
-            productId: metadata.kind === "flash_voucher" ? metadata.productId : null,
-            expiresAt: new Date(Math.min(run.endsAt.getTime() + FLASH_VOUCHER_TTL_MS, Date.now() + FLASH_VOUCHER_TTL_MS)),
+            productId: metadata.kind === "flash_voucher" || metadata.kind === "flash_sale" ? metadata.productId : null,
+            expiresAt: metadata.kind === "flash_sale" ? run.endsAt : new Date(Math.min(run.endsAt.getTime() + FLASH_VOUCHER_TTL_MS, Date.now() + FLASH_VOUCHER_TTL_MS)),
           } : {}),
         },
       });
+      // 發放前使用結帳同一套報價檢查；錯誤商品／價格會回滾整個 claim。
+      if (metadata.kind === "flash_sale") await resolveFlashSaleQuote(tx, bearer, { vendorId: run.vendorId, productId: metadata.productId });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (error) {
+    if (error instanceof FlashSaleUnavailableError) return NextResponse.json({ error: "Flash sale unavailable" }, { status: 409 });
     const changedResponse = changedInteractionResponse(error);
     if (changedResponse) return changedResponse;
     if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
@@ -452,7 +465,7 @@ export async function POST(request: Request) {
     throw error;
   }
   const response = NextResponse.json({ run: await projectRun(run.id, viewer.participantHash) }, { headers: { "Cache-Control": "private, no-store" } });
-  if (bearer) response.cookies.set(FLASH_VOUCHER_COOKIE, bearer, {
+  if (bearer) response.cookies.set(metadata.kind === "flash_sale" ? FLASH_SALE_COOKIE : FLASH_VOUCHER_COOKIE, bearer, {
     httpOnly: true,
     sameSite: "lax",
     secure: secureInteractionCookie(request),

@@ -84,14 +84,23 @@ export async function resolveFlashSaleQuote(
     || run.status !== "active" || run.startsAt > now || run.endsAt <= now) {
     throw new FlashSaleUnavailableError();
   }
+  const terms = await resolveFlashSaleTerms(db, { ...input, liveId: run.liveId, title: run.title, configuration: run.configuration });
+  return { claimId: claim.id, runId: run.id, runRevision: run.updatedAt.getTime(), vendorId: input.vendorId, liveId: run.liveId, productId: input.productId, ...terms };
+}
+
+/** 公開卡片與核銷共用同一套價格、幣別和商品綁定驗證。 */
+export async function resolveFlashSaleTerms(db: Prisma.TransactionClient, input: {
+  vendorId: string; liveId: string; productId: string; title: string; configuration: Prisma.JsonValue;
+}) {
+  if (!input.configuration || typeof input.configuration !== "object" || Array.isArray(input.configuration)) throw new FlashSaleUnavailableError();
   const normalized = normalizeInteractionEventDraft({
-    eventType: "flash_sale", triggerSec: 0, title: run.title,
-    productId: claim.productId, metadata: run.configuration,
+    eventType: "flash_sale", triggerSec: 0, title: input.title,
+    productId: input.productId, metadata: input.configuration,
   });
   if (!normalized.success || normalized.data.metadata?.kind !== "flash_sale"
     || normalized.data.metadata.productId !== input.productId) throw new FlashSaleUnavailableError();
   const metadata = normalized.data.metadata;
-  const raw = run.configuration as Record<string, unknown>;
+  const raw = input.configuration as Record<string, unknown>;
   // Normalizer 的寬容匯入行為不能把錯誤優惠悄悄轉為原價結帳。
   for (const field of ["salePriceCents", "originalPriceCents", "stockLimit"] as const) {
     if (raw[field] !== undefined && raw[field] !== metadata[field]) throw new FlashSaleUnavailableError();
@@ -100,17 +109,12 @@ export async function resolveFlashSaleQuote(
     where: {
       id: input.productId, vendorId: input.vendorId, isActive: true,
       fulfillmentTypeConfirmed: true, checkoutUrl: null,
-      liveProducts: { some: { vendorId: input.vendorId, liveId: run.liveId } },
+      liveProducts: { some: { vendorId: input.vendorId, liveId: input.liveId } },
     },
   });
   if (!product) throw new FlashSaleUnavailableError();
   const salePriceCents = validatedSalePrice(metadata, product);
-  return {
-    claimId: claim.id, runId: run.id, runRevision: run.updatedAt.getTime(),
-    vendorId: input.vendorId, liveId: run.liveId, productId: product.id,
-    productRevision: product.revision, priceCents: product.priceCents,
-    salePriceCents, currency: product.currency, stockLimit: metadata.stockLimit ?? null,
-  };
+  return { productRevision: product.revision, priceCents: product.priceCents, salePriceCents, currency: product.currency, stockLimit: metadata.stockLimit ?? null };
 }
 
 /** 必須在訂單與商品庫存共用的 Serializable transaction 內呼叫。 */

@@ -96,7 +96,7 @@ try {
     await salePage.goto(`http://127.0.0.1:${server.address().port}`);
     await salePage.evaluate(() => window.renderInteractions({ enabled: true }));
     await expect.poll(() => salePage.evaluate(() => window.requests.length)).toBe(1);
-    const sale = { ...run("sale", "限時商品"), eventType: "flash_sale", metadata: { kind: "flash_sale", durationSec: 120, productId: "bound-product" } };
+    const sale = { ...run("sale", "限時商品"), eventType: "flash_sale", metadata: { kind: "flash_sale", durationSec: 120, productId: "bound-product" }, sale: { priceCents: 2000, salePriceCents: 1000, currency: "TWD", stockLimit: 1 } };
     await salePage.evaluate(payload => window.answer(0, payload), { runs: [sale] });
     await salePage.getByRole("button", { name: "立即搶購特惠方案" }).click();
     await expect.poll(() => salePage.evaluate(() => window.requests.length)).toBe(2);

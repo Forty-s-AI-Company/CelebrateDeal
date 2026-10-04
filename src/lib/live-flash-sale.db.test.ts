@@ -11,6 +11,8 @@ import { CHECKOUT_ADMISSION_COOKIE } from "@/lib/checkout-admission";
 import { POST as admitCheckout } from "@/app/api/payments/checkout/admission/route";
 import { POST as checkout } from "@/app/api/payments/checkout/route";
 import { processPaymentWebhook, PaymentWebhookPayload } from "@/lib/payment-webhooks";
+import { POST as respondToInteraction } from "@/app/api/live-interactions/route";
+import { hashLiveViewerToken, LIVE_VIEWER_SESSION_COOKIE } from "@/lib/live-quota-admission";
 
 // 隔離外部寄信與發票；保留真實付款事件、訂單及庫存處理。
 vi.mock("@/lib/commerce-order-email", () => ({ ensureCommerceOrderPaidDelivery: vi.fn() }));
@@ -23,7 +25,7 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 
-async function fixture(configuration: Record<string, unknown> = {}) {
+async function fixture(configuration: Record<string, unknown> = {}, issueThroughViewer = false) {
   const db = getDb();
   const suffix = randomUUID();
   const vendor = await db.vendor.create({ data: { name: "Synthetic flash sale", slug: suffix, email: `${suffix}@example.test`, passwordHash: "synthetic-only" } });
@@ -37,7 +39,7 @@ async function fixture(configuration: Record<string, unknown> = {}) {
     configuration: { kind: "flash_sale", durationSec: 60, productId: product.id, salePriceCents: 1000, originalPriceCents: 2000, stockLimit: 1, ...configuration },
   } });
   const bearers = [createInteractionBearer(), createInteractionBearer()];
-  await db.liveInteractionResponse.createMany({ data: bearers.map((bearer) => ({
+  if (!issueThroughViewer) await db.liveInteractionResponse.createMany({ data: bearers.map((bearer) => ({
     vendorId: vendor.id, liveId: live.id, runId: run.id, productId: product.id,
     eventType: "flash_sale", participantHash: randomUUID(), value: "buy",
     claimTokenHash: hashInteractionBearer(bearer), expiresAt: run.endsAt,
@@ -46,14 +48,35 @@ async function fixture(configuration: Record<string, unknown> = {}) {
 }
 
 describe("flash sale authoritative price and reservation", () => {
+  it.each([0, 2500, 999])("does not issue a cookie or persist a claim for invalid sale amount %s", async (salePriceCents) => {
+    const f = await fixture({ salePriceCents }, true);
+    const viewer = createInteractionBearer();
+    await f.db.liveViewerSession.create({ data: { vendorId: f.vendor.id, liveId: f.live.id, tokenHash: hashLiveViewerToken(viewer), lastSeenAt: new Date(), expiresAt: new Date(Date.now() + 60000) } });
+    const response = await respondToInteraction(new Request("https://app.example.test/api/live-interactions", {
+      method: "POST", headers: { origin: "https://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web", cookie: `${LIVE_VIEWER_SESSION_COOKIE}=${viewer}` },
+      body: JSON.stringify({ action: "respond", vendorId: f.vendor.id, liveId: f.live.id, runId: f.run.id, value: "buy" }),
+    }));
+    expect(response.status).toBe(409);
+    expect(response.cookies.get(FLASH_SALE_COOKIE)).toBeUndefined();
+    expect(await f.db.liveInteractionResponse.count({ where: { runId: f.run.id } })).toBe(0);
+  });
+
   it.each(["unchanged", "missing-cookie", "changed-offer"])("enforces signed offer in real admission and checkout APIs: %s", async (scenario) => {
     vi.stubEnv("PAYMENT_PROVIDER", "demo");
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://127.0.0.1:31027");
-    const f = await fixture();
+    const f = await fixture({}, true);
     const request = (path: string, body: unknown, cookie: string) => new Request(`http://127.0.0.1:31027${path}`, {
       method: "POST", headers: { origin: "http://127.0.0.1:31027", "content-type": "application/json", "x-celebratedeal-client": "web", cookie }, body: JSON.stringify(body),
     });
-    const saleCookie = `${FLASH_SALE_COOKIE}=${f.bearers[0]}`;
+    const viewer = createInteractionBearer();
+    await f.db.liveViewerSession.create({ data: { vendorId: f.vendor.id, liveId: f.live.id, tokenHash: hashLiveViewerToken(viewer), lastSeenAt: new Date(), expiresAt: new Date(Date.now() + 60000) } });
+    const issued = await respondToInteraction(request("/api/live-interactions", { action: "respond", vendorId: f.vendor.id, liveId: f.live.id, runId: f.run.id, value: "buy" }, `${LIVE_VIEWER_SESSION_COOKIE}=${viewer}`));
+    expect(issued.status).toBe(200);
+    expect(await issued.json()).toMatchObject({ run: { sale: { priceCents: 2000, salePriceCents: 1000, currency: "TWD" } } });
+    const issuedCookie = issued.cookies.get(FLASH_SALE_COOKIE)!;
+    expect(issuedCookie).toMatchObject({ httpOnly: true, sameSite: "lax", path: "/" });
+    expect((await f.db.liveInteractionResponse.findFirstOrThrow({ where: { runId: f.run.id } })).expiresAt).toEqual(f.run.endsAt);
+    const saleCookie = `${FLASH_SALE_COOKIE}=${issuedCookie.value}`;
     const admission = await admitCheckout(request("/api/payments/checkout/admission", f.scope, saleCookie));
     expect(admission.status).toBe(200);
     const authorized = await admission.json();

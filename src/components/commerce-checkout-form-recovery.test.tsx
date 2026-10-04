@@ -3,8 +3,10 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommerceCheckoutForm } from "@/components/commerce-checkout-form";
+import { CommerceCheckoutEntry } from "@/components/commerce-checkout-entry";
 import {
   checkoutIdempotencyStorageKey,
+  clearCheckoutRecoveryRecord,
   readCheckoutIdempotencyKey,
   saveCheckoutRecoveryRecord,
 } from "@/lib/checkout-idempotency";
@@ -36,11 +38,12 @@ afterEach(async () => {
 
 describe("pending checkout recovery", () => {
   it("displays the signed offer and waits for a second confirmation before checkout", async () => {
+    clearCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname);
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ admissionToken, idempotencyKey: key, expiresAt: "2027-01-01T00:00:00.000Z", offer: { priceCents: 1000, currency: "TWD", hash: "a".repeat(64) } }) })
       .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ code: "FLASH_SALE_UNAVAILABLE", error: "raw diagnostics" }) });
     vi.stubGlobal("fetch", fetchMock);
-    await act(async () => { root.render(<CommerceCheckoutForm vendorId="vendor-1" productId="product-1" productName="商品" fulfillmentType="digital" priceCents={2000} />); });
+    await act(async () => { root.render(<CommerceCheckoutEntry summary={{ vendorName: "測試商家" }} current={{ vendorId: "vendor-1", productId: "product-1", productName: "商品", fulfillmentType: "digital", priceCents: 2000, currency: "TWD" }} />); });
     const form = container.querySelector("form")!;
     form.querySelector<HTMLInputElement>('[name="buyerName"]')!.value = "測試買家";
     form.querySelector<HTMLInputElement>('[name="buyerEmail"]')!.value = "buyer@example.test";
@@ -48,6 +51,9 @@ describe("pending checkout recovery", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("確認優惠並前往付款");
     expect(container.querySelector("strong.text-xl")?.textContent).toContain("10");
+    expect(container.querySelector("section")?.textContent).toContain("商品原價");
+    expect(container.querySelector("section")?.textContent).toContain("20");
+    expect(container.querySelector("section")?.textContent).not.toContain("訂單摘要");
     await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/payments/checkout");

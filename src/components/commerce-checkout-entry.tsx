@@ -131,10 +131,10 @@ export function CommerceCheckoutEntry({
       <div className="p-5 sm:p-6">
         {state.kind === "current" && summary.vendorName ? <p className="text-sm font-semibold text-blue-700">{summary.vendorName}</p> : null}
         <h1 id="checkout-product-title" className="mt-2 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">{terms?.productName ?? "結帳訂單"}</h1>
-        {total ? <p className="mt-3 text-2xl font-black text-slate-950">{total}</p> : null}
+        {total ? <p className="mt-3 text-2xl font-black text-slate-950">{state.kind === "current" ? <span className="mr-2 text-sm font-medium text-slate-600">商品原價</span> : null}{total}</p> : null}
         {terms ? <p className="mt-2 text-sm font-medium text-slate-600">{fulfillmentLabels[terms.fulfillmentType]}</p> : null}
         {state.kind === "current" && summary.description ? <p className="mt-5 whitespace-pre-line text-sm leading-7 text-slate-600">{summary.description}</p> : null}
-        {terms && total ? <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-700"><p className="font-semibold">訂單摘要</p><div className="mt-2 flex items-center justify-between gap-4"><span>{terms.productName} × 1{state.kind === "recovered" && terms.initialOrderBumpSelected && terms.orderBump ? `＋${terms.orderBump.title}` : ""}</span><span className="font-bold">{total}</span></div></div> : null}
+        {terms && total ? <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-700"><p className="font-semibold">{state.kind === "current" ? "商品原價（優惠與加購以結帳總額為準）" : "訂單摘要"}</p><div className="mt-2 flex items-center justify-between gap-4"><span>{terms.productName} × 1{state.kind === "recovered" && terms.initialOrderBumpSelected && terms.orderBump ? `＋${terms.orderBump.title}` : ""}</span><span className="font-bold">{total}</span></div></div> : null}
       </div>
     </section>
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7" aria-labelledby="checkout-form-title"><p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-700">安全結帳</p><h2 id="checkout-form-title" className="mt-2 text-2xl font-black text-slate-950">確認購買資料</h2><p className="mt-2 mb-6 text-sm leading-6 text-slate-600">先建立可追蹤訂單，再前往金流商付款。重新送出相同請求不會重複建立訂單。</p>{form}</section>

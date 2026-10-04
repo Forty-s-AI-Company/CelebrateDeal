@@ -268,13 +268,13 @@
     ]
   },
   "latest_remote_ci_observation": {
-    "head": "8adbc8dc68645b3eca55333718bb197d8de13336",
+    "head": "5af5773a9bbc09b8a6bf3c0b7e15f26c7b35b6f6",
     "run_ids": [
-      37235580212,
-      37235576999
+      37236350969,
+      37236347033
     ],
-    "status": "failure",
-    "note": "Does not cover unpushed flash sale core checkpoint."
+    "status": "in_progress",
+    "note": "Does not cover later local quote/UI/issuer commits."
   },
   "flash_sale_reservation_revision_repair": {
     "status": "CORE_VALIDATED_NOT_API_WIRED",
@@ -352,12 +352,38 @@
       "eslint": "PASS",
       "typescript": "PASS"
     },
-    "review": "Requested existing independent reviewer to verify paid-repurchase fix and UI confirmation",
+    "review": "Original paid repurchase MAJOR closed; reviewer found MINOR original-price summary label, addressed in viewer issuance checkpoint and full Entry component test.",
     "remaining": [
       "Actual viewer flash-sale claim issuance",
       "Authoritative live-card display of price/currency",
       "Full browser flow and provider-failure recovery",
       "Exact-head CI and canonical acceptance before protected merge"
+    ]
+  },
+  "flash_sale_viewer_issuance_checkpoint": {
+    "status": "SOURCE_AND_COMPONENT_VALIDATED_NOT_READY",
+    "implemented": [
+      "Actual admitted viewer response issues dedicated HttpOnly hashed-bearer sale claim expiring at run end",
+      "Invalid price/product rolls back claim and emits no cookie",
+      "Public run and checkout share authoritative product price/currency validation; live card uses server sale terms",
+      "Current catalog column explicitly marked original product price; recovered order summary unchanged"
+    ],
+    "validation": {
+      "passed": 43,
+      "failed": 0,
+      "receipt": ".ai-team/tmp/flash-sale-viewer-issuance-results.json",
+      "browser_component_scenarios": 6,
+      "browser_receipt": ".ai-team/tmp/live-advanced-interactions-browser-results.json",
+      "eslint": "PASS",
+      "typescript": "PASS",
+      "scope": "Actual viewer issue/admission/checkout/payment event/repurchase DB chain plus component browser; not full browser-to-backend chain"
+    },
+    "review": "Requested existing independent reviewer; pending",
+    "remaining": [
+      "Preserve expected sale intent before admission, including missing cookie and previously responded navigation",
+      "Full browser-to-backend payment flow",
+      "Provider failure recovery policy",
+      "Final independent review, exact-head CI and canonical acceptance"
     ]
   }
 }
