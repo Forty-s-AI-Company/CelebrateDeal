@@ -328,6 +328,16 @@ function changedInteractionResponse(error: unknown) {
     : null;
 }
 
+function retryableQuestionConflict(error: unknown) {
+  const response = changedInteractionResponse(error);
+  if (response) return response;
+  throw error;
+}
+
+function secureInteractionCookie(request: Request) {
+  return process.env.NODE_ENV === "production" || new URL(request.url).protocol === "https:";
+}
+
 export async function POST(request: Request) {
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
   if (sameOrigin) return sameOrigin;
@@ -354,7 +364,8 @@ export async function POST(request: Request) {
         data: { vendorId: data.vendorId, liveId: data.liveId, participantHash: viewer.participantHash, displayName, body },
         select: { id: true, status: true },
       });
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }).catch(retryableQuestionConflict);
+    if (question instanceof Response) return question;
     if (!question) return NextResponse.json({ error: "Question rate limit exceeded" }, { status: 429 });
     return NextResponse.json({ question }, { status: 201, headers: { "Cache-Control": "private, no-store" } });
   }
@@ -426,7 +437,7 @@ export async function POST(request: Request) {
   if (bearer) response.cookies.set(FLASH_VOUCHER_COOKIE, bearer, {
     httpOnly: true,
     sameSite: "lax",
-    secure: new URL(request.url).protocol === "https:",
+    secure: secureInteractionCookie(request),
     path: "/",
     maxAge: FLASH_VOUCHER_TTL_MS / 1_000,
   });

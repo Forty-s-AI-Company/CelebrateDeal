@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   findEvent: vi.fn(),
@@ -86,7 +86,31 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => vi.unstubAllEnvs());
+
 describe("live interaction public contract", () => {
+  it("returns a retryable conflict when concurrent questions cannot serialize", async () => {
+    mocks.countQuestions.mockRejectedValueOnce({ code: "P2034" });
+    const response = await POST(request({ action: "ask_question", vendorId: "vendor-1", liveId: "live-1", body: "Question" }));
+    expect(response.status).toBe(409);
+    expect(mocks.createQuestion).not.toHaveBeenCalled();
+  });
+
+  it("keeps voucher cookies Secure behind an internal HTTP production proxy", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    mocks.findRun.mockResolvedValue({ id: "run-voucher", vendorId: "vendor-1", liveId: "live-1", eventType: "flash_voucher", status: "active", endsAt: new Date(Date.now() + 60_000), configuration: { kind: "flash_voucher", durationSec: 60, maxClaims: 2, discountType: "fixed", discountValue: 100, productId: null } });
+    mocks.countResponses.mockResolvedValue(0);
+    const response = await POST(new Request("http://app.example.test/api/live-interactions", {
+      method: "POST", headers: { origin: "http://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web" },
+      body: JSON.stringify({ action: "respond", vendorId: "vendor-1", liveId: "live-1", runId: "run-voucher", value: "claim" }),
+    }));
+    expect(response.status).toBe(200);
+    const cookie = response.cookies.get("celebratedeal_flash_voucher");
+    // Inspect flags only; never include the generated bearer in assertions or reports.
+    expect(cookie?.secure).toBe(true);
+    expect(cookie?.httpOnly).toBe(true);
+  });
+
   it.each(["celebratedeal_form_submission=submission-1", "celebratedeal_form_submission_chat_session=invalid"])("rejects purchased entry without a valid signed identity: %s", async (cookie) => {
     mocks.verifyRegistrationSession.mockReturnValue(null);
     mocks.findRun.mockResolvedValue({ id: "run-purchased", vendorId: "vendor-1", liveId: "live-1", eventType: "lucky_draw", status: "active", endsAt: new Date(Date.now() + 60_000), configuration: { kind: "lucky_draw", durationSec: 60, slogan: "", eligibility: "purchased" } });
