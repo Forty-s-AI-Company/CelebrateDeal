@@ -1,6 +1,7 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
+import { requestedLiveStatus } from "@/lib/live-status-transition";
 import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { isIP } from "node:net";
 import { redirect } from "next/navigation";
@@ -716,33 +717,6 @@ function parseLiveDraftClaim(formData: FormData, liveId: string | null) {
     : `/lives/new?error=draft_conflict${draftId ? `&draft=${encodeURIComponent(draftId)}` : ""}`;
   if (!draftId || draftId.length > 128 || revision < 1) redirect(conflictPath);
   return { draftId, revision, conflictPath };
-}
-
-const liveStatusTransitions: Readonly<Record<string, ReadonlySet<string>>> = {
-  draft: new Set(["draft", "scheduled"]),
-  scheduled: new Set(["draft", "scheduled", "live"]),
-  live: new Set(["live", "ended"]),
-  ended: new Set(["draft", "ended", "scheduled"]),
-};
-
-function requestedLiveStatus(
-  formData: FormData,
-  liveId: string | null,
-  draftId: string,
-  currentStatus: string | null,
-) {
-  const status = text(formData, "status", "draft");
-  const transitionAllowed = liveId
-    ? Boolean(currentStatus && liveStatusTransitions[currentStatus]?.has(status))
-    : status === "draft" || status === "scheduled";
-  if (!transitionAllowed) {
-    redirect(
-      liveId
-        ? `/lives/${encodeURIComponent(liveId)}/edit?error=invalid_status`
-        : `/lives/new?error=invalid_status&draft=${encodeURIComponent(draftId)}`,
-    );
-  }
-  return status;
 }
 
 async function commitLiveDraft(input: {
