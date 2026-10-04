@@ -117,7 +117,16 @@
     "remaining": [
       "Real PostgreSQL claim-to-checkout transaction and rollback tests",
       "Independent security review",
-      "Flash sale pricing/stock implementation and full purchase identity chain"
+      "Flash sale pricing/stock implementation and full purchase identity chain",
+      "Resolve post-commit provider failure voucher recovery and prevent silent full-price retry"
+    ],
+    "database_validation": {
+      "tests": 13,
+      "status": "PASS",
+      "scope": "Actual issued live voucher concurrent CAS consumes once; order-transaction exception rolls back claim and allows retry. Excludes post-commit provider failure recovery."
+    },
+    "review_findings": [
+      "OPEN MAJOR: provider checkout or metadata failure after reservation leaves voucher consumed; new idempotency key can silently fall back to full price. Need safe recovery considering late paid callback, not blind usedOrderId reset."
     ]
   }
 }

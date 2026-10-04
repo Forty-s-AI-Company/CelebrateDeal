@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import * as dbModule from "@/lib/db";
+import { consumeCheckoutVoucherClaim, VoucherClaimConflictError } from "@/lib/checkout-voucher-claim";
 import { hashLiveViewerToken, LIVE_VIEWER_SESSION_COOKIE } from "@/lib/live-quota-admission";
 
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
@@ -30,6 +31,35 @@ async function fixture() {
 }
 
 describe("advanced interactions isolated PostgreSQL", () => {
+  it("allows only one order to consume a real issued live voucher", async () => {
+    const { db, run, tokens, respond } = await fixture();
+    expect((await respond(tokens[0]!)).status).toBe(200);
+    const issued = await db.liveInteractionResponse.findFirstOrThrow({ where: { runId: run.id } });
+    const claim = { id: issued.id, source: "live" as const, discountAmountCents: 100 };
+    const results = await Promise.allSettled(["order-a", "order-b"].map(orderId => db.$transaction(tx => consumeCheckoutVoucherClaim(tx, claim, { vendorId: run.vendorId, orderId, now: new Date() }))));
+    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    const failure = results.find(result => result.status === "rejected");
+    expect(failure?.status === "rejected" && failure.reason instanceof VoucherClaimConflictError).toBe(true);
+    const consumed = await db.liveInteractionResponse.findUniqueOrThrow({ where: { id: issued.id } });
+    expect(["order-a", "order-b"]).toContain(consumed.usedOrderId);
+    expect(consumed.discountAmountCents).toBe(100);
+  });
+
+  it("rolls back voucher consumption when the surrounding order transaction fails", async () => {
+    const { db, run, tokens, respond } = await fixture();
+    expect((await respond(tokens[0]!)).status).toBe(200);
+    const issued = await db.liveInteractionResponse.findFirstOrThrow({ where: { runId: run.id } });
+    const claim = { id: issued.id, source: "live" as const, discountAmountCents: 100 };
+    await expect(db.$transaction(async tx => {
+      await consumeCheckoutVoucherClaim(tx, claim, { vendorId: run.vendorId, orderId: "failed-order", now: new Date() });
+      throw new Error("synthetic order persistence failure");
+    })).rejects.toThrow("synthetic order persistence failure");
+    const reverted = await db.liveInteractionResponse.findUniqueOrThrow({ where: { id: issued.id } });
+    expect(reverted.usedOrderId).toBeNull();
+    expect(reverted.discountAmountCents).toBeNull();
+    await expect(db.$transaction(tx => consumeCheckoutVoucherClaim(tx, claim, { vendorId: run.vendorId, orderId: "retry-order", now: new Date() }))).resolves.toBeUndefined();
+  });
+
   it.each([
     { isActive: false },
     { fulfillmentTypeConfirmed: false },

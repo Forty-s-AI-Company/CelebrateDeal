@@ -1,3 +1,4 @@
+import { consumeCheckoutVoucherClaim, VoucherClaimConflictError, type EligibleCheckoutVoucherClaim } from "@/lib/checkout-voucher-claim";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -75,14 +76,6 @@ const CheckoutRequest = CommerceCheckoutRequestSchema.extend({
 });
 
 const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
-
-class VoucherClaimConflictError extends Error {}
-
-type EligibleCheckoutVoucherClaim = {
-  id: string;
-  source: "automation" | "live";
-  discountAmountCents: number;
-} | null;
 
 type CheckoutRequestData = z.infer<typeof CheckoutRequest>;
 type CheckoutAdmission = NonNullable<ReturnType<typeof verifyCheckoutAdmission>>;
@@ -181,31 +174,6 @@ async function eligibleCheckoutVoucherClaim(
   return live ? { ...live, source: "live" } : null;
 }
 
-async function consumeCheckoutVoucherClaim(
-  tx: Prisma.TransactionClient,
-  claim: EligibleCheckoutVoucherClaim,
-  input: { vendorId: string; orderId: string; now: Date },
-) {
-  if (!claim) return;
-  if (claim.source === "live") {
-    const consumed = await tx.liveInteractionResponse.updateMany({
-      where: { id: claim.id, vendorId: input.vendorId, eventType: "flash_voucher", usedOrderId: null, expiresAt: { gt: input.now } },
-      data: { usedOrderId: input.orderId, discountAmountCents: claim.discountAmountCents },
-    });
-    if (consumed.count !== 1) throw new VoucherClaimConflictError();
-    return;
-  }
-  const consumed = await tx.automationVoucherGrant.updateMany({
-    where: {
-      id: claim.id,
-      vendorId: input.vendorId,
-      usedOrderId: null,
-      expiresAt: { gt: input.now },
-    },
-    data: { usedOrderId: input.orderId, redeemedAt: input.now },
-  });
-  if (consumed.count !== 1) throw new VoucherClaimConflictError();
-}
 
 function hasReadyProductDelivery(product: {
   fulfillmentType: string;
