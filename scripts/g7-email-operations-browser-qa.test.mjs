@@ -13,9 +13,11 @@ test("G7-55 receipt fails closed for migration, privacy, durable requeue, cleanu
   for (const value of [{ ...safe, workPackage: "G7-54" }, { ...safe, expected: { ...safe.expected, canonicalMigrations: 52 } }, { ...safe, expected: { ...safe.expected, emailDeliveries: 54 } }, { ...safe, browser: { ...safe.browser, requeue: "NOT_RUN" } }, { ...safe, browser: { ...safe.browser, tenantIsolation: "FAIL" } }, { ...safe, safety: { ...safe.safety, externalOperations: true } }, { ...safe, screenshots: {} }]) assert.equal(validateReceipt(value), false);
 });
 
-test("G7-55 source attests canonical migrations, no-dotenv mirror, loopback guard, local cache and full email contract", () => {
+test("G7-55 historical runner rejects the additive migration while retaining its safety contract", () => {
   const source = fs.readFileSync(new URL("./g7-email-operations-browser-qa.mjs", import.meta.url), "utf8");
-  assert.equal(canonicalMigrations().length, EXPECTED_CANONICAL_MIGRATIONS); assert.match(safeSourceDigest(), /^[a-f0-9]{64}$/u); assert.equal(assertStaticSafety(source), true);
+  assert.equal(canonicalMigrations().length, EXPECTED_CANONICAL_MIGRATIONS + 2);
+  assert.deepEqual(canonicalMigrations().slice(-2), ["20260929170000_payment_method_setup_intent", "20260930094500_payuni_live_probe"]);
+  assert.match(safeSourceDigest(), /^[a-f0-9]{64}$/u); assert.equal(assertStaticSafety(source), true);
   for (const text of ["emailDelivery", "55", "/messages/deliveries", "aria-busy=true", "provider_rejected", "createEmailRecipientHash", "manualRetryCount", "liveReminderFailedId", "observation-", "mergeBrowserObservations", "PLAYWRIGHT_BROWSERS_PATH", "NPM_CONFIG_OFFLINE", "receipt-exists-no-overwrite", ".HostConfig.Tmpfs", "G7_EMAIL_OPERATIONS_EXTERNAL_NETWORK_DENIED"]) assert.equal(source.includes(text), true, text);
   for (const unsafe of ["require('dotenv')", "launchPersistentContext", "fetch('https://outside.example')"]) assert.equal(assertStaticSafety(unsafe), false);
 });

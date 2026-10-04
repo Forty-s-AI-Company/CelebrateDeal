@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   webhookEventFindUnique: vi.fn(),
   webhookEventCreate: vi.fn(),
   webhookEventUpdateMany: vi.fn(),
+  paymentTransactionFindFirst: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
@@ -69,6 +70,7 @@ function observedRecord(consoleInfo: ReturnType<typeof vi.spyOn>) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.webhookEventUpdateMany.mockReset().mockResolvedValue({ count: 1 });
+  mocks.paymentTransactionFindFirst.mockReset().mockResolvedValue(null);
   vi.stubEnv("PAYMENT_PROVIDER", "demo");
   vi.stubEnv("NODE_ENV", "test");
   mocks.getDb.mockReturnValue({
@@ -77,6 +79,7 @@ beforeEach(() => {
       create: mocks.webhookEventCreate,
       updateMany: mocks.webhookEventUpdateMany,
     },
+    paymentTransaction: { findFirst: mocks.paymentTransactionFindFirst },
   });
 });
 
@@ -86,6 +89,143 @@ afterEach(() => {
 });
 
 describe("payment webhook provider selection", () => {
+  const planTransaction = {
+    id: "transaction-plan", vendorId: "vendor-plan", providerName: "payuni", orderNumber: "CD-PLAN", paymentMode: "platform", status: "paid",
+    metadata: { billingPurpose: "platform_subscription_checkout", platformSubscriptionId: "subscription-plan", billingPlanId: "plan-starter" },
+  };
+  const processedPlanEvent = {
+    id: "event-plan", provider: "payuni", vendorId: "vendor-plan", status: "processed", retryCount: 0,
+    payload: { normalized: { provider: "payuni", orderNumber: "CD-PLAN" } },
+  };
+
+  function verifiedPlanCallback() {
+    vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+    mocks.payUniVerifySignature.mockResolvedValue(true);
+    mocks.payUniNormalizePayload.mockResolvedValue({
+      payload: { provider: "payuni", eventId: "provider-plan", eventType: "paid", orderNumber: "CD-PLAN" }, rawPayload: {},
+    });
+  }
+
+  it("returns a reconciled platform plan payment to authenticated billing without a success query or identifiers", async () => {
+    verifiedPlanCallback();
+    mocks.webhookEventFindUnique.mockResolvedValue(null);
+    mocks.webhookEventCreate.mockResolvedValue({ ...processedPlanEvent, vendorId: null, status: "received" });
+    mocks.processPaymentWebhook.mockResolvedValue({ vendor: { id: "vendor-plan" }, transaction: planTransaction });
+    const response = await POST(webhookRequest("?provider=payuni&source=return"));
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("https://app.example.test/billing/plans");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(mocks.processPaymentWebhook).toHaveBeenCalledOnce();
+    expect(mocks.paymentTransactionFindFirst).not.toHaveBeenCalled();
+    const visible = `${response.headers.get("location")} ${await response.text()}`;
+    for (const value of ["vendor-plan", "transaction-plan", "subscription-plan", "CD-PLAN", "paid", "updated"]) expect(visible).not.toContain(value);
+  });
+
+  it("routes a processed duplicate using the stored event tenant, provider and order", async () => {
+    verifiedPlanCallback();
+    // The already-processed identity controls the lookup, even when the signed
+    // duplicate contains unrelated presentation metadata or another order.
+    mocks.payUniNormalizePayload.mockResolvedValue({ payload: { provider: "payuni", eventId: "provider-plan", eventType: "paid", orderNumber: "CD-INCOMING", metadata: { billingPurpose: "product_checkout" } }, rawPayload: {} });
+    mocks.webhookEventFindUnique.mockResolvedValue(processedPlanEvent);
+    mocks.paymentTransactionFindFirst.mockResolvedValue(planTransaction);
+    const response = await POST(webhookRequest("?provider=payuni&source=return&vendorId=vendor-other"));
+    expect(response.headers.get("location")).toBe("https://app.example.test/billing/plans");
+    expect(mocks.paymentTransactionFindFirst).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-plan", providerName: "payuni", orderNumber: "CD-PLAN" },
+      select: { vendorId: true, providerName: true, orderNumber: true, paymentMode: true, metadata: true },
+    });
+    expect(mocks.processPaymentWebhook).not.toHaveBeenCalled();
+    expect(mocks.webhookEventUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("uses the latest processed event after losing the claim race", async () => {
+    verifiedPlanCallback();
+    mocks.webhookEventFindUnique.mockResolvedValueOnce({ ...processedPlanEvent, vendorId: null, status: "received" }).mockResolvedValueOnce(processedPlanEvent);
+    mocks.webhookEventUpdateMany.mockResolvedValueOnce({ count: 0 });
+    mocks.paymentTransactionFindFirst.mockResolvedValue(planTransaction);
+    const response = await POST(webhookRequest("?provider=payuni&source=return"));
+    expect(response.headers.get("location")).toBe("https://app.example.test/billing/plans");
+    expect(mocks.paymentTransactionFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-plan", providerName: "payuni", orderNumber: "CD-PLAN" } }));
+    expect(mocks.processPaymentWebhook).not.toHaveBeenCalled();
+  });
+
+  it("preserves processed-event convergence when the payment reconciler loses a race", async () => {
+    verifiedPlanCallback();
+    mocks.webhookEventFindUnique.mockResolvedValueOnce({ ...processedPlanEvent, vendorId: null, status: "received" }).mockResolvedValueOnce(processedPlanEvent);
+    mocks.processPaymentWebhook.mockRejectedValueOnce(new Error("付款 webhook 事件處理權已變更。"));
+    mocks.paymentTransactionFindFirst.mockResolvedValue(planTransaction);
+    const response = await POST(webhookRequest("?provider=payuni&source=return"));
+    expect(response.headers.get("location")).toBe("https://app.example.test/billing/plans");
+    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledOnce();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { vendorId: "other-vendor" }, { providerName: "demo" }, { orderNumber: "OTHER-ORDER" }, { paymentMode: "merchant" },
+    { metadata: { billingPurpose: "invoice_payment" } }, { metadata: { billingPurpose: "platform_subscription_checkout", billingPlanId: "plan-starter" } },
+  ])("keeps a duplicate with mismatched server identity or purpose on the buyer result: %j", async (change) => {
+    verifiedPlanCallback();
+    mocks.webhookEventFindUnique.mockResolvedValue(processedPlanEvent);
+    mocks.paymentTransactionFindFirst.mockResolvedValue({ ...planTransaction, ...change });
+    const response = await POST(webhookRequest("?provider=payuni&source=return"));
+    expect(response.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=updated");
+    expect(mocks.processPaymentWebhook).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { vendorId: null }, { provider: "demo" }, { payload: { normalized: { provider: "payuni" } } },
+    { payload: { normalized: { provider: "demo", orderNumber: "CD-PLAN" } } },
+  ])("does not infer plan purpose from an incomplete processed event: %j", async (change) => {
+    verifiedPlanCallback();
+    mocks.webhookEventFindUnique.mockResolvedValue({ ...processedPlanEvent, ...change });
+    const response = await POST(webhookRequest("?provider=payuni&source=return"));
+    expect(response.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=updated");
+    expect(mocks.paymentTransactionFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("keeps a presentation lookup failure from reprocessing or failing a processed payment", async () => {
+    verifiedPlanCallback();
+    mocks.webhookEventFindUnique.mockResolvedValue(processedPlanEvent);
+    mocks.paymentTransactionFindFirst.mockRejectedValueOnce(new Error("presentation lookup unavailable"));
+    const response = await POST(webhookRequest("?provider=payuni&source=return"));
+    expect(response.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=updated");
+    expect(mocks.processPaymentWebhook).not.toHaveBeenCalled();
+    expect(mocks.webhookEventUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("ignores forged plan query and provider metadata when the server transaction is a product payment", async () => {
+    verifiedPlanCallback();
+    mocks.payUniNormalizePayload.mockResolvedValue({ payload: { provider: "payuni", eventId: "provider-plan", eventType: "paid", orderNumber: "CD-PLAN", metadata: planTransaction.metadata }, rawPayload: {} });
+    mocks.webhookEventFindUnique.mockResolvedValue(null);
+    mocks.webhookEventCreate.mockResolvedValue({ ...processedPlanEvent, vendorId: null, status: "received" });
+    mocks.processPaymentWebhook.mockResolvedValue({ vendor: { id: "vendor-plan" }, transaction: { ...planTransaction, metadata: { billingPurpose: "product_checkout" } } });
+    const response = await POST(webhookRequest("?provider=payuni&source=return&billingPurpose=platform_subscription_checkout&returnUrl=/billing/plans&payment=paid"));
+    expect(response.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=updated");
+  });
+
+  it("rejects a forged signature before any plan-purpose lookup", async () => {
+    verifiedPlanCallback();
+    mocks.payUniVerifySignature.mockResolvedValueOnce(false);
+    const response = await POST(webhookRequest("?provider=payuni&source=return&billingPurpose=platform_subscription_checkout"));
+    expect(response.headers.get("location")).toBe("https://app.example.test/checkout/result?payment=unverified");
+    expect(mocks.getDb).not.toHaveBeenCalled();
+    expect(mocks.paymentTransactionFindFirst).not.toHaveBeenCalled();
+    expect(mocks.processPaymentWebhook).not.toHaveBeenCalled();
+  });
+
+  it("keeps processed platform plan notifications as JSON without presentation lookups", async () => {
+    verifiedPlanCallback();
+    mocks.webhookEventFindUnique.mockResolvedValue(processedPlanEvent);
+    mocks.paymentTransactionFindFirst.mockResolvedValue(planTransaction);
+    const response = await POST(webhookRequest("?provider=payuni&source=notify"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    await expect(response.json()).resolves.toEqual({ ok: true, duplicate: true, eventId: "event-plan" });
+    expect(mocks.paymentTransactionFindFirst).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["return", "return"],
     ["notify", "notify"],

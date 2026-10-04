@@ -6,7 +6,7 @@ import {
 } from "@/lib/payment-refund-accounting";
 import type { PaymentQueryResult } from "@/lib/payment-providers/types";
 
-export type RefundReconciliationDisposition = "reconciled" | "already_reconciled" | "provider_not_refunded";
+export type RefundReconciliationDisposition = "reconciled" | "already_reconciled";
 
 export type RefundReconciliationResult = {
   disposition: RefundReconciliationDisposition;
@@ -149,50 +149,13 @@ export async function reconcilePayUniRefund(input: {
       throw new PayUniRefundReconciliationError("local_amount_mismatch");
     }
     const now = input.now ?? new Date();
-    // A no-refund snapshot may only release a reservation after the issuing
-    // action has durably marked its provider outcome ambiguous. A plain
-    // request:* reservation may still be in-flight, so it must remain locked.
+    // PayUni's cumulative query may lag a successful close. An unchanged
+    // snapshot cannot prove that an ambiguous refund did not happen.
     if (
       input.providerSnapshot.status === transaction.status
       && input.providerSnapshot.refundedAmountCents === transaction.refundedAmountCents
     ) {
-      if (!isAmbiguousReservationId(pendingRefund.providerEventId)) {
-        throw new PayUniRefundReconciliationError("local_state_ambiguous");
-      }
-      await tx.refundRecord.update({
-        where: {
-          id: pendingRefund.id,
-          status: "pending",
-          providerEventId: pendingRefund.providerEventId,
-        },
-        data: { status: "failed" },
-      });
-      await tx.auditLog.create({
-        data: {
-          vendorId: transaction.vendorId,
-          actorId: input.actor.id,
-          actorLabel: input.actor.label,
-          action: "resolve_payuni_refund_not_processed",
-          targetType: "PaymentTransaction",
-          targetId: transaction.id,
-          before: {
-            status: transaction.status,
-            refundedAmountCents: transaction.refundedAmountCents,
-            pendingRefundRecordCount: pending.length,
-          } satisfies Prisma.InputJsonValue,
-          after: {
-            status: transaction.status,
-            refundedAmountCents: transaction.refundedAmountCents,
-            failedRefundRecordCount: pending.length,
-          } satisfies Prisma.InputJsonValue,
-        },
-      });
-      return {
-        disposition: "provider_not_refunded",
-        transactionId: transaction.id,
-        processedRefundRecordCount: 0,
-        refundedAmountCents: transaction.refundedAmountCents,
-      };
+      throw new PayUniRefundReconciliationError("local_state_ambiguous");
     }
     if (reservedAmountCents !== input.providerSnapshot.refundedAmountCents) {
       throw new PayUniRefundReconciliationError("local_amount_mismatch");

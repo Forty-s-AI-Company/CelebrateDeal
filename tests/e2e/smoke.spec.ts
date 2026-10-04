@@ -420,7 +420,9 @@ function invalidTotpCode(totpSeed: string) {
 }
 
 async function enrollMfa(page: Page, user: MfaTestUser) {
-  await loginMfaAdmin(page, user, /\/mfa\/setup$/);
+  await loginMfaAdmin(page, user, /\/admin\/billing\/dashboard$/);
+  await page.goto("/mfa/setup");
+  await expect(page).toHaveURL(/\/mfa\/setup$/);
   await page.getByRole("button", { name: "開始建立 TOTP" }).click();
   await expect(page).toHaveURL(/\/mfa\/setup\?updated=mfa_started/);
 
@@ -446,7 +448,7 @@ async function displayedRecoveryCode(page: Page) {
 
 async function verifyMfa(page: Page, code: string) {
   await page.getByLabel("驗證碼").fill(code);
-  await page.getByRole("button", { name: "確認並進入後台" }).click();
+  await page.getByRole("button", { name: "確認並繼續" }).click();
 }
 
 async function expectMfaAuditActions(userId: string, actions: string[]) {

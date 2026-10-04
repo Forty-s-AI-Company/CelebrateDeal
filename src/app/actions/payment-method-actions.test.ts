@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getCanonicalAppUrl: vi.fn(),
   revalidatePath: vi.fn(),
   writeAuditLog: vi.fn(),
+  createIntent: vi.fn(),
   redirect: vi.fn((path: string) => { throw new Error(`redirect:${path}`); }),
 }));
 
@@ -22,6 +23,10 @@ vi.mock("@/lib/db", () => ({ getDb: () => ({
 vi.mock("@/lib/payment-providers", () => ({ getPaymentProvider: mocks.getPaymentProvider }));
 vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: mocks.getCanonicalAppUrl }));
 vi.mock("@/lib/audit", () => ({ auditSnapshot: (value: unknown) => value, writeAuditLog: mocks.writeAuditLog }));
+vi.mock("@/lib/payment-method-setup-intent", () => ({
+  createPaymentMethodSetupIntent: mocks.createIntent,
+  PaymentMethodSetupIntentRejectedError: class PaymentMethodSetupIntentRejectedError extends Error {},
+}));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
@@ -30,6 +35,7 @@ import { revokePaymentMethodReferenceAction, startPaymentMethodSetupAction } fro
 function form(values: Record<string, string>) {
   const data = new FormData();
   data.set("_csrf", "synthetic-csrf");
+  data.set("setupConsent", "yes");
   for (const [key, value] of Object.entries(values)) data.set(key, value);
   return data;
 }
@@ -43,6 +49,8 @@ beforeEach(() => {
   });
   mocks.membershipFindFirst.mockResolvedValue({ id: "membership-current" });
   mocks.getCanonicalAppUrl.mockReturnValue("http://localhost:31023");
+  vi.stubEnv("PAYUNI_ENV", "sandbox");
+  mocks.createIntent.mockResolvedValue({ intentId: "intent-1", setupNonce: "synthetic-nonce" });
   mocks.getPaymentProvider.mockReturnValue({ id: "demo" });
   mocks.referenceFindUnique.mockResolvedValue({
     id: "reference-1",
@@ -83,6 +91,13 @@ describe("startPaymentMethodSetupAction", () => {
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
+  it("requires explicit setup consent before creating an intent", async () => {
+    await expect(startPaymentMethodSetupAction(form({ scopeType: "VENDOR", setupConsent: "" }))).rejects.toThrow(
+      "redirect:/billing/payment-methods?error=consent_required",
+    );
+    expect(mocks.createIntent).not.toHaveBeenCalled();
+  });
+
   it("checks membership ownership and active status before calling the provider", async () => {
     mocks.membershipFindFirst.mockResolvedValue(null);
     mocks.getPaymentProvider.mockReturnValue({
@@ -108,7 +123,7 @@ describe("startPaymentMethodSetupAction", () => {
     });
   });
 
-  it("redirects only to a safe provider setup URL and never persists provider payloads", async () => {
+  it("rejects unapproved provider redirects even when their URLs are HTTPS", async () => {
     const setup = vi.fn().mockResolvedValue({
       provider: "payuni",
       mode: "redirect",
@@ -123,16 +138,21 @@ describe("startPaymentMethodSetupAction", () => {
       normalizePaymentMethodSetupPayload: vi.fn(),
     });
 
-    await expect(startPaymentMethodSetupAction(form({ scopeType: "VENDOR" }))).rejects.toThrow(
-      "redirect:https://payuni.example/setup?session=opaque",
+    await expect(startPaymentMethodSetupAction(form({ scopeType: "VENDOR", actorId: "forged-actor" }))).rejects.toThrow(
+      "redirect:/billing/payment-methods?error=provider_setup_unsupported",
     );
     expect(setup).toHaveBeenCalledWith(expect.objectContaining({
+      intentId: "intent-1",
+      setupNonce: "synthetic-nonce",
       vendor: { id: "vendor-current", name: "測試商家" },
       scopeType: "VENDOR",
       appUrl: "http://localhost:31023",
       returnPath: "/billing/payment-methods",
     }));
-    expect(mocks.revalidatePath).toHaveBeenCalledExactlyOnceWith("/billing/payment-methods");
+    expect(mocks.createIntent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      vendorId: "vendor-current", consentActorId: "member-current",
+    }));
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 
   it("does not silently send a provider form-post or manual response", async () => {
@@ -142,7 +162,7 @@ describe("startPaymentMethodSetupAction", () => {
         provider: "payuni",
         mode: "form_post",
         setupUrl: null,
-        formAction: "https://payuni.example/setup",
+        formAction: "https://sandbox-api.payuni.com.tw/api/upp",
         formMethod: "POST",
         formPayload: { token: "must-not-be-rendered" },
         nextAction: "complete provider verification",
@@ -151,9 +171,11 @@ describe("startPaymentMethodSetupAction", () => {
       normalizePaymentMethodSetupPayload: vi.fn(),
     });
 
-    await expect(startPaymentMethodSetupAction(form({ scopeType: "VENDOR" }))).rejects.toThrow(
-      "redirect:/billing/payment-methods?error=provider_form_post_unsupported",
-    );
+    await expect(startPaymentMethodSetupAction(form({ scopeType: "VENDOR" }))).resolves.toEqual({
+      mode: "form_post",
+      formAction: "https://sandbox-api.payuni.com.tw/api/upp",
+      formPayload: { token: "must-not-be-rendered" },
+    });
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 });

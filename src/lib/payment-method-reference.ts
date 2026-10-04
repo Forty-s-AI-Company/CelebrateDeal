@@ -9,6 +9,9 @@ export type PaymentMethodReferenceStatus = "pending" | "verified" | "expired" | 
  * boundary.
  */
 export type PaymentMethodSetupVerificationInput = {
+  /** Signed callback must bind to one server-owned consent record. */
+  setupIntentId: string;
+  setupNonce: string;
   providerName: string;
   eventId: string;
   vendorId: string;

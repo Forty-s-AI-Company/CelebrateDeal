@@ -7,7 +7,7 @@ import test from "node:test";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { BACKUP_SOURCE_SHA, createInitialReceipt, sourceInventory } from "./secure-staging-runner.mjs";
-import { BACKUP_SOURCE, attestBackupRun, validateBackupRun, verifyBackupSource } from "./staging-backup-recovery-source.mjs";
+import { BACKUP_MIGRATION_TREE_SHA, BACKUP_SOURCE, attestBackupRun, validateBackupRun, verifyBackupSource } from "./staging-backup-recovery-source.mjs";
 import { createRecoveryReceipt, runRecoveryDrill, validateRecoveryReceipt, verifyDownloadedBackup } from "./staging-backup-recovery.mjs";
 
 const hash = (value) => `sha256:${crypto.createHash("sha256").update(value).digest("hex")}`;
@@ -31,7 +31,7 @@ function backupReceipt(archive) {
   receipt.result = "PASS";
   receipt.lineage = { deploymentReads: 2, deploymentMatched: true, sourceMatched: true, preview: true, ready: true, healthStatus: 200, noRedirect: true, deploymentDigest: `sha256:${"a".repeat(64)}` };
   receipt.database = { connectionAttempts: 1, firstTransactionReadOnly: true, identityMatched: true, readQueries: 6, disconnected: true };
-  receipt.migration = { expectedCount: sourceInventory(BACKUP_SOURCE_SHA).size, appliedCount: 58, unresolvedFailedCount: 0, rollbackEntryCount: 0, completedCounterpartCount: 0, exactChecksumCount: 58, formatVarianceCount: 0, unknownMismatchCount: 0, status: "BACKUP_READY_MIGRATIONS_PENDING" };
+  receipt.migration = { expectedCount: sourceInventory(BACKUP_SOURCE_SHA, undefined, BACKUP_MIGRATION_TREE_SHA).size, appliedCount: 58, unresolvedFailedCount: 0, rollbackEntryCount: 0, completedCounterpartCount: 0, exactChecksumCount: 58, formatVarianceCount: 0, unknownMismatchCount: 0, status: "BACKUP_READY_MIGRATIONS_PENDING" };
   receipt.backup = { attempts: 1, result: "PASS", byteBucket: "lt_1mib", digest: hash("synthetic plain dump") };
   receipt.restore = { attempts: 1, result: "PASS", migrationCount: 58, schemaMatched: true, extensionsMatched: true, aggregateMatched: true, isolated: true };
   receipt.retention = { status: "ENCRYPTED", archiveDigest: hash(archive), recipientDigest: hash(`age1${"a".repeat(58)}`), recoverability: "NOT_PROVEN", migrationAuthorization: "BLOCKED" };
@@ -63,6 +63,14 @@ test("approved backup blobs remain valid after a later master merge", () => {
     return spawnSync(command, args, options);
   };
   assert.equal(verifyBackupSource(current, wrongBlob), false);
+  // The newly approved validator is executable backup code, so an unknown blob must fail.
+  const unknownValidator = (command, args, options) => {
+    if (args[0] === "rev-parse" && args[1].endsWith(":scripts/validate-staging-retained-backup.mjs")) {
+      return { status: 0, stdout: `${"d".repeat(40)}\n` };
+    }
+    return spawnSync(command, args, options);
+  };
+  assert.equal(verifyBackupSource(current, unknownValidator), false);
   // Approving a reviewed payment-only workflow must not trust arbitrary workflows.
   const unknownWorkflow = (command, args, options) => {
     if (args[0] === "rev-parse" && args[1].endsWith(":.github/workflows/secure-staging-validation.yml")) {

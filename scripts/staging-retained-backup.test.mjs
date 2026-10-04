@@ -5,10 +5,15 @@ import path from "node:path";
 import test from "node:test";
 
 import { parseProductionRecipient, retainEncryptedBackup, validateStagingRecipient } from "./staging-retained-backup.mjs";
-import { validateRetainedBackupPath } from "./validate-staging-retained-backup.mjs";
+import { RETAINED_BACKUP_MIGRATION_TREE_SHA, validateRetainedBackupPath } from "./validate-staging-retained-backup.mjs";
 import { BACKUP_SOURCE_SHA, createInitialReceipt, sourceInventory } from "./secure-staging-runner.mjs";
+import { BACKUP_MIGRATION_TREE_SHA } from "./staging-backup-recovery-source.mjs";
 
 const recipient = `age1${"a".repeat(58)}`;
+
+test("retained backup and recovery pin the same reviewed RC tree", () => {
+  assert.equal(RETAINED_BACKUP_MIGRATION_TREE_SHA, BACKUP_MIGRATION_TREE_SHA);
+});
 
 test("staging recipient must be distinct from production and syntactically bounded", () => {
   const production = fs.readFileSync(path.join("ops", "backup", "keys", "production-backup.agepub"), "utf8").split(/\r?\n/u).find((line) => line.startsWith("age1"));
@@ -37,7 +42,7 @@ test("only an age archive is retained and its digest is sanitized", async () => 
     receipt.result = "PASS";
     receipt.lineage = { deploymentReads: 2, deploymentMatched: true, sourceMatched: true, preview: true, ready: true, healthStatus: 200, noRedirect: true, deploymentDigest: `sha256:${"a".repeat(64)}` };
     receipt.database = { connectionAttempts: 1, firstTransactionReadOnly: true, identityMatched: true, readQueries: 6, disconnected: true };
-    receipt.migration = { expectedCount: sourceInventory(BACKUP_SOURCE_SHA).size, appliedCount: 58, unresolvedFailedCount: 0, rollbackEntryCount: 0, completedCounterpartCount: 0, exactChecksumCount: 58, formatVarianceCount: 0, unknownMismatchCount: 0, status: "BACKUP_READY_MIGRATIONS_PENDING" };
+    receipt.migration = { expectedCount: sourceInventory(BACKUP_SOURCE_SHA, undefined, BACKUP_MIGRATION_TREE_SHA).size, appliedCount: 58, unresolvedFailedCount: 0, rollbackEntryCount: 0, completedCounterpartCount: 0, exactChecksumCount: 58, formatVarianceCount: 0, unknownMismatchCount: 0, status: "BACKUP_READY_MIGRATIONS_PENDING" };
     receipt.backup = { attempts: 1, result: "PASS", byteBucket: "lt_1mib", digest: `sha256:${"b".repeat(64)}` };
     receipt.restore = { attempts: 1, result: "PASS", migrationCount: 58, schemaMatched: true, extensionsMatched: true, aggregateMatched: true, isolated: true };
     receipt.retention = { status: "ENCRYPTED", archiveDigest: retained.archiveDigest, recipientDigest: retained.recipientDigest, recoverability: "NOT_PROVEN", migrationAuthorization: "BLOCKED" };

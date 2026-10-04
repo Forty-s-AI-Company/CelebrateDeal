@@ -42,17 +42,36 @@ describe("payment method setup contract", () => {
     expect(parsePaymentMethodSetupRequest({ scopeType: "UNKNOWN", teamId: "team-1", membershipId: "membership-1" })).toBeNull();
   });
 
-  it("allows only credential-free HTTP(S) provider setup URLs", () => {
+  it("allows only credential-free HTTPS or loopback setup URLs", () => {
     expect(isSafePaymentMethodSetupUrl("https://payuni.example/setup?session=opaque")).toBe(true);
     expect(isSafePaymentMethodSetupUrl("http://localhost:31023/setup")).toBe(true);
+    vi.stubEnv("NODE_ENV", "production");
+    expect(isSafePaymentMethodSetupUrl("http://localhost:31023/setup")).toBe(false);
+    vi.unstubAllEnvs();
+    expect(isSafePaymentMethodSetupUrl("http://payuni.example/setup")).toBe(false);
     expect(isSafePaymentMethodSetupUrl("javascript:alert(1)")).toBe(false);
     expect(isSafePaymentMethodSetupUrl("https://user:password@payuni.example/setup")).toBe(false);
     expect(isSafePaymentMethodSetupUrl("not-a-url")).toBe(false);
   });
 
-  it("fails closed for provider modes that need an unimplemented persistence boundary", () => {
-    expect(paymentMethodSetupDisposition(result())).toBe("redirect");
+  it("allows a bounded provider form and fails closed for malformed handoffs", () => {
+    vi.stubEnv("PAYUNI_ENV", "sandbox");
+    expect(paymentMethodSetupDisposition(result())).toBe("provider_setup_unsupported");
     expect(paymentMethodSetupDisposition(result({ mode: "form_post", setupUrl: null }))).toBe("provider_form_post_unsupported");
+    expect(paymentMethodSetupDisposition(result({ mode: "form_post", setupUrl: null,
+      formAction: "https://sandbox-api.payuni.com.tw/api/upp", formMethod: "POST", formPayload: { MerID: "merchant" } }))).toBe("form_post");
+    expect(paymentMethodSetupDisposition(result({ mode: "form_post", setupUrl: null,
+      formAction: "http://payuni.example/upp", formMethod: "POST", formPayload: { MerID: "merchant" } }))).toBe("provider_form_post_unsupported");
+    for (const formAction of [
+      "https://unrelated.example/collect",
+      "https://sandbox-api.payuni.com.tw.evil.example/api/upp",
+      "https://sandbox-api.payuni.com.tw:444/api/upp",
+      "https://api.payuni.com.tw/api/upp",
+    ]) {
+      expect(paymentMethodSetupDisposition(result({ mode: "form_post", setupUrl: null,
+        formAction, formMethod: "POST", formPayload: { MerID: "merchant" } }))).toBe("provider_form_post_unsupported");
+    }
+    vi.unstubAllEnvs();
     expect(paymentMethodSetupDisposition(result({ mode: "manual", setupUrl: null }))).toBe("provider_setup_unavailable");
   });
 });

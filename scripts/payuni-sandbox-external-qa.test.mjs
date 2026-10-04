@@ -82,9 +82,9 @@ test("Sandbox QA requires an explicit non-production Staging host allowlist", ()
 
 test("Sandbox execution preflight is process-env-only and missing values fail before any network stage", () => {
   const secret = "do-not-persist-payuni-secret";
-  const availability = sandboxEnvironmentAvailability({ PAYUNI_HASH_KEY: secret });
-  assert.equal(availability.PAYUNI_HASH_KEY, true);
-  assert.equal(availability.PAYUNI_HASH_IV, false);
+  const availability = sandboxEnvironmentAvailability({ PAYUNI_SANDBOX_HASH_KEY: secret });
+  assert.equal(availability.PAYUNI_SANDBOX_HASH_KEY, true);
+  assert.equal(availability.PAYUNI_SANDBOX_HASH_IV, false);
   assert.equal("PAYUNI_QA_FINANCE_EMAIL" in availability, false);
   assert.equal("PAYUNI_QA_FINANCE_PASSWORD" in availability, false);
   assert.equal("PLATFORM_ADMIN_EMAIL" in availability, false);
@@ -92,7 +92,7 @@ test("Sandbox execution preflight is process-env-only and missing values fail be
   assert.equal(JSON.stringify(availability).includes(secret), false);
 
   assert.throws(
-    () => assertSandboxExecutionEnvironment({ PAYUNI_HASH_KEY: secret }),
+    () => assertSandboxExecutionEnvironment({ PAYUNI_SANDBOX_HASH_KEY: secret }),
     (error) => error?.name === "SandboxExecutionBlockedError" && error.status === "LOGIN_REQUIRED",
   );
 });
@@ -104,9 +104,9 @@ test("Sandbox payment-only preflight does not require a separate finance login",
     PAYUNI_SANDBOX_REFUND_ENABLED: "true",
     PAYUNI_TEST_APP_URL: "https://staging.example.test",
     PAYUNI_STAGING_ALLOWED_HOST: "staging.example.test",
-    PAYUNI_MERCHANT_ID: "synthetic-merchant",
-    PAYUNI_HASH_KEY: "12345678901234567890123456789012",
-    PAYUNI_HASH_IV: "1234567890123456",
+    PAYUNI_SANDBOX_MERCHANT_ID: "synthetic-merchant",
+    PAYUNI_SANDBOX_HASH_KEY: "12345678901234567890123456789012",
+    PAYUNI_SANDBOX_HASH_IV: "1234567890123456",
     PAYUNI_SANDBOX_ONETIME_CARD_NO: "4000000000000002",
     PAYUNI_TEST_EXPIRY: "1230",
     PAYUNI_TEST_CVV: "123",
@@ -192,13 +192,13 @@ function pageAt(url) {
 }
 
 function withHashKey(key, callback) {
-  const previous = process.env.PAYUNI_HASH_KEY;
-  process.env.PAYUNI_HASH_KEY = key;
+  const previous = process.env.PAYUNI_SANDBOX_HASH_KEY;
+  process.env.PAYUNI_SANDBOX_HASH_KEY = key;
   try {
     return callback();
   } finally {
-    if (previous === undefined) delete process.env.PAYUNI_HASH_KEY;
-    else process.env.PAYUNI_HASH_KEY = previous;
+    if (previous === undefined) delete process.env.PAYUNI_SANDBOX_HASH_KEY;
+    else process.env.PAYUNI_SANDBOX_HASH_KEY = previous;
   }
 }
 
@@ -422,18 +422,18 @@ test("successful provider rows remain internal to reconciliation", async () => {
 test("payUniRequest rejects each non-string response envelope field", async () => {
   const previous = {
     fetch: globalThis.fetch,
-    hashKey: process.env.PAYUNI_HASH_KEY,
-    hashIv: process.env.PAYUNI_HASH_IV,
-    merchantId: process.env.PAYUNI_MERCHANT_ID,
+    hashKey: process.env.PAYUNI_SANDBOX_HASH_KEY,
+    hashIv: process.env.PAYUNI_SANDBOX_HASH_IV,
+    merchantId: process.env.PAYUNI_SANDBOX_MERCHANT_ID,
   };
   let outerResponse;
   globalThis.fetch = async () => ({
     ok: true,
     text: async () => JSON.stringify(outerResponse),
   });
-  process.env.PAYUNI_HASH_KEY = DIAGNOSTIC_HASH_KEY;
-  process.env.PAYUNI_HASH_IV = "1234567890123456";
-  process.env.PAYUNI_MERCHANT_ID = "merchant-test";
+  process.env.PAYUNI_SANDBOX_HASH_KEY = DIAGNOSTIC_HASH_KEY;
+  process.env.PAYUNI_SANDBOX_HASH_IV = "1234567890123456";
+  process.env.PAYUNI_SANDBOX_MERCHANT_ID = "merchant-test";
   try {
     for (const invalidEnvelope of [
       { EncryptInfo: 7, HashInfo: "not-used" },
@@ -448,9 +448,9 @@ test("payUniRequest rejects each non-string response envelope field", async () =
   } finally {
     globalThis.fetch = previous.fetch;
     for (const [name, value] of Object.entries({
-      PAYUNI_HASH_KEY: previous.hashKey,
-      PAYUNI_HASH_IV: previous.hashIv,
-      PAYUNI_MERCHANT_ID: previous.merchantId,
+      PAYUNI_SANDBOX_HASH_KEY: previous.hashKey,
+      PAYUNI_SANDBOX_HASH_IV: previous.hashIv,
+      PAYUNI_SANDBOX_MERCHANT_ID: previous.merchantId,
     })) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;

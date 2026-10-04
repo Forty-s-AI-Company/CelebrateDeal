@@ -17,6 +17,7 @@ import { PaymentWebhookPayload, processPaymentWebhook } from "../../src/lib/paym
 import { getRuntimeLivePublishReadiness } from "../../src/lib/live-runtime-readiness";
 import { publicLiveAvailabilityWhere } from "../../src/lib/sellable-live";
 import { navigateAndAssertDirectUrlGuard } from "./helpers/direct-url-guard";
+import { formatSanitizedAxeBlockingError } from "../../scripts/playwright-ci-reporter";
 
 const db = new PrismaClient();
 const runId = randomUUID().replace(/-/g, "");
@@ -104,17 +105,10 @@ async function expectNoBlockingAxeViolations(page: Page) {
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .analyze();
   const blocking = result.violations
-    .filter((violation) => violation.impact === "critical" || violation.impact === "serious")
-    .map((violation) => ({
-      id: violation.id,
-      impact: violation.impact,
-      targets: violation.nodes.map((node) => node.target.map((selector) => (
-        String(selector).split(" > ").slice(-3).join(" > ")
-      ))),
-    }));
+    .filter((violation) => violation.impact === "critical" || violation.impact === "serious");
 
   if (blocking.length > 0) {
-    throw new Error(`AXE_BLOCKING:${JSON.stringify(blocking)}`);
+    throw new Error(formatSanitizedAxeBlockingError(blocking));
   }
 }
 

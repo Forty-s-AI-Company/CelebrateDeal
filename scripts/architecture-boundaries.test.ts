@@ -158,7 +158,7 @@ describe("architecture boundaries", () => {
     });
 
     expect(violations).toEqual([]);
-  });
+  }, 15_000);
 
   it("keeps API route handlers independent from browser components", () => {
     const violations = sourceFiles.flatMap((filePath) => {

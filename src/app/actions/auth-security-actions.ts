@@ -43,7 +43,7 @@ function normalizedEmail(value: string) {
 }
 
 function safeInternalPath(value: string, fallback = "/admin/billing/dashboard") {
-  if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
+  if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
     return fallback;
   }
   return value;
@@ -123,11 +123,11 @@ export async function loginAction(formData: FormData) {
     targetId: auth.user.id,
     after: { email: auth.user.email, platformRole: auth.user.platformRole, vendorId: auth.vendor?.id ?? null },
   });
-  if (auth.isPlatformAdmin) {
-    if (!auth.user.mfaFactor) redirect("/mfa/setup");
-    redirect("/mfa/verify?next=%2Fadmin%2Fbilling%2Fdashboard");
-  }
-  redirect("/dashboard");
+  const destination = auth.isPlatformAdmin ? "/admin/billing/dashboard" : "/dashboard";
+  // Enrollment is voluntary for every role; an enabled factor still protects
+  // every new session before the user can access authenticated content.
+  if (auth.user.mfaFactor) redirect(`/mfa/verify?next=${encodeURIComponent(destination)}`);
+  redirect(destination);
 }
 
 export async function logoutAction(formData: FormData) {
@@ -221,7 +221,7 @@ export async function confirmMfaEnrollmentAction(formData: FormData) {
 
 export async function verifyMfaAction(formData: FormData) {
   await assertServerActionSecurity(formData);
-  const auth = await requireAuth();
+  const auth = await requireAuth({ allowUnverifiedMfa: true });
   const next = safeInternalPath(text(formData, "next", "/admin/billing/dashboard"));
   const code = text(formData, "code");
   if (!auth.user.mfaFactor) redirect("/mfa/setup");

@@ -110,7 +110,7 @@ describe("billing plans source attribution", () => {
         paymentMode: "platform",
         status: "pending",
       },
-      select: { id: true, metadata: true },
+      select: { id: true, metadata: true, grossAmountCents: true },
     });
     expect(mocks.subscriptionFindFirst).toHaveBeenCalledWith({
       where: {
@@ -119,7 +119,7 @@ describe("billing plans source attribution", () => {
         planId: activePlan.id,
         status: "pending_payment",
       },
-      select: { id: true },
+      select: { id: true, plan: { select: { code: true, monthlyPriceCents: true, isActive: true, description: true } } },
     });
     expect(mocks.getCsrfToken).toHaveBeenCalledExactlyOnceWith();
     expect(html).toContain("付款頁建立失敗");

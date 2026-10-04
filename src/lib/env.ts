@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { isValidSentryEnvironment } from "@/lib/sentry-environment";
+import { payUniLiveProbeAvailable } from "@/lib/payuni-live-probe";
+import { payUniStagingPlanTestScope } from "@/lib/payuni-staging-plan-test";
+import { isStagingPayUniPreviewCandidate } from "@/lib/database-identity";
+import { payUniCredentialKeys } from "@/lib/payuni-credentials";
 import { MINIMUM_ENCRYPTION_SECRET_BYTES } from "@/lib/sensitive-data";
 import {
   LIVE_CHAT_INGRESS_SECRET_MAX_LENGTH,
@@ -45,6 +49,9 @@ export const ProductionEnvSchema = z.object({
   PAYUNI_HASH_KEY: OptionalSecret,
   PAYUNI_HASH_IV: OptionalSecret,
   PAYUNI_MERCHANT_ID: OptionalSecret,
+  PAYUNI_SANDBOX_HASH_KEY: OptionalSecret,
+  PAYUNI_SANDBOX_HASH_IV: OptionalSecret,
+  PAYUNI_SANDBOX_MERCHANT_ID: OptionalSecret,
   PAYUNI_ENV: z.enum(["sandbox", "production"]).optional(),
   ECPAY_WEBHOOK_SECRET: OptionalSecret,
   RESEND_API_KEY: z.string().min(1),
@@ -130,7 +137,9 @@ function payUniEnvironmentDeploymentCheck(
   const configured = secretPresent(env.PAYUNI_ENV);
   const value = env.PAYUNI_ENV?.trim().toLowerCase();
   const expected = env.VERCEL_ENV === "preview"
-    ? "sandbox"
+    ? payUniLiveProbeAvailable(env.PAYUNI_LIVE_PROBE_VENDOR_ID ?? "", env)
+      || payUniStagingPlanTestScope(env)
+      || isStagingPayUniPreviewCandidate(env) ? "production" : "sandbox"
     : env.VERCEL_ENV === "production" || env.NODE_ENV === "production"
       ? "production"
       : undefined;
@@ -255,13 +264,21 @@ export function getEnvCheckReport(env: NodeJS.ProcessEnv = process.env) {
 
   if (env.PAYMENT_PROVIDER === "payuni") {
     checks.push(payUniEnvironmentDeploymentCheck(env, deploymentSecurityRequired));
-    for (const key of ["PAYUNI_HASH_KEY", "PAYUNI_HASH_IV", "PAYUNI_MERCHANT_ID"]) {
-      const value = env[key];
-      checks.push({
-        key,
-        status: secretPresent(value) ? "pass" : "fail",
-        message: `PAYMENT_PROVIDER=payuni 時必須設定 ${key}`,
-      });
+    try {
+      const selected = payUniCredentialKeys(env);
+      for (const [field, key] of Object.entries(selected)) {
+        const value = env[key];
+        const valid = secretPresent(value) && (field === "hashKey"
+          ? Buffer.byteLength(value!.trim()) === 32
+          : field === "hashIv" ? Buffer.byteLength(value!.trim()) === 16 : true);
+        checks.push({
+          key,
+          status: valid ? "pass" : "fail",
+          message: valid ? "所選 PAYUNi 環境資料已設定" : `PAYMENT_PROVIDER=payuni 時必須設定有效的 ${key}`,
+        });
+      }
+    } catch {
+      // The PAYUNI_ENV check above already reports the invalid selector.
     }
   }
 

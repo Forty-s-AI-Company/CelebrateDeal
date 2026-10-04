@@ -27,6 +27,8 @@ import {
   authenticateUser,
   createUserSession,
   createWp4PreviewMfaVerifiedSession,
+  getCurrentAuth,
+  requireAuth,
   requireFinanceAdmin,
   requireVendorFinance,
   requireVendorManager,
@@ -173,6 +175,23 @@ describe("authenticateUser", () => {
   });
 });
 
+describe("voluntary MFA session boundary", () => {
+  it("keeps a pending or absent factor optional even with no verified timestamp", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "owner", mfaFactor: null, mfaVerifiedAt: null }));
+
+    await expect(getCurrentAuth()).resolves.toMatchObject({ user: { id: "user-1" }, isMfaVerified: false });
+    await expect(requireAuth()).resolves.toMatchObject({ user: { id: "user-1" } });
+  });
+
+  it("hides an enabled but unverified actor from direct API callers", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "none", memberRole: "owner", mfaVerifiedAt: null }));
+
+    await expect(getCurrentAuth()).resolves.toBeNull();
+    await expect(requireAuth()).rejects.toThrow("redirect:/mfa/verify?next=%2Fdashboard");
+    await expect(requireAuth({ allowUnverifiedMfa: true })).resolves.toMatchObject({ user: { id: "user-1" } });
+  });
+});
+
 describe("requireFinanceAdmin", () => {
   it("allows an MFA-verified platform administrator", async () => {
     mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "platform_admin" }));
@@ -194,10 +213,10 @@ describe("requireFinanceAdmin", () => {
     },
   );
 
-  it("still requires MFA setup for a platform administrator", async () => {
-    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "platform_admin", mfaFactor: null }));
+  it("allows a platform administrator without MFA to use the admin area", async () => {
+    mocks.findSession.mockResolvedValue(sessionFor({ platformRole: "platform_admin", mfaFactor: null, mfaVerifiedAt: null }));
 
-    await expect(requireFinanceAdmin()).rejects.toThrow("redirect:/mfa/setup");
+    await expect(requireFinanceAdmin()).resolves.toMatchObject({ isPlatformAdmin: true });
   });
 
   it("still requires MFA verification for a platform administrator", async () => {
@@ -273,12 +292,12 @@ describe("requireVendorManagerMfa", () => {
     );
   });
 
-  it("requires MFA enrollment before order PII may be revealed", async () => {
+  it("allows an unenrolled manager into their tenant's order data", async () => {
     mocks.findSession.mockResolvedValue(
-      sessionFor({ platformRole: "none", memberRole: "owner", mfaFactor: null }),
+      sessionFor({ platformRole: "none", memberRole: "owner", mfaFactor: null, mfaVerifiedAt: null }),
     );
 
-    await expect(requireVendorManagerMfa()).rejects.toThrow("redirect:/mfa/setup");
+    await expect(requireVendorManagerMfa()).resolves.toMatchObject({ vendor: { id: "vendor-1" } });
   });
 
   it("requires current-session MFA and rejects an external next path", async () => {
@@ -316,11 +335,11 @@ describe("requireVendorSupportMfa", () => {
     );
   });
 
-  it("requires MFA enrollment and a safe internal next path", async () => {
+  it("allows unenrolled support and challenges enabled support with a safe next path", async () => {
     mocks.findSession.mockResolvedValue(
-      sessionFor({ platformRole: "none", memberRole: "support", mfaFactor: null }),
+      sessionFor({ platformRole: "none", memberRole: "support", mfaFactor: null, mfaVerifiedAt: null }),
     );
-    await expect(requireVendorSupportMfa()).rejects.toThrow("redirect:/mfa/setup");
+    await expect(requireVendorSupportMfa()).resolves.toMatchObject({ member: { role: "support" } });
 
     mocks.findSession.mockResolvedValue(
       sessionFor({ platformRole: "none", memberRole: "support", mfaVerifiedAt: null }),
@@ -365,12 +384,12 @@ describe("requireVendorFinance", () => {
     });
   });
 
-  it("requires MFA enrollment for tenant finance roles", async () => {
+  it("allows unenrolled tenant finance roles", async () => {
     mocks.findSession.mockResolvedValue(
-      sessionFor({ platformRole: "none", memberRole: "accountant", mfaFactor: null }),
+      sessionFor({ platformRole: "none", memberRole: "accountant", mfaFactor: null, mfaVerifiedAt: null }),
     );
 
-    await expect(requireVendorFinance("/billing/invoices")).rejects.toThrow("redirect:/mfa/setup");
+    await expect(requireVendorFinance("/billing/invoices")).resolves.toMatchObject({ member: { role: "accountant" } });
   });
 
   it("requires current-session MFA verification and preserves only a safe internal next path", async () => {

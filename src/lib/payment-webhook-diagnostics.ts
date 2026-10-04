@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { activePayUniCredentials } from "@/lib/payuni-credentials";
 
 function parseRawPayload(rawBody: string) {
   try {
@@ -15,10 +16,12 @@ function safeEqual(a: string, b: string) {
 }
 
 function payUniHashInfo(encryptInfo: string) {
-  const key = process.env.PAYUNI_HASH_KEY?.trim();
-  const iv = process.env.PAYUNI_HASH_IV?.trim();
-  if (!key || !iv) return null;
-  return createHash("sha256").update(`${key}${encryptInfo}${iv}`).digest("hex").toUpperCase();
+  try {
+    const { key, iv } = activePayUniCredentials();
+    return createHash("sha256").update(`${key}${encryptInfo}${iv}`).digest("hex").toUpperCase();
+  } catch {
+    return null;
+  }
 }
 
 function fieldSummary(value: unknown) {
@@ -55,7 +58,7 @@ export function buildPaymentWebhookDiagnostics(providerId: string, rawBody: stri
       hashInfoVerification: expectedHash && hashInfo ? (safeEqual(expectedHash, hashInfo.trim()) ? "pass" : "fail") : "not_checked",
       dashboardChecklist: [
         "PayUni UPP endpoint is selected from the approved PAYUNI_ENV mapping.",
-        "MerID must match PAYUNI_MERCHANT_ID.",
+        "MerID must match the selected PAYUNI_ENV merchant ID.",
         "HashKey and HashIV must be stored only in server-side env vars.",
         "NotifyURL and ReturnURL must point to /api/webhooks/payments?provider=payuni.",
       ],

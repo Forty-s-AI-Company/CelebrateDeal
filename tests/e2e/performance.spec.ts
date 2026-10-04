@@ -80,15 +80,17 @@ async function loginOwner(page: Page) {
   await page.getByLabel("Email").fill(fixture.email);
   await page.getByLabel("密碼").fill(password);
   await page.getByRole("button", { name: "登入" }).click();
-  await expect(page).toHaveURL(/\/dashboard/);
-  await expect(page.locator('[data-dashboard-scope="kpis"]')).toBeVisible();
-  await expect(page.locator('[data-dashboard-scope="details"]')).toBeVisible();
+  await expect(page).toHaveURL("/mfa/verify?next=%2Fdashboard");
   // The performance test is not an MFA flow; mark this isolated local session
-  // verified after the normal login so the protected billing page is measured.
+  // verified after reaching the challenge, before measuring protected pages.
   await db.userSession.updateMany({
     where: { userId: fixture.userId, revokedAt: null },
     data: { mfaVerifiedAt: new Date() },
   });
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/dashboard/);
+  await expect(page.locator('[data-dashboard-scope="kpis"]')).toBeVisible();
+  await expect(page.locator('[data-dashboard-scope="details"]')).toBeVisible();
 }
 
 async function installDashboardLifecycleObserver(page: Page) {
@@ -145,8 +147,8 @@ test.beforeAll(async () => {
       },
     },
   });
-  // Billing routes require an enrolled MFA factor. This opaque test marker is
-  // only checked for presence by the guard and is never decrypted or sent out.
+  // Keep this synthetic enabled factor to exercise a verified account on the
+  // billing performance path. Its secret is never decrypted or sent out.
   await db.userMfaFactor.create({
     data: {
       userId: user.id,

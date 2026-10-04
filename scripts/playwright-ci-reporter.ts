@@ -5,6 +5,23 @@ const allowedTestPath = /^tests\/e2e\/[A-Za-z0-9_.()[\]/-]+\.spec\.(?:[cm]?[jt]s
 // Keep shared guard assertion locations without exposing arbitrary helper paths or errors.
 const allowedHelperPaths = new Set(["tests/e2e/helpers/direct-url-guard.ts"]);
 const fixedStatuses = new Set(["failed", "timedout", "flaky"]);
+// Fixed WCAG rule IDs from the installed axe inventory. New/unknown rules are
+// reported as "unknown"; selectors, HTML and arbitrary error text stay private.
+const allowedAxeRuleIds = new Set([
+  "area-alt", "aria-allowed-attr", "aria-braille-equivalent", "aria-command-name", "aria-conditional-attr",
+  "aria-deprecated-role", "aria-hidden-body", "aria-hidden-focus", "aria-input-field-name", "aria-meter-name",
+  "aria-progressbar-name", "aria-prohibited-attr", "aria-required-attr", "aria-required-children", "aria-required-parent",
+  "aria-roledescription", "aria-roles", "aria-tab-name", "aria-toggle-field-name", "aria-tooltip-name",
+  "aria-valid-attr", "aria-valid-attr-value", "audio-caption", "autocomplete-valid", "avoid-inline-spacing", "blink",
+  "button-name", "bypass", "color-contrast", "css-orientation-lock", "definition-list", "dlitem", "document-title",
+  "duplicate-id-aria", "form-field-multiple-labels", "frame-focusable-content", "frame-title", "frame-title-unique",
+  "html-has-lang", "html-lang-valid", "html-xml-lang-mismatch", "image-alt", "input-button-name", "input-image-alt",
+  "label", "label-content-name-mismatch", "link-in-text-block", "link-name", "list", "listitem", "marquee",
+  "meta-refresh", "meta-viewport", "nested-interactive", "no-autoplay-audio", "object-alt", "p-as-heading",
+  "role-img-alt", "scrollable-region-focusable", "select-name", "server-side-image-map", "summary-name", "svg-img-alt",
+  "table-fake-caption", "target-size", "td-has-header", "td-headers-attr", "th-has-data-cells", "valid-lang", "video-caption",
+  "unknown",
+]);
 
 type AnnotationStatus = "failed" | "timedout" | "flaky";
 
@@ -33,6 +50,22 @@ export function classifySyntheticCheckoutError(value: unknown) {
   if (value === "G748:COOKIE:MISSING") return "checkout_cookie_missing";
   const match = /^G748:([1-5][0-9]{2}):([APISU]):T([0-9]{1,3})O([0-9]{1,3})S([0-9]{1,3})G([0-9]{1,3})$/u.exec(value);
   return match ? `checkout_http_${match[1]} branch=${match[2]} transactions=${match[3]} orders=${match[4]} snapshots=${match[5]} grants=${match[6]}` : null;
+}
+
+/** Produce one bounded diagnostic without retaining axe nodes or selectors. */
+export function formatSanitizedAxeBlockingError(violations: ReadonlyArray<{ id: unknown }>) {
+  const rules = violations.map(({ id }) => typeof id === "string" && allowedAxeRuleIds.has(id) ? id : "unknown");
+  return `AXE_BLOCKING:RULES:${[...new Set(rules)].sort().join(",")}`;
+}
+
+/** Accept only complete messages generated from the closed rule vocabulary. */
+export function classifySanitizedAxeError(value: unknown) {
+  if (typeof value !== "string" || value.length > 4096) return null;
+  const match = /^(?:Error: )?AXE_BLOCKING:RULES:([a-z0-9-]+(?:,[a-z0-9-]+)*)$/u.exec(value);
+  if (!match) return null;
+  const rules = match[1].split(",");
+  if (rules.length > allowedAxeRuleIds.size || !rules.every((rule) => allowedAxeRuleIds.has(rule))) return null;
+  return `axe_blocking rules=${[...new Set(rules)].sort().join(",")}`;
 }
 
 export function formatSanitizedPlaywrightAnnotation(input: {
@@ -112,7 +145,7 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
         if (stepAnnotation) this.write(stepAnnotation);
         // Direct database/explicit throws may not produce a failed Playwright step.
         for (const error of attempt.errors ?? []) {
-          const classification = classifySyntheticCheckoutError(error.message);
+          const classification = classifySyntheticCheckoutError(error.message) ?? classifySanitizedAxeError(error.message);
           const location = error.location;
           if (!classification && !location) continue;
           const errorAnnotation = formatSanitizedPlaywrightAnnotation({

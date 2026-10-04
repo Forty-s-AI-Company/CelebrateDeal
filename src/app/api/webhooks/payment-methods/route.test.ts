@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   readTextBody: vi.fn(),
   getDb: vi.fn(),
   applyVerifiedPaymentMethodSetup: vi.fn(),
+  consumeIntent: vi.fn(),
   writeAuditLog: vi.fn(),
   auditSnapshot: vi.fn((value: unknown) => value),
   setupVerify: vi.fn(),
@@ -12,6 +13,9 @@ const mocks = vi.hoisted(() => ({
   eventUpsert: vi.fn(),
   eventUpdate: vi.fn(),
   eventUpdateMany: vi.fn(),
+  probeFindUnique: vi.fn(),
+  probeUpdate: vi.fn(),
+  referenceFindUnique: vi.fn(),
   transaction: vi.fn(),
 }));
 
@@ -24,6 +28,10 @@ vi.mock("@/lib/payment-method-reference", () => ({
   PaymentMethodSetupConflictError: class PaymentMethodSetupConflictError extends Error {},
 }));
 vi.mock("@/lib/audit", () => ({ writeAuditLog: mocks.writeAuditLog, auditSnapshot: mocks.auditSnapshot }));
+vi.mock("@/lib/payment-method-setup-intent", () => ({
+  consumePaymentMethodSetupIntent: mocks.consumeIntent,
+  PaymentMethodSetupIntentRejectedError: class PaymentMethodSetupIntentRejectedError extends Error {},
+}));
 
 import { POST } from "@/app/api/webhooks/payment-methods/route";
 
@@ -37,12 +45,16 @@ function request(provider = "payuni", body = "signed-body") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.applyVerifiedPaymentMethodSetup.mockReset();
+  mocks.consumeIntent.mockReset();
   vi.stubEnv("PAYMENT_PROVIDER", "payuni");
   vi.stubEnv("NODE_ENV", "test");
   mocks.readTextBody.mockResolvedValue("signed-body");
   mocks.setupVerify.mockResolvedValue(true);
   mocks.setupNormalize.mockResolvedValue({
     providerName: "payuni",
+    setupIntentId: "intent-1",
+    setupNonce: "synthetic-opaque-nonce",
     eventId: "setup-event-1",
     vendorId: "vendor-1",
     scopeType: "VENDOR",
@@ -50,11 +62,16 @@ beforeEach(() => {
     verifiedAt: "2026-08-07T12:00:00.000Z",
     expiresAt: null,
   });
-  mocks.eventUpsert.mockResolvedValue({ id: "webhook-event-1", status: "received", eventType: "payment_method_setup_verified" });
+  mocks.eventUpsert.mockResolvedValue({ id: "webhook-event-1", status: "received", eventType: "payment_method_setup_verified", vendorId: "vendor-1", payload: { setupIntentId: "intent-1" } });
   mocks.eventUpdate.mockResolvedValue(undefined);
   mocks.eventUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.probeFindUnique.mockResolvedValue(null);
+  mocks.probeUpdate.mockResolvedValue(undefined);
+  mocks.referenceFindUnique.mockResolvedValue({ id: "reference-1", status: "verified" });
   mocks.transaction.mockImplementation(async (callback: (tx: unknown) => unknown) => callback({
-    paymentMethodReference: {},
+    paymentMethodSetupIntent: {},
+    paymentMethodReference: { findUnique: mocks.referenceFindUnique },
+    payUniLiveProbe: { findUnique: mocks.probeFindUnique, update: mocks.probeUpdate },
     vendor: {},
     teamMembership: {},
     webhookEvent: { update: mocks.eventUpdate },
@@ -106,9 +123,10 @@ describe("POST /api/webhooks/payment-methods", () => {
       providerName: "payuni",
       providerPaymentMethodRef: "method_ref",
     }));
+    expect(mocks.consumeIntent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ setupIntentId: "intent-1" }));
     expect(mocks.eventUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: "processed" }) }));
 
-    mocks.eventUpsert.mockResolvedValue({ id: "webhook-event-1", status: "processed", eventType: "payment_method_setup_verified" });
+    mocks.eventUpsert.mockResolvedValue({ id: "webhook-event-1", status: "processed", eventType: "payment_method_setup_verified", vendorId: "vendor-1", payload: { setupIntentId: "intent-1" } });
     const duplicate = await POST(request());
     expect(duplicate.status).toBe(200);
     await expect(duplicate.json()).resolves.toEqual({ ok: true, duplicate: true, eventId: "webhook-event-1" });
@@ -116,7 +134,7 @@ describe("POST /api/webhooks/payment-methods", () => {
   });
 
   it("fails closed when the provider event id belongs to a different webhook type", async () => {
-    mocks.eventUpsert.mockResolvedValue({ id: "webhook-event-1", status: "processed", eventType: "payment_paid" });
+    mocks.eventUpsert.mockResolvedValue({ id: "webhook-event-1", status: "processed", eventType: "payment_paid", vendorId: "vendor-1", payload: { setupIntentId: "intent-1" } });
 
     const response = await POST(request());
 
@@ -135,5 +153,26 @@ describe("POST /api/webhooks/payment-methods", () => {
     expect(mocks.eventUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: "failed", errorMessage: "payment_method_setup_rejected" }),
     }));
+  });
+
+  it("schedules only the consented one-time live probe after a verified setup", async () => {
+    mocks.probeFindUnique.mockResolvedValue({
+      id: "probe-1", vendorId: "vendor-1", status: "awaiting_setup",
+      firstAmountCents: 100, secondAmountCents: 100,
+    });
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(mocks.probeUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "probe-1" },
+      data: expect.objectContaining({ status: "scheduled", paymentMethodReferenceId: "reference-1", dueAt: expect.any(Date) }),
+    }));
+  });
+
+  it("rejects a signed callback with no matching live consent intent", async () => {
+    const { PaymentMethodSetupIntentRejectedError } = await import("@/lib/payment-method-setup-intent");
+    mocks.consumeIntent.mockRejectedValue(new PaymentMethodSetupIntentRejectedError());
+    const response = await POST(request());
+    expect(response.status).toBe(409);
+    expect(mocks.applyVerifiedPaymentMethodSetup).not.toHaveBeenCalled();
   });
 });

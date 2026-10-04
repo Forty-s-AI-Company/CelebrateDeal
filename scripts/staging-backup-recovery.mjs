@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { BACKUP_SOURCE_SHA, filteredRestoreList, validateReceipt as validateBackupReceipt } from "./secure-staging-runner.mjs";
-import { BACKUP_SOURCE } from "./staging-backup-recovery-source.mjs";
+import { BACKUP_MIGRATION_TREE_SHA, BACKUP_SOURCE } from "./staging-backup-recovery-source.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const IMAGE = "postgres:17-alpine";
@@ -17,9 +17,6 @@ const BACKUP_RECEIPT_NAME = "wp2-readonly-restore-receipt.json";
 const SHA256 = /^sha256:[a-f0-9]{64}$/u;
 const CONTAINER_ID = /^[a-f0-9]{64}$/u;
 const TMPFS_MAGIC = 0x01021994;
-// The retained archive is tied to this immutable RC migration tree, not to
-// future master migrations that may be added during the 30-day retention.
-const BACKUP_MIGRATION_TREE_SHA = "8204bf3ce05a309035f55b2f90aaffb18aed05c8";
 
 function digest(value) { return `sha256:${crypto.createHash("sha256").update(value).digest("hex")}`; }
 function safeEnvironment() {

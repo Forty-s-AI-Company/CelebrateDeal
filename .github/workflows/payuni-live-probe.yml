@@ -1,0 +1,34 @@
+name: One-time PAYUNi live probe
+
+on:
+  # A merge must never start a real-money probe; dispatch requires separate authorization.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  due-charge:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected && vars.PAYUNI_LIVE_PROBE_SCHEDULER_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    environment: Preview – celebrate-deal-staging
+    concurrency:
+      group: payuni-live-probe
+      cancel-in-progress: false
+    steps:
+      - name: Checkout protected runner
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Check due one-time charge
+        env:
+          PAYUNI_LIVE_PROBE_URL: ${{ vars.PAYUNI_LIVE_PROBE_URL }}
+          PAYUNI_LIVE_PROBE_HOST: ${{ vars.PAYUNI_LIVE_PROBE_HOST }}
+          PAYUNI_LIVE_PROBE_JOB_SECRET: ${{ secrets.PAYUNI_LIVE_PROBE_JOB_SECRET }}
+          PAYUNI_LIVE_PROBE_ONCE: 'true'
+        run: node scripts/payuni-live-probe-trigger.mjs
