@@ -1,7 +1,7 @@
 "use client";
 
 import { BarChart3, Flame, Gift, MessageCircleQuestion, PartyPopper, Sparkles, Trophy, X, Zap } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AdvancedInteractionMetadata } from "@/lib/interaction-event";
 
 type AdvancedEvent = {
@@ -32,14 +32,19 @@ type PublicRun = {
 };
 type PublicSpotlight = { id: string; body: string; displayName: string | null; spotlightedAt: string | null };
 
+export function canUseLiveAdvancedInteractions(playable: boolean, admissionStatus: string, admissionRequired?: boolean) {
+  return playable && admissionStatus === "admitted" && admissionRequired === true;
+}
+
 function metadata(value: unknown): AdvancedInteractionMetadata | null {
   if (!value || typeof value !== "object" || Array.isArray(value) || !("kind" in value)) return null;
   return value as AdvancedInteractionMetadata;
 }
 
-async function interactionRequest(body: Record<string, unknown>) {
+async function interactionRequest(body: Record<string, unknown>, signal?: AbortSignal) {
   const response = await fetch("/api/live-interactions", {
     method: "POST",
+    signal,
     headers: { "content-type": "application/json", "x-celebratedeal-client": "web" },
     body: JSON.stringify(body),
   });
@@ -53,7 +58,7 @@ function WinnerReveal({ run }: { run: PublicRun }) {
   const [candidateName, setCandidateName] = useState("抽獎進行中…");
   useEffect(() => {
     if (!isSpinning || !run.winner) return;
-    const candidates = ["幸運觀眾", "VIP 學員", "直播鐵粉", "台北 陳**", "高雄 林**", "台中 黃**", run.winner];
+    const candidates = ["正在揭曉…", "準備公布結果…", "好運即將揭曉…"];
     let step = 0;
     const timer = window.setInterval(() => {
       step++;
@@ -93,7 +98,7 @@ function WinnerReveal({ run }: { run: PublicRun }) {
     </>);
   }
 
-export function LiveAdvancedInteractions({
+function ActiveLiveAdvancedInteractions({
   vendorId,
   liveId,
   currentSeconds,
@@ -124,32 +129,36 @@ export function LiveAdvancedInteractions({
     return config && event.triggerSec <= currentSeconds && currentSeconds < event.triggerSec + config.durationSec;
   }), [currentSeconds, events]);
 
-  const refresh = useCallback(async () => {
-    if (!enabled) return;
-    try {
-      if (scriptedEvent) {
-        const payload = await interactionRequest({ action: "open", vendorId, liveId, eventId: scriptedEvent.id });
-        if (payload.run) setRun(payload.run);
-      }
-      const response = await fetch(`/api/live-interactions?vendorId=${encodeURIComponent(vendorId)}&liveId=${encodeURIComponent(liveId)}`, { cache: "no-store" });
-      if (!response.ok) return;
-      const payload = await response.json() as { runs?: PublicRun[]; spotlight?: PublicSpotlight | null };
-      if (!scriptedEvent) setRun(payload.runs?.[0] ?? null);
-      setSpotlight(payload.spotlight ?? null);
-    } catch {
-      // Polling is best effort; the next interval can recover without hiding playback.
-    }
-  }, [enabled, liveId, scriptedEvent, vendorId]);
-
   useEffect(() => {
     if (!enabled) return;
-    const immediate = window.setTimeout(() => void refresh(), 0);
-    const timer = window.setInterval(() => void refresh(), 2_000);
+    // 依序輪詢，切換直播或事件時中止舊請求，避免過期結果覆蓋新狀態。
+    const controller = new AbortController();
+    const { signal } = controller;
+    let timer: number;
+    async function refresh() {
+      try {
+        if (scriptedEvent) {
+          const payload = await interactionRequest({ action: "open", vendorId, liveId, eventId: scriptedEvent.id }, signal);
+          if (!signal.aborted) setRun(payload.run ?? null);
+        }
+        const response = await fetch(`/api/live-interactions?vendorId=${encodeURIComponent(vendorId)}&liveId=${encodeURIComponent(liveId)}`, { cache: "no-store", signal });
+        if (!response.ok) return;
+        const payload = await response.json() as { runs?: PublicRun[]; spotlight?: PublicSpotlight | null };
+        if (signal.aborted) return;
+        if (!scriptedEvent) setRun(payload.runs?.[0] ?? null);
+        setSpotlight(payload.spotlight ?? null);
+      } catch {
+        // 暫時斷線不影響播放；下一輪重新讀取伺服器結果。
+      } finally {
+        if (!signal.aborted) timer = window.setTimeout(() => void refresh(), 2_000);
+      }
+    }
+    timer = window.setTimeout(() => void refresh(), 0);
     return () => {
-      window.clearTimeout(immediate);
-      window.clearInterval(timer);
+      controller.abort();
+      window.clearTimeout(timer);
     };
-  }, [enabled, refresh]);
+  }, [enabled, liveId, scriptedEvent, vendorId]);
 
   useEffect(() => {
     if (!run) return;
@@ -338,4 +347,10 @@ export function LiveAdvancedInteractions({
     </section> : null}
     </>
   );
+}
+
+/** 入場失效時卸載互動；跨租戶或直播時重新建立所有參與狀態。 */
+export function LiveAdvancedInteractions(props: Parameters<typeof ActiveLiveAdvancedInteractions>[0]) {
+  if (!props.enabled) return null;
+  return <ActiveLiveAdvancedInteractions key={`${props.vendorId}:${props.liveId}`} {...props} />;
 }

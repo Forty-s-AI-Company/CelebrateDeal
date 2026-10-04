@@ -45,17 +45,26 @@
   ],
   "ui_recovery": {
     "component": "src/components/live-advanced-interactions.tsx",
-    "state": "RESTORED_NOT_WIRED",
+    "state": "WIRED_PENDING_BROWSER_AND_INDEPENDENT_REVIEW",
     "eslint": "PASS",
     "remaining": [
-      "Mount only for admitted playable live and reset on tenant/live identity change",
-      "Remove fictitious participant names from winner animation",
-      "Review stale polling responses and component browser tests"
+      "Browser tests for poll ordering, stale responses, admission changes and interaction submissions",
+      "Resolve independent review findings",
+      "Verify full purchased-draw registration/payment identity chain"
     ],
     "public_metadata": {
       "state": "IMPLEMENTED",
       "validation": "29 targeted tests PASS; ESLint PASS; tsc --noEmit PASS",
       "scope": "Canonical advanced settings only; unknown and nested private keys omitted; product references restricted to bound live products; public-page wiring test included"
+    },
+    "admission_and_polling": {
+      "validation": "71 targeted component/player tests PASS; ESLint PASS; tsc --noEmit PASS",
+      "behavior": [
+        "Mount only for admitted playable live with server admission required",
+        "Tenant/live key resets interaction state; admission loss unmounts",
+        "Sequential abortable polling; obsolete polling results ignored",
+        "Winner animation uses generic reveal messages without fictitious participant names"
+      ]
     }
   }
 }

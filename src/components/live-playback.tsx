@@ -6,6 +6,7 @@ import { ArrowLeft, Maximize2, Megaphone, MessageCircle, Minimize2, Package, Pau
 import { usePathname, useRouter } from "next/navigation";
 import { LeadForm } from "@/components/lead-form";
 import { LiveMediaReceiver } from "@/components/live-media-receiver";
+import { canUseLiveAdvancedInteractions, LiveAdvancedInteractions } from "@/components/live-advanced-interactions";
 import { LiveChatPanel } from "@/components/live-chat-panel";
 import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
@@ -1709,6 +1710,13 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       className={playbackPageClass(isCheckoutOverlay)}
       data-checkout-overlay-active={isCheckoutOverlay ? "true" : "false"}
     >
+      <LiveAdvancedInteractions
+        vendorId={live.vendorId}
+        liveId={live.id}
+        currentSeconds={currentSeconds}
+        events={live.interactionEvents}
+        enabled={canUseLiveAdvancedInteractions(isPlayableRuntime, admissionStatus, live.admissionRequired)}
+      />
       <DirectEntryAttributionReset enabled={isPlayableRuntime} />
       <LiveShareUrlCleanup liveShareCode={liveShareCode} />
       <section className={playbackSectionClass(isCheckoutOverlay)}>
