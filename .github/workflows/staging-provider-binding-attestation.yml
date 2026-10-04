@@ -1,0 +1,54 @@
+name: Staging provider binding attestation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  attest-r2:
+    # Only the protected default branch can receive the Preview environment.
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Preview – celebrate-deal-staging
+    steps:
+      - name: Checkout protected source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Attest fixed staging R2 binding with read-only HeadBucket
+        id: attest
+        continue-on-error: true
+        env:
+          CLOUDFLARE_R2_ACCOUNT_ID: ${{ vars.CLOUDFLARE_R2_ACCOUNT_ID }}
+          CLOUDFLARE_R2_BUCKET: ${{ vars.CLOUDFLARE_R2_BUCKET }}
+          STAGING_R2_EXPECTED_ACCOUNT_ID: ${{ vars.STAGING_R2_EXPECTED_ACCOUNT_ID }}
+          STAGING_R2_EXPECTED_BUCKET: ${{ vars.STAGING_R2_EXPECTED_BUCKET }}
+          CLOUDFLARE_R2_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
+          CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          STAGING_PROVIDER_RECEIPT_PATH: ${{ runner.temp }}/staging-provider-binding-receipt.json
+        run: node scripts/staging-provider-binding-attestation.mjs
+
+      - name: Upload sanitized attestation receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: staging-provider-binding-${{ github.sha }}
+          path: ${{ runner.temp }}/staging-provider-binding-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce attestation result
+        if: ${{ steps.attest.outcome != 'success' }}
+        run: exit 2

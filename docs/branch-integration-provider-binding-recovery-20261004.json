@@ -1,0 +1,165 @@
+{
+  "source": "8605600797576dd2db003948f30358d1f2a7af78",
+  "files": [
+    {
+      "path": ".github/workflows/staging-provider-binding-attestation.yml",
+      "source_sha256": "1920d73cf9e7d860fca81bbe221e456ad073660502a45fee1c7038ad586606c5"
+    },
+    {
+      "path": "docs/launch/staging-provider-binding-attestation.md",
+      "source_sha256": "686fe2d6a19bd6ada964d75137bd260c1766ef5635e17b6ccd8f1f3ff030c397"
+    },
+    {
+      "path": "scripts/staging-provider-binding-attestation.mjs",
+      "source_sha256": "605caf525e03f20f20ec636d3e2b751d3a5f590a4bb5db8ea7d6ff6e29213e3b"
+    },
+    {
+      "path": "scripts/staging-provider-binding-attestation.test.mjs",
+      "source_sha256": "fe45a6ee8a0d401be9019f119928d00106646943b49be84af3fa84c6d6eb49ba"
+    }
+  ],
+  "external_operations": false,
+  "status": "RECOVERED_PENDING_PROTECTED_PR",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "provider-binding-recovery",
+    "signals": {
+      "task_type": "implement",
+      "complexity": "low",
+      "risk": "medium",
+      "risk_score": 0,
+      "engineering_profile": "routine",
+      "large_workload": false,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "low",
+      "risk_requirement": "medium",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "implement",
+    "difficulty": "low",
+    "requested_team": "ai-team",
+    "team": "ai-team",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "8605600797576dd2db003948f30358d1f2a7af78",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [
+      "new-head-ci-quality"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "low",
+    "effort_floor": "low",
+    "effort_reason": null,
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "low",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "low",
+      "effort_floor": "low",
+      "effort_reason": null,
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": "senior_review"
+  },
+  "validation": {
+    "exit": 0,
+    "summary": [
+      "# tests 4",
+      "# pass 4",
+      "# fail 0",
+      "# skipped 0",
+      "# duration_ms 130.7161"
+    ],
+    "external_operations": false,
+    "source_head": "8605600797576dd2db003948f30358d1f2a7af78"
+  },
+  "lint": [
+    {
+      "file": "scripts/staging-provider-binding-attestation.mjs",
+      "exit": 0,
+      "errors": 0,
+      "warnings": 0,
+      "messages": []
+    },
+    {
+      "file": "scripts/staging-provider-binding-attestation.test.mjs",
+      "exit": 0,
+      "errors": 0,
+      "warnings": 0,
+      "messages": []
+    }
+  ],
+  "review": {
+    "security": "Manual dispatch only; protected master and fixed Preview environment. Exact expected identity, staging-name and production-name checks before one HeadBucket. No object access, writes, Stream credentials or raw response persistence.",
+    "performance": "Single request, maxAttempts=1,10-second abort; SDK client always destroyed.",
+    "readability": "Distinct binding, attestation and SDK functions; sanitized fixed failure categories.",
+    "maintainability": "Existing locked dependencies provide AWS S3 and YAML parser; source tests match current dependency installation.",
+    "findings": []
+  },
+  "limitations": [
+    "No real Cloudflare credential, resource isolation or permissions verified; named bucket and HEAD success alone cannot prove credential scope.",
+    "Source-only synthetic test pass is not deployed-runtime or provider attestation."
+  ],
+  "next": "Merge PR355 after its final-head CI, update this branch with protected master, then publish these four recovered files and integration evidence through a new protected PR."
+}
