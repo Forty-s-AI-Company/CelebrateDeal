@@ -126,7 +126,8 @@
       "scope": "Actual issued live voucher concurrent CAS consumes once; order-transaction exception rolls back claim and allows retry. Excludes post-commit provider failure recovery."
     },
     "review_findings": [
-      "OPEN MAJOR: provider checkout or metadata failure after reservation leaves voucher consumed; new idempotency key can silently fall back to full price. Need safe recovery considering late paid callback, not blind usedOrderId reset."
+      "OPEN MAJOR: provider checkout or metadata failure after reservation leaves voucher consumed; new idempotency key can silently fall back to full price. Need safe recovery considering late paid callback, not blind usedOrderId reset.",
+      "OPEN: used HttpOnly live voucher cookie can block legitimate repurchase after paid order; distinguish proven-paid prior order from uncertain/failed payment. Automation priority is an explicit exception to used-live rejection."
     ],
     "retry_protection": {
       "state": "IMPLEMENTED_PENDING_INDEPENDENT_REVIEW",
@@ -135,6 +136,16 @@
       "eslint": "PASS",
       "tsc": "PASS",
       "remaining": "Provider failure recovery remains open; no blind usedOrderId reset due to late-payment risk."
+    },
+    "provider_failure_regression": {
+      "route_tests": 57,
+      "status": "PASS",
+      "scope": "Synthetic provider failure after voucher consume, then fresh admitted idempotency key:409, no second reservation/provider call; original discounted amount retained. Mocked route evidence only."
+    },
+    "recovery_evidence": {
+      "source": "src/lib/inventory-reservations.ts:applyPaymentInventoryTransition",
+      "finding": "paid event can reacquire released inventory; provider failure is not proof that a late paid event cannot arrive",
+      "required_policy": "Keep claim bound until provider finality/reconciliation. Do not clear usedOrderId solely because local transaction failed. Prove normal paid repurchase and uncertain failure isolation."
     }
   }
 }

@@ -168,7 +168,7 @@ beforeEach(() => {
   db.paymentTransaction.findUnique.mockResolvedValue(null);
   funnelMocks.resolvePublishedFunnelCheckout.mockReset();
   liveInteractionMocks.resolveEligibleAutomationVoucherClaim.mockResolvedValue(null);
-  liveInteractionMocks.resolveEligibleVoucherClaim.mockResolvedValue(null);
+  liveInteractionMocks.resolveEligibleVoucherClaim.mockReset().mockResolvedValue(null);
   liveInteractionMocks.consumeLive.mockResolvedValue({ count: 1 });
   db.paymentTransaction.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: "transaction-1", ...data }));
   db.paymentTransaction.update.mockResolvedValue({ id: "transaction-1" });
@@ -1203,6 +1203,29 @@ describe("checkout form submission attribution", () => {
 });
 
 describe("checkout provider failures", () => {
+  it("keeps the original discount binding and blocks a new-key retry after provider failure", async () => {
+    const { LiveVoucherAlreadyUsedError } = await import("@/lib/live-interaction");
+    liveInteractionMocks.resolveEligibleVoucherClaim
+      .mockResolvedValueOnce({ id: "live-claim", discountAmountCents: 200 })
+      .mockRejectedValueOnce(new LiveVoucherAlreadyUsedError());
+    createCheckoutSession.mockRejectedValueOnce(new Error("synthetic provider outage"));
+    const cookie = `celebratedeal_flash_voucher=${"A".repeat(43)}`;
+    const first = await POST(checkoutRequest(cookie));
+    expect(first.status).toBe(502);
+    expect(liveInteractionMocks.consumeLive).toHaveBeenCalledTimes(1);
+    expect(inventoryMocks.failPendingCheckoutAndReleaseInventory).toHaveBeenCalledTimes(1);
+    admissionMocks.verifyCheckoutAdmission.mockReturnValueOnce({
+      vendorId: "vendor-1", productId: "product-1", productRevision: 4,
+      idempotencyKey: "11111111-1111-4111-8111-111111111111", expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+    });
+    const retry = await POST(checkoutRequest(cookie, { idempotencyKey: "11111111-1111-4111-8111-111111111111" }));
+    expect(retry.status).toBe(409);
+    expect(await retry.json()).toMatchObject({ code: "LIVE_VOUCHER_ALREADY_USED" });
+    expect(createCheckoutSession).toHaveBeenCalledTimes(1);
+    expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledTimes(1);
+    expect(db.paymentTransaction.create.mock.calls[0]?.[0]?.data.grossAmountCents).toBe(1000);
+  });
+
   it("returns sold out when inventory is consumed between product lookup and reservation", async () => {
     inventoryMocks.createReservedPaymentTransaction.mockRejectedValueOnce(
       new inventoryMocks.InventoryUnavailableError(),
