@@ -1,0 +1,26 @@
+{
+  "master": "361a37da2b487bbfa17f419d7b72b9306da07c99",
+  "scope": "Four original working-tree paths reconciled without destructive source edits; other auth action differences remain open",
+  "entries": [
+    {
+      "path": "scripts/validate-non-production-owner-authorization.mjs",
+      "decision": "ORIGINAL_DELETION_ALREADY_IN_MASTER",
+      "evidence": "Absent in original working tree and origin/master tree; no content read or deleted by integration."
+    },
+    {
+      "path": "scripts/validate-non-production-owner-authorization.test.mjs",
+      "decision": "ORIGINAL_DELETION_ALREADY_IN_MASTER",
+      "evidence": "Absent in original working tree and origin/master tree; no content read or deleted by integration."
+    },
+    {
+      "path": "src/lib/auth-rate-limits.ts",
+      "decision": "BEHAVIOR_ALREADY_IN_MASTER",
+      "evidence": "Original helper only returns fixed 5. Current auth-security-actions.ts retains LOGIN_SOURCE_EMAIL_LIMIT = 5 and uses it for login-source-email key; no functional limit change required."
+    },
+    {
+      "path": "src/lib/auth-rate-limits.test.ts",
+      "decision": "FIXED_THRESHOLD_COVERED_BY_ACTION_TEST",
+      "evidence": "Original added tests both assert helper returns 5. Existing action test asserts actual checkRateLimit call with login-source-email key; 328 action/policy tests passed in PR359 validation."
+    }
+  ]
+}

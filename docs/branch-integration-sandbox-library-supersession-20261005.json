@@ -1,0 +1,78 @@
+{
+  "master": "361a37da2b487bbfa17f419d7b72b9306da07c99",
+  "scope": "Five file-level semantic decisions only; does not close entire historical branches.",
+  "validation": {
+    "vitest": {
+      "files": 2,
+      "tests": 10,
+      "status": "PASS",
+      "actual_files": [
+        "src/lib/blacklist-identifiers.test.ts",
+        "src/lib/registration-form-fields.test.ts"
+      ]
+    },
+    "invoice_presentation": "Full small-file diff reviewed; no dedicated test exists and none claimed",
+    "analytics_vitest": {
+      "files": 2,
+      "tests": 12,
+      "status": "PASS"
+    }
+  },
+  "files": [
+    {
+      "path": "src/lib/blacklist-identifiers.ts",
+      "source_blob": "a6f4a41747cd9a00ffea518f4357ba83509bee07",
+      "source_heads": [
+        "35d8f59341bcb776e548c69fe874a3f4d1fe2528"
+      ],
+      "master_blob": "e810a271a3018c255cbd2e515bdd219bc2a74b58",
+      "decision": "HISTORICAL_BEHAVIOR_PRESERVED_BY_CURRENT_MASTER",
+      "reason": "Existing email, phone, IP and visitor ID normalization retained; master adds keyword normalization and matching."
+    },
+    {
+      "path": "src/lib/blacklist-identifiers.test.ts",
+      "source_blob": "c5027341cd33316598934d0863d181560ff35e0d",
+      "source_heads": [
+        "35d8f59341bcb776e548c69fe874a3f4d1fe2528"
+      ],
+      "master_blob": "9ac8772cdb20c8b6bf9def0340dcf9e9782c2386",
+      "decision": "HISTORICAL_BEHAVIOR_PRESERVED_BY_CURRENT_MASTER",
+      "reason": "Historical assertions retained; master adds keyword tests."
+    },
+    {
+      "path": "src/lib/invoice-presentation.ts",
+      "source_blob": "4e20c0849eb88a5519f7c5d848663fe0bf07f1b9",
+      "source_heads": [
+        "35d8f59341bcb776e548c69fe874a3f4d1fe2528"
+      ],
+      "master_blob": "d631017e535fc4618b2a0bc97a584d0d84013286",
+      "decision": "HISTORICAL_BEHAVIOR_PRESERVED_BY_CURRENT_MASTER",
+      "reason": "All historical status labels and tones retained; master adds partially_refunded/refunded cases."
+    },
+    {
+      "path": "src/lib/registration-form-fields.ts",
+      "source_blob": "1c8809abd1eac29d1a4d5ab5e73a605280c0ad83",
+      "source_heads": [
+        "35d8f59341bcb776e548c69fe874a3f4d1fe2528"
+      ],
+      "master_blob": "7336f2efc0f6798ddd860a950975c6d3a6143b76",
+      "decision": "HISTORICAL_BEHAVIOR_PRESERVED_BY_CURRENT_MASTER",
+      "reason": "Validation unchanged except additional reserved transport fields landingPageId, funnelStepId and shareCode; prevents schema collision with newer funnel transport."
+    },
+    {
+      "path": "src/lib/client-analytics.ts",
+      "source_blob": "62c95e5a82f413740fb8c06b32ab41e6294962a0",
+      "source_heads": [
+        "35d8f59341bcb776e548c69fe874a3f4d1fe2528"
+      ],
+      "master_blob": "e3a5ec57231ab182407cf830ce81e1608f234228",
+      "decision": "SUPERSEDED_BY_VERIFIED_SESSION_IDENTITY",
+      "reason": "Only historical helper change is removal of client-provided visitorId. Current analytics API rejects forged visitorId and derives identity from an admitted playback token. Event union, fetch behavior and failure handling preserved.",
+      "evidence": [
+        "src/app/api/analytics/route.ts",
+        "src/app/api/analytics/route.test.ts",
+        "src/lib/client-analytics.test.ts"
+      ]
+    }
+  ]
+}
