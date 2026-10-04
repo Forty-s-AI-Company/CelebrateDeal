@@ -129,6 +129,37 @@ describe("PAYUNi official UPP setup contract", () => {
     expect(dbMocks.findUnique).not.toHaveBeenCalled();
   });
 
+  it("cancels the same single-merchant token scope selected during setup", async () => {
+    environment();
+    const session = await payUniPaymentProvider.createPaymentMethodSetupSession?.({
+      intentId: orderNumber,
+      setupNonce: payUniSetupNonce(orderNumber),
+      vendor: { id: "vendor-1" } as Vendor,
+      scopeType: "VENDOR",
+      appUrl: "https://staging.example.test",
+      returnPath: "/billing/payment-methods",
+    });
+    const setupPayload = decrypt(session!.formPayload!.EncryptInfo);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(signedCallback({
+      MerID: "TESTMER", Status: "SUCCESS", BindVal: "opaque-credit-hash",
+    }, "1.0")));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(payUniPaymentProvider.revokePaymentMethodReference?.({
+      providerPaymentMethodRef: "opaque-credit-hash",
+    })).resolves.toEqual({});
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://api.payuni.com.tw/api/credit_bind/cancel");
+    const cancellationPayload = decrypt(init.body.get("EncryptInfo"));
+    expect(setupPayload.CreditTokenType).toBe("2");
+    expect(cancellationPayload).toMatchObject({
+      CreditTokenType: setupPayload.CreditTokenType,
+      UseTokenType: "1", BindVal: "opaque-credit-hash",
+    });
+  });
+
   it("accepts only a signed paid card result with CreditHash", async () => {
     environment();
     dbMocks.findUnique.mockResolvedValue({

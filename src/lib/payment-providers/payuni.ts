@@ -534,6 +534,8 @@ async function revokePayUniPaymentMethod({ providerPaymentMethodRef }: PaymentMe
     MerID: merchantId,
     Timestamp: Math.floor(Date.now() / 1000),
     UseTokenType: 1,
+    // Match the single-merchant token scope used by the setup request.
+    CreditTokenType: 2,
     BindVal: payUniOpaqueReference(providerPaymentMethodRef),
   });
 
