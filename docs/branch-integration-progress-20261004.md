@@ -8,6 +8,7 @@
 - #352：已合入 master `fc28e1b8`，回收 #211 的三份 Funnel 回歸測試及 #13/#353 商品預覽修正；新 head CI 與 canonical gate 通過。
 - #353：兩份產品檔案已透過 #352 完整交付，原 PR 關閉保留追溯。
 - #354：已於 `2026-10-04T14:26:55Z` 合入 master `42bce600e9c6b88003bd3b2a924d0ea96c70aee8`，交付 LINE 圖文選單草稿。PR CI `37207666809`、push CI `37207662788` 全數通過，canonical gate READY、0 blockers；master tree 與已驗收 head `23fcae98` 完全一致。
+- #355：已於 `2026-10-04T15:14:26Z` 合入 master `c071b2d6`，補回表單同步送出鎖、公開表單指定場次及一頁式網站側欄入口；PR CI `37210769933`、push CI `37210766776` 全數成功，canonical gate READY，master tree 與驗收 head `24d9c7c7` 相同。
 - #210、#211：保留開啟，其餘產品功能與原有 dirty 工作尚未全部整合。
 
 ## #354 已驗證範圍
@@ -27,9 +28,11 @@ CI 原失敗為新增 migration 後歷史 runner/inventory 測試的固定清單
 ## 下一段與未完成工作
 
 1. #354 合併及 master tree 核對已完成；將本輪最新盤點與驗收證據納入下一個受保護文件交付。
-2. #211 舊 Puck CSS import 已確認由現行套件 runtime 自動注入替代，不需補匯入；舊 inventory snapshot migration 與主線較晚時間戳 migration 完全相同，不重複套用。PR #355 已補回表單同步送出鎖、一頁式網站導覽及公開表單指定場次；26 個 targeted tests 與表單重試 browser 通過，等待最終 head CI 及驗收後合併。
+2. #211 舊 Puck CSS import 已確認由現行套件 runtime 自動注入替代，不需補匯入；舊 inventory snapshot migration 與主線較晚時間戳 migration 完全相同，不重複套用。PR #355 已補回表單同步送出鎖、一頁式網站導覽及公開表單指定場次；26 個 targeted tests 與表單重試 browser 通過，已通過最終 head CI／驗收並合併。
 3. #210 LINE 外部同步仍缺發布序列化、provider/DB 補償及學員入口解析，介面明確未開放；student portal、affiliate/commission、成長與私訊功能待逐段核對。
 4. 原 dirty 中 password-reset smoke 的正式環境限制、Funnel、AI Team 路由／驗證差異需繼續審查；不能直接覆蓋較新的 master。
 5. Sandbox QA 共用 runner/設定、provider binding attestation 與其餘歷史差異詳見未來處理報告。
 
 完整來源、雜湊與逐 head 處置：`branch-integration-deferred-work-20261004.json`。未來工作與歷史操作紀錄：`branch-integration-future-work.md`。本輪未部署 Production、未操作正式 DB、未呼叫真實 LINE 或付款／退款服務。
+
+R2 綁定驗證來源 `860560079757` 的四個檔案已完整回收至 `codex/recover-staging-provider-binding-20261004`，4 個合成契約測試與 ESLint 通過，尚待下一個受保護 PR；不宣稱真實 Cloudflare 連線或權限已驗證。另 9 個 #211 library/UI 路徑完成保留新版的差異紀錄，50 個 targeted tests 通過；eac0a343 的 target_url leaf intent 已由現行主線保留，整支繼承差異仍待處理。
