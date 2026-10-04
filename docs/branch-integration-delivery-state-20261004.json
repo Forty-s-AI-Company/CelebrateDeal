@@ -1,6 +1,6 @@
 {
   "initial_inventory_base": "bdbae2f53491afd518b97ee597e117d6a585b55c",
-  "master": "c071b2d655b0d875fa9d616920c5a554d462dbe6",
+  "master": "361a37da2b487bbfa17f419d7b72b9306da07c99",
   "remote_head_count": 282,
   "open_prs": [
     {
@@ -323,8 +323,8 @@
   },
   "scope_note": "Current metadata only; historical content dispositions remain in the initial audit and subsequent evidence.",
   "goal_status": "IN_PROGRESS",
-  "remaining_historical_heads": 28,
-  "latest_merged_pr": 354,
+  "remaining_historical_heads": 27,
+  "latest_merged_pr": 357,
   "pr355": {
     "headRefOid": "24d9c7c76d6273329e2aff0b27ae9299da04d364",
     "mergeCommit": {
@@ -333,5 +333,12 @@
     "mergedAt": "2026-10-04T15:14:26Z",
     "state": "MERGED",
     "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/355"
+  },
+  "pr357": {
+    "status": "MERGED",
+    "head": "a214d277811809d581660e2b1b3c5856fb62a7d2",
+    "merge_commit": "361a37da2b487bbfa17f419d7b72b9306da07c99",
+    "partial_source_pr": 210,
+    "goal_complete": false
   }
 }

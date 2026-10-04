@@ -1,0 +1,42 @@
+{
+  "updated_at": "2026-10-04T16:30:49.148446+00:00",
+  "pr": 357,
+  "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/357",
+  "status": "MERGED",
+  "head": "a214d277811809d581660e2b1b3c5856fb62a7d2",
+  "base": "0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2",
+  "ci_runs": {
+    "pull_request": 37215992336,
+    "push": 37215989311
+  },
+  "last_verified_live_phase": null,
+  "local_validation": {
+    "test_files": 593,
+    "tests": 4270,
+    "coverage_thresholds": "PASS",
+    "browser_tests": 3,
+    "migration_count": 83,
+    "typecheck": "PASS",
+    "strict_index": "PASS",
+    "secret_scan": "PASS"
+  },
+  "independent_review": "PASS; no open findings",
+  "owned_database_cleanup": "PASS",
+  "original_dirty_preserved": {
+    "entries": 120,
+    "hashes": 118
+  },
+  "next": [
+    "Publish verified original routing integration candidate",
+    "Continue remaining 27 historical groups and original uncommitted files"
+  ],
+  "local_processes_still_running": [],
+  "production_operations": false,
+  "goal_status": "ACTIVE",
+  "merge_commit": "361a37da2b487bbfa17f419d7b72b9306da07c99",
+  "merged_at": "2026-10-04T16:40:44Z",
+  "accepted_tree_equals_master": true,
+  "canonical_acceptance": "READY",
+  "canonical_revision": "sha256:e48f241402d8b3d9d1ed5a67ee52c2d0e91ec05b7a69cd6e23bd6395b173e92a",
+  "ci_status": "PR and push SUCCESS"
+}

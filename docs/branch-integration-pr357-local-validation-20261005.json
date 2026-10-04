@@ -1,0 +1,87 @@
+{
+  "head": "a214d277811809d581660e2b1b3c5856fb62a7d2",
+  "full_combined_coverage": {
+    "exit_code": 0,
+    "elapsed_seconds": 412.9,
+    "diagnostics": [
+      "Test Files  593 passed (593)",
+      "Tests  4270 passed (4270)",
+      "Statements   : 64.89% ( 32875/50655 )",
+      "Branches     : 63.59% ( 31300/49217 )",
+      "Functions    : 68.31% ( 6301/9224 )",
+      "Lines        : 70.49% ( 28628/40612 )",
+      "{\"disposableDatabase\":\"PASS\",\"migrationCount\":83}",
+      "{\"disposableCleanup\":{\"container\":\"PASS\",\"tempRoot\":\"PASS\"}}"
+    ]
+  },
+  "global_coverage": {
+    "lines": {
+      "total": 40612,
+      "covered": 28628,
+      "skipped": 0,
+      "pct": 70.49
+    },
+    "statements": {
+      "total": 50655,
+      "covered": 32875,
+      "skipped": 0,
+      "pct": 64.89
+    },
+    "functions": {
+      "total": 9224,
+      "covered": 6301,
+      "skipped": 0,
+      "pct": 68.31
+    },
+    "branches": {
+      "total": 49217,
+      "covered": 31300,
+      "skipped": 0,
+      "pct": 63.59
+    },
+    "branchesTrue": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 100
+    }
+  },
+  "lib_coverage": {
+    "statements": {
+      "total": 14359,
+      "covered": 12595,
+      "pct": 87.72
+    },
+    "branches": {
+      "total": 13584,
+      "covered": 10982,
+      "pct": 80.85
+    },
+    "functions": {
+      "total": 2679,
+      "covered": 2526,
+      "pct": 94.29
+    },
+    "lines": {
+      "total": 11990,
+      "covered": 11150,
+      "pct": 92.99
+    }
+  },
+  "typecheck": [
+    {
+      "command": "node node_modules/typescript/bin/tsc --noEmit",
+      "exit": 0,
+      "diagnostics": []
+    },
+    {
+      "command": "node node_modules/typescript/bin/tsc -p tsconfig.strict-index.json --noEmit",
+      "exit": 0,
+      "diagnostics": []
+    }
+  ],
+  "secret_scan": "PASS",
+  "independent_review": "PASS after all findings fixed",
+  "remote_ci": "IN_PROGRESS; no merge acceptance claimed",
+  "production_operations": false
+}

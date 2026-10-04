@@ -100,10 +100,12 @@
     "Support browser adapter and newer dependency-audit script require separate scoped reconciliation"
   ],
   "next": [
-    "Commit and reconcile with merged portal PR357",
-    "Protected exact-head CI and canonical acceptance",
+    "Publish protected PR with exact scoped candidate",
+    "Pass protected exact-head CI and canonical acceptance",
     "Reconcile remaining original dirty files and historical branch groups"
   ],
   "production_operations": false,
-  "whole_goal": "IN_PROGRESS"
+  "whole_goal": "IN_PROGRESS",
+  "integration_base": "361a37da2b487bbfa17f419d7b72b9306da07c99",
+  "parent_portal_status": "MERGED"
 }
