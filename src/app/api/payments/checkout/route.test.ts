@@ -53,6 +53,7 @@ vi.mock("@/lib/buyer-support-access", () => ({
 vi.mock("@/lib/checkout-admission", () => admissionMocks);
 vi.mock("@/lib/funnel-commerce-service", () => funnelMocks);
 vi.mock("@/lib/live-interaction", () => ({
+  LiveVoucherAlreadyUsedError: class LiveVoucherAlreadyUsedError extends Error {},
   FLASH_VOUCHER_COOKIE: "celebratedeal_flash_voucher",
   resolveEligibleVoucherClaim: liveInteractionMocks.resolveEligibleVoucherClaim,
   AUTOMATION_VOUCHER_COOKIE: "celebratedeal_automation_voucher",
@@ -234,6 +235,16 @@ function expectNoAffiliateAttribution() {
 }
 
 describe("successful checkout response", () => {
+  it("does not silently charge full price when a previous order consumed the live voucher", async () => {
+    const { LiveVoucherAlreadyUsedError } = await import("@/lib/live-interaction");
+    liveInteractionMocks.resolveEligibleVoucherClaim.mockRejectedValueOnce(new LiveVoucherAlreadyUsedError());
+    const response = await POST(checkoutRequest(`celebratedeal_flash_voucher=${"A".repeat(43)}`));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "LIVE_VOUCHER_ALREADY_USED" });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it("applies a live voucher and atomically binds its redemption to the order", async () => {
     liveInteractionMocks.resolveEligibleVoucherClaim.mockResolvedValueOnce({ id: "live-claim", discountAmountCents: 200 });
     const response = await POST(checkoutRequest(`celebratedeal_flash_voucher=${"A".repeat(43)}`));

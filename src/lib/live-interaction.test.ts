@@ -17,9 +17,22 @@ import {
   pollPercentages,
   resolveEligibleAutomationVoucherClaim,
   resolveEligibleVoucherClaim,
+  LiveVoucherAlreadyUsedError,
 } from "./live-interaction";
 
 describe("advanced live interaction algorithms", () => {
+  it("rejects a consumed matching voucher even after expiry, without rejecting other tenant/product scope", async () => {
+    const findUnique = vi.fn().mockResolvedValue({
+      id: "used-claim", vendorId: "vendor-1", productId: "product-1", eventType: "flash_voucher",
+      usedOrderId: "earlier-order", expiresAt: new Date(0), run: { eventType: "flash_voucher" },
+    });
+    const db = { liveInteractionResponse: { findUnique } } as unknown as PrismaClient;
+    const input = { vendorId: "vendor-1", productId: "product-1", priceCents: 1200, currency: "TWD", rejectUsed: true };
+    await expect(resolveEligibleVoucherClaim(db, "A".repeat(43), input)).rejects.toBeInstanceOf(LiveVoucherAlreadyUsedError);
+    await expect(resolveEligibleVoucherClaim(db, "A".repeat(43), { ...input, vendorId: "other" })).resolves.toBeNull();
+    await expect(resolveEligibleVoucherClaim(db, "A".repeat(43), { ...input, productId: "other" })).resolves.toBeNull();
+  });
+
   it("calculates bounded percentage and fixed discounts without producing a free order", () => {
     expect(calculateVoucherDiscount(10_000, {
       kind: "flash_voucher", durationSec: 60, maxClaims: 10,

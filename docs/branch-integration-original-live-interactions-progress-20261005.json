@@ -127,6 +127,14 @@
     },
     "review_findings": [
       "OPEN MAJOR: provider checkout or metadata failure after reservation leaves voucher consumed; new idempotency key can silently fall back to full price. Need safe recovery considering late paid callback, not blind usedOrderId reset."
-    ]
+    ],
+    "retry_protection": {
+      "state": "IMPLEMENTED_PENDING_INDEPENDENT_REVIEW",
+      "behavior": "Matching already-used live voucher rejects new checkout before reserving stock or contacting provider, including expired used vouchers. Different tenant/product scope does not expose previous order state.",
+      "tests": 65,
+      "eslint": "PASS",
+      "tsc": "PASS",
+      "remaining": "Provider failure recovery remains open; no blind usedOrderId reset due to late-payment risk."
+    }
   }
 }

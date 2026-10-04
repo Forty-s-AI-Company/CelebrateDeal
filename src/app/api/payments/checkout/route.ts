@@ -59,6 +59,7 @@ import { resolvePublishedFunnelCheckout, type ResolvedFunnelCheckout } from "@/l
 import {
   AUTOMATION_VOUCHER_COOKIE,
   FLASH_VOUCHER_COOKIE,
+  LiveVoucherAlreadyUsedError,
   resolveEligibleVoucherClaim,
   resolveEligibleAutomationVoucherClaim,
 } from "@/lib/live-interaction";
@@ -170,7 +171,7 @@ async function eligibleCheckoutVoucherClaim(
   );
   // 維持既有自動化券優先順序，不疊加兩張優惠券。
   if (automation) return automation;
-  const live = await resolveEligibleVoucherClaim(getDb(), requestCookie(request, FLASH_VOUCHER_COOKIE), input);
+  const live = await resolveEligibleVoucherClaim(getDb(), requestCookie(request, FLASH_VOUCHER_COOKIE), { ...input, rejectUsed: true });
   return live ? { ...live, source: "live" } : null;
 }
 
@@ -784,7 +785,11 @@ export async function POST(request: Request) {
     productId: product.id,
     priceCents: product.priceCents,
     currency: product.currency,
+  }).catch((error: unknown) => {
+    if (error instanceof LiveVoucherAlreadyUsedError) return NextResponse.json({ error: "優惠券已綁定先前訂單，請確認原訂單付款狀態後再試。", code: "LIVE_VOUCHER_ALREADY_USED" }, { status: 409 });
+    throw error;
   });
+  if (voucherClaim instanceof Response) return voucherClaim;
   const discountAmountCents = voucherClaim?.discountAmountCents ?? 0;
   const checkoutAmountCents = product.priceCents + (orderBumpProduct?.priceCents ?? 0) - discountAmountCents;
   const transactionMetadata = checkoutTransactionMetadata({
