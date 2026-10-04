@@ -60,6 +60,7 @@ export default async function LoginPage({
           <p className="mb-3 text-center text-xs font-semibold text-slate-500">公開資訊與客服</p>
           <PublicResourceLinks compact />
         </div>
+        <p className="mt-4 text-center text-sm text-slate-600">第一次使用？ <Link href="/register" className="font-semibold text-primary hover:underline">建立商家 Workspace</Link></p>
       </section>
     </main>
   );

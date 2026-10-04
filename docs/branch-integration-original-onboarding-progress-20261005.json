@@ -1,0 +1,96 @@
+{
+  "state": "CHECKPOINT_PENDING_REVIEW_FIXES",
+  "dependency_pr": 360,
+  "scope": "Restore missing registration and personalized welcome UI while preserving current auth and tenant safeguards",
+  "recovered_files": [
+    {
+      "path": "src/app/welcome/page.tsx",
+      "original_sha256": "a7b9d4158edc10027f79d6ebc3999a51e5b6e193eeeb82883ff65f3fb9851f32"
+    },
+    {
+      "path": "src/app/welcome/preparing/page.tsx",
+      "original_sha256": "676899a3781d0e86a1f5b9e38ae94524475fae9345a34bfcff177f687e425269"
+    },
+    {
+      "path": "src/components/personalized-onboarding-questionnaire.tsx",
+      "original_sha256": "d3e0e1085c34b673315da6a67985780eb7822c14d9951c0f5183e3d27dcb7121"
+    },
+    {
+      "path": "src/components/workspace-preparing-progress.tsx",
+      "original_sha256": "78a029a44aba6cdd8531fe57e2c0ea4d96a84c914b4fdfde9e3e0c33fc78005c"
+    }
+  ],
+  "remaining": [
+    "Validate questionnaire frontend/backend type and data contracts",
+    "Review saved-answer concurrency and tenant boundaries",
+    "Restore safe bounded registration with actual route and session integration",
+    "Targeted unit, database, browser and independent auth review",
+    "Canonical acceptance and protected PR merge"
+  ],
+  "changes": [
+    "Recovered welcome and preparation routes and two original UI components",
+    "Parse persisted questionnaire via canonical schema",
+    "Serialize client answer saves and prevent advancement after failed save"
+  ],
+  "validation": {
+    "initial_copy_typecheck": "PASS",
+    "post_fix_typecheck": "PASS",
+    "targeted_eslint": "PASS",
+    "behavioral_tests": "PENDING",
+    "independent_auth_review": "PENDING",
+    "component_browser": {
+      "desktop_and_mobile": 2,
+      "status": "PASS",
+      "scope": "Actual React component with controlled save/complete promises; no backend or style acceptance",
+      "assertions": [
+        "Failed save blocks advancement",
+        "Retry allows progression",
+        "Pending save blocks competing option writes",
+        "Multiple selections preserve earlier answers",
+        "Complete waits for last save"
+      ]
+    }
+  },
+  "registration_reconciliation": {
+    "original_action": "auth-security-actions.ts registerAction",
+    "missing_routes": [
+      "/register",
+      "/welcome",
+      "/welcome/preparing"
+    ],
+    "recovered_routes": [
+      "/welcome",
+      "/welcome/preparing"
+    ],
+    "required_preservation": [
+      "CSRF before all writes",
+      "Source rate-limit before password hashing",
+      "Atomic user/vendor/owner membership/preference creation",
+      "Existing session cookie policy",
+      "Audit registration and redirect to welcome"
+    ],
+    "original_issues_to_fix": [
+      "Only email.includes(@) validates email; require canonical bounded validation",
+      "Name/workspace/password have no upper bounds",
+      "Catch-all database errors reported as duplicate email",
+      "Do not overwrite current auth/MFA/recovery implementations"
+    ]
+  },
+  "registration_implementation": {
+    "state": "IMPLEMENTED_PENDING_DB_BROWSER_AND_REVIEW",
+    "files": [
+      "src/app/actions/registration-actions.ts",
+      "src/app/actions/registration-actions.test.ts",
+      "src/app/register/page.tsx",
+      "src/app/login/page.tsx"
+    ],
+    "unit_passed": 12,
+    "unit_failed": 0,
+    "reviewer": "portal_review_fallback",
+    "review_status": "RUNNING"
+  },
+  "open_review_findings": [
+    "MAJOR: Registration preserves surrounding password whitespace but current login trims it; align contract and prove register/logout/login round trip.",
+    "MINOR: Existing tenant projects without selectedProjectId can complete onboarding but preparation page rejects; reconcile action and page contract."
+  ]
+}
