@@ -2,6 +2,7 @@ export const LIVE_PREVIEW_DEFAULTS = {
   title: "未命名直播",
   accentCopy: "直播限定優惠",
   noProducts: "尚未選擇主打商品",
+  unnamedProduct: "未命名商品",
 } as const;
 
 export type LivePreviewProduct = {
@@ -26,12 +27,13 @@ export function summarizeLivePreviewProducts(
   selectedProductIds: string[],
 ) {
   const productsById = new Map(products.map((product) => [product.id, product]));
-  const selectedProducts = selectedProductIds
+  // 先去重再計算摘要，避免重複 ID 佔用顯示名額或灌大剩餘件數。
+  const selectedProducts = [...new Set(selectedProductIds)]
     .map((productId) => productsById.get(productId))
     .filter((product): product is LivePreviewProduct => Boolean(product));
 
   return {
-    productNames: selectedProducts.slice(0, 2).map((product) => product.name),
+    productNames: selectedProducts.slice(0, 2).map((product) => valueOrDefault(product.name, LIVE_PREVIEW_DEFAULTS.unnamedProduct)),
     remainingProductCount: Math.max(0, selectedProducts.length - 2),
   };
 }
