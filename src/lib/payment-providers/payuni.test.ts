@@ -348,6 +348,7 @@ describe("PayUni provider", () => {
     expect(decryptCheckoutPayload(form.get("EncryptInfo") ?? "")).toMatchObject({
       MerID: "TESTMER",
       UseTokenType: "1",
+      CreditTokenType: "2",
       BindVal: "bind-token-001",
     });
     expect(JSON.stringify(request)).not.toContain(hashKey);

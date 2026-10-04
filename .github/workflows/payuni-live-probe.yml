@@ -1,8 +1,7 @@
 name: One-time PAYUNi live probe
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
+  # A merge must never start a real-money probe; dispatch requires separate authorization.
   workflow_dispatch:
 
 permissions:
