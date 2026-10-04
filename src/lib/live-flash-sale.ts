@@ -1,10 +1,19 @@
 import type { Prisma } from "@prisma/client";
+import { createHash } from "node:crypto";
 import { normalizeInteractionEventDraft, type FlashSaleInteractionMetadata } from "@/lib/interaction-event";
 import { hashInteractionBearer } from "@/lib/live-interaction";
 import type { ReservedInventoryRevision } from "@/lib/inventory-reservations";
 
 export const FLASH_SALE_COOKIE = "celebratedeal_flash_sale";
 export class FlashSaleUnavailableError extends Error {}
+
+export function flashSaleBearerFromRequest(request: Request) {
+  for (const segment of (request.headers.get("cookie") ?? "").split(";").slice(0, 100)) {
+    const separator = segment.indexOf("=");
+    if (separator > 0 && segment.slice(0, separator).trim() === FLASH_SALE_COOKIE) return segment.slice(separator + 1).trim();
+  }
+  return null;
+}
 
 export type FlashSaleQuote = {
   claimId: string;
@@ -19,6 +28,20 @@ export type FlashSaleQuote = {
   currency: string;
   stockLimit: number | null;
 };
+
+/** 固定欄位順序，將使用者確認的整份伺服器報價綁定到結帳簽章。 */
+export function flashSaleQuoteHash(quote: FlashSaleQuote) {
+  return createHash("sha256").update(JSON.stringify([
+    "flash-sale-quote-v1", quote.claimId, quote.runId, quote.runRevision,
+    quote.vendorId, quote.liveId, quote.productId, quote.productRevision,
+    quote.priceCents, quote.salePriceCents, quote.currency, quote.stockLimit,
+  ])).digest("hex");
+}
+
+/** 優惠消失、被替換或條件變更時，必須重新確認，不能靜默改成原價。 */
+export function assertFlashSaleAdmission(offerHash: string | undefined, quote: FlashSaleQuote | null) {
+  if ((quote ? flashSaleQuoteHash(quote) : undefined) !== offerHash) throw new FlashSaleUnavailableError();
+}
 
 function validatedSalePrice(metadata: FlashSaleInteractionMetadata, product: { priceCents: number; currency: string }) {
   const amount = metadata.salePriceCents ?? product.priceCents;

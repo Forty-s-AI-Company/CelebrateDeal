@@ -6,6 +6,10 @@ import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
 import { createInteractionBearer, hashInteractionBearer } from "@/lib/live-interaction";
 import { consumeFlashSaleQuote, FlashSaleUnavailableError, resolveFlashSaleQuote } from "./live-flash-sale";
+import { FLASH_SALE_COOKIE } from "./live-flash-sale";
+import { CHECKOUT_ADMISSION_COOKIE } from "@/lib/checkout-admission";
+import { POST as admitCheckout } from "@/app/api/payments/checkout/admission/route";
+import { POST as checkout } from "@/app/api/payments/checkout/route";
 
 const vendors: string[] = [];
 beforeEach(() => vi.stubEnv("CSRF_SECRET", "synthetic-flash-sale-db-secret-over-thirty-two-bytes"));
@@ -37,6 +41,39 @@ async function fixture(configuration: Record<string, unknown> = {}) {
 }
 
 describe("flash sale authoritative price and reservation", () => {
+  it.each(["unchanged", "missing-cookie", "changed-offer"])("enforces signed offer in real admission and checkout APIs: %s", async (scenario) => {
+    vi.stubEnv("PAYMENT_PROVIDER", "demo");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://127.0.0.1:31027");
+    const f = await fixture();
+    const request = (path: string, body: unknown, cookie: string) => new Request(`http://127.0.0.1:31027${path}`, {
+      method: "POST", headers: { origin: "http://127.0.0.1:31027", "content-type": "application/json", "x-celebratedeal-client": "web", cookie }, body: JSON.stringify(body),
+    });
+    const saleCookie = `${FLASH_SALE_COOKIE}=${f.bearers[0]}`;
+    const admission = await admitCheckout(request("/api/payments/checkout/admission", f.scope, saleCookie));
+    expect(admission.status).toBe(200);
+    const authorized = await admission.json();
+    expect(authorized.offer).toMatchObject({ priceCents: 1000, currency: "TWD" });
+    const session = admission.cookies.get(CHECKOUT_ADMISSION_COOKIE)!;
+    if (scenario === "changed-offer") await f.db.liveInteractionRun.update({ where: { id: f.run.id }, data: { updatedAt: new Date(f.run.updatedAt.getTime() + 1000) } });
+    const response = await checkout(request("/api/payments/checkout", {
+      ...f.scope, admissionToken: authorized.admissionToken, idempotencyKey: authorized.idempotencyKey,
+      buyer: { name: "Synthetic buyer", email: "buyer@example.test", phone: "0912345678" },
+      shipping: { recipientName: "Synthetic buyer", phone: "0912345678", countryCode: "TW", postalCode: "100", administrativeArea: "台北市", locality: "中正區", addressLine1: "合成測試路 1 號" },
+    }, `${session.name}=${session.value}${scenario === "missing-cookie" ? "" : `; ${saleCookie}`}`));
+    if (scenario === "unchanged") {
+      expect(response.status).toBe(200);
+      expect(await f.db.paymentTransaction.findFirstOrThrow({ where: { vendorId: f.vendor.id } })).toMatchObject({ grossAmountCents: 1000, currency: "TWD" });
+      expect(await f.db.commerceOrder.findFirstOrThrow({ where: { vendorId: f.vendor.id } })).toMatchObject({ totalAmountCents: 1000, subtotalAmountCents: 2000 });
+      expect(await f.db.commerceOrderItem.findFirstOrThrow({ where: { vendorId: f.vendor.id } })).toMatchObject({ nonSensitiveSnapshot: { discountAmountCents: 1000 } });
+      expect(await f.db.liveInteractionResponse.count({ where: { runId: f.run.id, usedOrderId: { not: null } } })).toBe(1);
+    } else {
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "FLASH_SALE_UNAVAILABLE" });
+      expect(await f.db.paymentTransaction.count({ where: { vendorId: f.vendor.id } })).toBe(0);
+      expect((await f.db.product.findUniqueOrThrow({ where: { id: f.product.id } })).inventory).toBe(5);
+    }
+  });
+
   it.each(["none", "price", "currency", "revision"])("uses real reservation evidence and atomically handles %s changes", async (change) => {
     const f = await fixture();
     const quote = (await resolveFlashSaleQuote(f.db, f.bearers[0], f.scope))!;

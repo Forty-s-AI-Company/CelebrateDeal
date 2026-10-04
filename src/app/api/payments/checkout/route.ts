@@ -1,4 +1,5 @@
 import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
+import { assertFlashSaleAdmission, consumeFlashSaleQuote, flashSaleBearerFromRequest, FlashSaleUnavailableError, resolveFlashSaleQuote } from "@/lib/live-flash-sale";
 import { consumeCheckoutVoucherClaim, VoucherClaimConflictError, type EligibleCheckoutVoucherClaim } from "@/lib/checkout-voucher-claim";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
@@ -775,13 +776,22 @@ export async function POST(request: Request) {
   const affiliateAttribution = await affiliateAttributionFromRequest(request, parsed.data.vendorId);
   const formSubmission = await verifiedLiveRegistrationFromRequest(request, parsed.data.vendorId);
   const formSubmissionId = formSubmission?.id;
-  const sourceLiveId = formSubmission?.liveId ?? undefined;
+  const saleBearer = flashSaleBearerFromRequest(request);
+  const saleQuote = await resolveFlashSaleQuote(db, saleBearer, parsed.data).then((quote) => {
+    assertFlashSaleAdmission(admission.offerHash, quote);
+    return quote;
+  }).catch((error: unknown) => {
+    if (error instanceof FlashSaleUnavailableError) return NextResponse.json({ error: "Flash sale changed or unavailable", code: "FLASH_SALE_UNAVAILABLE" }, { status: 409 });
+    throw error;
+  });
+  if (saleQuote instanceof Response) return saleQuote;
+  const sourceLiveId = saleQuote?.liveId ?? formSubmission?.liveId ?? undefined;
   // Checkout attribution must come from the server-validated click only. Request
   // data can contain a forged referralCode and must never affect the transaction
   // or payment-provider metadata.
   const referralCode = affiliateAttribution?.referralCode;
   const coursePolicySnapshot = coursePolicySnapshotFromProduct(product);
-  const voucherClaim = await eligibleCheckoutVoucherClaim(request, {
+  const voucherClaim = saleQuote ? null : await eligibleCheckoutVoucherClaim(request, {
     vendorId: parsed.data.vendorId,
     productId: product.id,
     priceCents: product.priceCents,
@@ -791,7 +801,8 @@ export async function POST(request: Request) {
     throw error;
   });
   if (voucherClaim instanceof Response) return voucherClaim;
-  const discountAmountCents = voucherClaim?.discountAmountCents ?? 0;
+  // 快閃價與優惠券不疊加；實際金額只使用已簽署且重新驗證的報價。
+  const discountAmountCents = saleQuote ? saleQuote.priceCents - saleQuote.salePriceCents : voucherClaim?.discountAmountCents ?? 0;
   const checkoutAmountCents = product.priceCents + (orderBumpProduct?.priceCents ?? 0) - discountAmountCents;
   const transactionMetadata = checkoutTransactionMetadata({
     productId: parsed.data.productId,
@@ -830,7 +841,7 @@ export async function POST(request: Request) {
         status: "pending",
         metadata: transactionMetadata,
       },
-      createCommerceOrder: async (tx, createdTransaction) => {
+      createCommerceOrder: async (tx, createdTransaction, reservedRevisions) => {
         const commerceOrder = await createCommerceOrderForCheckout(tx, {
           vendorId: parsed.data.vendorId,
           productId: product.id,
@@ -852,6 +863,7 @@ export async function POST(request: Request) {
           orderId: commerceOrder.id,
           now: new Date(),
         });
+        if (saleQuote && saleBearer) await consumeFlashSaleQuote(tx, saleBearer, saleQuote, commerceOrder.id, new Date(), reservedRevisions.find((item) => item.productId === product.id));
         commerceOrderId = commerceOrder.id;
       },
     });
@@ -871,6 +883,9 @@ export async function POST(request: Request) {
     }
     if (error instanceof VoucherClaimConflictError) {
       return NextResponse.json({ error: "Voucher already used or expired" }, { status: 409 });
+    }
+    if (error instanceof FlashSaleUnavailableError) {
+      return NextResponse.json({ error: "Flash sale changed or unavailable", code: "FLASH_SALE_UNAVAILABLE" }, { status: 409 });
     }
     return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
   }

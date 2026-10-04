@@ -304,5 +304,36 @@
     "change": "Fixture explicitly transitions to VERIFIED and supplies a real signed session; attribution assertions retained. Actual verification issuance covered by separate DB chain.",
     "receipt": ".ai-team/tmp/live-share-commercial-flow-results.json",
     "passed": 1
+  },
+  "flash_sale_api_binding_checkpoint": {
+    "status": "API_VALIDATED_UI_NOT_WIRED_NOT_READY",
+    "implemented": [
+      "Canonical quote hash included in signed checkout admission",
+      "Admission resolves server offer and returns price/currency/hash",
+      "New checkout rejects missing or changed offers before reservation; no coupon stacking",
+      "Actual payment/order amount discounted, claim consumed in reservation transaction using verified revision evidence"
+    ],
+    "validation": {
+      "unit_regression": {
+        "passed": 83,
+        "failed": 0,
+        "receipt": ".ai-team/tmp/flash-sale-api-regression-results.json"
+      },
+      "db": {
+        "passed": 17,
+        "failed": 0,
+        "receipt": ".ai-team/tmp/flash-sale-api-db-results.json",
+        "scope": "Includes actual admission and checkout route success, missing-cookie rejection and changed-run rejection"
+      },
+      "eslint": "PASS",
+      "typescript": "PASS"
+    },
+    "review": "requested from existing independent reviewer; pending",
+    "next": [
+      "Extend strict CommerceCheckoutAdmissionResponseSchema to accept authoritative offer; explicitly present and confirm price before payment POST",
+      "Issue flash sale bearer from real viewer interaction and resolve display currency/price from server",
+      "Handle offer-unavailable error and existing-order recovery in UI; browser tests",
+      "Complete provider failure recovery policy and protected exact-head acceptance"
+    ]
   }
 }
