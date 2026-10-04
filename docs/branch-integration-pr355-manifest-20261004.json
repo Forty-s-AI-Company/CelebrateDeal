@@ -1,0 +1,132 @@
+{
+  "pr": 355,
+  "head": "24d9c7c76d6273329e2aff0b27ae9299da04d364",
+  "integration_base": "42bce600e9c6b88003bd3b2a924d0ea96c70aee8",
+  "source_pr": 211,
+  "files": [
+    {
+      "path": "docs/branch-integration-deferred-work-20261004.json",
+      "candidate_sha256": "a36a373929db040bfce106cf6475a17412ab15b494f683eae7feb48d101fc0d3"
+    },
+    {
+      "path": "docs/branch-integration-delivery-state-20261004.json",
+      "candidate_sha256": "b0ed17434beda8b118db9d976b1bda91569e8e5ffa839a3d1ef780f0e7be762b"
+    },
+    {
+      "path": "docs/branch-integration-final-receipt-20261004.json",
+      "candidate_sha256": "83b6d848a844a83a486c0a933f143f40837845c2a20f66386d32e29350eb8dcf"
+    },
+    {
+      "path": "docs/branch-integration-funnel-recovery-20261004.json",
+      "candidate_sha256": "c2da2009335d5a23e8facbdca101d50fd86a9b2f04b50a4b02ab581d6b19d38c"
+    },
+    {
+      "path": "docs/branch-integration-future-work.md",
+      "candidate_sha256": "5027695214d3c0adabf7deaad17abef3f11923f7cd29266f3fb1bf7449ef2074"
+    },
+    {
+      "path": "docs/branch-integration-historical-smoke-supersession-20261004.json",
+      "candidate_sha256": "126d12cac18c9e2825de6744ed883b285179637dfb8bd0e12d8d9d6c3034a280"
+    },
+    {
+      "path": "docs/branch-integration-original-dirty-equivalence-20261004.json",
+      "candidate_sha256": "bc0cf4e14cc25bbcfd01e5c09ed7f9fb59b38083f41748609575de7e8adc6615"
+    },
+    {
+      "path": "docs/branch-integration-payuni-idempotency-supersession-20261004.json",
+      "candidate_sha256": "a1c9e2c72ecd39fab47a9c7df707633356d161b69482fba142f728b1f2233eec"
+    },
+    {
+      "path": "docs/branch-integration-pr13-preview-manifest-20261004.json",
+      "candidate_sha256": "51310a209198016b328624e601026232dc7b9573bcf90445f55249d28f7d079c"
+    },
+    {
+      "path": "docs/branch-integration-pr211-layout-migration-20261004.json",
+      "candidate_sha256": "40b97edfef4d665c03be732f03e1406af020a0627b3f44a68f4ce0c1e4f2af71"
+    },
+    {
+      "path": "docs/branch-integration-pr211-tests-manifest-20261004.json",
+      "candidate_sha256": "f06d4e207c22a56e51299907b309ac87bb9eaa65f8c7e85eeb1eb6c04231f7f1"
+    },
+    {
+      "path": "docs/branch-integration-pr352-acceptance-20261004.json",
+      "candidate_sha256": "f245285b043733e556a2668a8ac35c1b8310e7217c5dd3b0b7f186cebd76010b"
+    },
+    {
+      "path": "docs/branch-integration-pr352-delivery-manifest-20261004.json",
+      "candidate_sha256": "b94eaf3007114c1ac98f2345ccbecab3ba282accda973ec25f204d7fd9dcedc1"
+    },
+    {
+      "path": "docs/branch-integration-pr352-remote-ci-20261004.json",
+      "candidate_sha256": "6aa76b6223e6914bb225a4560c75da4be2dee2a41ecc1880b1bdf08f9afc4ece"
+    },
+    {
+      "path": "docs/branch-integration-pr354-acceptance-20261004.json",
+      "candidate_sha256": "a87c308b9aaf00b88c71de2d343ebbc6c1c547151bd67a6f11b460673e273c41"
+    },
+    {
+      "path": "docs/branch-integration-pr354-manifest-20261004.json",
+      "candidate_sha256": "b99ddd29650d1b46dffedb6a335067202183456eb2b571945e68f67a71cdd0e4"
+    },
+    {
+      "path": "docs/branch-integration-pr354-remote-ci-20261004.json",
+      "candidate_sha256": "e65984876400e5088a90c00cc28b22c06be860d63078261122c9ff73f16337b7"
+    },
+    {
+      "path": "docs/branch-integration-preservation-20261004.json",
+      "candidate_sha256": "3a40e21ac17991d9001d8b2058ac61d034028f2ddf38d625a73a37d7c8cd7ccb"
+    },
+    {
+      "path": "docs/branch-integration-progress-20261004.md",
+      "candidate_sha256": "e86d3d4e455945de05dca20368b9bc64bd770a8df967eb14638ebad9189f5262"
+    },
+    {
+      "path": "docs/branch-integration-publication-20261004.json",
+      "candidate_sha256": "76c1f181070c11d0f326e1ed4d3360e1dfffce60dfdc08da4cf691a3da80e3c2"
+    },
+    {
+      "path": "docs/branch-integration-staging-apply-supersession-20261004.json",
+      "candidate_sha256": "b9c68205c2c6544a5ee3d5f9dded3124c8683f65702bafa10b3b59f152ac9391"
+    },
+    {
+      "path": "docs/branch-integration-staging-backup-lineage-supersession-20261004.json",
+      "candidate_sha256": "e3f12749fe6bbd5dd5c3f7c1207bffb7c9ab2cbe199cf1b8a2a8865c8a83dc77"
+    },
+    {
+      "path": "docs/branch-integration-staging-browser-supersession-20261004.json",
+      "candidate_sha256": "57e1e83c5374726eaf2d64e9ed6080d37575f65dde76b31b113fef42fffc7be3"
+    },
+    {
+      "path": "docs/branch-integration-staging-provider-supersession-20261004.json",
+      "candidate_sha256": "b91736f472e38d89fc89541b41b2d62a111062025bd4c0f9f726e124c2bc2061"
+    },
+    {
+      "path": "docs/branch-integration-staging-replay-supersession-20261004.json",
+      "candidate_sha256": "22bcfdfa71512a3e2ee72a114c82026b2c88a928e13cf8c464e1c45aa2bfd4ae"
+    },
+    {
+      "path": "src/app/form/[slug]/page.test.tsx",
+      "candidate_sha256": "e788c992c26c55796baae89a2bf596985c1b6fb2b10a45973bdae043f0959745"
+    },
+    {
+      "path": "src/app/form/[slug]/page.tsx",
+      "candidate_sha256": "483e1e1a17ce23034c4657c6c13d5be9d91c44d56f9b5f0074fef7440ec7e1a3"
+    },
+    {
+      "path": "src/components/app-shell.test.ts",
+      "candidate_sha256": "d7c08804e98e2b3ee88598aaf58b1aebbcfa9c1290ace8655c56d6948f9bb663"
+    },
+    {
+      "path": "src/components/app-shell.tsx",
+      "candidate_sha256": "e4ec934a98dddc665ceb731420207e77c2f0d9be77aacc85388e05827b002076"
+    },
+    {
+      "path": "src/components/lead-form.tsx",
+      "candidate_sha256": "377c83ef924c70318dbe55cdb360b77fa0f4c9c722dbea1d28fc32fb8766e960"
+    },
+    {
+      "path": "tests/e2e/smoke.spec.ts",
+      "candidate_sha256": "2ab148cf9983398c236d23a059511365f3e864c084ac80778d4509b3a826be54"
+    }
+  ]
+}
