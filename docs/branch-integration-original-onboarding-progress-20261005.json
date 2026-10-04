@@ -1,5 +1,5 @@
 {
-  "state": "CHECKPOINT_PENDING_REVIEW_FIXES",
+  "state": "LOCAL_VALIDATED_PENDING_PARENT_PR360_AND_PROTECTED_CI",
   "dependency_pr": 360,
   "scope": "Restore missing registration and personalized welcome UI while preserving current auth and tenant safeguards",
   "recovered_files": [
@@ -21,11 +21,10 @@
     }
   ],
   "remaining": [
-    "Validate questionnaire frontend/backend type and data contracts",
-    "Review saved-answer concurrency and tenant boundaries",
-    "Restore safe bounded registration with actual route and session integration",
-    "Targeted unit, database, browser and independent auth review",
-    "Canonical acceptance and protected PR merge"
+    "Wait PR360 protected merge",
+    "Refresh original-content reconciliation and acceptance handoff",
+    "Publish exact-scope PR with immutable manifest",
+    "Exact-head CI and canonical acceptance before protected merge"
   ],
   "changes": [
     "Recovered welcome and preparation routes and two original UI components",
@@ -49,7 +48,8 @@
         "Multiple selections preserve earlier answers",
         "Complete waits for last save"
       ]
-    }
+    },
+    "typecheck": "PASS"
   },
   "registration_reconciliation": {
     "original_action": "auth-security-actions.ts registerAction",
@@ -92,5 +92,68 @@
   "open_review_findings": [
     "MAJOR: Registration preserves surrounding password whitespace but current login trims it; align contract and prove register/logout/login round trip.",
     "MINOR: Existing tenant projects without selectedProjectId can complete onboarding but preparation page rejects; reconcile action and page contract."
-  ]
+  ],
+  "review_fixes": {
+    "state": "CLOSED_BY_INDEPENDENT_REVIEW_AND_TESTS",
+    "password": "Trim before hash to match existing login; real round-trip still pending",
+    "session": "Committed account fallback to /login?registered=1 with recovery message on session/cookie failure",
+    "preparing": "Require completed questionnaire and workspace-scoped tasks; no selected-project prerequisite",
+    "unit_verification": "Registration14 tests PASS; preparing initial6 tests PASS, redundant inventory-labelled case consolidated for rerun",
+    "typecheck": "PASS before newest page test",
+    "eslint": "PASS before newest page test"
+  },
+  "registration_database_validation": {
+    "status": "PASS",
+    "tests": 5,
+    "scope": "Real PostgreSQL, actual register/logout/login, password hashing, session storage; synthetic request/cookie/rate boundaries",
+    "verified": [
+      "Normal and whitespace-surrounded password round trips",
+      "Audit failure rolls back account and workspace",
+      "Session failure preserves one account and subsequent login succeeds",
+      "Duplicate signup creates no second workspace"
+    ],
+    "typecheck": "PASS",
+    "targeted_eslint": "PASS",
+    "full_browser": "PENDING",
+    "independent_rereview": "RUNNING"
+  },
+  "independent_review": {
+    "reviewer": "portal_review_fallback",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "findings": [],
+    "closed_findings": [
+      "Password trim contract",
+      "Aggregate preparation page",
+      "Post-provisioning login recovery"
+    ],
+    "receipt_scope": "Source review and unit14/DB5/preparing5/component-browser2 receipts; reviewer did not run tests"
+  },
+  "browser": {
+    "state": "PASS",
+    "stats": {
+      "startTime": "2026-10-04T18:16:38.325Z",
+      "duration": 67730.22700000001,
+      "expected": 2,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "scope": "Real registration, questionnaire, project creation, logout and login at1440/390px",
+    "environment": "Development Next server in env-free mirror, isolated PostgreSQL54463",
+    "limitations": "Release build and remote CI pending"
+  },
+  "candidate_hashes": {
+    "src/app/actions/registration-actions.ts": "7a0583d59b2e17009262e5dc9bb9a3d2cbd3cfb9a44a6a9731397dda1201e542",
+    "src/app/actions/registration-actions.test.ts": "fd46d84835ff1a830edaf21c4cf4e8ef555f18bbeeaf219adb3c4fb26e7b9915",
+    "src/app/actions/registration-actions.db.test.ts": "b60b18d44bd643e3b1ace63ce5b3619ffebec2191900df8ade06d7e53d76553e",
+    "src/app/login/page.tsx": "485a42c1f0ba1cbe64904e52f3c121dcdf8652aea012140977faa2c0efedda51",
+    "src/app/register/page.tsx": "0968d653ea1b0a73df63891c27872089812ab9ffcbb6b1b164296f492441456b",
+    "src/app/welcome/page.tsx": "2001eb1086af776e0112378122ba9b0b9c6fadc816e97d4218ba856708c7561f",
+    "src/app/welcome/preparing/page.tsx": "77c33be3bd7a05eee126a179787f11e7514ca547b9c918c29e4eb4826bc66cd3",
+    "src/app/welcome/preparing/page.test.tsx": "e92d890d81fdade793da165bb3936b91e5b01a6ed60b1d0123574b51535b97dd",
+    "src/components/personalized-onboarding-questionnaire.tsx": "1c1d37135f1daded5d5a95d9689b871f36b80778b5e90ef20380526d94fb3fca",
+    "src/components/workspace-preparing-progress.tsx": "83e374c7441641fe2cfb9821f7c8eb34e3fbec60593ad768c1f17da9e3c3a47d",
+    "tests/e2e/registration-onboarding.spec.ts": "8264c5341b3847de00bd230fbdf644616a0b19c5dff93936e07b0e50526c2532"
+  }
 }

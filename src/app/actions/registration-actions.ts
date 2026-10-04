@@ -15,8 +15,8 @@ const RegistrationInput = z.object({
   name: z.string().trim().min(2).max(120),
   workspaceName: z.string().trim().min(2).max(120),
   email: z.string().trim().toLowerCase().email().max(320),
-  // Preserve the exact password; whitespace can be an intentional character.
-  password: z.string().min(12).max(128),
+  // Match the existing login action, which trims submitted passwords.
+  password: z.string().max(128).transform((value) => value.trim()).pipe(z.string().min(12)),
 });
 
 /** Create the original self-service workspace flow using current security boundaries. */
@@ -50,9 +50,14 @@ export async function registerAction(formData: FormData) {
     const duplicate = typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
     redirect(`/register?error=${duplicate ? "exists" : "temporarily_unavailable"}`);
   }
-  const session = await createUserSession({ ...created, ipAddress: incoming.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, userAgent: incoming.get("user-agent") });
-  const store = await cookies();
-  store.set(AUTH_COOKIE, session.token, sessionCookieOptions(session.expiresAt));
-  store.delete(LEGACY_VENDOR_COOKIE);
+  try {
+    const session = await createUserSession({ ...created, ipAddress: incoming.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null, userAgent: incoming.get("user-agent") });
+    const store = await cookies();
+    store.set(AUTH_COOKIE, session.token, sessionCookieOptions(session.expiresAt));
+    store.delete(LEGACY_VENDOR_COOKIE);
+  } catch {
+    // Provisioning has committed: offer login recovery instead of asking for another signup.
+    redirect("/login?registered=1");
+  }
   redirect("/welcome");
 }

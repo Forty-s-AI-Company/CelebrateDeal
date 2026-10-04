@@ -17,13 +17,15 @@ beforeEach(() => {
 describe("workspace registration boundaries", () => {
  it("creates ownership and audit in one transaction before issuing the session", async () => {
   await expect(registerAction(form())).rejects.toThrow("redirect:/welcome");
-  expect(mocks.hash).toHaveBeenCalledWith("  synthetic password  ");
+  expect(mocks.hash).toHaveBeenCalledWith("synthetic password");
   expect(mocks.user).toHaveBeenCalledWith({data:{name:"Owner",email:"owner@example.test",passwordHash:"synthetic-hash"}});
   expect(mocks.member).toHaveBeenCalledWith({data:{vendorId:"vendor-1",userId:"user-1",role:"owner",status:"active"}});
   expect(mocks.preference).toHaveBeenCalledOnce(); expect(mocks.audit).toHaveBeenCalledOnce();
   expect(mocks.audit.mock.invocationCallOrder[0]).toBeLessThan(mocks.session.mock.invocationCallOrder[0]);
   expect(mocks.set).toHaveBeenCalledWith("auth","synthetic-session",{httpOnly:true});
  });
+ it("recovers a committed account when session creation fails", async () => { mocks.session.mockRejectedValue(new Error("synthetic session failure")); await expect(registerAction(form())).rejects.toThrow("redirect:/login?registered=1"); expect(mocks.transaction).toHaveBeenCalledOnce(); expect(mocks.audit).toHaveBeenCalledOnce(); expect(mocks.set).not.toHaveBeenCalled(); });
+ it("offers login recovery if cookie publication fails", async () => { mocks.set.mockImplementation(() => { throw new Error("synthetic cookie failure"); }); await expect(registerAction(form())).rejects.toThrow("redirect:/login?registered=1"); expect(mocks.transaction).toHaveBeenCalledOnce(); expect(mocks.session).toHaveBeenCalledOnce(); });
  it("rejects CSRF before rate limiting or writing", async () => { mocks.security.mockRejectedValue(new Error("csrf")); await expect(registerAction(form())).rejects.toThrow("csrf"); expect(mocks.limit).not.toHaveBeenCalled(); expect(mocks.transaction).not.toHaveBeenCalled(); });
  it.each([{email:"bad@"},{name:"x"},{workspaceName:"x"},{password:"short"},{password:"x".repeat(129)},{name:"x".repeat(121)}])("rejects invalid bounded input %j", async (input) => { await expect(registerAction(form(input))).rejects.toThrow("error=invalid"); expect(mocks.hash).not.toHaveBeenCalled(); expect(mocks.transaction).not.toHaveBeenCalled(); });
  it.each([429,503])("fails closed on rate-limit status %s", async (status) => { mocks.limit.mockResolvedValue(new Response(null,{status})); await expect(registerAction(form())).rejects.toThrow(status===429?"error=rate_limited":"error=temporarily_unavailable"); expect(mocks.hash).not.toHaveBeenCalled(); expect(mocks.session).not.toHaveBeenCalled(); });
