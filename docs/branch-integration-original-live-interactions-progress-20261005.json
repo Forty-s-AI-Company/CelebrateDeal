@@ -18,7 +18,7 @@
     "unit_failed": 0,
     "typecheck": "PASS",
     "eslint": "PASS",
-    "database": "PARTIAL: three real PostgreSQL cases PASS including close-after-initial-read interleaving",
+    "database": "PARTIAL: six actual PostgreSQL cases PASS; complete purchased draw chain pending",
     "browser": "PENDING",
     "independent_review": "PENDING",
     "identity_helper_tests_passed": 4
@@ -38,6 +38,9 @@
   "database_verified": [
     "Concurrent last-voucher requests produce one200 and one409, exactly one response and one cookie",
     "Closed and future-start run requests leave zero responses",
-    "Committed close after initial read is rejected by transaction recheck; no response or voucher cookie"
+    "Committed close after initial read is rejected by transaction recheck; no response or voucher cookie",
+    "Foreign tenant viewer cannot claim",
+    "Expired viewer cannot claim",
+    "Replay cannot create a second claim or cookie"
   ]
 }

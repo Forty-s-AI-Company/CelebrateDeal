@@ -30,6 +30,29 @@ async function fixture() {
 }
 
 describe("advanced interactions isolated PostgreSQL", () => {
+  it("rejects a viewer session from another tenant before accepting a claim", async () => {
+    const first = await fixture();
+    const second = await fixture();
+    expect((await first.respond(second.tokens[0]!)).status).toBe(401);
+    expect(await first.db.liveInteractionResponse.count({ where: { runId: first.run.id } })).toBe(0);
+  });
+
+  it("rejects an expired viewer session before accepting a claim", async () => {
+    const { db, run, tokens, respond } = await fixture();
+    await db.liveViewerSession.update({ where: { tokenHash: hashLiveViewerToken(tokens[0]!) }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    expect((await respond(tokens[0]!)).status).toBe(401);
+    expect(await db.liveInteractionResponse.count({ where: { runId: run.id } })).toBe(0);
+  });
+
+  it("does not issue a second voucher when the same admitted viewer replays a claim", async () => {
+    const { db, run, tokens, respond } = await fixture();
+    expect((await respond(tokens[0]!)).status).toBe(200);
+    const replay = await respond(tokens[0]!);
+    expect(replay.status).toBe(409);
+    expect(replay.cookies.has("celebratedeal_flash_voucher")).toBe(false);
+    expect(await db.liveInteractionResponse.count({ where: { runId: run.id } })).toBe(1);
+  });
+
   it("rejects a run closed after the initial read but before the response transaction", async () => {
     const { db, run, tokens, respond } = await fixture();
     let closed = false;
