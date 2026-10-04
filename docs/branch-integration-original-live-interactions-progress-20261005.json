@@ -18,7 +18,7 @@
     "unit_failed": 0,
     "typecheck": "PASS",
     "eslint": "PASS",
-    "database": "PARTIAL: two actual PostgreSQL cases PASS; real admission/transaction, only rate limiter mocked",
+    "database": "PARTIAL: three real PostgreSQL cases PASS including close-after-initial-read interleaving",
     "browser": "PENDING",
     "independent_review": "PENDING",
     "identity_helper_tests_passed": 4
@@ -28,15 +28,16 @@
     "Test concurrent responses and claim caps using isolated PostgreSQL",
     "Recover advanced UI and wire current playback without regressing existing behavior",
     "Independent review, protected PR CI and canonical acceptance",
-    "Real verification-route cookie issuance through checkout into paid draw eligibility still pending; run close after initial read race still needs targeted DB interleaving"
+    "Real verification-route cookie issuance through checkout into paid draw eligibility still pending"
   ],
   "production": "Not operated",
   "review_findings": {
-    "run_close_race": "Transaction now rechecks run version, scope, active state and time window; independent rereview and real DB concurrency test pending",
+    "run_close_race": "Source independently reviewed; real DB interleaving PASS",
     "purchased_identity": "Use verified signed chat session claim, no raw-cookie fallback; reviewer confirmed signature/cookie lifecycle. True verify-route then checkout then draw integration still pending. Single-browser registration replacement/expiry remains a capability limitation; evaluate buyer support grant fallback if needed."
   },
   "database_verified": [
     "Concurrent last-voucher requests produce one200 and one409, exactly one response and one cookie",
-    "Closed and future-start run requests leave zero responses"
+    "Closed and future-start run requests leave zero responses",
+    "Committed close after initial read is rejected by transaction recheck; no response or voucher cookie"
   ]
 }

@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
+import * as dbModule from "@/lib/db";
 import { hashLiveViewerToken, LIVE_VIEWER_SESSION_COOKIE } from "@/lib/live-quota-admission";
 
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
@@ -9,6 +10,7 @@ import { POST } from "./route";
 const vendors: string[] = [];
 beforeEach(() => vi.stubEnv("CSRF_SECRET", "disposable-interaction-database-secret-over-thirty-two-bytes"));
 afterEach(async () => {
+  vi.restoreAllMocks();
   await getDb().vendor.deleteMany({ where: { id: { in: vendors.splice(0) } } });
   vi.unstubAllEnvs();
 });
@@ -28,6 +30,26 @@ async function fixture() {
 }
 
 describe("advanced interactions isolated PostgreSQL", () => {
+  it("rejects a run closed after the initial read but before the response transaction", async () => {
+    const { db, run, tokens, respond } = await fixture();
+    let closed = false;
+    const interleaved = db.$extends({ query: { liveInteractionRun: { async findFirst({ args, query }) {
+      const result = await query(args);
+      if (!closed && result?.id === run.id) {
+        closed = true;
+        // Commit a real concurrent close before returning the stale initial read.
+        await db.liveInteractionRun.update({ where: { id: run.id }, data: { status: "closed" } });
+      }
+      return result;
+    } } } });
+    vi.spyOn(dbModule, "getDb").mockReturnValue(interleaved as unknown as ReturnType<typeof getDb>);
+    const response = await respond(tokens[0]!);
+    expect(closed).toBe(true);
+    expect(response.status).toBe(409);
+    expect(await db.liveInteractionResponse.count({ where: { runId: run.id } })).toBe(0);
+    expect(response.cookies.has("celebratedeal_flash_voucher")).toBe(false);
+  });
+
   it("allows only one claim when two admitted viewers race for the final voucher", async () => {
     const { db, run, tokens, respond } = await fixture();
     const replies = await Promise.all(tokens.map(respond));
