@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { normalizeInteractionEventDraft, type FlashSaleInteractionMetadata } from "@/lib/interaction-event";
 import { hashInteractionBearer } from "@/lib/live-interaction";
+import type { ReservedInventoryRevision } from "@/lib/inventory-reservations";
 
 export const FLASH_SALE_COOKIE = "celebratedeal_flash_sale";
 export class FlashSaleUnavailableError extends Error {}
@@ -87,10 +88,19 @@ export async function consumeFlashSaleQuote(
   quote: FlashSaleQuote,
   orderId: string,
   now = new Date(),
+  reservedRevision?: ReservedInventoryRevision,
 ) {
   const current = await resolveFlashSaleQuote(tx, bearer, { ...quote, now });
+  // 只接受同交易庫存 helper 回傳的精確 +1 證據；其餘欄位仍逐一重驗。
+  const expected = { ...quote };
+  if (reservedRevision) {
+    if (reservedRevision.vendorId !== quote.vendorId || reservedRevision.productId !== quote.productId
+      || reservedRevision.beforeRevision !== quote.productRevision
+      || reservedRevision.afterRevision !== quote.productRevision + 1) throw new FlashSaleUnavailableError();
+    expected.productRevision = reservedRevision.afterRevision;
+  }
   if (!current || Object.keys(quote).some((key) =>
-    current[key as keyof FlashSaleQuote] !== quote[key as keyof FlashSaleQuote])) {
+    current[key as keyof FlashSaleQuote] !== expected[key as keyof FlashSaleQuote])) {
     throw new FlashSaleUnavailableError();
   }
   if (current.stockLimit !== null) {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createFormSubmissionChatSessionToken, FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
 
 type StoredClick = {
   id: string;
@@ -10,6 +11,7 @@ type StoredClick = {
 };
 
 type StoredSubmission = {
+  verificationStatus: "UNVERIFIED" | "VERIFIED";
   id: string;
   formId: string;
   liveId: string | null;
@@ -252,12 +254,13 @@ beforeEach(() => {
   testRuntime.db.blacklist.findFirst.mockResolvedValue(null);
   testRuntime.db.formSubmission.findFirst.mockImplementation(async ({ where }: { where: Record<string, unknown> }) => {
     const submission = testRuntime.state.submission;
-    if (submission && where.id === submission.id) return { id: submission.id };
+    if (submission && where.id === submission.id && submission.verificationStatus === "VERIFIED") return { id: submission.id, liveId: submission.liveId };
     return null;
   });
   testRuntime.db.formSubmission.findUnique.mockResolvedValue(null);
   testRuntime.db.formSubmission.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
     const submission: StoredSubmission = {
+      verificationStatus: "UNVERIFIED",
       id: "submission-1",
       formId: String(data.formId),
       liveId: typeof data.liveId === "string" ? data.liveId : null,
@@ -395,6 +398,9 @@ describe("Live share commercial attribution flow", () => {
       referralCode: "B-CODE",
     });
 
+    // 此流程測試提供已驗證身分；真實驗證路由的簽章發放另由 DB 流程測試覆蓋。
+    testRuntime.state.submission!.verificationStatus = "VERIFIED";
+    const verifiedSession = createFormSubmissionChatSessionToken({ submissionId: "submission-1" });
     const checkoutResponse = await startCheckout(jsonRequest(
       "/api/payments/checkout",
       {
@@ -404,7 +410,7 @@ describe("Live share commercial attribution flow", () => {
         admissionToken,
         buyer: { name: "B lead", email: "b-lead@example.test" },
       },
-      cookieHeader(clickResponse, leadResponse),
+      `${cookieHeader(clickResponse, leadResponse)}; ${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${verifiedSession}`,
     ));
 
     expect(checkoutResponse.status).toBe(200);

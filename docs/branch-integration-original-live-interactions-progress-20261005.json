@@ -257,7 +257,7 @@
       "agent": "/root/portal_review_fallback",
       "observed_model": "unknown",
       "observed_effort": "unknown",
-      "status": "MAJOR_FOUND",
+      "status": "MAJOR_CLOSED_BY_RESERVATION_REVISION_REPAIR",
       "finding": "Actual createReservedPaymentTransaction increments product.revision before createCommerceOrder callback; direct quote revision equality would reject valid checkout. Current direct domain tests do not cover this callback integration."
     },
     "next_required": [
@@ -273,7 +273,36 @@
       37235580212,
       37235576999
     ],
-    "status": "in_progress",
+    "status": "failure",
     "note": "Does not cover unpushed flash sale core checkpoint."
+  },
+  "flash_sale_reservation_revision_repair": {
+    "status": "CORE_VALIDATED_NOT_API_WIRED",
+    "change": "Inventory reservation passes exact successfully guarded before/after product revision evidence to its same-transaction order callback; flash-sale consumption validates scope and +1 while retaining all other quote checks.",
+    "validation": {
+      "receipt": ".ai-team/tmp/flash-sale-reservation-results.json",
+      "passed": 22,
+      "failed": 0,
+      "includes": "14 flash-sale DB tests (4 actual inventory/payment/order transaction cases) and 8 inventory tests",
+      "eslint": "PASS",
+      "typescript_before_fixture_update": "PASS",
+      "typescript": "PASS including commercial attribution fixture update"
+    },
+    "review": {
+      "agent": "/root/portal_review_fallback",
+      "original_major": "CLOSED",
+      "new_findings": 0,
+      "observed_model": "unknown",
+      "observed_effort": "unknown"
+    },
+    "remaining": "Signed offer quote binding, API/UI wiring, recovery and browser acceptance remain required."
+  },
+  "commercial_attribution_fixture_repair": {
+    "failed_run": 37235580212,
+    "head": "8adbc8dc68645b3eca55333718bb197d8de13336",
+    "root_cause": "Existing commercial flow test still supplied unsigned legacy form submission cookie after checkout adopted signed verified identity.",
+    "change": "Fixture explicitly transitions to VERIFIED and supplies a real signed session; attribution assertions retained. Actual verification issuance covered by separate DB chain.",
+    "receipt": ".ai-team/tmp/live-share-commercial-flow-results.json",
+    "passed": 1
   }
 }

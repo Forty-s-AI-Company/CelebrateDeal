@@ -1,13 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
+import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
 import { createInteractionBearer, hashInteractionBearer } from "@/lib/live-interaction";
 import { consumeFlashSaleQuote, FlashSaleUnavailableError, resolveFlashSaleQuote } from "./live-flash-sale";
 
 const vendors: string[] = [];
+beforeEach(() => vi.stubEnv("CSRF_SECRET", "synthetic-flash-sale-db-secret-over-thirty-two-bytes"));
 afterEach(async () => {
   await getDb().vendor.deleteMany({ where: { id: { in: vendors.splice(0) } } });
+  vi.unstubAllEnvs();
 });
 
 async function fixture(configuration: Record<string, unknown> = {}) {
@@ -33,6 +37,46 @@ async function fixture(configuration: Record<string, unknown> = {}) {
 }
 
 describe("flash sale authoritative price and reservation", () => {
+  it.each(["none", "price", "currency", "revision"])("uses real reservation evidence and atomically handles %s changes", async (change) => {
+    const f = await fixture();
+    const quote = (await resolveFlashSaleQuote(f.db, f.bearers[0], f.scope))!;
+    const key = randomUUID();
+    const reservation = createReservedPaymentTransaction({
+      ...f.scope, expectedProductRevision: quote.productRevision, checkoutIdempotencyKey: key,
+      transactionData: {
+        vendorId: f.vendor.id, checkoutIdempotencyKey: key, providerName: "demo", orderNumber: key,
+        paymentMode: "platform", grossAmountCents: 1000, netAmountCents: 1000, currency: "TWD", status: "pending",
+      },
+      createCommerceOrder: async (tx, payment, revisions) => {
+        const order = await createCommerceOrderForCheckout(tx, {
+          ...f.scope, orderNumber: key, checkoutIdempotencyKey: key, paymentTransactionId: payment.id,
+          totalAmountCents: 1000, discountAmountCents: 1000, currency: "TWD",
+          buyer: { name: "Synthetic buyer", email: "buyer@example.test", phone: "0912345678" },
+          shipping: { recipientName: "Synthetic buyer", phone: "0912345678", countryCode: "TW", postalCode: "100", administrativeArea: "台北市", locality: "中正區", addressLine1: "合成測試路 1 號" },
+        });
+        // 模擬同交易後續程式修改商品；優惠不得接受未報價的改動。
+        if (change !== "none") await tx.product.update({ where: { id: f.product.id }, data:
+          change === "price" ? { priceCents: 3000 } : change === "currency" ? { currency: "USD" } : { revision: { increment: 1 } },
+        });
+        await consumeFlashSaleQuote(tx, f.bearers[0]!, quote, order.id, new Date(), revisions.find((item) => item.productId === f.product.id));
+      },
+    });
+    if (change === "none") {
+      await expect(reservation).resolves.toMatchObject({ grossAmountCents: 1000 });
+      expect(await f.db.commerceOrder.count({ where: { vendorId: f.vendor.id } })).toBe(1);
+      expect(await f.db.inventoryReservation.count({ where: { vendorId: f.vendor.id } })).toBe(1);
+      expect(await f.db.liveInteractionResponse.count({ where: { runId: f.run.id, usedOrderId: { not: null } } })).toBe(1);
+      expect((await f.db.product.findUniqueOrThrow({ where: { id: f.product.id } })).inventory).toBe(4);
+    } else {
+      await expect(reservation).rejects.toBeInstanceOf(FlashSaleUnavailableError);
+      expect(await f.db.paymentTransaction.count({ where: { vendorId: f.vendor.id } })).toBe(0);
+      expect(await f.db.commerceOrder.count({ where: { vendorId: f.vendor.id } })).toBe(0);
+      expect(await f.db.inventoryReservation.count({ where: { vendorId: f.vendor.id } })).toBe(0);
+      expect(await f.db.liveInteractionResponse.count({ where: { runId: f.run.id, usedOrderId: { not: null } } })).toBe(0);
+      expect(await f.db.product.findUniqueOrThrow({ where: { id: f.product.id } })).toMatchObject({ inventory: 5, revision: quote.productRevision, priceCents: 2000, currency: "TWD" });
+    }
+  });
+
   it("quotes only server prices and rejects unrelated tenant/product, expired and closed offers", async () => {
     const f = await fixture();
     const quote = await resolveFlashSaleQuote(f.db, f.bearers[0], f.scope);
