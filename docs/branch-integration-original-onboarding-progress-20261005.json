@@ -1,0 +1,156 @@
+{
+  "state": "LOCAL_VALIDATED_PARENT_MERGED_PENDING_PROTECTED_CI",
+  "dependency_pr": 360,
+  "scope": "Restore missing registration and personalized welcome UI while preserving current auth and tenant safeguards",
+  "recovered_files": [
+    {
+      "path": "src/app/welcome/page.tsx",
+      "original_sha256": "a7b9d4158edc10027f79d6ebc3999a51e5b6e193eeeb82883ff65f3fb9851f32"
+    },
+    {
+      "path": "src/app/welcome/preparing/page.tsx",
+      "original_sha256": "676899a3781d0e86a1f5b9e38ae94524475fae9345a34bfcff177f687e425269"
+    },
+    {
+      "path": "src/components/personalized-onboarding-questionnaire.tsx",
+      "original_sha256": "d3e0e1085c34b673315da6a67985780eb7822c14d9951c0f5183e3d27dcb7121"
+    },
+    {
+      "path": "src/components/workspace-preparing-progress.tsx",
+      "original_sha256": "78a029a44aba6cdd8531fe57e2c0ea4d96a84c914b4fdfde9e3e0c33fc78005c"
+    }
+  ],
+  "remaining": [
+    "Publish exact-scope PR with immutable manifest",
+    "Exact-head CI and canonical acceptance before protected merge"
+  ],
+  "changes": [
+    "Recovered welcome and preparation routes and two original UI components",
+    "Parse persisted questionnaire via canonical schema",
+    "Serialize client answer saves and prevent advancement after failed save"
+  ],
+  "validation": {
+    "initial_copy_typecheck": "PASS",
+    "post_fix_typecheck": "PASS",
+    "targeted_eslint": "PASS",
+    "behavioral_tests": "PASS: registration14, preparing5, PostgreSQL5",
+    "independent_auth_review": "PASS: zero remaining findings",
+    "component_browser": {
+      "desktop_and_mobile": 2,
+      "status": "PASS",
+      "scope": "Actual React component with controlled save/complete promises; no backend or style acceptance",
+      "assertions": [
+        "Failed save blocks advancement",
+        "Retry allows progression",
+        "Pending save blocks competing option writes",
+        "Multiple selections preserve earlier answers",
+        "Complete waits for last save"
+      ]
+    },
+    "typecheck": "PASS"
+  },
+  "registration_reconciliation": {
+    "original_action": "auth-security-actions.ts registerAction",
+    "missing_routes": [
+      "/register",
+      "/welcome",
+      "/welcome/preparing"
+    ],
+    "recovered_routes": [
+      "/welcome",
+      "/welcome/preparing"
+    ],
+    "required_preservation": [
+      "CSRF before all writes",
+      "Source rate-limit before password hashing",
+      "Atomic user/vendor/owner membership/preference creation",
+      "Existing session cookie policy",
+      "Audit registration and redirect to welcome"
+    ],
+    "original_issues_to_fix": [
+      "Only email.includes(@) validates email; require canonical bounded validation",
+      "Name/workspace/password have no upper bounds",
+      "Catch-all database errors reported as duplicate email",
+      "Do not overwrite current auth/MFA/recovery implementations"
+    ]
+  },
+  "registration_implementation": {
+    "state": "LOCAL_VALIDATED_PENDING_PROTECTED_CI",
+    "files": [
+      "src/app/actions/registration-actions.ts",
+      "src/app/actions/registration-actions.test.ts",
+      "src/app/register/page.tsx",
+      "src/app/login/page.tsx"
+    ],
+    "unit_passed": 14,
+    "unit_failed": 0,
+    "reviewer": "portal_review_fallback",
+    "review_status": "PASS"
+  },
+  "open_review_findings": [],
+  "review_fixes": {
+    "state": "CLOSED_BY_INDEPENDENT_REVIEW_AND_TESTS",
+    "password": "Trim before hash to match existing login; real PostgreSQL and desktop/mobile browser round trips PASS",
+    "session": "Committed account fallback to /login?registered=1 with recovery message on session/cookie failure",
+    "preparing": "Require completed questionnaire and workspace-scoped tasks; no selected-project prerequisite",
+    "unit_verification": "Registration14 and preparing5 PASS",
+    "typecheck": "PASS",
+    "eslint": "PASS"
+  },
+  "registration_database_validation": {
+    "status": "PASS",
+    "tests": 5,
+    "scope": "Real PostgreSQL, actual register/logout/login, password hashing, session storage; synthetic request/cookie/rate boundaries",
+    "verified": [
+      "Normal and whitespace-surrounded password round trips",
+      "Audit failure rolls back account and workspace",
+      "Session failure preserves one account and subsequent login succeeds",
+      "Duplicate signup creates no second workspace"
+    ],
+    "typecheck": "PASS",
+    "targeted_eslint": "PASS",
+    "full_browser": "PASS: desktop/mobile2",
+    "independent_rereview": "PASS"
+  },
+  "independent_review": {
+    "reviewer": "portal_review_fallback",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "findings": [],
+    "closed_findings": [
+      "Password trim contract",
+      "Aggregate preparation page",
+      "Post-provisioning login recovery"
+    ],
+    "receipt_scope": "Source review and unit14/DB5/preparing5/component-browser2 receipts; reviewer did not run tests"
+  },
+  "browser": {
+    "state": "PASS",
+    "stats": {
+      "startTime": "2026-10-04T18:16:38.325Z",
+      "duration": 67730.22700000001,
+      "expected": 2,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "scope": "Real registration, questionnaire, project creation, logout and login at1440/390px",
+    "environment": "Development Next server in env-free mirror, isolated PostgreSQL54463",
+    "limitations": "Release build and remote CI pending"
+  },
+  "candidate_hashes": {
+    "src/app/actions/registration-actions.ts": "7a0583d59b2e17009262e5dc9bb9a3d2cbd3cfb9a44a6a9731397dda1201e542",
+    "src/app/actions/registration-actions.test.ts": "fd46d84835ff1a830edaf21c4cf4e8ef555f18bbeeaf219adb3c4fb26e7b9915",
+    "src/app/actions/registration-actions.db.test.ts": "b60b18d44bd643e3b1ace63ce5b3619ffebec2191900df8ade06d7e53d76553e",
+    "src/app/login/page.tsx": "485a42c1f0ba1cbe64904e52f3c121dcdf8652aea012140977faa2c0efedda51",
+    "src/app/register/page.tsx": "0968d653ea1b0a73df63891c27872089812ab9ffcbb6b1b164296f492441456b",
+    "src/app/welcome/page.tsx": "2001eb1086af776e0112378122ba9b0b9c6fadc816e97d4218ba856708c7561f",
+    "src/app/welcome/preparing/page.tsx": "77c33be3bd7a05eee126a179787f11e7514ca547b9c918c29e4eb4826bc66cd3",
+    "src/app/welcome/preparing/page.test.tsx": "e92d890d81fdade793da165bb3936b91e5b01a6ed60b1d0123574b51535b97dd",
+    "src/components/personalized-onboarding-questionnaire.tsx": "1c1d37135f1daded5d5a95d9689b871f36b80778b5e90ef20380526d94fb3fca",
+    "src/components/workspace-preparing-progress.tsx": "83e374c7441641fe2cfb9821f7c8eb34e3fbec60593ad768c1f17da9e3c3a47d",
+    "tests/e2e/registration-onboarding.spec.ts": "8264c5341b3847de00bd230fbdf644616a0b19c5dff93936e07b0e50526c2532"
+  },
+  "candidate_hash_format": "SHA256 of local bytes including CRLF",
+  "dependency_merge": "11541b6ac097ea957f2152710e7d9f405b4bfccb"
+}

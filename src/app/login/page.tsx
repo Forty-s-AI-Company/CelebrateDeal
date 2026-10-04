@@ -15,7 +15,7 @@ const errorMessages: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; revoked?: string; reset?: string; password_changed?: string }>;
+  searchParams: Promise<{ error?: string; revoked?: string; reset?: string; password_changed?: string; registered?: string }>;
 }) {
   const params = await searchParams;
   const showDemoHint = process.env.NODE_ENV !== "production";
@@ -23,6 +23,7 @@ export default async function LoginPage({
   return (
     <main className="grid min-h-screen place-items-center bg-background px-4">
       <section className="w-full max-w-md rounded-lg border border-border bg-white p-6 shadow-sm">
+        {params.registered === "1" ? <p role="status" className="mb-4 text-sm text-slate-700">帳戶已建立，請使用剛才設定的 Email 與密碼登入。</p> : null}
         <div className="mb-6">
           <p className="text-sm font-semibold text-primary">CelebrateDeal</p>
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">登入直播商務後台</h1>
@@ -60,6 +61,7 @@ export default async function LoginPage({
           <p className="mb-3 text-center text-xs font-semibold text-slate-500">公開資訊與客服</p>
           <PublicResourceLinks compact />
         </div>
+        <p className="mt-4 text-center text-sm text-slate-600">第一次使用？ <Link href="/register" className="font-semibold text-primary hover:underline">建立商家 Workspace</Link></p>
       </section>
     </main>
   );
