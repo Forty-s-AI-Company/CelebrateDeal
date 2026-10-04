@@ -154,6 +154,15 @@
       "eslint": "PASS",
       "tsc": "PASS",
       "remaining": "Paid-order repeat purchase and support/recovery navigation remain pending"
+    },
+    "paid_repurchase": {
+      "state": "IMPLEMENTED_PENDING_REVIEW",
+      "behavior": "Used voucher with same-tenant order paidAt present and paid/refund status does not block new purchase; claim stays consumed. Failed/pending/expired/cancelled or missing paid evidence still rejects retry.",
+      "unit_route_tests": 68,
+      "real_database_tests": 14,
+      "eslint": "PASS",
+      "typecheck": "PASS before final DB fixture addition",
+      "remaining": "Independent review, full checkout browser chain, safe uncertain-payment recovery"
     }
   }
 }

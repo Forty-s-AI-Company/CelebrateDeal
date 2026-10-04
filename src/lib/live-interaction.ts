@@ -139,7 +139,18 @@ export async function resolveEligibleVoucherClaim(
   // 已核銷的同商品券不得在新結帳請求中默默退回原價。
   if (input.rejectUsed && claim?.usedOrderId && claim.vendorId === input.vendorId
     && claim.eventType === "flash_voucher" && claim.run.eventType === "flash_voucher"
-    && (!claim.productId || claim.productId === input.productId)) throw new LiveVoucherAlreadyUsedError();
+    && (!claim.productId || claim.productId === input.productId)) {
+    // 已確認付款的訂單保留核銷紀錄；舊 Cookie 不應阻擋新的正常購買。
+    const settled = await db.commerceOrder.findFirst({
+      where: {
+        id: claim.usedOrderId, vendorId: input.vendorId, paidAt: { not: null },
+        status: { in: ["paid", "partially_refunded", "refunded"] },
+      },
+      select: { id: true },
+    });
+    if (settled) return null;
+    throw new LiveVoucherAlreadyUsedError();
+  }
   if (
     !claim
     || claim.vendorId !== input.vendorId

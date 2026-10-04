@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import * as dbModule from "@/lib/db";
 import { consumeCheckoutVoucherClaim, VoucherClaimConflictError } from "@/lib/checkout-voucher-claim";
+import { resolveEligibleVoucherClaim, LiveVoucherAlreadyUsedError } from "@/lib/live-interaction";
 import { hashLiveViewerToken, LIVE_VIEWER_SESSION_COOKIE } from "@/lib/live-quota-admission";
 
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
@@ -31,6 +32,30 @@ async function fixture() {
 }
 
 describe("advanced interactions isolated PostgreSQL", () => {
+  it("allows repurchase only after the consumed voucher order is confirmed paid", async () => {
+    const { db, run, tokens, respond } = await fixture();
+    const response = await respond(tokens[0]!);
+    expect(response.status).toBe(200);
+    const bearer = response.cookies.get("celebratedeal_flash_voucher")!.value;
+    const claim = await db.liveInteractionResponse.findFirstOrThrow({ where: { runId: run.id } });
+    const order = await db.commerceOrder.create({ data: {
+      vendorId: run.vendorId, orderNumber: randomUUID(), checkoutIdempotencyKey: randomUUID(),
+      checkoutIdentityHash: randomBytes(32).toString("base64url"), subtotalAmountCents: 1000, totalAmountCents: 900,
+      buyerEncryptedEnvelope: "synthetic-not-real-pii", buyerMaskedName: "Fixture", buyerMaskedEmail: "fixture@example.test",
+    } });
+    await db.liveInteractionResponse.update({ where: { id: claim.id }, data: { usedOrderId: order.id } });
+    const input = { vendorId: run.vendorId, productId: "synthetic-product", priceCents: 1000, currency: "TWD", rejectUsed: true };
+    for (const status of ["pending_payment", "payment_failed", "expired", "cancelled"] as const) {
+      await db.commerceOrder.update({ where: { id: order.id }, data: { status } });
+      await expect(resolveEligibleVoucherClaim(db, bearer, input)).rejects.toBeInstanceOf(LiveVoucherAlreadyUsedError);
+    }
+    await db.commerceOrder.update({ where: { id: order.id }, data: { status: "paid" } });
+    await expect(resolveEligibleVoucherClaim(db, bearer, input)).rejects.toBeInstanceOf(LiveVoucherAlreadyUsedError);
+    await db.commerceOrder.update({ where: { id: order.id }, data: { paidAt: new Date(), paidAmountCents: 900 } });
+    await expect(resolveEligibleVoucherClaim(db, bearer, input)).resolves.toBeNull();
+    expect((await db.liveInteractionResponse.findUniqueOrThrow({ where: { id: claim.id } })).usedOrderId).toBe(order.id);
+  });
+
   it("allows only one order to consume a real issued live voucher", async () => {
     const { db, run, tokens, respond } = await fixture();
     expect((await respond(tokens[0]!)).status).toBe(200);
