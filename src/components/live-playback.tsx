@@ -102,6 +102,7 @@ export type LivePageData = {
   };
   formConfigurationUnavailable?: boolean;
   interactionEvents: Array<{
+    metadata?: import("@/lib/interaction-event").AdvancedInteractionMetadata;
     id: string;
     eventType: string;
     triggerSec: number;

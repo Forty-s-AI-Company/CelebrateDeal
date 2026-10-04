@@ -114,6 +114,22 @@ afterEach(() => {
 });
 
 describe("PublicLivePage", () => {
+  it("passes only normalized advanced event settings to the public player", async () => {
+    mocks.findFirst.mockResolvedValue({
+      ...publicLive,
+      interactionScript: {
+        vendorId: "vendor-1", status: "published",
+        events: [{ id: "poll-1", eventType: "poll", triggerSec: 10, title: "投票", role: null,
+          metadata: { question: "選哪個？", options: ["A", "B"], durationSec: 30, internalNote: "private" } }],
+      },
+    });
+    const element = await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
+    expect(element.props.live.interactionEvents[0].metadata).toEqual({
+      kind: "poll", question: "選哪個？", durationSec: 30,
+      options: [{ id: "option-1", label: "A" }, { id: "option-2", label: "B" }],
+    });
+  });
+
   it("only resolves scheduled, live, or replay-enabled ended lives", async () => {
     await PublicLivePage({ params: Promise.resolve({ slug: "public-live" }) });
 

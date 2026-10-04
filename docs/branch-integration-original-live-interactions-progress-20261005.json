@@ -48,10 +48,14 @@
     "state": "RESTORED_NOT_WIRED",
     "eslint": "PASS",
     "remaining": [
-      "Pass normalized public advanced metadata from viewer page",
       "Mount only for admitted playable live and reset on tenant/live identity change",
       "Remove fictitious participant names from winner animation",
       "Review stale polling responses and component browser tests"
-    ]
+    ],
+    "public_metadata": {
+      "state": "IMPLEMENTED",
+      "validation": "29 targeted tests PASS; ESLint PASS; tsc --noEmit PASS",
+      "scope": "Canonical advanced settings only; unknown and nested private keys omitted; product references restricted to bound live products; public-page wiring test included"
+    }
   }
 }
