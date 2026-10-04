@@ -107,5 +107,17 @@
     ],
     "eslint": "PASS",
     "tsc": "PASS"
+  },
+  "live_voucher_checkout": {
+    "state": "IMPLEMENTED_PENDING_DB_CHAIN_AND_REVIEW",
+    "behavior": "Existing automation voucher has priority; otherwise server-resolved live voucher adjusts checkout amount. Compare-and-set consumption in order reservation transaction prevents duplicate use.",
+    "unit_tests": 55,
+    "eslint": "PASS",
+    "tsc": "PASS",
+    "remaining": [
+      "Real PostgreSQL claim-to-checkout transaction and rollback tests",
+      "Independent security review",
+      "Flash sale pricing/stock implementation and full purchase identity chain"
+    ]
   }
 }

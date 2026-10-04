@@ -31,7 +31,7 @@ const paymentProviderMocks = vi.hoisted(() => ({ getPaymentProvider: vi.fn() }))
 const commerceOrderMocks = vi.hoisted(() => ({ createCommerceOrderForCheckout: vi.fn() }));
 const buyerSupportMocks = vi.hoisted(() => ({ issueBuyerSupportGrant: vi.fn() }));
 const funnelMocks = vi.hoisted(() => ({ resolvePublishedFunnelCheckout: vi.fn() }));
-const liveInteractionMocks = vi.hoisted(() => ({ resolveEligibleAutomationVoucherClaim: vi.fn() }));
+const liveInteractionMocks = vi.hoisted(() => ({ resolveEligibleAutomationVoucherClaim: vi.fn(), resolveEligibleVoucherClaim: vi.fn(), consumeLive: vi.fn() }));
 const admissionMocks = vi.hoisted(() => ({
   checkoutSessionTokenFromRequest: vi.fn(),
   verifyCheckoutAdmission: vi.fn(),
@@ -53,6 +53,8 @@ vi.mock("@/lib/buyer-support-access", () => ({
 vi.mock("@/lib/checkout-admission", () => admissionMocks);
 vi.mock("@/lib/funnel-commerce-service", () => funnelMocks);
 vi.mock("@/lib/live-interaction", () => ({
+  FLASH_VOUCHER_COOKIE: "celebratedeal_flash_voucher",
+  resolveEligibleVoucherClaim: liveInteractionMocks.resolveEligibleVoucherClaim,
   AUTOMATION_VOUCHER_COOKIE: "celebratedeal_automation_voucher",
   resolveEligibleAutomationVoucherClaim: liveInteractionMocks.resolveEligibleAutomationVoucherClaim,
 }));
@@ -165,6 +167,8 @@ beforeEach(() => {
   db.paymentTransaction.findUnique.mockResolvedValue(null);
   funnelMocks.resolvePublishedFunnelCheckout.mockReset();
   liveInteractionMocks.resolveEligibleAutomationVoucherClaim.mockResolvedValue(null);
+  liveInteractionMocks.resolveEligibleVoucherClaim.mockResolvedValue(null);
+  liveInteractionMocks.consumeLive.mockResolvedValue({ count: 1 });
   db.paymentTransaction.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: "transaction-1", ...data }));
   db.paymentTransaction.update.mockResolvedValue({ id: "transaction-1" });
   checkoutReadiness.mockReturnValue("local_only");
@@ -192,6 +196,7 @@ beforeEach(() => {
     const transaction = await db.paymentTransaction.create({ data: transactionData });
     if (createCommerceOrder) {
       await createCommerceOrder({
+        liveInteractionResponse: { updateMany: liveInteractionMocks.consumeLive },
         automationVoucherGrant: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       }, transaction);
     }
@@ -229,6 +234,25 @@ function expectNoAffiliateAttribution() {
 }
 
 describe("successful checkout response", () => {
+  it("applies a live voucher and atomically binds its redemption to the order", async () => {
+    liveInteractionMocks.resolveEligibleVoucherClaim.mockResolvedValueOnce({ id: "live-claim", discountAmountCents: 200 });
+    const response = await POST(checkoutRequest(`celebratedeal_flash_voucher=${"A".repeat(43)}`));
+    expect(response.status).toBe(200);
+    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ grossAmountCents: 1000 }) }));
+    expect(liveInteractionMocks.consumeLive).toHaveBeenCalledWith({
+      where: { id: "live-claim", vendorId: expect.any(String), eventType: "flash_voucher", usedOrderId: null, expiresAt: { gt: expect.any(Date) } },
+      data: { usedOrderId: expect.any(String), discountAmountCents: 200 },
+    });
+  });
+
+  it("rejects a concurrently consumed live voucher before starting provider checkout", async () => {
+    liveInteractionMocks.resolveEligibleVoucherClaim.mockResolvedValueOnce({ id: "live-claim", discountAmountCents: 200 });
+    liveInteractionMocks.consumeLive.mockResolvedValueOnce({ count: 0 });
+    const response = await POST(checkoutRequest(`celebratedeal_flash_voucher=${"A".repeat(43)}`));
+    expect(response.status).toBe(409);
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it("applies a server-resolved automation voucher and consumes it in the reservation transaction", async () => {
     liveInteractionMocks.resolveEligibleAutomationVoucherClaim.mockResolvedValueOnce({
       id: "grant-1",

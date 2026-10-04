@@ -57,6 +57,8 @@ import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transa
 import { resolvePublishedFunnelCheckout, type ResolvedFunnelCheckout } from "@/lib/funnel-commerce-service";
 import {
   AUTOMATION_VOUCHER_COOKIE,
+  FLASH_VOUCHER_COOKIE,
+  resolveEligibleVoucherClaim,
   resolveEligibleAutomationVoucherClaim,
 } from "@/lib/live-interaction";
 import {
@@ -76,9 +78,9 @@ const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
 
 class VoucherClaimConflictError extends Error {}
 
-type EligibleAutomationVoucherClaim = {
+type EligibleCheckoutVoucherClaim = {
   id: string;
-  source: "automation";
+  source: "automation" | "live";
   discountAmountCents: number;
 } | null;
 
@@ -164,23 +166,35 @@ function requestCookie(request: Request, name: string) {
   return null;
 }
 
-async function eligibleAutomationVoucherClaim(
+async function eligibleCheckoutVoucherClaim(
   request: Request,
   input: { vendorId: string; productId: string; priceCents: number; currency: string },
-): Promise<EligibleAutomationVoucherClaim> {
-  return resolveEligibleAutomationVoucherClaim(
+): Promise<EligibleCheckoutVoucherClaim> {
+  const automation = await resolveEligibleAutomationVoucherClaim(
     getDb(),
     requestCookie(request, AUTOMATION_VOUCHER_COOKIE),
     input,
   );
+  // 維持既有自動化券優先順序，不疊加兩張優惠券。
+  if (automation) return automation;
+  const live = await resolveEligibleVoucherClaim(getDb(), requestCookie(request, FLASH_VOUCHER_COOKIE), input);
+  return live ? { ...live, source: "live" } : null;
 }
 
-async function consumeAutomationVoucherClaim(
+async function consumeCheckoutVoucherClaim(
   tx: Prisma.TransactionClient,
-  claim: EligibleAutomationVoucherClaim,
+  claim: EligibleCheckoutVoucherClaim,
   input: { vendorId: string; orderId: string; now: Date },
 ) {
   if (!claim) return;
+  if (claim.source === "live") {
+    const consumed = await tx.liveInteractionResponse.updateMany({
+      where: { id: claim.id, vendorId: input.vendorId, eventType: "flash_voucher", usedOrderId: null, expiresAt: { gt: input.now } },
+      data: { usedOrderId: input.orderId, discountAmountCents: claim.discountAmountCents },
+    });
+    if (consumed.count !== 1) throw new VoucherClaimConflictError();
+    return;
+  }
   const consumed = await tx.automationVoucherGrant.updateMany({
     where: {
       id: claim.id,
@@ -797,7 +811,7 @@ export async function POST(request: Request) {
   // or payment-provider metadata.
   const referralCode = affiliateAttribution?.referralCode;
   const coursePolicySnapshot = coursePolicySnapshotFromProduct(product);
-  const voucherClaim = await eligibleAutomationVoucherClaim(request, {
+  const voucherClaim = await eligibleCheckoutVoucherClaim(request, {
     vendorId: parsed.data.vendorId,
     productId: product.id,
     priceCents: product.priceCents,
@@ -859,7 +873,7 @@ export async function POST(request: Request) {
           customCheckoutAnswers: customCheckout.answers,
           ...(hasExplicitInvoiceSelection ? { invoiceSelection } : {}),
         });
-        await consumeAutomationVoucherClaim(tx, voucherClaim, {
+        await consumeCheckoutVoucherClaim(tx, voucherClaim, {
           vendorId: parsed.data.vendorId,
           orderId: commerceOrder.id,
           now: new Date(),
