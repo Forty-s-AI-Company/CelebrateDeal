@@ -27,7 +27,7 @@ CI 原失敗為新增 migration 後歷史 runner/inventory 測試的固定清單
 ## 下一段與未完成工作
 
 1. #354 合併及 master tree 核對已完成；將本輪最新盤點與驗收證據納入下一個受保護文件交付。
-2. #211 舊 Puck CSS import 已確認由現行套件 runtime 自動注入替代，不需補匯入；舊 inventory snapshot migration 與主線較晚時間戳 migration 完全相同，不重複套用。表單同步送出鎖已補回，正在驗證並準備受保護 PR。
+2. #211 舊 Puck CSS import 已確認由現行套件 runtime 自動注入替代，不需補匯入；舊 inventory snapshot migration 與主線較晚時間戳 migration 完全相同，不重複套用。PR #355 已補回表單同步送出鎖、一頁式網站導覽及公開表單指定場次；26 個 targeted tests 與表單重試 browser 通過，等待最終 head CI 及驗收後合併。
 3. #210 LINE 外部同步仍缺發布序列化、provider/DB 補償及學員入口解析，介面明確未開放；student portal、affiliate/commission、成長與私訊功能待逐段核對。
 4. 原 dirty 中 password-reset smoke 的正式環境限制、Funnel、AI Team 路由／驗證差異需繼續審查；不能直接覆蓋較新的 master。
 5. Sandbox QA 共用 runner/設定、provider binding attestation 與其餘歷史差異詳見未來處理報告。

@@ -6,7 +6,9 @@
     "src/components/lead-form.tsx": "377c83ef924c70318dbe55cdb360b77fa0f4c9c722dbea1d28fc32fb8766e960",
     "src/components/app-shell.tsx": "e4ec934a98dddc665ceb731420207e77c2f0d9be77aacc85388e05827b002076",
     "src/components/app-shell.test.ts": "d7c08804e98e2b3ee88598aaf58b1aebbcfa9c1290ace8655c56d6948f9bb663",
-    "tests/e2e/smoke.spec.ts": "2ab148cf9983398c236d23a059511365f3e864c084ac80778d4509b3a826be54"
+    "tests/e2e/smoke.spec.ts": "2ab148cf9983398c236d23a059511365f3e864c084ac80778d4509b3a826be54",
+    "src/app/form/[slug]/page.tsx": "483e1e1a17ce23034c4657c6c13d5be9d91c44d56f9b5f0074fef7440ec7e1a3",
+    "src/app/form/[slug]/page.test.tsx": "e788c992c26c55796baae89a2bf596985c1b6fb2b10a45973bdae043f0959745"
   },
   "browser": {
     "status": "PASS",
@@ -64,8 +66,8 @@
     "cleanup": "PASS"
   },
   "unit": {
-    "numTotalTests": 19,
-    "numPassedTests": 19,
+    "numTotalTests": 26,
+    "numPassedTests": 26,
     "numFailedTests": 0,
     "numPendingTests": 0,
     "success": true,
@@ -183,7 +185,9 @@
   "limitations": [
     "Browser validates public submission; sidebar was added after browser build and checked with SSR role/feature tests.",
     "First browser attempt failed due to ambiguous alert locator; scoped selector fixed and rerun passed.",
-    "Puck CSS functionality is supplied by installed runtime; no CSS change shipped."
+    "Puck CSS functionality is supplied by installed runtime; no CSS change shipped.",
+    "Public form liveId change added after targeted browser run; final head CI and updated SSR tests required."
   ],
-  "whole_goal": "IN_PROGRESS"
+  "whole_goal": "IN_PROGRESS",
+  "scope_addition": "Recover selected public webinar session behavior from PR211. Only sessions returned by public-registration-form are selectable; missing/foreign IDs return 404; SSR regression checks immutable input."
 }
