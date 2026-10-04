@@ -1,0 +1,103 @@
+{
+  "state": "DEPENDENCY_RECONCILIATION_REQUIRED",
+  "scope": "Original app-shell UI and dependent navigation E2E; not delivered by dev-hygiene checkpoint",
+  "master": "9c45f10314faff768a33fac3f3770517b859ddce",
+  "files": [
+    {
+      "path": "src/components/app-shell.tsx",
+      "lines": 312,
+      "imports": [
+        "next/link",
+        "lucide-react",
+        "@/app/actions",
+        "@/components/app-shell-nav-link",
+        "@/components/app-shell-nav-group",
+        "@/components/app-shell-account-menu",
+        "@/components/csrf-field",
+        "@/components/form-submit-button",
+        "@/components/feature-access-boundary",
+        "@/lib/vendor-feature-toggles",
+        "@/components/workspace-project-switcher",
+        "@/components/onboarding-task-panel"
+      ],
+      "source_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+      "master_present": true
+    },
+    {
+      "path": "src/components/app-shell-nav-link.tsx",
+      "lines": 38,
+      "imports": [
+        "next/link",
+        "next/navigation",
+        "clsx"
+      ],
+      "source_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+      "master_present": false
+    },
+    {
+      "path": "src/components/app-shell-nav-group.tsx",
+      "lines": 36,
+      "imports": [
+        "lucide-react",
+        "next/navigation",
+        "react"
+      ],
+      "source_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+      "master_present": false
+    },
+    {
+      "path": "src/components/app-shell-account-menu.tsx",
+      "lines": 46,
+      "imports": [
+        "lucide-react",
+        "react"
+      ],
+      "source_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+      "master_present": false
+    },
+    {
+      "path": "src/components/workspace-project-switcher.tsx",
+      "lines": 61,
+      "imports": [
+        "react",
+        "next/link",
+        "lucide-react"
+      ],
+      "source_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+      "master_present": false
+    },
+    {
+      "path": "src/components/onboarding-task-panel.tsx",
+      "lines": 57,
+      "imports": [
+        "react",
+        "next/navigation",
+        "next/link",
+        "lucide-react",
+        "@/app/actions/sales-workspace-actions"
+      ],
+      "source_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+      "master_present": false
+    }
+  ],
+  "onboarding_action": {
+    "path": "src/app/actions/sales-workspace-actions.ts",
+    "master_present": true,
+    "exports_confirmed": [
+      "persistTaskPanelCollapsedAction",
+      "selectSalesProjectAction"
+    ]
+  },
+  "dependent_original_tests": [
+    "tests/e2e/loading-route-segments.spec.ts",
+    "tests/e2e/accountant-affiliate-detail-direct-url.spec.ts"
+  ],
+  "next": [
+    "Inspect action/data ownership and layout caller props before porting the full shell",
+    "Preserve existing role/feature gating and current account/session controls",
+    "Port matching navigation test labels with the actual rendered UI; retain cross-tenant negative assertions",
+    "Verify mobile menu and navigation in isolated browser before acceptance"
+  ],
+  "tests_executed": false,
+  "caller_gap": "Current app layout passes vendorName, memberRole and enabledModules only; project switcher and onboarding task data require explicit caller integration."
+}
