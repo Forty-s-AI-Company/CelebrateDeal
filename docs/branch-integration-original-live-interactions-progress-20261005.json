@@ -1,0 +1,32 @@
+{
+  "state": "RECOVERED_API_PENDING_FULL_INTEGRATION",
+  "branch": "codex/integrate-original-live-interactions-20261005",
+  "parent": "164ad4a952628c06d6f88d1093334c1d6a352445",
+  "source": "Original preserved checkout; restored API and tests without changing content",
+  "files": [
+    {
+      "path": "src/app/api/live-interactions/route.ts",
+      "sha256_lf": "da1b8f1be6e7ad36aee16db7c6b95ca90387756718868684e11ad93341ed1483"
+    },
+    {
+      "path": "src/app/api/live-interactions/route.test.ts",
+      "sha256_lf": "36864d6075232e9103e1f22eb10392ff66fa656fc50f66c7857b39e88a5f1c37"
+    }
+  ],
+  "validation": {
+    "unit_passed": 12,
+    "unit_failed": 0,
+    "typecheck": "PASS",
+    "eslint": "PASS",
+    "database": "PENDING",
+    "browser": "PENDING",
+    "independent_review": "PENDING"
+  },
+  "remaining": [
+    "Review viewer/tenant boundaries, winner privacy and canonical runtime checks",
+    "Test concurrent responses and claim caps using isolated PostgreSQL",
+    "Recover advanced UI and wire current playback without regressing existing behavior",
+    "Independent review, protected PR CI and canonical acceptance"
+  ],
+  "production": "Not operated"
+}
