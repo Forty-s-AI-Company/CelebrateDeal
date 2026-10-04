@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { CommerceCheckoutForm, type CommerceCheckoutFormProps } from "@/components/commerce-checkout-form";
 import { CommerceCheckoutRecoveryResponseSchema } from "@/lib/commerce-checkout";
 import {
@@ -42,7 +43,7 @@ function CheckoutContent({ state, current, externalCheckoutUrl, retry, startNewC
   </>;
   if (state.kind === "loading") return <p role="status" className="text-sm text-slate-600">正在檢查是否有可恢復的訂單…</p>;
   if (state.kind === "error") return <div role="alert" className="space-y-3 text-sm text-slate-700"><p>暫時無法確認原訂單，請稍後再試。尚未建立新訂單。</p><button type="button" className="font-semibold text-blue-700 underline" onClick={retry}>重新檢查</button></div>;
-  if (state.kind === "finished") return <div role="status" className="space-y-3 text-sm text-slate-700"><p>原結帳請求已結束。請先查看訂單狀態，避免重複付款。</p>{current ? <button type="button" className="font-semibold text-blue-700 underline" onClick={startNewCheckout}>確認後開始新訂單</button> : null}</div>;
+  if (state.kind === "finished") return <div role="status" className="space-y-3 text-sm text-slate-700"><p>原結帳請求已結束。請先查看訂單狀態，避免重複付款。</p><Link href="/support/orders" className="block font-semibold text-blue-700 underline">查看原訂單與付款狀態</Link>{current ? <button type="button" className="font-semibold text-blue-700 underline" onClick={startNewCheckout}>確認後開始新訂單</button> : null}</div>;
   return <div role="status" className="space-y-3 text-sm text-slate-700"><p>目前無法建立新訂單，也找不到這個瀏覽器先前建立的待付款訂單。</p>{externalCheckoutUrl ? <a className="font-semibold text-blue-700 underline" href={externalCheckoutUrl}>前往商家指定的結帳頁</a> : null}</div>;
 }
 

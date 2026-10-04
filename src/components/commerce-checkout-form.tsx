@@ -412,7 +412,7 @@ export function CommerceCheckoutForm({
       const parsed = CommerceCheckoutResponseSchema.safeParse(await response.json());
       if (!parsed.success) {
         setPhase("error");
-        setMessage("付款服務回應不完整；尚未向你收款，請稍後重試。");
+        setMessage("付款服務回應不完整；請先查看訂單狀態，避免重複付款。");
         return;
       }
 
@@ -420,7 +420,7 @@ export function CommerceCheckoutForm({
       if (checkout.formAction && checkout.formMethod === "POST" && checkout.formPayload) {
         if (!isAllowedCheckoutDestination(checkout.formAction, window.location.origin, checkout.provider)) {
           setPhase("error");
-          setMessage("付款服務目的地不安全；尚未向你收款，請聯絡客服。");
+          setMessage("付款服務目的地不安全；請先查看訂單狀態並聯絡客服，避免重複付款。");
           return;
         }
         setPhase("redirecting");
@@ -435,7 +435,7 @@ export function CommerceCheckoutForm({
       if (checkout.checkoutUrl) {
         if (!isAllowedCheckoutDestination(checkout.checkoutUrl, window.location.origin, checkout.provider)) {
           setPhase("error");
-          setMessage("付款服務目的地不安全；尚未向你收款，請聯絡客服。");
+          setMessage("付款服務目的地不安全；請先查看訂單狀態並聯絡客服，避免重複付款。");
           return;
         }
         setPhase("redirecting");
@@ -452,7 +452,7 @@ export function CommerceCheckoutForm({
       setMessage(`訂單 ${checkout.orderNumber} 已建立；目前付款服務尚未要求進一步操作。`);
     } catch {
       setPhase("error");
-      setMessage("連線逾時或暫時中斷；尚未向你收款，請重試。重試會沿用同一筆訂單，不會重複扣庫存。");
+      setMessage("連線逾時或暫時中斷；請先查看訂單狀態。重試會沿用同一筆訂單，不會重複扣庫存。");
     } finally {
       window.clearTimeout(timeout);
     }
@@ -537,6 +537,7 @@ export function CommerceCheckoutForm({
       >
         {message || "尚未送出"}
       </p>
+      <Link href="/support/orders" className="text-sm font-semibold text-blue-700 underline">查看這個瀏覽器的訂單與付款狀態</Link>
     </form>
   );
 }

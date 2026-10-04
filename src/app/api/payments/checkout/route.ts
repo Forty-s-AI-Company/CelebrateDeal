@@ -493,6 +493,24 @@ function storedCheckoutSession(metadata: unknown): CheckoutSessionResult | null 
   };
 }
 
+async function failedCheckoutResponse(request: Request, vendorId: string, orderId: string | null) {
+  const response = NextResponse.json({ error: "Unable to start checkout" }, {
+    status: 502, headers: { "Cache-Control": "no-store" },
+  });
+  if (!orderId) return response;
+  try {
+    // 僅限本次已建立的訂單；失敗或延遲付款仍可從原瀏覽器查詢。
+    const cookie = await issueBuyerSupportGrant(getDb(), { request, vendorId, orderId });
+    response.cookies.set(cookie.name, cookie.value, buyerSupportCookieOptions({
+      expiresAt: cookie.expiresAt,
+      secure: process.env.NODE_ENV === "production" || new URL(request.url).protocol === "https:",
+    }));
+  } catch {
+    // 查詢憑證服務失敗時維持一般錯誤，不揭露內部細節或放寬存取權限。
+  }
+  return response;
+}
+
 function checkoutResponse({
   request,
   transaction,
@@ -910,7 +928,7 @@ export async function POST(request: Request) {
     } catch {
       // Keep the provider failure response generic when the recovery write also fails.
     }
-    return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
+    return failedCheckoutResponse(request, parsed.data.vendorId, commerceOrderId);
   }
 
   try {
@@ -933,7 +951,7 @@ export async function POST(request: Request) {
     } catch {
       // Keep the metadata persistence failure response generic when the recovery write also fails.
     }
-    return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
+    return failedCheckoutResponse(request, parsed.data.vendorId, commerceOrderId);
   }
 
   if (!commerceOrderId) {

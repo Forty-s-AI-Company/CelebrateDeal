@@ -426,6 +426,12 @@ describe("successful checkout response", () => {
       transactionId: "transaction-1",
       reason: "provider_checkout_failed",
     });
+    expect(buyerSupportMocks.issueBuyerSupportGrant).toHaveBeenCalledWith(db, expect.objectContaining({
+      vendorId: "vendor-1", orderId: "order-1",
+    }));
+    expect(response.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(response.headers.get("set-cookie")).toContain("Secure");
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(db.paymentTransaction.update).toHaveBeenCalledTimes(1);
   });
 

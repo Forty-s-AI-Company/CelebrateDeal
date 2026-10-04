@@ -449,5 +449,63 @@
       "Exact-head CI and canonical acceptance"
     ],
     "production_operations": false
+  },
+  "provider_failure_support_checkpoint": {
+    "status": "LOCAL_VALIDATED_REVIEW_CLOSED_REMOTE_PENDING",
+    "implemented": [
+      "Provider/session persistence failures issue an HttpOnly support grant only for the order created by the current validated checkout",
+      "Keep consumed sale/voucher claims attached to original orders for late payment safety",
+      "Expose support/orders from checkout and finished recovery state",
+      "Do not claim no charge when payment outcome is unknown"
+    ],
+    "validation": {
+      "passed": 72,
+      "failed": 0,
+      "receipt": ".ai-team/tmp/checkout-failure-entry-results.json",
+      "eslint": "PASS",
+      "typescript": "PASS"
+    },
+    "review": {
+      "agent": "/root/portal_review_fallback",
+      "status": "Zero remaining findings; MINOR closed by independent recheck",
+      "observed_model": "unknown",
+      "observed_effort": "unknown"
+    },
+    "remote_ci": {
+      "head": "d9c007f51aaf8c8d07a5787426466220016a1624",
+      "runs": [
+        37239518253,
+        37239514792
+      ],
+      "last_observed_status": "in_progress",
+      "includes_this_uncommitted_patch": false
+    },
+    "remaining": [
+      "Final exact-head CI and canonical acceptance"
+    ],
+    "database_validation": {
+      "passed": 21,
+      "failed": 0,
+      "receipt": ".ai-team/tmp/flash-sale-failure-db-results.json",
+      "scope": "Actual checkout failure, inventory release, cookie-authorized order lookup, single consumed claim, blocked new discounted checkout, late paid webhook reconciles original order. Only provider transport/mail/invoice mocked."
+    },
+    "review_followup": {
+      "finding": "MINOR unsafe destination text claimed no charge",
+      "fix": "Both form/link rejection branches now direct to order status; preserve identity and support link",
+      "tests": {
+        "passed": 5,
+        "failed": 0,
+        "receipt": ".ai-team/tmp/checkout-destination-rejection-results.json"
+      },
+      "review_status": "closed"
+    },
+    "browser_validation": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "receipt": ".ai-team/tmp/wp7-live-results.json",
+      "started_at": "2026-10-04T22:25:46.187Z",
+      "scope": "Desktop/mobile real sale order and reload recovery, then synthetic failed state projection and actual cookie-authorized support page. Provider failure itself is covered separately by DB tests, not browser transport."
+    }
   }
 }

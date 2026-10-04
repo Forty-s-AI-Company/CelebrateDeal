@@ -13,6 +13,8 @@ import { POST as checkout } from "@/app/api/payments/checkout/route";
 import { processPaymentWebhook, PaymentWebhookPayload } from "@/lib/payment-webhooks";
 import { POST as respondToInteraction } from "@/app/api/live-interactions/route";
 import { hashLiveViewerToken, LIVE_VIEWER_SESSION_COOKIE } from "@/lib/live-quota-admission";
+import * as paymentProviders from "@/lib/payment-providers";
+import { resolveBuyerSupportGrants } from "@/lib/buyer-support-access";
 
 // 隔離外部寄信與發票；保留真實付款事件、訂單及庫存處理。
 vi.mock("@/lib/commerce-order-email", () => ({ ensureCommerceOrderPaidDelivery: vi.fn() }));
@@ -21,6 +23,7 @@ vi.mock("@/lib/taiwan-electronic-invoice", () => ({ reconcileElectronicInvoiceAf
 const vendors: string[] = [];
 beforeEach(() => vi.stubEnv("CSRF_SECRET", "synthetic-flash-sale-db-secret-over-thirty-two-bytes"));
 afterEach(async () => {
+  vi.restoreAllMocks();
   await getDb().vendor.deleteMany({ where: { id: { in: vendors.splice(0) } } });
   vi.unstubAllEnvs();
 });
@@ -61,7 +64,7 @@ describe("flash sale authoritative price and reservation", () => {
     expect(await f.db.liveInteractionResponse.count({ where: { runId: f.run.id } })).toBe(0);
   });
 
-  it.each(["unchanged", "missing-cookie", "changed-offer"])("enforces signed offer in real admission and checkout APIs: %s", async (scenario) => {
+  it.each(["unchanged", "missing-cookie", "changed-offer", "provider-failure"])("enforces signed offer in real admission and checkout APIs: %s", async (scenario) => {
     vi.stubEnv("PAYMENT_PROVIDER", "demo");
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://127.0.0.1:31027");
     const f = await fixture({}, true);
@@ -94,12 +97,34 @@ describe("flash sale authoritative price and reservation", () => {
     expect(authorized.offer).toMatchObject({ priceCents: 1000, currency: "TWD" });
     const session = admission.cookies.get(CHECKOUT_ADMISSION_COOKIE)!;
     if (scenario === "changed-offer") await f.db.liveInteractionRun.update({ where: { id: f.run.id }, data: { updatedAt: new Date(f.run.updatedAt.getTime() + 1000) } });
+    if (scenario === "provider-failure") {
+      const demo = paymentProviders.getPaymentProvider("demo");
+      vi.spyOn(paymentProviders, "getPaymentProvider").mockReturnValue({
+        ...demo, createCheckoutSession: async () => { throw new Error("synthetic provider failure"); },
+      });
+    }
     const response = await checkout(request("/api/payments/checkout", {
       ...f.scope, admissionToken: authorized.admissionToken, idempotencyKey: authorized.idempotencyKey,
       buyer: { name: "Synthetic buyer", email: "buyer@example.test", phone: "0912345678" },
       shipping: { recipientName: "Synthetic buyer", phone: "0912345678", countryCode: "TW", postalCode: "100", administrativeArea: "台北市", locality: "中正區", addressLine1: "合成測試路 1 號" },
     }, `${session.name}=${session.value}${scenario === "missing-cookie" ? "" : `; ${saleCookie}`}`));
-    if (scenario === "unchanged") {
+    if (scenario === "provider-failure") {
+      expect(response.status).toBe(502);
+      const order = await f.db.commerceOrder.findFirstOrThrow({ where: { vendorId: f.vendor.id } });
+      expect(order).toMatchObject({ status: "payment_failed", totalAmountCents: 1000 });
+      const grants = await resolveBuyerSupportGrants(f.db, { getAll: () => response.cookies.getAll() });
+      expect(grants.map((grant) => grant.orderId)).toEqual([order.id]);
+      expect(await resolveBuyerSupportGrants(f.db, { getAll: () => [] })).toEqual([]);
+      expect(await f.db.liveInteractionResponse.count({ where: { runId: f.run.id, usedOrderId: order.id } })).toBe(1);
+      expect((await f.db.product.findUniqueOrThrow({ where: { id: f.product.id } })).inventory).toBe(5);
+      expect((await admitCheckout(request("/api/payments/checkout/admission", f.scope, saleCookie))).status).toBe(409);
+      // 延遲付款仍歸屬原訂單，優惠保持單次核銷。
+      const payment = await f.db.paymentTransaction.findFirstOrThrow({ where: { vendorId: f.vendor.id } });
+      await processPaymentWebhook(PaymentWebhookPayload.parse({ provider: "demo", eventId: randomUUID(), eventType: "paid", vendorId: f.vendor.id, orderNumber: payment.orderNumber!, grossAmountCents: 1000, currency: "TWD" }));
+      expect((await f.db.commerceOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("paid");
+      expect(await f.db.commerceOrder.count({ where: { vendorId: f.vendor.id } })).toBe(1);
+      expect(await f.db.liveInteractionResponse.count({ where: { runId: f.run.id, usedOrderId: order.id } })).toBe(1);
+    } else if (scenario === "unchanged") {
       expect(response.status).toBe(200);
       expect(await f.db.paymentTransaction.findFirstOrThrow({ where: { vendorId: f.vendor.id } })).toMatchObject({ grossAmountCents: 1000, currency: "TWD" });
       expect(await f.db.commerceOrder.findFirstOrThrow({ where: { vendorId: f.vendor.id } })).toMatchObject({ totalAmountCents: 1000, subtotalAmountCents: 2000 });

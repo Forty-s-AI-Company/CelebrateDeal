@@ -46,6 +46,7 @@ describe("CommerceCheckoutEntry", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 409 }));
     await act(async () => { root.render(<CommerceCheckoutEntry current={{ vendorId: "vendor-1", productId: "product-1", productName: "商品", fulfillmentType: "digital", flashSaleRunId: "old-sale" }} />); });
     expect(window.location.search).toContain("flashSale=old-sale");
+    expect(container.querySelector('a[href="/support/orders"]')?.textContent).toContain("原訂單");
     const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent === "確認後開始新訂單")!;
     expect(button).toBeTruthy();
     await act(async () => { button.click(); });

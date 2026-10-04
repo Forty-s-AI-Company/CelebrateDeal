@@ -60,6 +60,18 @@ for (const width of [1440, 390]) {
       await expect(page.locator("form strong.text-xl")).toHaveText(/10/u);
       expect(await db.commerceOrder.count({ where: { vendorId: vendor.id } })).toBe(1);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+      // 此段只驗證失敗狀態的瀏覽器呈現與憑證查詢；金流失敗及庫存恢復另由真實 DB 測試涵蓋。
+      await db.$transaction([
+        db.paymentTransaction.updateMany({ where: { vendorId: vendor.id }, data: { status: "failed" } }),
+        db.commerceOrder.update({ where: { id: order.id }, data: { status: "payment_failed", failedAt: new Date() } }),
+      ]);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(page.getByText("原結帳請求已結束。請先查看訂單狀態，避免重複付款。")).toBeVisible();
+      await page.getByRole("link", { name: "查看原訂單與付款狀態" }).click();
+      await expect(page.getByRole("heading", { name: "我的訂單", exact: true })).toBeVisible();
+      await expect(page.getByText("付款失敗", { exact: true })).toBeVisible();
+      await expect(page.getByText(`訂單 ${order.orderNumber}`, { exact: false })).toBeVisible();
+      expect(await db.liveInteractionResponse.count({ where: { runId: run.id, usedOrderId: order.id } })).toBe(1);
     } finally {
       await page.goto("about:blank");
       await db.vendor.delete({ where: { id: vendor.id } });
