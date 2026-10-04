@@ -1,0 +1,111 @@
+{
+  "status": "LOCAL_VERIFIED_PENDING_PROTECTED_PR",
+  "branch": "codex/integrate-original-routing-20261005",
+  "parent_portal_head": "a214d277811809d581660e2b1b3c5856fb62a7d2",
+  "requested_team": "ai-team",
+  "effective_team": "primary manual integration; no AI Team dispatch for self-modification",
+  "selected_model": "main thread inherited; child dispatch not used",
+  "observed_model": "unknown",
+  "reasoning": "Preserve original requested routing update and repair the discovered CI dependency without removing current master gates",
+  "fallback_events": [],
+  "review_plan": "Primary review of policy/effort selection, hard-cap preservation, explicit runtime support, governance adapters and CI fail-fast behaviour; exact-head protected CI before acceptance",
+  "ownership": "Primary sole writer in managed checkout; original 120 dirty entries retained",
+  "dispatch_count": 0,
+  "parent_depth": 0,
+  "files": [
+    {
+      "path": ".agents/skills/ai-team/SKILL.md",
+      "candidate_sha256": "8fe80fe0a250350d8dfdb87a74d3f85e1fae7417c5691d606c2e8acecd7b84a5"
+    },
+    {
+      "path": ".ai-team/config/routing-policy.json",
+      "candidate_sha256": "f2e6ff3c747a19af5834116b483d87a3ba9352fb342eba7f8df2ed82e10570d5"
+    },
+    {
+      "path": ".ai-team/mcp_server/routing.py",
+      "candidate_sha256": "50a16af8a777c25153e070bd9022a3eec1dc956052fbcbc8f1d60b8035bdb1e0"
+    },
+    {
+      "path": ".ai-team/mcp_server/test_routing.py",
+      "candidate_sha256": "029d5517685cf2ed01e4325b6293ea4f96f9923be33b135004087eb3a81aa3f5"
+    },
+    {
+      "path": ".ai-team/mcp_server/test_server.py",
+      "candidate_sha256": "25511392dc9a14f6af1c96d08a3828fd1c3d1d805a9994adfd01e83e77b5eca3"
+    },
+    {
+      "path": ".ai-team/scripts/Test-AiTeamRouting.ps1",
+      "candidate_sha256": "96bced99ac0a6ae321a4164306ef7039c894d3eb71e5830b2ce1c602c3a0eed1"
+    },
+    {
+      "path": ".codex/agents/planner.toml",
+      "candidate_sha256": "c142b0ec7777d3fc018d788e25d7c116483ab9bf0c9481a8b7d9f715f5fbea0d"
+    },
+    {
+      "path": ".codex/agents/reviewer.toml",
+      "candidate_sha256": "70fbe46cd88b364f7100acd437161f9882c2880c58c2832323aa9a0913dbe891"
+    },
+    {
+      "path": ".codex/agents/worker.toml",
+      "candidate_sha256": "e9b8d2f04aeb0f15e1842bb8e68678bc71af89bdd029ef2da7921f3be51b73ed"
+    },
+    {
+      "path": ".codex/agents/worker-deep.toml",
+      "candidate_sha256": "f439807a8b13962b77c4261cb47e02bf9938f615e4f70d92f6a4163f2205554f"
+    },
+    {
+      "path": "AGENTS.md",
+      "candidate_sha256": "4bd481880514f4fb966fbdb81bcccad582c49e8014ffb759b4730a27533d8300"
+    },
+    {
+      "path": "docs/ai-team/ROUTING.md",
+      "candidate_sha256": "fb20fefd0d8020648bb67b4f8840195a8fa72fb9d5fab9d48e604d70cf5182ca"
+    },
+    {
+      "path": "docs/ai-team/vnext-validation.md",
+      "candidate_sha256": "87978b842e28aeb673e0c7067cd2d5a4f65a0e1211c91bce7ba2eee593b40668"
+    },
+    {
+      "path": "docs/ai-team/workflow-policy.md",
+      "candidate_sha256": "1cc4246847e9ab5ceb7ab8c7ec57d190336aef66d59f710c232dbdbff3ffda47"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "candidate_sha256": "7e7ed9b437561362a154490453e07d9f80e89354d6b4194cc6e84a0fa756ddab"
+    },
+    {
+      "path": ".codex/config.toml",
+      "candidate_sha256": "d26a8dba004d7cd1e9cb233f463b17f017584d6c4e68d8f86104ed6a45c3344c"
+    }
+  ],
+  "validation": {
+    "python_routing_server_tests": 43,
+    "failed": 0,
+    "integration_dependency": "Original test fails on master combined CI step (5 native commands share one step). Split commands without deleting pinned source import, dependency audit, bounded concurrency timeout or other current gates.",
+    "powershell": {
+      "routing_resilience": "PASS; synthetic providers only",
+      "handoff": "PASS",
+      "relocated_bootstrap": "PASS after portable MCP config recovery",
+      "tracked_snapshot": "PASS"
+    },
+    "secret_scan": "PASS",
+    "discovered_baseline_failures": [
+      "Combined native CI step could mask earlier failures; split without removing gates",
+      "MCP config used original user absolute paths; ported relative launcher and retained disabled live Desktop MCP state"
+    ]
+  },
+  "deferred_from_original_ci": [
+    "Enterprise/mobile suite entries depend on features not yet integrated",
+    "Current master protected source import, staging Stream gate, audit and concurrency timeout retained; no wholesale CI rollback",
+    "Support browser adapter and newer dependency-audit script require separate scoped reconciliation"
+  ],
+  "next": [
+    "Publish protected PR with exact scoped candidate",
+    "Pass protected exact-head CI and canonical acceptance",
+    "Reconcile remaining original dirty files and historical branch groups"
+  ],
+  "production_operations": false,
+  "whole_goal": "IN_PROGRESS",
+  "integration_base": "361a37da2b487bbfa17f419d7b72b9306da07c99",
+  "parent_portal_status": "MERGED"
+}

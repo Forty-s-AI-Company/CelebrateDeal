@@ -1,0 +1,292 @@
+{
+  "decision": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "student-portal-recovery",
+    "signals": {
+      "task_type": "feature",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 8,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "cross_module",
+        "migration"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "feature",
+    "difficulty": "high",
+    "requested_team": "ai-team",
+    "team": "ai-team",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "required": true,
+        "fallback_events": [
+          {
+            "model": "opus",
+            "reason": "unavailable"
+          },
+          {
+            "model": "astra",
+            "reason": "quota_exhausted"
+          }
+        ],
+        "status": "planned",
+        "model_key": "sol",
+        "model": "gpt-6.1-sol",
+        "provider": "native_agent",
+        "reasoning_effort": "high",
+        "effort_floor": null,
+        "effort_reason": null,
+        "sandbox_mode": "read-only",
+        "execution": "native_agent_handoff_only",
+        "candidate_findings_only": false,
+        "may_spawn": false
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:e48f241402d8b3d9d1ed5a67ee52c2d0e91ec05b7a69cd6e23bd6395b173e92a",
+    "snapshot_root": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal",
+    "snapshot_files": [
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/ai-team-payuni-sandbox-qa.md",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/branch-integration-deferred-work-20261004.json",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/branch-integration-future-work.md",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/branch-integration-pr210-student-portal-review-20261004.json",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/branch-integration-pr356-acceptance-20261004.json",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/branch-integration-pr356-manifest-20261004.json",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/branch-integration-pr356-remote-ci-20261004.json",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/branch-integration-preservation-20261004.json",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/branch-integration-progress-20261004.md",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/branch-integration-provider-binding-recovery-20261004.json",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/branch-integration-publication-20261004.json",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/branch-integration-sandbox-common-layer-20261004.json",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/branch-integration-student-portal-independent-review-20261005.json",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/branch-integration-student-portal-progress-20261004.json",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/codex-goal/API_CONTRACT_REGISTRY.md",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/docs/codex-goal/PRISMA_INVARIANTS.md",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/prisma/migrations/20261004154500_student_portal_access_tokens/migration.sql",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/prisma/schema.prisma",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/scripts/g7-email-operations-browser-qa.test.mjs",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/scripts/prisma-invariant-inventory.test.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/scripts/staging-migration-compat-preflight.test.mjs",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/scripts/staging-migration-isolated-replay.test.mjs",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/scripts/staging-payuni-management-migrate.test.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/actions/student-portal-actions-boundary.test.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/actions/student-portal-actions.test.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/actions/student-portal-actions.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/api/automation/vouchers/redeem/route.test.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/api/automation/vouchers/redeem/route.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/api/email/unsubscribe/route.test.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/api/email/unsubscribe/route.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/checkout/result/page.test.tsx",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/checkout/result/page.tsx",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/portal/[vendorSlug]/access/route.test.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/portal/[vendorSlug]/access/route.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/portal/[vendorSlug]/calendar/[bookingId]/route.test.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/portal/[vendorSlug]/calendar/[bookingId]/route.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/portal/[vendorSlug]/login/page.test.tsx",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/portal/[vendorSlug]/login/page.tsx",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/portal/[vendorSlug]/page.test.tsx",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/portal/[vendorSlug]/page.tsx",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/portal/[vendorSlug]/vouchers/[voucherId]/use/route.test.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/app/portal/[vendorSlug]/vouchers/[voucherId]/use/route.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/components/student-portal-login-form.tsx",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/lib/email-delivery.test.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/lib/email-delivery.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/lib/student-portal-auth.db.test.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/lib/student-portal-auth.test.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/lib/student-portal-auth.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/lib/student-portal-voucher.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/lib/student-portal.test.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/src/lib/student-portal.ts",
+      ".ai-team/tmp/pr357-evidence-20261004/snapshot/tests/e2e/student-portal.spec.ts"
+    ],
+    "required_checks": [
+      "new-head-ci-quality",
+      "student-portal-local-browser"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "evidence": {
+    "execution": {
+      "kind": "execution",
+      "source": "desktop_native",
+      "revision": "sha256:e48f241402d8b3d9d1ed5a67ee52c2d0e91ec05b7a69cd6e23bd6395b173e92a",
+      "status": "COMPLETED",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "head": "a214d277811809d581660e2b1b3c5856fb62a7d2",
+      "scope": "Implemented and pushed PR357; immutable manifest binds published candidate to independently reviewed code",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr357-evidence-20261004\\execution.json"
+    },
+    "checks": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "new-head-ci-quality",
+        "revision": "sha256:e48f241402d8b3d9d1ed5a67ee52c2d0e91ec05b7a69cd6e23bd6395b173e92a",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 3.969,
+        "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr357-evidence-20261004\\new-head-ci-quality.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "student-portal-local-browser",
+        "revision": "sha256:e48f241402d8b3d9d1ed5a67ee52c2d0e91ec05b7a69cd6e23bd6395b173e92a",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 1.421,
+        "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr357-evidence-20261004\\student-portal-local-browser.json"
+      }
+    ],
+    "review": {
+      "kind": "review",
+      "source": "desktop_native",
+      "revision": "sha256:e48f241402d8b3d9d1ed5a67ee52c2d0e91ec05b7a69cd6e23bd6395b173e92a",
+      "status": "PASS",
+      "independent": true,
+      "role": "critical_review",
+      "model": "gpt-6.1-sol",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "reviewer": "/root/portal_review_fallback",
+      "head": "a214d277811809d581660e2b1b3c5856fb62a7d2",
+      "reviewed_files": {
+        "prisma/migrations/20261004154500_student_portal_access_tokens/migration.sql": "972dfa9876b30e9dadda6ab2fa6b1c5619611416cff6684f17c7a192c6074124",
+        "prisma/schema.prisma": "1a78a8bdc51c7a16db5a87bdf7f1ea42b345149b59a5a4ee87deff86fcdfff10",
+        "scripts/g7-email-operations-browser-qa.test.mjs": "ddf5da4eaf5bc6cbe143e288f4bb71c2b7fde92c43d5bba205103be51b80720a",
+        "scripts/prisma-invariant-inventory.test.ts": "e32d2bf677214e763bd6008915d338a3c2a889675875169ada68ed09ddde9a86",
+        "scripts/staging-migration-compat-preflight.test.mjs": "1e2b62df8a07b0439c6ddab7afee96fd130310862e862f713b6370b80af394a2",
+        "scripts/staging-migration-isolated-replay.test.mjs": "52eaaf218f2c608ebd00891ef195b89f33a7cc105f30baf302596461c9c912ff",
+        "scripts/staging-payuni-management-migrate.test.ts": "d8aa5ce1c4f0b8274bceb2b34242ddcf74d272f257fd8085d61eccaa841abc26",
+        "src/app/actions/student-portal-actions-boundary.test.ts": "9d25dcc6edad6305df0ca791e68a07aff16fc95a4686ae52e95d04de64c34b7f",
+        "src/app/actions/student-portal-actions.test.ts": "02d2ca2a1be116a1e8f0018cd643bb17e9d382229668c9e24715b25e62140e6a",
+        "src/app/actions/student-portal-actions.ts": "83ce997926bb2f2cb098c2908989a80e851256f5d93f0212575ab82d32e85f9c",
+        "src/app/api/automation/vouchers/redeem/route.test.ts": "2943687d37e1a65c32cb9a640360ae35a17b6092a30cf5a84149d8c6855f0718",
+        "src/app/api/automation/vouchers/redeem/route.ts": "bfe2470d175b119824c3fbfd6decb73e430a67635ea2990688ab8ecc3659415a",
+        "src/app/api/email/unsubscribe/route.test.ts": "2d627626315d567fddd53f034f04df00c41cf3287eb6413d819520ed31181f9c",
+        "src/app/api/email/unsubscribe/route.ts": "fcce304e44254e1fa59cf63bf0a98cfa5e14167f66ba24f72dca9105a2ee6c1f",
+        "src/app/checkout/result/page.test.tsx": "38d47af8bf699bdfd03a977d3d8a9af382e372a7bf899db0f72cf5ef1a45dd35",
+        "src/app/checkout/result/page.tsx": "14c160c37f1b4e1b26133dead583dfb073df747389c4a235cbf5d5bfce807e57",
+        "src/app/portal/[vendorSlug]/access/route.test.ts": "a562109b32ff25ab680faaec85540e50b96ab5ac025b8c99f38ff71208f98737",
+        "src/app/portal/[vendorSlug]/access/route.ts": "6e0b9274a016fac0bf476bc9fed7547a3fe56852827a0e3fd2b5919c671be30c",
+        "src/app/portal/[vendorSlug]/calendar/[bookingId]/route.test.ts": "f22bcda80e849e8a8359336cd8d0f7a68b495f1ebe10214299378ed346d7cf82",
+        "src/app/portal/[vendorSlug]/calendar/[bookingId]/route.ts": "64df11818861d990870762eb9455f2b35e622443a5dade8c8e6510e55a459f54",
+        "src/app/portal/[vendorSlug]/login/page.test.tsx": "7019295450292b3b1f91bcaf476ff7722856fbb29fbd94ae8ccc53bf4d6847f2",
+        "src/app/portal/[vendorSlug]/login/page.tsx": "fe1c3e6677ddd14ae6db61687535ef72cfc3a52364864d88e6901eda1f3e1342",
+        "src/app/portal/[vendorSlug]/page.test.tsx": "1276e9410703e01caa8b7ad2a2db83e078693d119b8f87e44ba0345e7da97452",
+        "src/app/portal/[vendorSlug]/page.tsx": "ecde2824638f552cc18f80b9520b3e5f76dffa1540d29b239ec17bf4a5af769f",
+        "src/app/portal/[vendorSlug]/vouchers/[voucherId]/use/route.test.ts": "f0893ad4c177503a29b8df3482b09363c982a28ec88facc59db5bef90789c537",
+        "src/app/portal/[vendorSlug]/vouchers/[voucherId]/use/route.ts": "e2f2079764ecc19c5a6006d07e0336f12623656ebdb13ba6e479bf71a01274c6",
+        "src/components/student-portal-login-form.tsx": "cf7ad9d3161873803b3e227d7ece4a49c439e10eccce808e0804315f0e78501a",
+        "src/lib/email-delivery.test.ts": "1e7c95200c2790511cb1905dbed790a0b45fc25ed36307b901082602af7d72ac",
+        "src/lib/email-delivery.ts": "ad2fb396bd3ed9445dc0f3b2dfc1ee76c9cba33bfc1fae0412286deb95306092",
+        "src/lib/student-portal-auth.db.test.ts": "bf408bee7bf1dcdbee96c1c0b21f4f34cf5a3dbf0aca670dc9df112dcb439ffc",
+        "src/lib/student-portal-auth.test.ts": "41b049bcbc55e5f322d85264d2844389c06599469befcf7d56933280eaf7b321",
+        "src/lib/student-portal-auth.ts": "c1fbbb7ac5de933c77c236f28edddd8468ed9528684a5138b281c1deb13ce2b8",
+        "src/lib/student-portal-voucher.ts": "7f56a1a27455f8c49bc6de41f9e65f3969171eca4ddbed96de7425460855c305",
+        "src/lib/student-portal.test.ts": "5d80d83365505ac42d070fd8ab3c17107486b63f9330d4a2f6bbdb345604e4ea",
+        "src/lib/student-portal.ts": "2b618011e22fe6f1d0a232680721a3e7c667f076bdf6c7c7faad3bb8c33d71ac",
+        "tests/e2e/student-portal.spec.ts": "1ef54d51c75eb8dc31c0d320d4649d5a513995f78c661f005eb34f6ad66b223d"
+      },
+      "scope": "Independent initial portal auth/migration/data review, email suppression fix review, voucher eligibility and currency closure, canonical voucher exchange and four migration contracts re-review. No open findings. Browser three tests verified separately. Only later API contract documentation changed. Observed runtime model/effort unknown.",
+      "findings": [],
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr357-evidence-20261004\\review.json"
+    },
+    "findings": []
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:e48f241402d8b3d9d1ed5a67ee52c2d0e91ec05b7a69cd6e23bd6395b173e92a"
+  },
+  "publication": "PUSHED_PR_OPEN"
+}

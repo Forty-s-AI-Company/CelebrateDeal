@@ -33,7 +33,7 @@ TASK_ALIASES = {
 TASKS = {
     "copy", "docs", "format", "ui", "test_fix", "crud", "api", "implement", "feature",
     "cross_module", "complex_debug", "architecture", "migration", "root_cause", "analyze",
-    "explore", "plan", "review", "broad_review", "deep_review", "business_review",
+    "explore", "plan", "agent", "review", "broad_review", "deep_review", "business_review",
     "plan_review", "security_review", "qa", "release", "manager", "summarize", "arbiter",
 }
 REVIEW_TASKS = {"review", "broad_review", "deep_review", "business_review", "plan_review", "security_review"}
@@ -152,11 +152,11 @@ def classify(task: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(task.get(field, False), bool):
             raise ValueError(f"Invalid {field}")
 
-    low_default_tasks = {"copy", "docs", "format", "ui", "test_fix", "explore", "manager", "summarize", "release"}
+    low_default_tasks = set(policy["MODEL_ROUTING"]["simple_task_types"]) | {"crud", "api", "implement", "feature"}
     task_type_floor = "low"
     if kind in {"cross_module", "complex_debug", "business_review", "deep_review"} and not task.get("mechanical_change", False):
         task_type_floor = "high"
-    if kind in {"architecture", "root_cause", "arbiter"}:
+    if kind in {"architecture", "agent", "root_cause", "arbiter"}:
         task_type_floor = "high"
 
     # A compatibility/default "auto" carries no caller capability requirement.
@@ -171,8 +171,7 @@ def classify(task: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
         if field == "code_surface_area" and task.get("mechanical_change", False):
             level = "low"
         size_requirement = max(size_requirement, level, key=COMPLEXITY.index)
-    # Risk determines validation/review requirements, not the implementation's
-    # reasoning difficulty. A small Critical edit may be implemented by Luna.
+    # Risk stays independent of complexity, but may raise model/effort and review requirements.
     floor = max(task_type_floor, complexity_requirement, size_requirement,
                 key=COMPLEXITY.index)
     important_findings = task.get("important_findings", False)
@@ -187,7 +186,17 @@ def classify(task: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
         capabilities.append("database")
     if categories & {"webhook", "concurrency"} or any(re.search(r"(?:queue|retry|rate.limit)", path, re.I) for path in changed_files):
         capabilities.append("sre")
+    # Workload size affects effort independently of reasoning complexity.
+    large_workload = (len(set(changed_files)) > 1 or sizes["context_size"] >= policy["size_thresholds"]["context_size"][0]
+                      or sizes["code_surface_area"] >= policy["size_thresholds"]["code_surface_area"][0])
+    profile = ("extreme" if floor == "very_high" else
+               "complex" if risk in {"high", "critical"} or kind in {"architecture", "agent", "root_cause", "arbiter"} else
+               "large" if large_workload or floor == "high" else
+               "medium" if floor == "medium" else
+               "trivial" if kind in policy["MODEL_ROUTING"]["simple_task_types"] or task.get("difficulty") == "trivial" else
+               "routine")
     return {"task_type": kind, "complexity": floor, "risk": risk, "risk_score": score,
+            "engineering_profile": profile, "large_workload": large_workload,
             "risk_categories": sorted(categories), "important_findings": important_findings,
             "required_capabilities": capabilities,
             "task_type_floor": task_type_floor,
@@ -208,13 +217,13 @@ def select_route(signals: dict[str, Any], policy: dict[str, Any]) -> tuple[str, 
             return "senior_review", "sonnet"
         if kind == "broad_review" or risk == "medium" or signals["context_size"] >= 20000:
             return "broad_review", "gemini_high" if risk == "medium" or complexity != "low" else "gemini_medium"
-        return "self_review", "luna" if complexity in {"low", "medium"} else "sol"
+        return "self_review", "luna" if complexity == "low" else "sol"
     if kind == "qa":
         return "qa", "gemini_high" if complexity in {"high", "very_high"} or risk != "low" else "gemini_medium"
     if kind == "arbiter":
         return "arbiter", "sol"
     role = "planner" if kind in {"plan", "architecture"} else "explorer" if kind in {"explore", "analyze", "summarize"} else "manager" if kind == "manager" else "release" if kind == "release" else "developer"
-    model = policy["MODEL_ROUTING"]["engineering"][complexity]
+    model = policy["MODEL_ROUTING"]["manager"] if role == "manager" else policy["MODEL_ROUTING"]["engineering"][signals["engineering_profile"]]["model"]
     return role, model
 
 
@@ -264,10 +273,12 @@ def recommendation(role: str, model: str, signals: dict, runtime: dict, policy: 
     effort = "low" if signals["complexity"] == "low" else "medium"
     if signals["complexity"] in {"high", "very_high"} or signals["risk"] in {"high", "critical"} or role in {"senior_review", "broad_review"}:
         effort = "high"
-    if model == "luna" and role in {"developer", "planner"}:
-        effort = "high"
-    if model == "sol" and role in {"developer", "planner"} and signals["complexity"] == "high":
-        effort = "medium" if signals["risk"] == "low" else "high"
+    engineering = role in {"developer", "planner", "explorer", "release", "manager"}
+    effort_floor = None
+    if engineering and model in {"luna", "sol"}:
+        profile = policy["MODEL_ROUTING"]["engineering"][signals["engineering_profile"]]
+        effort = "low" if role == "manager" else profile["effort"]
+        effort_floor = effort
     if model == "astra":
         effort = "low" if role == "arbiter" else "high"
     if entry["provider"] != "codex":
@@ -280,6 +291,9 @@ def recommendation(role: str, model: str, signals: dict, runtime: dict, policy: 
             "model": entry.get("slug") or runtime["agy_models"][model],
             "provider": "native_agent" if entry["provider"] == "codex" else "agy_wrapper",
             "reasoning_effort": effort,
+            "effort_floor": effort_floor,
+            "effort_reason": ("engineering_profile:" + signals["engineering_profile"]
+                              if effort in {"xhigh", "max"} and engineering else None),
             "sandbox_mode": "workspace-write" if role == "developer" else "read-only",
             "execution": "native_agent_handoff_only" if entry["provider"] == "codex" else "agy_readonly",
             "candidate_findings_only": entry["provider"] == "gemini",
@@ -366,7 +380,15 @@ def route(task: dict[str, Any], runtime: dict[str, Any] | None = None, team: str
                 raise ValueError("UNSUPPORTED_MODEL_EFFORT")
             if requested_effort in {"xhigh", "max"} and not task.get("effort_reason"):
                 raise ValueError("ELEVATED_EFFORT_REASON_REQUIRED")
-            rec["reasoning_effort"] = requested_effort
+            floor = rec.get("effort_floor")
+            efforts = policy["codex_efforts"].get(resolved, [requested_effort])
+            rec["reasoning_effort"] = max(requested_effort, floor, key=efforts.index) if floor else requested_effort
+            if rec["reasoning_effort"] != requested_effort:
+                rec["effort_adjustment"] = "required_policy_floor"
+            if task.get("effort_reason"):
+                rec["effort_reason"] = task["effort_reason"]
+        if resolved in policy["codex_efforts"] and rec["reasoning_effort"] not in runtime.get("supported_efforts", {}).get(resolved, policy["codex_efforts"][resolved]):
+            raise ValueError("UNSUPPORTED_MODEL_EFFORT")
         result.update(rec)
         result["resolved"] = {"model": rec["model"], "effort": rec["reasoning_effort"],
                               "speed": "standard", "source": "router_policy"}

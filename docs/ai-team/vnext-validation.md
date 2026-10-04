@@ -1,5 +1,39 @@
 # AI Team vNext Validation
 
+## 2026-10-05 未提交路由更新整合候選
+
+這次在 managed checkout 重新驗證原始工作目錄的 GPT-6.1 Sol 更新；下方 2026-10-03 的 PowerShell BLOCKED 僅是歷史紀錄。
+
+- Python routing／MCP server：43/43 PASS。
+- PowerShell routing／resilience：PASS，僅 disposable fixture 與合成 provider；沒有真實模型 dispatch。
+- Handoff、搬移目錄 bootstrap、完整 safe tracked snapshot：PASS；原本使用者絕對路徑改為既有相對 launcher。
+- CI 原本將五個 native validation 指令包在同一步，可能掩蓋較早的非零 exit；已拆為獨立必過步驟，保留 push ESLint、unit coverage、套件稽核、固定 staging source 驗證與 DB timeout。
+- Desktop live MCP 仍 disabled，未宣稱 Desktop 連線或 provider 執行通過；observed model／effort 維持 unknown。
+- Secret scan PASS。完整 protected CI／canonical acceptance 仍須對發佈後的精確 head 驗證。
+
+
+## 2026-10-03 GPT-6.1 Sol 路由更新
+
+本節描述這次模型／effort 政策修改；後面的 Luna-first 與 live 紀錄是歷史版本證據，不代表 GPT-6.1 Sol 已 live 驗收。
+
+- Canonical registry 的 `sol` 已改為 `gpt-6.1-sol`；active native planner、worker、worker-deep、reviewer preset 與 PowerShell fallback regression 同步更新。
+- 超簡單工作 Luna low；一般 coding/debugging Sol low；Medium Sol medium；大型 context／多檔工作 Sol high；複雜 agent／架構／High 或 Critical 修改 Sol xhigh；Very High Sol max。Astra 仍需合法 `astra_reason`，`sol_insufficient` 需失敗證據。
+- complexity 與 risk 分開；多檔機械工作可保持 Low complexity，但 workload 提高 effort。Critical 仍需要合格獨立審查，不能降低驗收底線。Lite 資源池保留 Luna／Flash；一般 coding 建議 Standard，硬性 Lite cap 不允許暗中選 Sol。
+- policy 自動選 xhigh/max 時附 `effort_reason`；明示較低 effort 不降低政策底線；runtime 不支援的組合拒絕。速度 Standard、spawn/depth 限制、共用 acceptance gate、AGY 與 quota 規則保持不變。
+
+| 實際檢查 | 結果 | 證據／界線 |
+| --- | --- | --- |
+| `python -m unittest discover -s .ai-team/mcp_server -p test_*.py -q` | PASS：43/43，exit 0 | `.ai-team/tmp/sol61-migration-20261003/python-tests.log`；offline fixtures，含六段路由、effort floor/runtime support、fallback、hard cap、MCP、acceptance、stale evidence、recursion 與 fail-fast regressions |
+| JSON、native TOML、project config TOML、Python AST 解析 | PASS | `python .ai-team/tmp/verify_sol61_migration.py`，exit 0；`.ai-team/tmp/sol61-migration-20261003/result.json` |
+| `git diff --check` | PASS：exit 0 | `.ai-team/tmp/sol61-migration-20261003/diff-check.log`；只有既有 LF/CRLF 提示 |
+| active `gpt-6-sol` 搜尋 | PASS：無匹配 | `rg -n gpt-6-sol .ai-team/config .ai-team/mcp_server .ai-team/scripts .codex/agents .agents/skills`；歷史文件不改寫 |
+| PowerShell 動態 routing/resilience/handoff | BLOCKED／本輪未重試 | 先前 PowerShell 啟動問題尚未重新證明已解決；只同步測試期待，不宣稱動態 PASS |
+| GPT-6.1 Sol live dispatch | SKIPPED | 本輪無 provider 呼叫，observed model/effort 保持 unknown；官方 model slug 與 effort 文件確認不等於 Desktop/CLI 實際執行證據 |
+| 產品 Node tests/build | SKIPPED | 只修改 AI Team 政策、native presets、相關 tests/docs；未修改產品程式、Node dependencies 或 CI |
+
+官方支援資訊：[GPT-6.1 Sol model](https://developers.openai.com/api/docs/models/gpt-6.1-sol)，slug `gpt-6.1-sol`，effort `low/medium/high/xhigh/max`。使用既有 Codex 訂閱，不新增 API execution path。既有 project MCP `enabled=false` 保持不變；原生 preset 下次載入後生效，router 不會切換目前 Desktop 主對話模型。
+
+
 - 日期：2026-09-20
 - 範圍：vNext routing、fallback、quota、AGY failure taxonomy、native adapters、portable MCP bootstrap 與完整 Node tracked-source validation。
 - 安全界線：沒有啟動舊版 AI Team 修改自己；沒有讀取 `.env*`、Secret、Cookie 或正式資料；沒有繞過 Windows host/sandbox 權限。

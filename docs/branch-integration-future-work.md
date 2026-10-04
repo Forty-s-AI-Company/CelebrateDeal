@@ -179,3 +179,8 @@ PR #355 的 head `24d9c7c76d6273329e2aff0b27ae9299da04d364` 已於 `2026-10-04T1
 ## 2026-10-05 學員入口整合驗證中
 
 已完成信箱登入及現有交付／訂單學員中心候選。修正單筆 checkout grant 升權、開發 mockLink、行銷退訂封鎖登入信、過期信重送與 internal-origin redirect；優惠券須符合原生結帳、交付、庫存及幣別。DB 13 項、登入邊界 browser 2 項及郵件 32 項 targeted tests 通過，獨立 Critical review findings 已關閉。最終 coverage、完整新增 browser 與 protected PR gate 仍執行中，不標為已合併。原生課程播放器／進度／證書、社群、多語言與 PWA 保留原來源，未計入此里程碑完成範圍；PR210、PR211 及其餘 27 historical heads 繼續逐項整合。
+
+
+## 2026-10-05 學員入口里程碑已合併
+
+PR #357 已於 2026-10-04T16:40:44Z 受保護 squash merge 到 `361a37da2b487bbfa17f419d7b72b9306da07c99`；accepted tree 等於 merge tree。4,270 項測試、3 項 Chromium、83 migration、完整 coverage、獨立 Critical review 及精確 head CI 皆通過，canonical gate READY。原生播放器／學習進度／證書、社群、多語言與 PWA 尚未交付，保留來源並列後續；本節更新先前「驗證中」紀錄。整體仍有 27 組歷史分支內容及原始未提交工作需要核對，不宣稱全部整合完成。

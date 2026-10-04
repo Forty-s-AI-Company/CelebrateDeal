@@ -1,5 +1,5 @@
 {
-  "status": "INDEPENDENT_REVIEW_PASS_PENDING_FULL_CI",
+  "status": "MERGED",
   "branch": "codex/recover-student-portal-20261004",
   "integration_base": "0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2",
   "source_head": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
@@ -353,11 +353,21 @@
       "failed": 1,
       "failure": "API registry omitted three new portal route contracts; documentation now added; rerun pending",
       "disposable_cleanup": "PASS"
+    },
+    "full_suite": {
+      "test_files": 593,
+      "tests": 4270,
+      "failed": 0,
+      "coverage_thresholds": "PASS"
+    },
+    "remote_ci": {
+      "pr": 37215992336,
+      "push": 37215989311,
+      "status": "SUCCESS"
     }
   },
   "remaining": [
-    "Full combined coverage and exact-head protected PR357 CI; canonical acceptance then merge",
-    "Native player/progress/certificates, community, multilingual/PWA remain future packages"
+    "Native player/progress/certificates, community, multilingual/PWA remain future packages; PR210 still open"
   ],
   "production_operations": false,
   "original_dirty_preserved": {
@@ -395,5 +405,9 @@
       "writers": 1
     },
     "scope": "Independent source review plus email and voucher follow-ups. Reviewer did not execute tests. Final increment reviewed canonical voucher exchange, public Cookie protocol, four migration inventory contracts and third browser source."
-  }
+  },
+  "pr": 357,
+  "merge_commit": "361a37da2b487bbfa17f419d7b72b9306da07c99",
+  "canonical_acceptance": "READY",
+  "accepted_tree_equals_master": true
 }

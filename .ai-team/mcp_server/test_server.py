@@ -58,7 +58,7 @@ class RouterServerTest(unittest.TestCase):
             self.assertEqual(module.snapshot_task(["source.py"])["revision"], snapshot_revision(Path(temporary), ["source.py"]))
             result = module.route_task("one line payment webhook", "bug_fix", "trivial")
             self.assertEqual(result["signals"]["risk"], "critical")
-            self.assertEqual(result["model"], "gpt-6-luna")
+            self.assertEqual(result["model"], "gpt-6.1-sol")
             self.assertEqual(result["review_plan"][0]["model"], "gpt-6-astra")
             self.assertEqual(result["execution"], "recommendation_only")
 
@@ -101,7 +101,7 @@ class RouterServerTest(unittest.TestCase):
                 "bounded task", "implement", "routine", {"complexity": "high"},
             )
             self.assertEqual(explicit_routine["signals"]["complexity"], "medium")
-            self.assertEqual(explicit_routine["model_key"], "luna")
+            self.assertEqual(explicit_routine["model_key"], "sol")
 
             task_floor = module.route_task(
                 "bounded task", "cross_module", "trivial", {"complexity": "low"},
@@ -187,7 +187,7 @@ class RouterServerTest(unittest.TestCase):
                       "model": decision["review_plan"][0]["model"],
                       "evidence_path": str(review_path)}
             review_path.write_text(json.dumps({"kind": "review", **review}), encoding="utf-8")
-            self.assertEqual(decision["model_key"], "luna")
+            self.assertEqual(decision["model_key"], "sol")
             self.assertEqual(decision["signals"]["risk"], "critical")
             self.assertEqual(decision["review_plan"][0]["role"], "critical_review")
             self.assertEqual(module.goal_finalize("done")["status"], "not_finalizable")

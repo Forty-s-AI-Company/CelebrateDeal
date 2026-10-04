@@ -7,7 +7,7 @@ description: CelebrateDeal 的 Standard 相容入口；依共享 vNext router �
 
 這是 thin adapter，不保存自己的模型或 review 階梯。開始前讀取 `.ai-team/config/routing-policy.json`、`docs/ai-team/ROUTING.md` 與 `docs/ai-team/handoff-schema.md`。
 
-以 `requested_team=ai-team` 呼叫既有 `route_task` 或 `.ai-team/scripts/Invoke-AiTeamTask.ps1`。Standard 可使用 GPT-6 Luna、GPT-6 Sol、Gemini Flash Medium/High 與已驗證的 Sonnet；由 router 依任務與證據選最低足夠模型。規格清楚的中型工程先用 Luna high，困難整合用 Sol medium/high；不要無條件啟動所有角色。
+以 `requested_team=ai-team` 呼叫既有 `route_task` 或 `.ai-team/scripts/Invoke-AiTeamTask.ps1`。Standard 可使用 GPT-6 Luna、GPT-6.1 Sol、Gemini Flash Medium/High 與已驗證的 Sonnet；一般工程改由 Sol 起用，超簡單工作保留 Luna，effort 由共享 router 決定；不要無條件啟動所有角色。
 
 Gemini 只回報 candidate findings；Sonnet 做深度 review；重大安全、金流、Auth、Migration 或資料完整性決策依 review plan 升級。Reviewer 不直接修改程式碼。
 

@@ -10,7 +10,7 @@
 - 主代理具備 Direct Autonomous 端到端直通模式，可直接規劃、實作、自測並建立 checkpoint commit。
 - 日常 70% 任務（UI、文案、簡單 Bug）通過本地 `typecheck` 與 targeted tests 即可交付，直接跳過 AI 複審以極限節省 Token 額度。
 - 高風險 review 依 vNext `review_plan` 路由：Gemini 先做廣域 candidate scan，Sonnet 做深度判斷；Critical security/payment/auth 直接使用 Opus 或其明確 Codex fallback。Review 不得因固定階梯而跳過必要審查。
-- 一般模型由 `.ai-team/config/routing-policy.json` 的 `MODEL_ROUTING` 按任務 signals 選擇：清楚的小中型工程優先 GPT-6 Luna high，困難整合與推理使用 GPT-6 Sol medium/high；GPT-6 Astra 需具體例外理由。
+- 一般模型由 `.ai-team/config/routing-policy.json` 的 `MODEL_ROUTING` 按任務 signals 選擇：超簡單工作用 GPT-6 Luna，一般工程用 GPT-6.1 Sol，effort 依共享政策提高；GPT-6 Astra 需具體例外理由。
 - Explorer／Analyst 是唯讀邏輯職位，實際模型由 router 選擇；agy 只在需要且 discovery 成功時使用，未登入時走 native fallback。
 - 推理程度由 complexity/risk/role 決定，不能把所有 Worker 固定成 Luna high/max，也不能因 Pro invocation 固定使用 Astra。
 - 只要同一檔案、資料資源或外部資源沒有 writer 衝突，不同 scope 可以並行。
