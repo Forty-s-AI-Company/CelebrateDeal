@@ -273,7 +273,7 @@ export async function dismissRecoveryCodesAction(formData: FormData) {
 
 export async function regenerateRecoveryCodesAction(formData: FormData) {
   const result = await regenerateMfaRecoveryCodes(formData);
-  redirect(`${result.destination}?${result.ok ? "updated=recovery_regenerated" : `error=${result.error}`}`);
+  redirect(withMfaReturnPath(`${result.destination}?${result.ok ? "updated=recovery_regenerated" : `error=${result.error}`}`, formData.get("next")));
 }
 
 export async function sendPasswordResetSmokeAction(formData: FormData) {

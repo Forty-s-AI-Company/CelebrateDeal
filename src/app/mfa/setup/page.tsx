@@ -47,7 +47,7 @@ export default async function MfaSetupPage({
   const params = await searchParams;
   const nextPath = safeMfaReturnPath(params.next);
   const returningToOrders = isOrdersReturn(nextPath);
-  const auth = await requireAuth();
+  const auth = await requireAuth({ nextPath });
   const showPasswordResetSmoke = isPasswordResetSmokeEnabled();
   const cookieStore = await cookies();
   const parsedPendingMfa = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
@@ -186,6 +186,7 @@ export default async function MfaSetupPage({
                 {auth.user.mfaFactor ? (
                   <form action="/api/settings/security/mfa/recovery-codes/regenerate" method="post" className="grid gap-3">
                     <CsrfField />
+                    <MfaReturnField nextPath={nextPath} />
                     <label className="grid gap-1.5 text-sm font-medium text-slate-700">
                       目前 TOTP 驗證碼
                       <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required className="h-11 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456" />

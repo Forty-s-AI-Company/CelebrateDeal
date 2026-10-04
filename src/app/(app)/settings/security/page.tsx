@@ -75,7 +75,7 @@ export default async function SecuritySettingsPage({
   await applyE2eLoadingDelay();
   const params = await searchParams;
   const nextPath = safeMfaReturnPath(params.next);
-  const auth = await requireAuth();
+  const auth = await requireAuth({ nextPath });
   const db = getDb();
   const vendorId = auth.vendor?.id;
   const isOwner = auth.member?.role === "owner";
@@ -217,6 +217,7 @@ export default async function SecuritySettingsPage({
               {auth.user.mfaFactor ? (
                 <form action={regenerateRecoveryCodesAction} className="grid gap-3">
                   <CsrfField />
+                  <MfaReturnField nextPath={nextPath} />
                   <label className="grid gap-1.5 text-sm font-medium text-slate-700">
                     目前 TOTP 驗證碼
                     <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required className="h-10 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456" />
