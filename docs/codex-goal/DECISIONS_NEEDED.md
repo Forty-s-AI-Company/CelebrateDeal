@@ -32,11 +32,13 @@
 
 ## D-004 — 商家 finance role 強制 MFA 的時程
 
-- 現況：platform admin 進 `/admin/**` 已強制 MFA；owner/admin/accountant 可自行啟用，但 vendor routes 尚未強制。
+**2026-10-03 已決定，取代下列歷史選項：**Owner 指定所有角色的 MFA 都為自願，包括平台管理員；未啟用者不被強制導向設定頁，已完成啟用者維持驗證。詳見 [MFA 產品政策](../admin-mfa-hardening-plan.md)。本項不再是待決策阻擋。
+
+- 歷史盤點：platform admin 進 `/admin/**` 已強制 MFA；owner/admin/accountant 可自行啟用，但當時 vendor routes 尚未強制。
 - 規格差異：`CELEBRATEDEAL_PLAN.md` 寫「平台與財務權限強制 MFA」；`admin-mfa-hardening-plan.md` 的 MVP Phase B 只強制 platform admin，並把商家強制 MFA 放在 100 個付費商家後。
 - 選項 A：正式收費前即對 vendor billing 與 owner security actions 強制 step-up MFA。
 - 選項 B（符合既有 MVP 文件）：目前只強制 platform admin；在到達商家門檻前建立 rollout 日期、提醒與 recovery 支援。
-- 目前判定：Needs Decision；未確認前不把所有 vendor 使用者直接鎖出系統。
+- 當時判定：Needs Decision；已由上述 owner 決策解決。
 
 ## D-005 — Payment order number 的唯一命名空間
 

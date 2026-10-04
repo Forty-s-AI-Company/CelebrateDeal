@@ -167,9 +167,9 @@ const REQUIRED_SANDBOX_ENVIRONMENT_KEYS = Object.freeze([
   "PAYUNI_SANDBOX_REFUND_ENABLED",
   "PAYUNI_TEST_APP_URL",
   "PAYUNI_STAGING_ALLOWED_HOST",
-  "PAYUNI_MERCHANT_ID",
-  "PAYUNI_HASH_KEY",
-  "PAYUNI_HASH_IV",
+  "PAYUNI_SANDBOX_MERCHANT_ID",
+  "PAYUNI_SANDBOX_HASH_KEY",
+  "PAYUNI_SANDBOX_HASH_IV",
   "PAYUNI_SANDBOX_ONETIME_CARD_NO",
   "PAYUNI_TEST_EXPIRY",
   "PAYUNI_TEST_CVV",
@@ -437,7 +437,7 @@ function safeHttpStatus(value) {
 }
 
 function diagnosticHashKey() {
-  const key = env("PAYUNI_HASH_KEY");
+  const key = env("PAYUNI_SANDBOX_HASH_KEY");
   return Buffer.byteLength(key) === 32 ? key : null;
 }
 
@@ -931,8 +931,8 @@ function safeEqual(left, right) {
 }
 
 function keyMaterial() {
-  const key = env("PAYUNI_HASH_KEY");
-  const iv = env("PAYUNI_HASH_IV");
+  const key = env("PAYUNI_SANDBOX_HASH_KEY");
+  const iv = env("PAYUNI_SANDBOX_HASH_IV");
   if (Buffer.byteLength(key) !== 32 || Buffer.byteLength(iv) !== 16) {
     throw new PayUniQueryFailure("request-configuration");
   }
@@ -990,7 +990,7 @@ function parseOuterPayload(text) {
 async function payUniRequest(path, version, payload, { signal } = {}) {
   assert(path === "/api/trade/query" || path === "/api/trade/close", "未核准的 PayUni API 路徑。");
   const url = assertExactHttpsHost(`${PAYUNI_API_ORIGIN}${path}`, PAYUNI_HOST, "PayUni API");
-  const merId = env("PAYUNI_MERCHANT_ID");
+  const merId = env("PAYUNI_SANDBOX_MERCHANT_ID");
   if (!merId) throw new PayUniQueryFailure("request-configuration");
   const encrypted = encryptInfo({ MerID: merId, ...payload });
   const body = new URLSearchParams({

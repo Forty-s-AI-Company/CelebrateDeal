@@ -113,7 +113,8 @@ export async function publishSalesProjectAction(formData: FormData) {
     db.registrationForm.count({ where: { vendorId: vendor.id, projectId, isActive: true } }),
     db.live.count({ where: { vendorId: vendor.id, projectId } }),
     db.consultationEvent.findMany({ where: { vendorId: vendor.id, projectId, isActive: true }, select: { weeklySchedule: true } }),
-    db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
+    // A legacy or inconsistent row cannot satisfy the publication gate merely by status.
+    db.paymentMethodReference.count({ where: { vendorId: vendor.id, scopeType: "VENDOR", membershipId: null, status: "verified", verifiedAt: { not: null, lte: now }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
   ]);
   const hasAvailability = consultations.some(({ weeklySchedule }) => Array.isArray(weeklySchedule) && weeklySchedule.some((entry) => {
     if (!entry || typeof entry !== "object") return false;

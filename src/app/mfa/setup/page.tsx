@@ -58,8 +58,8 @@ export default async function MfaSetupPage({
       <section className="w-full max-w-2xl">
         <div className="mb-6">
           <p className="text-sm font-semibold text-primary">CelebrateDeal</p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-950">設定管理員 MFA</h1>
-          <p className="mt-2 text-sm text-slate-600">進入 `/admin/*` 之前，先完成一次 TOTP 設定與驗證。</p>
+          <h1 className="mt-2 text-3xl font-semibold text-slate-950">設定多因子驗證</h1>
+          <p className="mt-2 text-sm text-slate-600">MFA 由你自行決定是否啟用；啟用後，每次新登入都需要驗證。</p>
         </div>
         {params.updated ? <p role="status" aria-live="polite" className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{updatedMessages[params.updated] ?? "已更新。"}</p> : null}
         {params.error ? <p role="alert" className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessages[params.error] ?? "設定失敗。"}</p> : null}
@@ -71,7 +71,7 @@ export default async function MfaSetupPage({
                 <h2 className="text-lg font-semibold text-slate-950">TOTP 設定</h2>
                 <p className="mt-1 text-sm text-slate-600">可使用 Google Authenticator、1Password、Authy 或其他支援 TOTP 的 App。</p>
               </div>
-              <Badge tone={auth.user.mfaFactor ? "green" : "orange"}>{auth.user.mfaFactor ? "enabled" : "setup required"}</Badge>
+              <Badge tone={auth.user.mfaFactor ? "green" : "blue"}>{auth.user.mfaFactor ? "已啟用" : "可自行啟用"}</Badge>
             </div>
 
             {auth.user.mfaFactor ? (

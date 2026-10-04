@@ -1,8 +1,5 @@
-import { config as loadEnv } from "dotenv";
 import { buildPayUniSandboxWebhookFixture, type PayUniSandboxFixtureName } from "../src/lib/payment-providers/payuni-fixtures";
-
-loadEnv({ path: ".env.local" });
-loadEnv({ path: ".env" });
+import { activePayUniCredentials } from "../src/lib/payuni-credentials";
 
 type Flags = {
   fixture: PayUniSandboxFixtureName;
@@ -38,19 +35,10 @@ function parseFlags() {
   return flags;
 }
 
-function assertEnv(name: string) {
-  const value = process.env[name];
-  if (!value?.trim()) {
-    throw new Error(`${name} is required.`);
-  }
-  return value;
-}
-
 async function main() {
+  if (process.env.PAYUNI_ENV !== "sandbox") throw new Error("Sandbox fixtures require PAYUNI_ENV=sandbox.");
   const flags = parseFlags();
-  const merchantId = assertEnv("PAYUNI_MERCHANT_ID");
-  const hashKey = assertEnv("PAYUNI_HASH_KEY");
-  const hashIv = assertEnv("PAYUNI_HASH_IV");
+  const { merchantId, key: hashKey, iv: hashIv } = activePayUniCredentials();
 
   const body = buildPayUniSandboxWebhookFixture({
     fixture: flags.fixture,

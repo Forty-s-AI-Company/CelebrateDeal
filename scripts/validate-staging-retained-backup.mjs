@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 import { validateReceipt } from "./secure-staging-runner.mjs";
 import { RETAINED_BACKUP_ARCHIVE_NAME } from "./staging-retained-backup.mjs";
 
+// Keep this immutable RC tree inside the blob-approved validator itself.
+export const RETAINED_BACKUP_MIGRATION_TREE_SHA = "8204bf3ce05a309035f55b2f90aaffb18aed05c8";
+
 export function validateRetainedBackupPath(candidate, receiptCandidate, runnerTemp = process.env.RUNNER_TEMP) {
   if (typeof candidate !== "string" || typeof receiptCandidate !== "string" || typeof runnerTemp !== "string") return false;
   try {
@@ -17,7 +20,7 @@ export function validateRetainedBackupPath(candidate, receiptCandidate, runnerTe
     if (!fs.lstatSync(candidate).isFile() || fs.lstatSync(candidate).isSymbolicLink()
       || !fs.lstatSync(receiptCandidate).isFile() || fs.lstatSync(receiptCandidate).isSymbolicLink()) return false;
     const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
-    if (!validateReceipt(receipt).ok || receipt.result !== "PASS" || receipt.retention.status !== "ENCRYPTED"
+    if (!validateReceipt(receipt, { pinnedMigrationTreeSha: RETAINED_BACKUP_MIGRATION_TREE_SHA }).ok || receipt.result !== "PASS" || receipt.retention.status !== "ENCRYPTED"
       || receipt.retention.recoverability !== "NOT_PROVEN" || receipt.retention.migrationAuthorization !== "BLOCKED") return false;
     const bytes = fs.readFileSync(archive);
     return bytes.length > 0 && bytes.subarray(0, 24).toString("ascii").startsWith("age-encryption.org/v1")

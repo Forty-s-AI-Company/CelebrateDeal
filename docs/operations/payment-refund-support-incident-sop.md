@@ -35,6 +35,7 @@ P0／P1 必須建立事件紀錄；P2 若涉及任何狀態不確定或個資風
 | 已完成退款的重複請求 | 終態為 `refunded` 或介面明確拒絕 `refund_already_processed` | 回覆已完成退款、保留拒絕原因分類 | 送出第二次退款、以空欄位繞過驗證 | 沒有明確終態或拒絕訊息 | 終態投影、拒絕分類、沒有新增退款／audit 的證據 |
 | 部分退款與超額退款 | 部分退款後 provider 顯示可退款餘額；超額請求應被拒絕且餘額不變 | 只依核准金額提出一次申請、比對 provider 與站內投影 | 把超額失敗標成完成、以多次小額請求規避餘額 | 已退款／可退款金額不一致 | 原金額、已退金額、餘額、拒絕分類與重查結果 |
 | provider 已接受、站內完成不明 | provider 與站內 webhook／付款投影不一致，或 callback 尚未可驗證 | 標記 `P1`、保留去識別參照、交平台管理員診斷 | 重播 provider、人工改寫帳務、發放額度或商品 | 超過作業窗口、重複／亂序事件、金額不同 | provider 封閉狀態、站內事件／交易狀態、調查結論與 owner 決定 |
+| provider 請求逾時且累計查詢未增加 | PayUni 查詢可能延後反映已接受的退款；`paid` 或既有 `partially_refunded` 不能證明該次請求未執行 | 保留 pending reservation、列 P1、持續唯讀核對及交財務 owner | 釋放鎖定、重送退款、把未變動 snapshot 當成確定拒絕 | 缺該次 request 的確定未執行證據或狀態仍不明 | 交易／reservation 去識別參照、查詢時間與累計變化、owner 判定 |
 | webhook `failed`／`retrying`／`exhausted` | 依事件狀態、retry count 與相同交易的後續狀態判讀 | `retrying` 期間觀察；`failed`／`exhausted` 建立 P1 並交平台管理員 | 直接重播 payload、略過驗簽、憑客服訊息改成 processed | `exhausted`、重複副作用、終態倒退或驗簽疑慮 | 去識別 event／transaction 參照、狀態、retry 分類、後續處置與無重複副作用證據 |
 
 ## 4. 必須停止與升級的條件

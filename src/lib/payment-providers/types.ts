@@ -70,6 +70,9 @@ export function checkoutSessionHasUsableDestination(
 }
 
 export type PaymentMethodSetupSessionInput = {
+  /** Opaque values the provider must echo in its signed setup callback. */
+  intentId: string;
+  setupNonce: string;
   vendor: Vendor;
   scopeType: "VENDOR" | "MEMBERSHIP";
   teamId?: string;

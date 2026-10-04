@@ -39,7 +39,7 @@ const errorMessages: Record<string, string> = {
   last_owner: "至少要保留一位 active owner。",
   member_not_found: "找不到可停用的成員。",
   member_confirmation: "請輸入要停用成員的 Email 以確認操作。",
-  mfa_required: "管理後台前需要先完成 MFA 設定。",
+  mfa_required: "此操作需要先啟用 MFA。",
   mfa_code: "TOTP 驗證碼不正確。",
   recovery_rate_limited: "Recovery codes 重建嘗試次數過多，請 15 分鐘後再試。",
   recovery_unavailable: "Recovery codes 驗證保護暫時無法使用，請稍後再試。",
@@ -130,9 +130,9 @@ export default async function SecuritySettingsPage({
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-slate-950">多因子驗證</h2>
-              <p className="mt-1 text-sm text-slate-500">平台財務後台會要求管理員先完成 TOTP 驗證；recovery code 只顯示一次。</p>
+              <p className="mt-1 text-sm text-slate-500">你可以自行啟用 TOTP；啟用後，每次新登入都需要驗證。Recovery code 只顯示一次。</p>
             </div>
-            <Badge tone={auth.user.mfaFactor ? "green" : "orange"}>{auth.user.mfaFactor ? "enabled" : "required for admin"}</Badge>
+            <Badge tone={auth.user.mfaFactor ? "green" : "blue"}>{auth.user.mfaFactor ? "已啟用" : "可自行啟用"}</Badge>
           </div>
 
           {auth.user.mfaFactor ? (
@@ -158,7 +158,7 @@ export default async function SecuritySettingsPage({
             <form action="/api/settings/security/mfa/start" method="post" className="grid gap-3">
               <CsrfField />
               <p className="rounded-lg border border-orange-100 bg-orange-50 p-4 text-sm text-orange-800">
-                尚未啟用 MFA。若這個帳號需要進入 `/admin/*`，啟用後才能繼續操作財務與 webhook 後台。
+                尚未啟用 MFA。你可以繼續使用目前的帳號權限，也可以選擇啟用以加強登入保護。
               </p>
               <SubmitButton>開始設定 TOTP</SubmitButton>
             </form>
