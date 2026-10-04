@@ -219,5 +219,19 @@
     "status": "FAILED",
     "step": "Unit tests and coverage thresholds",
     "diagnosis": "Pending; GitHub annotations only report exit1 without specific test failure"
+  },
+  "ci_registry_repair": {
+    "failed_run": 37234634199,
+    "failed_head": "345402de2d857f42d09bcd90775df3c9641b4c02",
+    "root_cause": "GET /api/live-interactions and POST /api/live-interactions missing from API_CONTRACT_REGISTRY.md",
+    "change": "Documented viewer admission, tenant/product binding, signed purchase identity, transaction/replay and response contracts.",
+    "validation": {
+      "api_registry_tests": 1,
+      "actual_verification_checkout_payment_draw_db_tests": 15,
+      "passed": 16,
+      "failed": 0,
+      "receipt": ".ai-team/tmp/advanced-interaction-db-results.json"
+    },
+    "full_ci": "Requires new published head run; previous failure is not passing evidence."
   }
 }
