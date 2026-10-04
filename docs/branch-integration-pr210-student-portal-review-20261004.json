@@ -36,7 +36,7 @@
       "recommended_fix": "Require a mailbox-delivered single-use magic link before granting account-wide portal access. Checkout may navigate to login; an order grant must remain limited to that order.",
       "required_test": "Two orders share an email; browser possesses only the newer order grant. Checkout entry must not create portal session or access the other order. Only consuming the emailed capability can authenticate.",
       "confidence": "high",
-      "verification": "Static cross-file boundary analysis; no real checkout or exploit executed."
+      "verification": "Isolated mocked Server Action regression reproduces the unexpected checkout capability issue; fixed candidate redirects to verified login. Not an end-to-end exploit."
     },
     {
       "severity": "MAJOR",
@@ -48,7 +48,7 @@
       "recommended_fix": "Queue email consistently; browser tests capture a synthetic local mail sink internally instead of exposing the capability in action response.",
       "required_test": "No response contains mockLink under development, test or production; synthetic mail sink only exists inside local test harness.",
       "confidence": "high",
-      "verification": "Static branch inspection."
+      "verification": "Mocked action regressions reproduce capability disclosure under development and test. Fixed candidate queues encrypted email in all three environments."
     },
     {
       "severity": "MINOR",
@@ -60,7 +60,7 @@
       "recommended_fix": "Require issuedAt <= now and expiresAt > issuedAt, keeping existing max TTL and exact token TTL.",
       "required_test": "Future-issued signed/encrypted payloads and nonpositive session duration fail closed.",
       "confidence": "high",
-      "verification": "Static predicate review."
+      "verification": "Four added synthetic temporal tests fail against exact source and pass against candidate; original seven auth tests also pass with deterministic clock."
     }
   ],
   "milestone": {
@@ -76,5 +76,43 @@
     "final published head quality CI and canonical acceptance gate"
   ],
   "production_operations": false,
-  "runtime_verified": false
+  "runtime_verified": false,
+  "candidate_validation": {
+    "scope": "Isolated recovery candidate; not merged or fully accepted",
+    "source_head": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+    "temporal_baseline": {
+      "passed": 7,
+      "failed": 4
+    },
+    "actions_baseline_with_temporal_fix": {
+      "passed": 13,
+      "failed": 3
+    },
+    "candidate": {
+      "exit": 0,
+      "passed": 16,
+      "failed": 0,
+      "pending": 0
+    },
+    "files": [
+      {
+        "file": "student-portal-actions-boundary.test.ts",
+        "sha256": "a50ae5fa05a4c1e8e3bed2aacc0f162d9dc250e5589978ace688fd8d4423732b"
+      },
+      {
+        "file": "student-portal-actions.ts",
+        "sha256": "bc7e5b03a871fd20e31c901729ad57d38cc8bf8f7080df0d674bca7ae55774bf"
+      },
+      {
+        "file": "student-portal-auth.test.ts",
+        "sha256": "67711b8fac4519c4c3a98e5e22a666891496484028e6748ef933d3cffdbae528"
+      },
+      {
+        "file": "student-portal-auth.ts",
+        "sha256": "b7b98ee1bc89dd4b4b8fd9ab37d81662682eed4b830520bbc73961134917babb"
+      }
+    ],
+    "external_operations": false,
+    "remaining": "Port complete portal, disable checkout-purpose acceptance in access route, migration, real database isolation/consume races, browser mail sink, full independent review and CI."
+  }
 }
