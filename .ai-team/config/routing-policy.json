@@ -50,7 +50,7 @@
       "minimum_team": "ai-team-lite"
     },
     "sol": {
-      "slug": "gpt-6-sol",
+      "slug": "gpt-6.1-sol",
       "provider": "codex",
       "minimum_team": "ai-team"
     },
@@ -123,6 +123,7 @@
   "task_keywords": {
     "copy": "文案|錯字|typo|copy[ _-](?:only|edit)|文字修改",
     "architecture": "architecture|大型架構",
+    "agent": "complex[ _-]agent|複雜代理|複雜 agent",
     "business_review": "business.logic.review|商業邏輯審查",
     "deep_review": "deep.review|深度審查",
     "broad_review": "large.diff|大型.diff",
@@ -227,11 +228,14 @@
   },
   "MODEL_ROUTING": {
     "engineering": {
-      "low": "luna",
-      "medium": "luna",
-      "high": "sol",
-      "very_high": "sol"
+      "trivial": {"model": "luna", "effort": "low"},
+      "routine": {"model": "sol", "effort": "low"},
+      "medium": {"model": "sol", "effort": "medium"},
+      "large": {"model": "sol", "effort": "high"},
+      "complex": {"model": "sol", "effort": "xhigh"},
+      "extreme": {"model": "sol", "effort": "max"}
     },
+    "simple_task_types": ["copy", "docs", "format", "ui", "test_fix", "explore", "manager", "summarize", "release"],
     "manager": "luna"
   },
   "MODEL_FALLBACK": {

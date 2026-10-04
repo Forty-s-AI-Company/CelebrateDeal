@@ -22,21 +22,21 @@ def available():
 
 
 class AcceptanceTests(unittest.TestCase):
-    def test_luna_first_model_registry_and_effort(self):
+    def test_sol_61_model_registry_and_effort(self):
         policy = load_policy()
         self.assertEqual({key for key, value in policy["models"].items() if value["provider"] == "codex"}, {"luna", "sol", "astra"})
         for key in ("luna", "sol", "astra"):
-            self.assertTrue(policy["models"][key]["slug"].startswith("gpt-6-"))
+            self.assertEqual(policy["models"][key]["slug"], {"luna": "gpt-6-luna", "sol": "gpt-6.1-sol", "astra": "gpt-6-astra"}[key])
         self.assertEqual(policy["limits"]["max_parallel_agents"], 1)
         self.assertEqual(policy["limits"]["max_writers"], 1)
         self.assertFalse(policy["limits"]["automatic_spawn"])
         medium = route({"task_summary": "well specified CRUD", "complexity": "medium"})
-        self.assertEqual((medium["model_key"], medium["reasoning_effort"]), ("luna", "high"))
+        self.assertEqual((medium["model_key"], medium["reasoning_effort"]), ("sol", "medium"))
         mechanical = route({"task_summary": "mechanical rename", "code_surface_area": 99, "mechanical_change": True})
-        self.assertEqual(mechanical["model_key"], "luna")
+        self.assertEqual((mechanical["model_key"], mechanical["reasoning_effort"]), ("sol", "high"))
         self.assertEqual(route({"task_summary": "difficult integration", "task_type": "cross_module"})["model_key"], "sol")
         very_high = route({"task_summary": "exceptional architecture", "complexity": "very_high"})
-        self.assertEqual(very_high["model_key"], "sol")
+        self.assertEqual((very_high["model_key"], very_high["reasoning_effort"]), ("sol", "max"))
 
     def test_astra_requires_reason_and_evidence(self):
         task = {"task_summary": "unresolved architecture", "task_type": "architecture", "astra_reason": "sol_insufficient"}
@@ -46,6 +46,51 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(route(task)["model_key"], "astra")
         with self.assertRaises(ValueError):
             route({"task_summary": "simple copy", "astra_reason": "invented_reason"})
+
+    def test_sol_61_engineering_profiles(self):
+        # Profile changes replace the old Luna-first engineering defaults only.
+        cases = [
+            ({"task_type": "ui", "complexity": "low"}, "luna", "low"),
+            ({"task_type": "implement", "complexity": "low"}, "sol", "low"),
+            ({"task_type": "implement", "complexity": "low", "task_summary": "ordinary debugging"}, "sol", "low"),
+            ({"task_type": "crud", "complexity": "medium"}, "sol", "medium"),
+            ({"task_type": "format", "changed_files": ["docs/a.md", "docs/b.md"], "mechanical_change": True}, "sol", "high"),
+            ({"task_type": "implement", "context_size": 30000}, "sol", "high"),
+            ({"task_type": "architecture"}, "sol", "xhigh"),
+            ({"task_type": "agent"}, "sol", "xhigh"),
+            ({"task_type": "implement", "complexity": "low", "risk": "high"}, "sol", "xhigh"),
+            ({"task_type": "implement", "complexity": "very_high"}, "sol", "max"),
+        ]
+        for fields, model, effort in cases:
+            with self.subTest(fields=fields):
+                result = route({"task_summary": "bounded task", **fields})
+                self.assertEqual((result["model_key"], result["reasoning_effort"]), (model, effort))
+                self.assertEqual(result["resolved"]["model"], load_policy()["models"][model]["slug"])
+                self.assertEqual(result["observed"]["model"], "unknown")
+                self.assertEqual(result["spawn_count"], 0)
+                if effort in {"xhigh", "max"}:
+                    self.assertTrue(result["effort_reason"])
+        low_risk = route({"task_summary": "bounded task", "complexity": "low", "risk": "critical"}, available())
+        self.assertEqual(low_risk["signals"]["complexity"], "low")
+        self.assertEqual(low_risk["review_plan"][0]["role"], "critical_review")
+        pro = route({"task_summary": "copy edit"}, team="ai-team-pro")
+        self.assertEqual(pro["model_key"], "luna")
+        capped = route({"task_summary": "ordinary CRUD", "hard_team_cap": True}, team="ai-team-lite")
+        self.assertEqual(capped["status"], "TEAM_CAP_BLOCKED")
+
+    def test_sol_61_effort_floor_and_runtime_support(self):
+        task = {"task_summary": "bounded architecture", "task_type": "architecture", "reasoning_effort": "low"}
+        result = route(task)
+        self.assertEqual(result["requested"]["effort"], "low")
+        self.assertEqual(result["resolved"]["effort"], "xhigh")
+        self.assertEqual(result["effort_adjustment"], "required_policy_floor")
+        with self.assertRaisesRegex(ValueError, "UNSUPPORTED_MODEL_EFFORT"):
+            route(task, {"supported_efforts": {"sol": ["low", "medium", "high"]}})
+        with self.assertRaisesRegex(ValueError, "UNSUPPORTED_MODEL_EFFORT"):
+            route({"task_summary": "ordinary CRUD", "reasoning_effort": "minimal"})
+        with self.assertRaisesRegex(ValueError, "UNSUPPORTED_MODEL_EFFORT"):
+            route({"task_summary": "ordinary CRUD", "reasoning_effort": "max", "effort_reason": "bounded exception"},
+                  {"supported_efforts": {"sol": ["low"]}})
 
     def test_capabilities_are_on_demand(self):
         ambiguous = route({"task_summary": "build a new feature", "ambiguous_requirements": True})
@@ -67,7 +112,7 @@ class AcceptanceTests(unittest.TestCase):
             with self.subTest(category=category):
                 result = route({"task_summary": "one-line fix", "difficulty": "trivial", "risk_categories": [category]})
                 self.assertEqual(result["signals"]["risk"], "critical")
-                self.assertEqual(result["model_key"], "luna")
+                self.assertEqual((result["model_key"], result["reasoning_effort"]), ("sol", "xhigh"))
                 self.assertEqual(result["review_plan"][0]["role"], "critical_review")
 
     def test_evidence_gate_never_uses_model_claim_as_test_pass(self):
@@ -244,7 +289,7 @@ class AcceptanceTests(unittest.TestCase):
         for descriptor in (root / ".codex/agents").glob("*.toml"):
             with self.subTest(descriptor=descriptor.name):
                 value = tomllib.loads(descriptor.read_text(encoding="utf-8"))
-                self.assertIn(value["model"], {"gpt-6-luna", "gpt-6-sol", "gpt-6-astra"})
+                self.assertIn(value["model"], {"gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"})
         tomllib.loads((root / ".codex/config.toml").read_text(encoding="utf-8"))
 
     def test_unknown_quota_does_not_mean_zero_or_unlimited(self):
@@ -257,7 +302,7 @@ class AcceptanceTests(unittest.TestCase):
     def test_twelve_cases(self):
         cases = [
             ("01-copy", {"task_summary": "修改文案"}, "auto", available(), "ai-team-lite", "luna"),
-            ("02-crud", {"task_summary": "一般 CRUD"}, "auto", available(), "ai-team-lite", "luna"),
+            ("02-crud", {"task_summary": "一般 CRUD"}, "auto", available(), "ai-team", "sol"),
             ("03-cross-module", {"task_summary": "跨模組 Feature"}, "auto", available(), "ai-team", "sol"),
             ("04-architecture", {"task_summary": "大型 architecture"}, "auto", available(), "ai-team", "sol"),
             ("05-large-diff", {"task_summary": "ordinary large diff review"}, "auto", available(), "ai-team", "gemini_high"),
@@ -267,7 +312,7 @@ class AcceptanceTests(unittest.TestCase):
             ("09-gemini-zero", {"task_summary": "ordinary large diff review"}, "auto", {**available(), "quota": {"gemini": 0}}, "ai-team", "sol"),
             ("10-no-agy", {"task_summary": "Payment review"}, "auto", {"agy_available": False}, "ai-team-pro", "astra"),
             ("11-pro-copy", {"task_summary": "修改文案"}, "ai-team-pro", available(), "ai-team-pro", "luna"),
-            ("12-one-line", {"task_summary": "one line payment webhook", "complexity": "low"}, "auto", available(), "ai-team-pro", "luna"),
+            ("12-one-line", {"task_summary": "one line payment webhook", "complexity": "low"}, "auto", available(), "ai-team-pro", "sol"),
         ]
         for name, task, team, runtime, expected_team, expected_model in cases:
             with self.subTest(case=name):
@@ -284,14 +329,14 @@ class AcceptanceTests(unittest.TestCase):
             with self.subTest(category=category):
                 result = route({"task_summary": "small edit", "complexity": "low", "risk_categories": [category]}, available(), "ai-team-lite")
                 self.assertEqual(result["signals"]["risk"], "critical")
-                self.assertEqual(result["model_key"], "luna")
+                self.assertEqual((result["model_key"], result["reasoning_effort"]), ("sol", "xhigh"))
                 self.assertTrue(result["escalated"])
                 self.assertEqual(result["review_plan"][0]["model_key"], "opus")
 
     def test_inputs_raise_capability(self):
         for field in ("context_size", "expected_duration", "code_surface_area"):
             task = {"task_summary": "small copy edit", "complexity": "low", field: load_policy()["size_thresholds"][field][1]}
-            self.assertEqual(route(task)["model_key"], "luna")
+            self.assertEqual(route(task)["model_key"], "sol")
         for field in ("production_impact", "security_impact", "data_integrity_impact"):
             self.assertEqual(route({"task_summary": "small copy edit", field: "critical"})["signals"]["risk"], "critical")
 
@@ -306,7 +351,7 @@ class AcceptanceTests(unittest.TestCase):
                 else:
                     self.assertEqual(result["model_key"], "sonnet")
         ordinary = route({"task_summary": "small bounded change", "task_type": "implement", "complexity": "low"})
-        self.assertEqual((ordinary["signals"]["complexity"], ordinary["model_key"]), ("low", "luna"))
+        self.assertEqual((ordinary["signals"]["complexity"], ordinary["model_key"], ordinary["reasoning_effort"]), ("low", "sol", "low"))
 
     def test_auth_permission_and_security_text_fallbacks(self):
         positives = (
@@ -320,7 +365,7 @@ class AcceptanceTests(unittest.TestCase):
             with self.subTest(summary=summary):
                 result = route({"task_summary": summary, "complexity": "low"}, available())
                 self.assertEqual(result["signals"]["risk"], "critical")
-                self.assertEqual(result["model_key"], "luna")
+                self.assertEqual((result["model_key"], result["reasoning_effort"]), ("sol", "xhigh"))
                 self.assertEqual(result["review_plan"][0]["model_key"], "opus")
         for summary in (
             "session documentation", "token budget notes", "secretary profile copy", "role description",
@@ -332,7 +377,7 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(structured["signals"]["risk"], "critical")
 
     def test_difficulty_is_strict_and_legacy_mapping_is_explicit(self):
-        expected = {"auto": "medium", "trivial": "low", "routine": "medium", "complex": "high", "critical": "very_high"}
+        expected = {"auto": "low", "trivial": "low", "routine": "medium", "complex": "high", "critical": "very_high"}
         for difficulty, complexity in expected.items():
             with self.subTest(difficulty=difficulty):
                 result = route({"task_summary": "bounded implementation", "task_type": "implement", "difficulty": difficulty})
@@ -364,7 +409,7 @@ class AcceptanceTests(unittest.TestCase):
     def test_general_review_consumes_effective_complexity_and_availability(self):
         expected = {
             "low": ("self_review", "luna"),
-            "medium": ("self_review", "luna"),
+            "medium": ("self_review", "sol"),
             "high": ("senior_review", "sonnet"),
             "very_high": ("senior_review", "sonnet"),
         }
@@ -385,13 +430,13 @@ class AcceptanceTests(unittest.TestCase):
                 self.assertEqual((result["role"], result["model_key"]), ("senior_review", "sol"))
 
     def test_roles(self):
-        for kind, model in [("manager","luna"),("explore","luna"),("plan","luna"),("release","luna"),("architecture","sol"),("root_cause","sol")]:
+        for kind, model in [("manager","luna"),("explore","luna"),("plan","sol"),("release","luna"),("architecture","sol"),("root_cause","sol")]:
             self.assertEqual(route({"task_summary": "bounded task", "task_type": kind})["model_key"], model)
         self.assertEqual(route({"task_summary":"dispute", "task_type":"arbiter"})["status"], "ASTRA_REASON_REQUIRED")
         self.assertEqual(route({"task_summary":"dispute", "task_type":"arbiter", "astra_reason":"major_reviewer_conflict"})["model_key"], "astra")
 
     def test_native_fallback_is_capability_preserving(self):
-        result = route({"task_summary": "ordinary CRUD"}, {"models": {"luna": {"quota_remaining": 0}}})
+        result = route({"task_summary": "copy edit", "task_type": "copy"}, {"models": {"luna": {"quota_remaining": 0}}})
         self.assertEqual(result["selected_model"], "luna")
         self.assertEqual(result["model_key"], "sol")
         self.assertEqual(result["fallback_events"][0]["reason"], "quota_exhausted")
@@ -527,7 +572,7 @@ class AcceptanceTests(unittest.TestCase):
     def test_escalation_reasons_are_structured(self):
         cross = route({"task_summary":"cross module feature","task_type":"cross_module","complexity":"low"}, available(), "ai-team-lite")
         self.assertTrue({"task_type_floor", "risk", "model_capability"}.issubset(cross["escalation_reasons"]))
-        fallback = route({"task_summary":"ordinary CRUD"}, {"models":{"luna":{"available":False}}}, "ai-team-lite")
+        fallback = route({"task_summary":"copy edit"}, {"models":{"luna":{"available":False}}}, "ai-team-lite")
         self.assertIn("fallback", fallback["escalation_reasons"])
         critical = route({"task_summary":"payment change","complexity":"low"}, available(), "ai-team-lite")
         self.assertIn("required_review", critical["escalation_reasons"])

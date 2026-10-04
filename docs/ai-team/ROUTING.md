@@ -24,13 +24,17 @@ Task type floor、caller complexity 與 size requirement 決定實作 complexity
 | 任務條件 | 直接模型 | reasoning |
 | --- | --- | --- |
 | 可用確定性工具完成的搜尋與分類 | 工具優先；需語意判斷時 GPT-6 Luna | low |
-| 規格清楚的局部與中型 CRUD、API、UI、測試 | GPT-6 Luna | high |
-| 模糊需求、困難跨模組整合、複雜 debug | GPT-6 Sol | medium；證據需要時 high |
-| 大型 architecture、困難 RCA 與一致性推理 | GPT-6 Sol | medium/high |
+| 超簡單 copy、UI、文件、局部快速工作 | GPT-6 Luna | low |
+| 一般 coding/debugging、CRUD、API | GPT-6.1 Sol | low |
+| 中等 complexity | GPT-6.1 Sol | medium |
+| 大 context、多檔修改或 High complexity | GPT-6.1 Sol | high |
+| 複雜 agent、architecture、RCA、High/Critical risk 修改 | GPT-6.1 Sol | xhigh |
+| Very High complexity | GPT-6.1 Sol | max；不足時附具體理由升 Astra |
 | 重大未解問題、明確仲裁或 Sol 不足 | GPT-6 Astra | low 起；提高須註明理由 |
-| 低實作 complexity 但 Payment、Auth、Security、RBAC 等 Critical risk | 明確且局部的實作可用 Luna high；困難實作直接 Sol | 必要檢查與合格 Critical 獨立審查不能省略 |
+| 低實作 complexity 但 Payment、Auth、Security、RBAC 等 Critical risk | GPT-6.1 Sol | xhigh；必要檢查與合格 Critical 獨立審查不能省略 |
 
 風險不會因為只改一行而消失。例如單行 Payment/Auth 修改仍會升級到 Critical path。
+多檔工作提高 workload/effort，機械式修改仍可維持 Low complexity。Very High 優先 Sol max，不直接選 Astra。政策產生的 xhigh/max 會記錄 `engineering_profile` 作為 `effort_reason`；明示較低 effort 不能降低政策底線，不支援的組合回報錯誤。
 `ai-team-pro` 是能力上限，不是 Astra/Opus 的強制啟動開關；Pro 內的簡單 copy 仍選 Luna。
 
 ## Review routing
@@ -68,7 +72,7 @@ agy failure receipt 必須保留分類：`AUTH_REQUIRED`、`HOST_PERMISSION_BLOC
 | invocation | 可用能力上限 | 行為 |
 | --- | --- | --- |
 | `ai-team-lite` | GPT-6 Luna、已驗證 Gemini Flash Medium | 小範圍低風險；預設單 Agent |
-| `ai-team` | 額外允許 GPT-6 Sol、Flash High、已驗證 Sonnet | 日常正式工程 |
+| `ai-team` | 額外允許 GPT-6.1 Sol、Flash High、已驗證 Sonnet | 日常正式工程；一般 coding 起用 Sol low |
 | `ai-team-pro` | 全部模型，含 Astra/Opus | 高風險或高複雜度；仍依任務選最低足夠模型 |
 | `ai-team-style` | Lite 能力上限 | 保留視覺偏好，不建立第四套政策 |
 

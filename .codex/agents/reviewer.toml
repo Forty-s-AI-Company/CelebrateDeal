@@ -1,6 +1,6 @@
 name = "reviewer"
 description = "唯讀審查代理：檢查正確性、安全性、資料風險、回歸與測試缺口。"
-model = "gpt-6-sol"
+model = "gpt-6.1-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """

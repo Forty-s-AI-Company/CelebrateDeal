@@ -1,17 +1,15 @@
-#model = "gpt-5.6-terra"
-#model_reasoning_effort = "high"
-
+# AI Team vNext: routing policy is canonical in .ai-team/config/routing-policy.json.
+# The version-controlled launcher rebuilds the ignored runtime when needed.
 [mcp_servers.ai_team_router]
-command = "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\.venv\\Scripts\\python.exe"
-args = ["C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\mcp_server\\server.py"]
-cwd = "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal"
-startup_timeout_sec = 10
+command = "pwsh"
+args = ["-NoProfile", "-File", ".ai-team/scripts/Start-AiTeamMcp.ps1"]
+cwd = "."
+startup_timeout_sec = 120
 tool_timeout_sec = 15
-enabled = true
+enabled = false # Live Desktop MCP startup is not verified; the Python CLI adapter remains available.
 required = false
 default_tools_approval_mode = "prompt"
-enabled_tools = ["router_status", "route_task", "goal_bootstrap", "goal_get_state", "goal_checkpoint", "goal_resume", "goal_finalize"]
-env = {AI_TEAM_ROOT = "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal", AI_TEAM_CONFIG = "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\config\\router.json"}
+enabled_tools = ["router_status", "route_task", "snapshot_task", "assess_task", "goal_bootstrap", "goal_get_state", "goal_checkpoint", "goal_resume", "goal_finalize"]
 
 [mcp_servers.ai_team_router.tools.router_status]
 approval_mode = "auto"

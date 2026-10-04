@@ -75,7 +75,7 @@ function Invoke-AiTeamProcess {
     Assert-Route (-not $major.accepted -and $major.review.findings[0].severity -eq 'MAJOR') 'finding was incorrectly accepted as PASS'
     foreach ($scenario in @('cli-failure','invalid-output','no-agy','host-permission','no-installed','discovery-first-output-timeout','discovery-idle-timeout')) {
         $fallback = Run-Wrapper $scenario 'Invoke-AgyDeep.ps1' 'complex business logic review'
-        Assert-Route ($fallback.status -eq 'FALLBACK_HANDOFF_REQUIRED' -and $fallback.finalModel -eq 'gpt-6-sol') "Sonnet fallback failed: $scenario"
+        Assert-Route ($fallback.status -eq 'FALLBACK_HANDOFF_REQUIRED' -and $fallback.finalModel -eq 'gpt-6.1-sol') "Sonnet fallback failed: $scenario"
         Assert-Route (-not $fallback.reviewed -and -not $fallback.completed) 'handoff falsely marked completed'
         Assert-Route (@($fallback.attempts).Count -le 1) 'failed model was retried'
         if ($scenario -eq 'host-permission') { Assert-Route ($fallback.agy_discovery_status -eq 'HOST_PERMISSION_BLOCKED') 'Host permission failure was not preserved in the receipt' }
@@ -84,7 +84,7 @@ function Invoke-AiTeamProcess {
         if ($scenario -eq 'discovery-idle-timeout') { Assert-Route ($fallback.agy_discovery_process_status -eq 'IDLE_TIMEOUT') 'Discovery idle timeout was hidden by the fallback classification' }
     }
     $legacy = Run-Wrapper 'no-agy' 'Invoke-AiTeamReadOnlyFailover.ps1' 'ordinary large diff review'
-    Assert-Route ($legacy.finalModel -eq 'gpt-6-sol') 'legacy failover entry did not use shared route'
+    Assert-Route ($legacy.finalModel -eq 'gpt-6.1-sol') 'legacy failover entry did not use shared route'
     $sensitive = Run-Wrapper 'normal' 'Invoke-AgyFast.ps1' 'token: synthetic-do-not-send'
     Assert-Route ($sensitive.status -eq 'BLOCKED_SENSITIVE_INPUT') 'sensitive prompt was dispatched'
     $priorChild = $env:AI_TEAM_CHILD
@@ -129,7 +129,7 @@ exit $LASTEXITCODE
     $criticalOverride = Run-SignalCase 'critical-override'
     Assert-Route ($criticalOverride.exitCode -eq 0 -and $criticalOverride.receipt.route.signals.complexity -eq 'very_high' -and $criticalOverride.receipt.route.model_key -ne 'luna') 'explicit critical difficulty was downgraded by structured complexity'
     $routineOverride = Run-SignalCase 'routine-override'
-    Assert-Route ($routineOverride.exitCode -eq 0 -and $routineOverride.receipt.route.signals.complexity -eq 'medium' -and $routineOverride.receipt.route.model_key -eq 'luna') 'explicit routine difficulty did not override structured high complexity'
+    Assert-Route ($routineOverride.exitCode -eq 0 -and $routineOverride.receipt.route.signals.complexity -eq 'medium' -and $routineOverride.receipt.route.model_key -eq 'sol' -and $routineOverride.receipt.route.reasoning_effort -eq 'medium') 'explicit routine difficulty did not override structured high complexity'
     $taskFloor = Run-SignalCase 'task-floor'
     Assert-Route ($taskFloor.exitCode -eq 0 -and $taskFloor.receipt.route.signals.complexity -eq 'high' -and $taskFloor.receipt.route.model_key -eq 'sol') 'task type floor did not raise explicit low difficulty'
     $riskFloor = Run-SignalCase 'risk-floor'

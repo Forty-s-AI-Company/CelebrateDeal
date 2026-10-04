@@ -11,13 +11,13 @@
 AI Team 的唯一 routing source of truth 是 `.ai-team/config/routing-policy.json`，搭配 `.ai-team/mcp_server/routing.py`、`docs/ai-team/ROUTING.md` 與 `docs/ai-team/handoff-schema.md`。`.agents/skills/*` 與 `.codex/agents/*` 只提供 thin adapter、角色權限與最小必要 context，不得複製模型階梯、fallback table 或完整 prompt。
 
 - `ai-team-lite`：能力上限為 GPT-6 Luna 與已驗證的 Gemini Flash Medium；低風險任務優先單 Agent。
-- `ai-team`：額外允許 GPT-6 Sol、Gemini Flash High 與已驗證的 Sonnet；依 task signals 選模型與必要 review。
+- `ai-team`：額外允許 GPT-6.1 Sol、Gemini Flash High 與已驗證的 Sonnet；依 task signals 選模型與必要 review。
 - `ai-team-pro`：開放全部模型，含 Astra/Opus；Pro 不代表每次使用高階模型。
 - `ai-team-style`：Lite 能力上限加上 UI/UX 視覺偏好，不建立第四套 routing。
 - Routing 依 complexity、risk、context、task type、duration、surface、production/security/data impact、availability 與 quota 選最低足夠模型；Critical risk 提高驗證與獨立審查底線，不機械指定實作模型。
 - Routing 與 fallback 分離。agy failure 必須區分 `AUTH_REQUIRED`、`HOST_PERMISSION_BLOCKED`、`AGY_NOT_INSTALLED`、`MODEL_UNAVAILABLE`、`AGY_RUNTIME_ERROR`，並回到適合的 Codex fallback。
 - Native agent descriptor 是 preset；真正 dispatch 必須明示 resolved model 與 effort，且實際觀測不到時記為 unknown。主對話模型不會因子代理路由而改變。
-- 明確規格的小中型工程優先 Luna high；難整合與推理由 Sol medium/high 處理。Astra 只在有 `astra_reason` 的例外使用；Medium／Very High 不直接綁模型。
+- 超簡單工作用 GPT-6 Luna；一般工程起用 GPT-6.1 Sol low，依 complexity、工作範圍與 risk 提高 effort，完整條件只維護於共享 routing policy。極高難度先用 Sol max；Astra 需具體 `astra_reason`。
 - 使用者的硬性 team cap 不得自動越界。Router 的結果是建議；只有具體執行回報才可填 observed model/effort。沒有 observed 就記 unknown。
 - Gemini 只提供廣域 candidate findings/QA；Sonnet 做深度 review；Opus 僅用於 Critical security、Auth、Permission、Payment、Billing、Production data、Migration 或重大爭議。
 
@@ -61,3 +61,13 @@ AI Team 的唯一 routing source of truth 是 `.ai-team/config/routing-policy.js
 - Routing：`docs/ai-team/ROUTING.md`
 - Handoff：`docs/ai-team/handoff-schema.md`
 - Validation：`docs/ai-team/vnext-validation.md`
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
