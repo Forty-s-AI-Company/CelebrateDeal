@@ -321,17 +321,16 @@
       ]
     },
     "browser": {
-      "tests": 2,
+      "tests": 3,
       "failed": 0,
       "scope": [
-        "synthetic encrypted mailbox queue -> browser login -> own orders -> logout",
-        "wrong tenant/replay rejection",
-        "single checkout grant cannot log into account"
+        "synthetic mailbox queue login and own dashboard, logout, wrong tenant and replay",
+        "single checkout grant cannot log into account",
+        "voucher stale rendered form rejects changed currency without rotation; valid exchange preserves public origin and HttpOnly cookie"
       ],
       "limitations": [
         "No external email provider dispatch",
-        "Voucher browser expansion pending",
-        "No claim of native player/community completion"
+        "No full course/calendar browser evidence"
       ]
     },
     "email_regression": {
@@ -348,11 +347,17 @@
       "tests": 3,
       "failed": 0,
       "scope": "canonical public origin and Secure/HttpOnly cookie behind internal proxy"
+    },
+    "full_suite_baseline": {
+      "passed": 4269,
+      "failed": 1,
+      "failure": "API registry omitted three new portal route contracts; documentation now added; rerun pending",
+      "disposable_cleanup": "PASS"
     }
   },
   "remaining": [
-    "Expanded voucher browser flow; final lint/typecheck/full coverage; protected PR exact-head CI and canonical acceptance",
-    "Native course player/progress/certificates, community, multilingual/PWA remain future feature packages; source PR210 not fully integrated"
+    "Full combined coverage and exact-head protected PR357 CI; canonical acceptance then merge",
+    "Native player/progress/certificates, community, multilingual/PWA remain future packages"
   ],
   "production_operations": false,
   "original_dirty_preserved": {
