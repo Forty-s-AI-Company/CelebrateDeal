@@ -93,11 +93,29 @@
     "tests/e2e/accountant-affiliate-detail-direct-url.spec.ts"
   ],
   "next": [
-    "Inspect action/data ownership and layout caller props before porting the full shell",
-    "Preserve existing role/feature gating and current account/session controls",
-    "Port matching navigation test labels with the actual rendered UI; retain cross-tenant negative assertions",
-    "Verify mobile menu and navigation in isolated browser before acceptance"
+    "Recover shell and five components as a coherent candidate, preserving listed current behaviors",
+    "Integrate server-side manager-scoped minimal project/onboarding DTO without changing schema",
+    "Add role-boundary layout tests and interactive menu/mobile browser coverage",
+    "Run independent permission review before protected PR acceptance"
   ],
   "tests_executed": false,
-  "caller_gap": "Current app layout passes vendorName, memberRole and enabledModules only; project switcher and onboarding task data require explicit caller integration."
+  "caller_gap": "Current app layout passes vendorName, memberRole and enabledModules only; project switcher and onboarding task data require explicit caller integration.",
+  "integration_constraints": [
+    {
+      "item": "platform MFA navigation",
+      "evidence": "Current app-shell role test requires /mfa/setup; original source test omits this expectation. Preserve current voluntary setup route."
+    },
+    {
+      "item": "public support and policy links",
+      "evidence": "Current shell renders PublicResourceLinks and tests require /policies and /support; original shell removes the import. Preserve usable access during shell redesign."
+    },
+    {
+      "item": "role-scoped onboarding DTO",
+      "evidence": "Original protected layout queries vendor projects and onboarding for every requireVendorContext caller. Current sales-workspace mutation actions requireVendorManagerContext. Gate manager-only read/props at server boundary before passing into client switcher/task panel."
+    },
+    {
+      "item": "existing test strength",
+      "evidence": "Keep current cross-tenant, unknown-role, support-only and platform navigation assertions; adapt rendering assertions to actual interactive account menu instead of deleting security tests."
+    }
+  ]
 }
