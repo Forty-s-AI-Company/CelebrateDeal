@@ -199,5 +199,14 @@
     ],
     "eslint": "PASS",
     "tsc": "PASS"
+  },
+  "checkout_registration_identity": {
+    "state": "IMPLEMENTED_PENDING_REVIEW",
+    "root_cause": "Checkout used short-lived consumed raw registration ID cookie while draw used persistent verified signed session; verified sessions could lose payment association on subsequent checkout.",
+    "fix": "Checkout verifies signed chat session, then resolves same-vendor VERIFIED submission/live. No raw-ID fallback. Signed session survives checkout; old raw attribution cookie still cleared.",
+    "route_tests": 59,
+    "eslint": "PASS",
+    "tsc": "PASS",
+    "remaining": "Independent review and full verification->real checkout->payment->draw browser/database chain"
   }
 }

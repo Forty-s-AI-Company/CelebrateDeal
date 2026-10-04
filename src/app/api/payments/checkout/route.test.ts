@@ -1,3 +1,4 @@
+import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, createFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -1142,8 +1143,16 @@ describe("checkout affiliate click attribution", () => {
 });
 
 describe("checkout form submission attribution", () => {
+  it.each(["raw", "tampered"])("does not assign a registration from a %s cookie", async (kind) => {
+    const cookie = kind === "raw" ? "celebratedeal_form_submission=submission-1"
+      : `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId: "submission-1" })}tampered`;
+    expect((await POST(checkoutRequest(cookie))).status).toBe(200);
+    expect(db.formSubmission.findFirst).not.toHaveBeenCalled();
+    expect(db.paymentTransaction.create.mock.calls[0]?.[0]?.data.metadata).not.toHaveProperty("formSubmissionId");
+  });
+
   it("carries a verified same-vendor live registration into transaction metadata", async () => {
-    const response = await POST(checkoutRequest("celebratedeal_form_submission=submission-1"));
+    const response = await POST(checkoutRequest(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId: "submission-1" })}`));
 
     expect(response.status).toBe(200);
     expect(db.formSubmission.findFirst).toHaveBeenCalledWith({
@@ -1162,12 +1171,13 @@ describe("checkout form submission attribution", () => {
       data: expect.objectContaining({ metadata: expect.objectContaining({ formSubmissionId: "submission-1", sourceLiveId: "live-1" }) }),
     }));
     expect(response.headers.getSetCookie().join("\n")).toContain("celebratedeal_form_submission=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=lax");
+    expect(response.headers.getSetCookie().join("\n")).not.toContain(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=`);
   });
 
   it("ignores a cross-vendor or invalid submission cookie without blocking checkout", async () => {
     db.formSubmission.findFirst.mockResolvedValue(null);
 
-    const response = await POST(checkoutRequest("celebratedeal_form_submission=foreign-submission"));
+    const response = await POST(checkoutRequest(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId: "foreign-submission" })}`));
 
     expect(response.status).toBe(200);
     expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({

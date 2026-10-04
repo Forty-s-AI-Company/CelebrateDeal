@@ -1,3 +1,4 @@
+import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import { consumeCheckoutVoucherClaim, VoucherClaimConflictError, type EligibleCheckoutVoucherClaim } from "@/lib/checkout-voucher-claim";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
@@ -988,8 +989,8 @@ function formSubmissionIdFromRequest(request: Request) {
   const cookie = request.headers.get("cookie");
   if (!cookie) return null;
 
-  const value = cookie.split(";").map((item) => item.trim()).find((item) => item.startsWith(`${FORM_SUBMISSION_COOKIE}=`))?.slice(FORM_SUBMISSION_COOKIE.length + 1);
-  return value && /^[a-zA-Z0-9_-]{1,128}$/.test(value) ? value : null;
+  const value = cookie.split(";").slice(0, 100).map((item) => item.trim()).find((item) => item.startsWith(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=`))?.slice(FORM_SUBMISSION_CHAT_SESSION_COOKIE.length + 1);
+  return value ? verifyFormSubmissionChatSessionToken(value)?.submissionId ?? null : null;
 }
 
 async function verifiedLiveRegistrationFromRequest(request: Request, vendorId: string) {
@@ -997,7 +998,7 @@ async function verifiedLiveRegistrationFromRequest(request: Request, vendorId: s
   if (!submissionId) return null;
 
   // The browser never sends a live ID. Attribution is attached only when its
-  // existing, httpOnly registration cookie resolves to this vendor's verified
+  // signed, verified registration session resolves to this vendor's verified
   // submission and an actual live relation.
   return getDb().formSubmission.findFirst({
     where: {
