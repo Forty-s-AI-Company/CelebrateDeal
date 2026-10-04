@@ -1,58 +1,11 @@
 {
-  "state": "VERIFIED_GAPS_PENDING_IMPLEMENTATION",
+  "state": "LOCAL_VALIDATED_PENDING_PROTECTED_CI",
   "candidate_head": "78672f510b2dc5fdcb7898a49bf4134d544d006b",
-  "files": [
-    {
-      "path": "src/app/(app)/settings/security/page.tsx",
-      "candidate_lf_sha256": "17952e23d0a6de561321068af3b5a7f5780ab9a6359e4783ebcbf085329758ab"
-    },
-    {
-      "path": "src/app/mfa/setup/page.tsx",
-      "candidate_lf_sha256": "eb6399c22bb7ec34c890e7d46e106366a0616c648c9ed96cd2ad3933001d1c1a"
-    },
-    {
-      "path": "src/components/mfa-enrollment-form.tsx",
-      "candidate_lf_sha256": "f876a6fbaab7196ed4c9163462e9ddb4ad23fd7245ecae4fb81cae58d0b9d01c"
-    },
-    {
-      "path": "src/lib/mfa-enrollment.ts",
-      "candidate_lf_sha256": "04c6927728b6e5ccdf571186d4a8209fd42fa3d5d025d79256a21c47fad3e6b5"
-    },
-    {
-      "path": "src/app/api/settings/security/mfa/start/route.ts",
-      "candidate_lf_sha256": "013601429f64dad334a3bfd00fb5b495b47119a6e87c134ce550a2fc7bc8fa69"
-    },
-    {
-      "path": "src/app/api/settings/security/mfa/confirm/route.ts",
-      "candidate_lf_sha256": "db149c8629fd67020ab7f695d7bdcc64978d05155b9f413a47b0a613cd66c341"
-    },
-    {
-      "path": "src/app/api/settings/security/mfa/recovery-codes/dismiss/route.ts",
-      "candidate_lf_sha256": "a07cf4bcfc9a74057d169b6292aa937cb3c2cc1014adcfc739de5e11ceb46d4c"
-    }
-  ],
-  "findings": [
-    {
-      "requirement": "Recover security settings QR enrollment UI",
-      "evidence": "Original page calls QRCode.toDataURL and renders Image; candidate page renders only secret and URI",
-      "preserve": "Pending setup userId binding, native enrollment POST, CSRF and existing vendor member management"
-    },
-    {
-      "requirement": "Recover safe return navigation through MFA setup",
-      "evidence": "Original setup accepts next, forwards hidden fields and verification link; candidate setup ignores next, enrollment service uses fixed destinations, native start/confirm/dismiss routes do not preserve next",
-      "scope": "Must reconcile service, forms, routes and actions together; simply copying old JSX leaves incomplete behavior",
-      "tests_needed": "Invalid external or backslash destinations rejected; start/restart/failure/success/recovery acknowledgement preserve validated internal return; desktop/mobile browser round trip"
-    },
-    {
-      "requirement": "Preserve current reliable recovery-code regeneration",
-      "evidence": "Original setup uses Server Action; candidate uses native POST route; preserve current security service and transport while recovering visuals"
-    }
-  ],
-  "acceptance": "No original files declared delivered; read-only gap analysis only",
-  "next": "Complete parent PR360 and onboarding publication, then implement MFA UI/navigation in a separate protected PR",
+  "acceptance": "Local validation and independent review passed; protected exact-head CI and canonical gate pending",
+  "next": "Publish MFA PR against master de0addfd and complete CI/acceptance before merge",
   "implementation": {
     "branch": "codex/integrate-original-mfa-ui-20261005",
-    "state": "LOCAL_VALIDATED_PENDING_PARENT_MERGES_AND_PROTECTED_CI",
+    "state": "LOCAL_VALIDATED_PENDING_PROTECTED_CI",
     "qr_display": "Restored server-local QR plus manual fallback; existing tenant/member and native POST controls preserved",
     "validation": {
       "targeted_eslint": "PASS after extracting return field",
@@ -61,8 +14,7 @@
       "independent_review": "PASS: zero remaining findings"
     },
     "remaining": [
-      "Parent PR360 and onboarding protected merges",
-      "Publish exact-scope MFA PR, complete CI and canonical acceptance"
+      "Protected PR exact-head CI and canonical acceptance"
     ],
     "return_path_utility": {
       "state": "WIRED_AND_REVIEWED",
@@ -188,5 +140,60 @@
     "entries": 120,
     "hashed_files": 118,
     "changed": 0
+  },
+  "historical_gap_analysis": {
+    "findings": [
+      {
+        "requirement": "Recover security settings QR enrollment UI",
+        "evidence": "Original page calls QRCode.toDataURL and renders Image; candidate page renders only secret and URI",
+        "preserve": "Pending setup userId binding, native enrollment POST, CSRF and existing vendor member management"
+      },
+      {
+        "requirement": "Recover safe return navigation through MFA setup",
+        "evidence": "Original setup accepts next, forwards hidden fields and verification link; candidate setup ignores next, enrollment service uses fixed destinations, native start/confirm/dismiss routes do not preserve next",
+        "scope": "Must reconcile service, forms, routes and actions together; simply copying old JSX leaves incomplete behavior",
+        "tests_needed": "Invalid external or backslash destinations rejected; start/restart/failure/success/recovery acknowledgement preserve validated internal return; desktop/mobile browser round trip"
+      },
+      {
+        "requirement": "Preserve current reliable recovery-code regeneration",
+        "evidence": "Original setup uses Server Action; candidate uses native POST route; preserve current security service and transport while recovering visuals"
+      }
+    ],
+    "files": [
+      {
+        "path": "src/app/(app)/settings/security/page.tsx",
+        "candidate_lf_sha256": "17952e23d0a6de561321068af3b5a7f5780ab9a6359e4783ebcbf085329758ab"
+      },
+      {
+        "path": "src/app/mfa/setup/page.tsx",
+        "candidate_lf_sha256": "eb6399c22bb7ec34c890e7d46e106366a0616c648c9ed96cd2ad3933001d1c1a"
+      },
+      {
+        "path": "src/components/mfa-enrollment-form.tsx",
+        "candidate_lf_sha256": "f876a6fbaab7196ed4c9163462e9ddb4ad23fd7245ecae4fb81cae58d0b9d01c"
+      },
+      {
+        "path": "src/lib/mfa-enrollment.ts",
+        "candidate_lf_sha256": "04c6927728b6e5ccdf571186d4a8209fd42fa3d5d025d79256a21c47fad3e6b5"
+      },
+      {
+        "path": "src/app/api/settings/security/mfa/start/route.ts",
+        "candidate_lf_sha256": "013601429f64dad334a3bfd00fb5b495b47119a6e87c134ce550a2fc7bc8fa69"
+      },
+      {
+        "path": "src/app/api/settings/security/mfa/confirm/route.ts",
+        "candidate_lf_sha256": "db149c8629fd67020ab7f695d7bdcc64978d05155b9f413a47b0a613cd66c341"
+      },
+      {
+        "path": "src/app/api/settings/security/mfa/recovery-codes/dismiss/route.ts",
+        "candidate_lf_sha256": "a07cf4bcfc9a74057d169b6292aa937cb3c2cc1014adcfc739de5e11ceb46d4c"
+      }
+    ],
+    "note": "Pre-implementation findings, now resolved; retained as reconciliation history"
+  },
+  "parent_merge_verification": {
+    "master": "de0addfd895723db797b85aab7a0abb466bc624e",
+    "source_files": 18,
+    "result": "All 18 reviewed source/test hashes unchanged after parent merge"
   }
 }
