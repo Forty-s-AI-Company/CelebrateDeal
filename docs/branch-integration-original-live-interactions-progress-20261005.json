@@ -1,5 +1,5 @@
 {
-  "state": "RECOVERED_API_PENDING_FULL_INTEGRATION",
+  "state": "DRAFT_PR_PENDING_FULL_COMMERCE_VALIDATION",
   "branch": "codex/integrate-original-live-interactions-20261005",
   "parent": "164ad4a952628c06d6f88d1093334c1d6a352445",
   "source": "Original preserved checkout; restored API and tests without changing content",
@@ -148,7 +148,7 @@
       "required_policy": "Keep claim bound until provider finality/reconciliation. Do not clear usedOrderId solely because local transaction failed. Prove normal paid repurchase and uncertain failure isolation."
     },
     "error_presentation": {
-      "status": "IMPLEMENTED_PENDING_REVIEW",
+      "status": "INDEPENDENT_REVIEW_CLOSED",
       "behavior": "Client parses only allowlisted LIVE_VOUCHER_ALREADY_USED code, presents fixed voucher-specific guidance, preserves admission/idempotency identity; does not render arbitrary API error body.",
       "tests": 9,
       "eslint": "PASS",
@@ -156,7 +156,7 @@
       "remaining": "Paid-order repeat purchase and support/recovery navigation remain pending"
     },
     "paid_repurchase": {
-      "state": "IMPLEMENTED_PENDING_REVIEW",
+      "state": "INDEPENDENT_REVIEW_CLOSED",
       "behavior": "Used voucher with same-tenant order paidAt present and paid/refund status does not block new purchase; claim stays consumed. Failed/pending/expired/cancelled or missing paid evidence still rejects retry.",
       "unit_route_tests": 68,
       "real_database_tests": 14,
@@ -164,5 +164,22 @@
       "typecheck": "PASS before final DB fixture addition",
       "remaining": "Independent review, full checkout browser chain, safe uncertain-payment recovery"
     }
-  }
+  },
+  "latest_validation": {
+    "targeted_tests": 195,
+    "real_postgresql_tests": 14,
+    "failed": 0,
+    "typecheck": "PASS",
+    "reports": [
+      ".ai-team/tmp/live-integration-targeted-results.json",
+      ".ai-team/tmp/advanced-interaction-db-results.json"
+    ],
+    "scope": "Nine actual targeted test files plus real isolated PostgreSQL route/CAS/state checks; no complete payment-browser-chain claim"
+  },
+  "merge_blockers": [
+    "Flash-sale displayed price/currency/stock must match actual server checkout guarantees",
+    "Real verification-issued cookie through checkout/paid transaction into purchased draw eligibility",
+    "Full isolated browser checkout flow and provider failure recovery policy",
+    "Exact-head protected CI and canonical acceptance; draft not ready"
+  ]
 }

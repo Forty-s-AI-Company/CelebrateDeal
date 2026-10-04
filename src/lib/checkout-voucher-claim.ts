@@ -34,4 +34,3 @@ export async function consumeCheckoutVoucherClaim(
   });
   if (consumed.count !== 1) throw new VoucherClaimConflictError();
 }
-
