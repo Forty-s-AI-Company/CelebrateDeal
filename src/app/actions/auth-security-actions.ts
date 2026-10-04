@@ -226,7 +226,7 @@ export async function verifyMfaAction(formData: FormData) {
   const auth = await requireAuth({ allowUnverifiedMfa: true });
   const next = safeInternalPath(text(formData, "next", "/admin/billing/dashboard"));
   const code = text(formData, "code");
-  if (!auth.user.mfaFactor) redirect("/mfa/setup");
+  if (!auth.user.mfaFactor) redirect(withMfaReturnPath("/mfa/setup", next));
 
   const headerStore = await headers();
   const rateLimited = await checkRateLimit(
