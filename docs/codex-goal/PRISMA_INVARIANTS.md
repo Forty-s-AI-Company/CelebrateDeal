@@ -1,17 +1,17 @@
 # CelebrateDeal Prisma Invariant Inventory
 
-最後更新：2026-09-29（Asia/Taipei）
+最後更新：2026-10-04（Asia/Taipei）
 
 基準 revision：`4ed3b463`
 
-> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前 chain 已增至 81，該歷史收據不代表新 migration、Staging 或 Production 已套用。
+> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前 chain 已增至 82，該歷史收據不代表新 migration、Staging 或 Production 已套用。
 
 ## Inventory 基準
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 121 |
-| Migration directories | 81 |
+| Prisma models | 122 |
+| Migration directories | 82 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -28,7 +28,7 @@
 | Course commerce／revenue share | 3 | `CourseCommissionAllocation`、`CourseCommissionLedgerEntry`、`CoursePayout` |
 | Commerce order／fulfillment | 10 | `CommerceOrder`、`CommerceOrderItem`、`CommerceOrderEvent`、`CommerceOrderRefund`、`ShippingFulfillment`、`CommerceEntitlement`、`ServiceFulfillment`、`VendorDeliveryUrlAllowlist`、`ProductDeliveryConfig`、`CommerceOrderItemDeliverySnapshot` |
 | Buyer support／refund handoff | 5 | `SupportCase`、`SupportCaseEvent`、`BuyerSupportOrderGrant`、`SupportRefundHandoff`、`SupportRefundHandoffRefund` |
-| LINE identity／delivery | 4 | `LineOfficialAccount`、`LineUserIdentity`、`LineLoginState`、`LineDelivery` |
+| LINE identity／delivery／draft | 5 | `LineOfficialAccount`、`LineUserIdentity`、`LineLoginState`、`LineDelivery`、`LineRichMenuDraft` |
 | Consultation scheduling | 2 | `ConsultationEvent`、`ConsultationBooking` |
 | Automation／CRM／Sales workspace | 11 | `AutomationRule`、`AutomationExecutionLog`、`CustomerTagAssignment`、`AutomationVoucherGrant`、`CustomerCrmRecord`、`ConsultantNote`、`SalesProject`、`SalesProjectProduct`、`SalesProjectCustomer`、`UserOnboardingPreference`、`OnboardingTaskState` |
 | Funnel 公開頁與來源紀錄 | 4 | `LandingPage`、`LandingPageVersion`、`FunnelVisit`、`FunnelSubmission` |
@@ -119,6 +119,7 @@
 | `20260911020000_presenter_layout` | versioned presenter layout JSON and tenant-scoped private WHIP/WHEP session leases |
 | `20260929170000_payment_method_setup_intent` | consent actor、短效 nonce 摘要、租戶與 membership scope、一次性 callback 消耗 |
 | `20260930094500_payuni_live_probe` | 獨立 PAYUNi 1 元綁卡後第二筆扣款探針的租戶、狀態與訂單唯一性；不等於三方案付款 |
+| `20261004140000_line_rich_menu_drafts` | 每商家唯一草稿、完整 JSON menu、revision CAS、owner cascade、RLS 無公開 policy |
 
 ## 已由資料庫強制的主要 invariants
 

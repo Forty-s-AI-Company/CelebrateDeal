@@ -9,9 +9,14 @@ function inventory() {
     .map((entry) => ({ name: entry.name, sql: readFileSync(path.join(migrationRoot, entry.name, "migration.sql"), "utf8") }));
 }
 
+function historicalInventory() {
+  // The payment adapter intentionally accepts only its fixed 79-to-81 migration window.
+  return inventory().filter((item) => item.name <= "20260930094500_payuni_live_probe");
+}
+
 describe("exact staging migration adapter", () => {
   it("pins the two DDL files and rejects changes or incomplete source inventory", () => {
-    const source = inventory();
+    const source = historicalInventory();
     expect(() => buildMigrationSql(source)).not.toThrow();
     expect(() => buildMigrationSql(source.slice(1))).toThrow("MIGRATION_INVENTORY_INVALID");
     const changed = source.map((item) => item.name === "20260930094500_payuni_live_probe"
@@ -20,7 +25,7 @@ describe("exact staging migration adapter", () => {
   });
 
   it("rejects duplicate inventory names and binds history and DDL in one transaction", () => {
-    const source = inventory();
+    const source = historicalInventory();
     expect(() => buildMigrationSql([...source.slice(1), source[1]])).toThrow("MIGRATION_INVENTORY_INVALID");
     const sql = buildMigrationSql(source);
     expect(sql).toContain("count(DISTINCT migration_name)");
@@ -33,5 +38,13 @@ describe("exact staging migration adapter", () => {
 
   it("rejects invocation before any CLI or filesystem mutation", async () => {
     await expect(runMigrations(["--apply"], { NODE_ENV: "test" })).rejects.toThrow("MIGRATION_APPROVAL_REQUIRED");
+  });
+
+  it("rejects the expanded candidate instead of silently applying the unrelated LINE migration", () => {
+    const current = inventory();
+    expect(current).toHaveLength(82);
+    expect(current.some((item) => item.name === "20261004140000_line_rich_menu_drafts")).toBe(true);
+    expect(historicalInventory()).toHaveLength(81);
+    expect(() => buildMigrationSql(current)).toThrow("MIGRATION_INVENTORY_INVALID");
   });
 });
