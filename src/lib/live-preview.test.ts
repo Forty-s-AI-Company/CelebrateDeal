@@ -61,4 +61,33 @@ describe("summarizeLivePreviewProducts", () => {
       remainingProductCount: 1,
     });
   });
+
+  it("counts distinct available products while preserving first selection order", () => {
+    const selectedIds = ["product-2", "missing-product", "product-2", "product-1", "product-3", "product-3"];
+
+    expect(summarizeLivePreviewProducts(products, selectedIds)).toEqual({
+      productNames: ["清爽防曬乳", "夏日保養組"],
+      remainingProductCount: 1,
+    });
+    expect(selectedIds).toEqual(["product-2", "missing-product", "product-2", "product-1", "product-3", "product-3"]);
+  });
+
+  it("does not count repeated selections of one product as additional products", () => {
+    expect(summarizeLivePreviewProducts(products, ["product-1", "product-1", "product-1"])).toEqual({
+      productNames: ["夏日保養組"],
+      remainingProductCount: 0,
+    });
+  });
+
+  it("normalizes product labels without presenting an existing selection as empty", () => {
+    const namedProducts = [{ id: "trimmed", name: "  夏日保養組  " }, { id: "blank", name: " \t " }];
+
+    expect(createLivePreview({ title: "直播", accentCopy: "優惠", products: namedProducts, selectedProductIds: ["trimmed", "blank"] })).toMatchObject({
+      productNames: ["夏日保養組", "未命名商品"],
+      remainingProductCount: 0,
+      emptyProductLabel: null,
+    });
+    expect(namedProducts[0].name).toBe("  夏日保養組  ");
+    expect(namedProducts[1].name).toBe(" \t ");
+  });
 });
