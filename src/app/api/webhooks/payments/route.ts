@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { Prisma, WebhookEvent } from "@prisma/client";
+import type { PaymentTransaction, Prisma, WebhookEvent } from "@prisma/client";
 import { readTextBody } from "@/lib/api-security";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
@@ -77,10 +77,12 @@ function payerReturnOutcome(status: number): PayerReturnOutcome {
   return "unverified";
 }
 
-function webhookResponse(requestUrl: URL, status: number, payload: unknown) {
+function webhookResponse(requestUrl: URL, status: number, payload: unknown, platformPlanReturn = false) {
   if (isPayUniPayerReturn(requestUrl)) {
-    const destination = new URL("/checkout/result", requestUrl.origin);
-    destination.searchParams.set("payment", payerReturnOutcome(status));
+    // The plan page authenticates again and reads the current tenant's actual
+    // subscription. No success flag or transaction identifier grants access.
+    const destination = new URL(platformPlanReturn ? "/billing/plans" : "/checkout/result", requestUrl.origin);
+    if (!platformPlanReturn) destination.searchParams.set("payment", payerReturnOutcome(status));
     observeCallbackRequest(requestUrl, "POST", 303);
     const response = NextResponse.redirect(destination, 303);
     response.headers.set("cache-control", "no-store");
@@ -90,6 +92,43 @@ function webhookResponse(requestUrl: URL, status: number, payload: unknown) {
 
   observeCallbackRequest(requestUrl, "POST", status);
   return NextResponse.json(payload, { status });
+}
+
+type PayerReturnTransaction = Pick<PaymentTransaction, "vendorId" | "providerName" | "orderNumber" | "paymentMode" | "metadata">;
+
+function isPlatformPlanReturnTransaction(transaction: PayerReturnTransaction | null, scope: { vendorId: string; provider: string; orderNumber?: string }) {
+  const metadata = transaction?.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  return scope.provider === "payuni" && Boolean(scope.orderNumber)
+    && transaction?.vendorId === scope.vendorId && transaction.providerName === scope.provider
+    && transaction.orderNumber === scope.orderNumber && transaction.paymentMode === "platform"
+    && metadata.billingPurpose === "platform_subscription_checkout"
+    && typeof metadata.platformSubscriptionId === "string" && metadata.platformSubscriptionId.length > 0
+    && typeof metadata.billingPlanId === "string" && metadata.billingPlanId.length > 0;
+}
+
+async function processedPayerReturnResponse(requestUrl: URL, event: WebhookEvent, responsePayload: unknown) {
+  if (isPayUniPayerReturn(requestUrl) && event.status === "processed" && event.provider === "payuni" && event.vendorId) {
+    const stored = event.payload;
+    const normalized = stored && typeof stored === "object" && !Array.isArray(stored) ? stored.normalized : null;
+    if (normalized && typeof normalized === "object" && !Array.isArray(normalized)
+      && normalized.provider === event.provider && typeof normalized.orderNumber === "string" && normalized.orderNumber.length > 0) {
+      try {
+        // Duplicate returns use the already-processed event's identity, never
+        // incoming metadata or query values. Read only the server-owned purpose.
+        const scope = { vendorId: event.vendorId, provider: event.provider, orderNumber: normalized.orderNumber };
+        const transaction = await getDb().paymentTransaction.findFirst({
+          where: { vendorId: scope.vendorId, providerName: scope.provider, orderNumber: scope.orderNumber },
+          select: { vendorId: true, providerName: true, orderNumber: true, paymentMode: true, metadata: true },
+        });
+        return webhookResponse(requestUrl, 200, responsePayload, isPlatformPlanReturnTransaction(transaction, scope));
+      } catch {
+        // Presentation lookup failures cannot alter a processed callback or
+        // retry payment processing; retain the existing neutral buyer result.
+      }
+    }
+  }
+  return webhookResponse(requestUrl, 200, responsePayload);
 }
 
 export async function HEAD(request: Request) {
@@ -116,7 +155,7 @@ async function claimWebhookEvent(db: ReturnType<typeof getDb>, event: WebhookEve
   });
   if (claimed.count !== 1) {
     const latestEvent = await db.webhookEvent.findUnique({ where: { id: event.id } });
-    return { status: latestEvent?.status === "processed" ? "processed" as const : "pending" as const, event };
+    return { status: latestEvent?.status === "processed" ? "processed" as const : "pending" as const, event: latestEvent ?? event };
   }
   return {
     status: "claimed" as const,
@@ -213,7 +252,7 @@ export async function POST(request: Request) {
 
   const claim = await claimWebhookEvent(db, event);
   if (claim.status === "processed") {
-    return webhookResponse(requestUrl, 200, { ok: true, duplicate: true, eventId: event.id });
+    return processedPayerReturnResponse(requestUrl, claim.event, { ok: true, duplicate: true, eventId: event.id });
   }
   if (claim.status === "pending") {
     return webhookResponse(requestUrl, 503, { error: "Payment webhook processing pending", eventId: event.id });
@@ -227,12 +266,12 @@ export async function POST(request: Request) {
       eventId: event.id,
       vendorId: result.vendor.id,
       transactionId: result.transaction.id,
-    });
+    }, isPlatformPlanReturnTransaction(result.transaction, { vendorId: result.vendor.id, provider: payload.provider, orderNumber: payload.orderNumber }));
   } catch (error) {
     try {
       const latestEvent = await db.webhookEvent.findUnique({ where: { id: event.id } });
       if (latestEvent?.status === "processed") {
-        return webhookResponse(requestUrl, 200, { ok: true, duplicate: true, eventId: event.id });
+        return processedPayerReturnResponse(requestUrl, latestEvent, { ok: true, duplicate: true, eventId: event.id });
       }
     } catch {
       // Keep the original failure path when convergence cannot be confirmed.
