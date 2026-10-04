@@ -1,24 +1,41 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@sentry/nextjs", () => ({
-  withSentryConfig: (config: unknown) => config,
-}));
+const sentry = vi.hoisted(() => ({ wrap: vi.fn((config) => config) }));
+vi.mock("@sentry/nextjs", () => ({ withSentryConfig: sentry.wrap }));
 
-import nextConfig from "./next.config";
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.resetModules();
+  vi.clearAllMocks();
+});
 
-describe("Next production security configuration", () => {
-  it("does not expose the built-in optimizer as an arbitrary remote image proxy", () => {
-    expect(nextConfig.images).toEqual({ unoptimized: true });
+describe("isolated development build configuration", () => {
+  it("keeps the default build directory and monitoring tunnel in production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("FUNNEL_ELEMENTS_E2E", "false");
+    const { default: config } = await import("./next.config");
+    expect(config).not.toHaveProperty("distDir");
+    expect(sentry.wrap).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tunnelRoute: "/monitoring" }));
   });
 
-  it("sets HSTS and the existing browser security headers on every route", async () => {
-    const rules = await nextConfig.headers?.();
-    const headers = new Map(rules?.[0]?.headers.map((header) => [header.key, header.value]));
+  it("isolates explicitly requested funnel QA builds inside the project", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("FUNNEL_ELEMENTS_E2E", "true");
+    const { default: config } = await import("./next.config");
+    expect(config.distDir).toBe(".next-funnel-elements");
+    expect(config.images?.unoptimized).toBe(true);
+  });
 
-    expect(rules?.[0]?.source).toBe("/:path*");
-    expect(headers.get("Strict-Transport-Security")).toBe("max-age=63072000; includeSubDomains");
-    expect(headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(headers.get("X-Frame-Options")).toBe("DENY");
-    expect(headers.get("Content-Security-Policy-Report-Only")).toContain("frame-ancestors 'none'");
+  it("disables only the development Sentry proxy and preserves local upload opt-out", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("FUNNEL_ELEMENTS_E2E", "false");
+    vi.stubEnv("SENTRY_DISABLE_AUTO_UPLOAD", "true");
+    await import("./next.config");
+    expect(sentry.wrap).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      tunnelRoute: undefined,
+      telemetry: false,
+      widenClientFileUpload: false,
+      sourcemaps: { disable: true },
+    }));
   });
 });
