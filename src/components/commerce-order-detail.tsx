@@ -312,7 +312,7 @@ export function CommerceOrderDetail({ order, pii, customCheckoutAnswersByItemId 
       </section>
       <Card>
         <h2 className="text-base font-semibold text-slate-950">退款與事件歷史</h2>
-        <p className="mt-2 text-sm text-slate-600">正式退款仍由平台財務 MFA 流程執行；本頁只顯示已完成、可追溯的結果。</p>
+        <p className="mt-2 text-sm text-slate-600">正式退款仍由具備權限的平台財務流程執行；本頁只顯示已完成、可追溯的結果。</p>
         <ul className="mt-4 divide-y divide-slate-100 text-sm">
           {order.events.map((event) => <li key={event.id} className="flex flex-wrap justify-between gap-2 py-3"><span>{event.eventType}</span><time className="text-slate-500">{localDate(event.occurredAt)}</time></li>)}
           {order.events.length === 0 ? <li className="py-3 text-slate-500">尚無事件</li> : null}

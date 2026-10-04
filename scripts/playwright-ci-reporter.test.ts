@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import SanitizedPlaywrightCiReporter, { classifySyntheticCheckoutError, formatSanitizedPlaywrightAnnotation } from "./playwright-ci-reporter";
+import SanitizedPlaywrightCiReporter, { classifySanitizedAxeError, classifySyntheticCheckoutError, formatSanitizedAxeBlockingError, formatSanitizedPlaywrightAnnotation } from "./playwright-ci-reporter";
 
 const safeFile = path.join(process.cwd(), "tests", "e2e", "smoke.spec.ts");
 
@@ -26,6 +26,44 @@ function testCase(input: {
 }
 
 describe("SanitizedPlaywrightCiReporter", () => {
+  it("formats only fixed axe rule IDs and never forwards nodes or arbitrary IDs", () => {
+    const violations = [
+      { id: "document-title", nodes: [{ html: "secret-token-must-not-appear", target: ["#private-customer"] }] },
+      { id: "color-contrast" }, { id: "document-title" },
+      { id: "secret-token-must-not-appear" }, { id: null },
+    ];
+    const message = formatSanitizedAxeBlockingError(violations);
+    expect(message).toBe("AXE_BLOCKING:RULES:color-contrast,document-title,unknown");
+    expect(classifySanitizedAxeError(message)).toBe("axe_blocking rules=color-contrast,document-title,unknown");
+    expect(classifySanitizedAxeError(`Error: ${message}`)).toBe("axe_blocking rules=color-contrast,document-title,unknown");
+    expect(message).toMatch(/AXE_BLOCKING:/u);
+    expect(message).not.toContain("private-customer");
+    expect(message).not.toContain("secret-token-must-not-appear");
+  });
+
+  it("rejects partial axe messages, raw JSON, unknown rules and annotation injection", () => {
+    for (const value of [
+      null, "AXE_BLOCKING:RULES:", "TypeError: AXE_BLOCKING:RULES:document-title", "AXE_BLOCKING:RULES:document-title\nsecret",
+      "AXE_BLOCKING:RULES:document-title,secret-token-must-not-appear", "AXE_BLOCKING:RULES:document-title,%0A::error::secret",
+      'AXE_BLOCKING:[{"id":"document-title","nodes":[{"html":"secret"}]}]',
+      `AXE_BLOCKING:RULES:${Array.from({ length: 100 }, () => "document-title").join(",")}`,
+    ]) expect(classifySanitizedAxeError(value)).toBeNull();
+  });
+
+  it("reports a flaky first-attempt axe rule while preserving the failing gate", () => {
+    let output = "";
+    const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });
+    const current = testCase({ id: "axe-flaky", outcome: "flaky", statuses: ["failed", "passed"] });
+    Object.assign(current.results[0]!, { errors: [{ message: "Error: AXE_BLOCKING:RULES:color-contrast,document-title" }] });
+    reporter.onTestEnd(current as never);
+    reporter.onEnd({ status: "failed" } as never);
+    expect(output).toContain("class=axe_blocking rules=color-contrast,document-title");
+    expect(output).toContain("playwright status=failed retry=0");
+    expect(output).toContain("playwright status=flaky retry=1");
+    expect(output).toContain("playwright status=failed failed=0 timedout=0 flaky=1");
+    expect(output).not.toContain("secret-token-must-not-appear");
+  });
+
   it("classifies only the closed synthetic checkout grammar", () => {
     expect(classifySyntheticCheckoutError("G748:503:A:T0O0S0G0")).toBe("checkout_http_503 branch=A transactions=0 orders=0 snapshots=0 grants=0");
     expect(classifySyntheticCheckoutError("G748:COOKIE:MISSING")).toBe("checkout_cookie_missing");

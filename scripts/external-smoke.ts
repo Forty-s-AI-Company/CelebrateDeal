@@ -1,4 +1,5 @@
 import { buildPayUniSandboxWebhookFixture } from "../src/lib/payment-providers/payuni-fixtures";
+import { activePayUniCredentials } from "../src/lib/payuni-credentials";
 import {
   resolveSmokeTarget,
   summarizeSmokeFailure,
@@ -285,13 +286,17 @@ async function pollUntilReady(videoId: string) {
 }
 
 async function runPayUniSmoke() {
-  const merchantId = process.env.PAYUNI_MERCHANT_ID;
-  const hashKey = process.env.PAYUNI_HASH_KEY;
-  const hashIv = process.env.PAYUNI_HASH_IV;
-  if (!merchantId || !hashKey || !hashIv) {
+  if (process.env.PAYUNI_ENV !== "sandbox") {
+    record({ name: "payuni sandbox webhook", status: "skip", detail: "Sandbox-only check" });
+    return;
+  }
+  let credentials: ReturnType<typeof activePayUniCredentials>;
+  try { credentials = activePayUniCredentials(); }
+  catch {
     record({ name: "payuni sandbox webhook", status: "skip", detail: "PAYUNI sandbox env is incomplete" });
     return;
   }
+  const { merchantId, key: hashKey, iv: hashIv } = credentials;
 
   const vendorId = process.env.SMOKE_VENDOR_ID;
   const vendorSlug = process.env.SMOKE_VENDOR_SLUG;

@@ -195,23 +195,24 @@ describe("getEnvCheckReport", () => {
   ])("requires %s when PayUni is selected", (missingKey) => {
     const env = configuredEnv();
     env[envKey("PAYMENT", "PROVIDER")] = "payuni";
-    env[envKey("PAYUNI", "HASH", "KEY")] = "test-payuni-key-value";
-    env[envKey("PAYUNI", "HASH", "IV")] = "test-payuni-iv-value";
+    env[envKey("PAYUNI", "ENV")] = "production";
+    env[envKey("PAYUNI", "HASH", "KEY")] = "12345678901234567890123456789012";
+    env[envKey("PAYUNI", "HASH", "IV")] = "1234567890123456";
     env[envKey("PAYUNI", "MERCHANT", "ID")] = "test-merchant-id";
     delete env[missingKey];
 
     const report = getEnvCheckReport(env);
 
     expect(report.ok).toBe(false);
-    expect(check(report, missingKey, "fail")?.message).toBe(`PAYMENT_PROVIDER=payuni 時必須設定 ${missingKey}`);
+    expect(check(report, missingKey, "fail")?.message).toBe(`PAYMENT_PROVIDER=payuni 時必須設定有效的 ${missingKey}`);
   });
 
   it("does not require a non-standard PayUni webhook secret", () => {
     const env = configuredEnv();
     env[envKey("PAYMENT", "PROVIDER")] = "payuni";
     env[envKey("PAYUNI", "ENV")] = "production";
-    env[envKey("PAYUNI", "HASH", "KEY")] = "test-payuni-key-value";
-    env[envKey("PAYUNI", "HASH", "IV")] = "test-payuni-iv-value";
+    env[envKey("PAYUNI", "HASH", "KEY")] = "12345678901234567890123456789012";
+    env[envKey("PAYUNI", "HASH", "IV")] = "1234567890123456";
     env[envKey("PAYUNI", "MERCHANT", "ID")] = "test-merchant-id";
 
     const report = getEnvCheckReport(env);
@@ -223,8 +224,11 @@ describe("getEnvCheckReport", () => {
   it("binds PayUni environment to Preview and Production deployment boundaries", () => {
     const env = configuredEnv();
     env[envKey("PAYMENT", "PROVIDER")] = "payuni";
-    env[envKey("PAYUNI", "HASH", "KEY")] = "test-payuni-key-value";
-    env[envKey("PAYUNI", "HASH", "IV")] = "test-payuni-iv-value";
+    env[envKey("PAYUNI", "SANDBOX", "HASH", "KEY")] = "ssssssssssssssssssssssssssssssss";
+    env[envKey("PAYUNI", "SANDBOX", "HASH", "IV")] = "ssssssssssssssss";
+    env[envKey("PAYUNI", "SANDBOX", "MERCHANT", "ID")] = "sandbox-merchant-id";
+    env[envKey("PAYUNI", "HASH", "KEY")] = "12345678901234567890123456789012";
+    env[envKey("PAYUNI", "HASH", "IV")] = "1234567890123456";
     env[envKey("PAYUNI", "MERCHANT", "ID")] = "test-merchant-id";
     env[envKey("VERCEL", "ENV")] = "preview";
     env[envKey("PAYUNI", "ENV")] = "production";
@@ -247,6 +251,67 @@ describe("getEnvCheckReport", () => {
     report = getEnvCheckReport(env);
     expect(report.ok).toBe(true);
     expect(check(report, envKey("PAYUNI", "ENV"), "pass")).toBeDefined();
+  });
+
+  it("permits Preview to use the live PayUni endpoint only for the exact one-time probe scope", () => {
+    const env = configuredEnv();
+    env[envKey("PAYMENT", "PROVIDER")] = "payuni";
+    env[envKey("PAYUNI", "HASH", "KEY")] = "12345678901234567890123456789012";
+    env[envKey("PAYUNI", "HASH", "IV")] = "1234567890123456";
+    env[envKey("PAYUNI", "MERCHANT", "ID")] = "test-merchant-id";
+    env[envKey("VERCEL", "ENV")] = "preview";
+    env[envKey("PAYUNI", "ENV")] = "production";
+    env[envKey("PAYUNI", "LIVE", "PROBE", "ENABLED")] = "true";
+    env[envKey("PAYUNI", "LIVE", "PROBE", "VENDOR", "ID")] = "vendor-1";
+    env[envKey("PAYUNI", "LIVE", "PROBE", "MERCHANT", "ID")] = "test-merchant-id";
+    expect(check(getEnvCheckReport(env), envKey("PAYUNI", "ENV"), "pass")).toBeDefined();
+    env[envKey("PAYUNI", "LIVE", "PROBE", "MERCHANT", "ID")] = "other-merchant";
+    expect(check(getEnvCheckReport(env), envKey("PAYUNI", "ENV"), "fail")).toBeDefined();
+  });
+
+  it("permits Preview production PayUni for the isolated staging plan test scope", () => {
+    const env = configuredEnv();
+    env.PAYMENT_PROVIDER = "payuni";
+    env.VERCEL_ENV = "preview";
+    env.VERCEL_PROJECT_ID = "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn";
+    env.VERCEL_GIT_COMMIT_REF = "codex/prelaunch-engineering-20260929";
+    env.PAYUNI_ENV = "production";
+    env.PAYUNI_MERCHANT_ID = "SYNTHETIC-MERCHANT";
+    env.PAYUNI_HASH_KEY = "12345678901234567890123456789012";
+    env.PAYUNI_HASH_IV = "1234567890123456";
+    env.PAYUNI_STAGING_PLAN_TEST_ENABLED = "true";
+    env.PAYUNI_STAGING_PLAN_TEST_VENDOR_ID = "synthetic-vendor";
+    env.VERCEL_URL = "staging-test.vercel.app";
+    env.NEXT_PUBLIC_APP_URL = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
+    env.NEXT_PUBLIC_SUPABASE_URL = "https://ocbugvgojrunvenozsbx.supabase.co";
+    env.DATABASE_URL = "postgresql:" + "//postgres.ocbugvgojrunvenozsbx:synthetic@aws-0-ap-northeast-1.pooler.supabase.com/postgres";
+    env.DIRECT_URL = "postgresql:" + "//postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres";
+    env.STAGING_DATABASE_URL = env.DIRECT_URL;
+    expect(check(getEnvCheckReport(env), "PAYUNI_ENV", "pass")).toBeDefined();
+    env.DATABASE_URL = "postgresql:" + "//postgres.other:synthetic@pooler.supabase.com/postgres";
+    expect(check(getEnvCheckReport(env), "PAYUNI_ENV", "fail")).toBeDefined();
+  });
+
+  it("builds the exact isolated staging candidate while the plan payment flag stays off", () => {
+    const env = configuredEnv();
+    env.VERCEL_PROJECT_ID = "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn";
+    env.VERCEL_GIT_COMMIT_REF = "codex/prelaunch-engineering-20260929";
+    env.VERCEL_ENV = "preview";
+    env.PAYMENT_PROVIDER = "payuni";
+    env.PAYUNI_ENV = "production";
+    env.PAYUNI_STAGING_PLAN_TEST_ENABLED = "false";
+    env.PAYUNI_MERCHANT_ID = "SYNTHETIC-MERCHANT";
+    env.PAYUNI_HASH_KEY = "12345678901234567890123456789012";
+    env.PAYUNI_HASH_IV = "1234567890123456";
+    env.NEXT_PUBLIC_APP_URL = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
+    env.NEXT_PUBLIC_SUPABASE_URL = "https://ocbugvgojrunvenozsbx.supabase.co";
+    env.DATABASE_URL = "postgresql:" + "//postgres.ocbugvgojrunvenozsbx:synthetic@aws-0-ap-northeast-1.pooler.supabase.com/postgres";
+    env.DIRECT_URL = "postgresql:" + "//postgres:synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres";
+    env.STAGING_DATABASE_URL = env.DIRECT_URL;
+    expect(check(getEnvCheckReport(env), "PAYUNI_ENV", "pass")).toBeDefined();
+    for (const [key, value] of [["VERCEL_PROJECT_ID", "prj_other"], ["VERCEL_GIT_COMMIT_REF", "other-branch"], ["NEXT_PUBLIC_SUPABASE_URL", "https://other.supabase.co"], ["PAYUNI_LIVE_PROBE_ENABLED", "true"]] as const) {
+      expect(check(getEnvCheckReport({ ...env, [key]: value }), "PAYUNI_ENV", "fail")).toBeDefined();
+    }
   });
 
   it.each(["ecpay-like", "platform-ecpay"])("requires the ECPay webhook verification value for %s", (provider) => {
@@ -354,6 +419,24 @@ describe("getEnvCheckReport", () => {
     expect(report.ok).toBe(false);
     expect(check(report, envKey("CSRF", "SECRET"), "fail")).toBeDefined();
     expect(check(report, envKey("RATE", "LIMIT", "PROVIDER"), "fail")).toBeDefined();
+  });
+
+  it("allows live PAYUNi only for the designated Preview merchant probe", () => {
+    const env = configuredEnv();
+    env.VERCEL_ENV = "preview";
+    env.PAYMENT_PROVIDER = "payuni";
+    env.PAYUNI_ENV = "production";
+    env.PAYUNI_MERCHANT_ID = "CELEBRATE_TEST_MERCHANT";
+    env.PAYUNI_HASH_KEY = "12345678901234567890123456789012";
+    env.PAYUNI_HASH_IV = "1234567890123456";
+    env.PAYUNI_LIVE_PROBE_MERCHANT_ID = "CELEBRATE_TEST_MERCHANT";
+    env.PAYUNI_LIVE_PROBE_VENDOR_ID = "vendor-1";
+    env.PAYUNI_LIVE_PROBE_ENABLED = "true";
+    const allowed = getEnvCheckReport(env);
+    expect(allowed.ok).toBe(true);
+    expect(check(allowed, "PAYUNI_ENV", "pass")).toBeDefined();
+    env.PAYUNI_LIVE_PROBE_MERCHANT_ID = "OTHER_MERCHANT";
+    expect(check(getEnvCheckReport(env), "PAYUNI_ENV", "fail")).toBeDefined();
   });
 
   it("keeps local development usable while warning about an implicit memory limiter", () => {

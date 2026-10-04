@@ -46,6 +46,12 @@ function isSerializationConflict(error: unknown) {
  * routes must select these values themselves and never forward caller input.
  */
 export async function executePayUniRefund(input: PayUniRefundExecutionInput): Promise<PayUniRefundExecutionResult> {
+  // Reject malformed monetary values before reserving a refund or contacting PayUni.
+  if (!Number.isSafeInteger(input.refundAmountCents) || input.refundAmountCents <= 0
+    || !Number.isSafeInteger(input.gatewayFeeRefundCents) || input.gatewayFeeRefundCents < 0
+    || !Number.isSafeInteger(input.platformFeeRefundCents) || input.platformFeeRefundCents < 0) {
+    return { disposition: "validation_failed" };
+  }
   const provider = getPaymentProvider("payuni");
   if (!provider.refundPayment) return { disposition: "provider_unavailable" };
 
@@ -153,12 +159,15 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
             where: { paymentTransactionId: transaction.id, status: "processed" },
             _sum: { gatewayFeeRefundCents: true, platformFeeRefundCents: true },
           });
+          // A provider response may identify only the trade, so it is not a
+          // unique accounting event for two partial refunds on that trade.
+          const accountingEventIdentity = `refund:payuni:${reserved.refundId}`;
           await applyPaymentRefundAccounting(tx, {
             vendorId: currentTransaction.vendorId,
             transactionId: currentTransaction.id,
             orderNumber: currentTransaction.orderNumber,
             providerName: currentTransaction.providerName,
-            eventIdentity: providerResult.providerEventId ?? `request:${reserved.refundId}`,
+            eventIdentity: accountingEventIdentity,
             refundRecordId: reserved.refundId,
             refundAmountCents: input.refundAmountCents,
             netReferenceAmountCents: calculateNetReferenceAmountCents({

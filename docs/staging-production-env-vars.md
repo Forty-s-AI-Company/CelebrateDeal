@@ -1,13 +1,13 @@
 # CelebrateDeal Staging / Production Env Vars 對照表
 
-最後更新：2026-07-21
+最後更新：2026-10-01
 
 ## 1. 使用原則
 
 - 真實 secret 只放 Vercel Environment Variables、GitHub Actions Secrets 或本機 `.env.*.local`。
 - 本 repo 只提交 `.env.example`、`.env.staging.example`、`.env.production.example`。
 - `NEXT_PUBLIC_*` 會進瀏覽器 bundle，不可放 secret。
-- Preview / staging 不可使用 production database 或 production PayUni credentials。
+- Preview / staging 不可使用 production database。經商店權限核對與隔離審查後，指定 staging 才可暫時使用 CelebrateDeal 正式 PAYUNi 商店做真實小額測試。
 
 ## 2. 對照表
 
@@ -25,10 +25,10 @@
 | `CLOUDFLARE_STREAM_TOKEN` | staging scoped token | production scoped token | Cloudflare API Tokens | 不在 client bundle 出現 |
 | `CLOUDFLARE_STREAM_WEBHOOK_SECRET` | staging webhook secret | production webhook secret | Cloudflare Notifications | 假 secret webhook 會 401 |
 | `PAYMENT_PROVIDER` | `payuni` | `payuni` | app config | preflight pass |
-| `PAYUNI_HASH_KEY` | sandbox key | production key | PayUni dashboard | sandbox paid webhook 可驗簽 |
-| `PAYUNI_HASH_IV` | sandbox IV | production IV | PayUni dashboard | sandbox paid webhook 可驗簽 |
-| `PAYUNI_MERCHANT_ID` | sandbox merchant | production merchant | PayUni dashboard | checkout metadata 正確 |
-| PayUni callback 驗證 | 使用 Sandbox Hash Key / Hash IV | 使用 Production Hash Key / Hash IV | PayUni 商店串接設定 | `EncryptInfo` 與 `HashInfo` 驗證通過 |
+| `PAYUNI_ENV` | `sandbox`；隔離的一次性正式測試可設 `production` | `production` | 部署設定 | 同時選擇 API 網址與整組商店金鑰 |
+| `PAYUNI_SANDBOX_MERCHANT_ID`、`PAYUNI_SANDBOX_HASH_KEY`、`PAYUNI_SANDBOX_HASH_IV` | Sandbox 商店完整一組 | 可保留供切換 | PAYUNi Sandbox 後台 | `PAYUNI_ENV=sandbox` 時專用，缺一即拒絕交易 |
+| `PAYUNI_MERCHANT_ID`、`PAYUNI_HASH_KEY`、`PAYUNI_HASH_IV` | 僅隔離正式 1 元測試需要 | CelebrateDeal 正式商店完整一組 | PAYUNi 正式後台 | `PAYUNI_ENV=production` 時專用，缺一即拒絕交易 |
+| PayUni callback 驗證 | 使用所選 Sandbox Hash Key / Hash IV | 使用所選 Production Hash Key / Hash IV | PAYUNi 商店串接設定 | `EncryptInfo` 與 `HashInfo` 驗證通過 |
 | `RESEND_API_KEY` | staging key | production key | Resend dashboard | test email delivered |
 | `EMAIL_FROM` | staging sender | production sender | Resend verified domain | SPF / DKIM / DMARC pass |
 | `SMOKE_TEST_EMAIL` | 單一測試收件信箱 | 單一受控維運信箱（非必要可不啟用 smoke） | 維運設定 | 其他收件人呼叫 test-email 必須回 403 |
@@ -41,6 +41,12 @@
 | `SENTRY_AUTH_TOKEN` | staging upload token | production upload token | Sentry auth token | build can upload source maps |
 | `NEXT_PUBLIC_POSTHOG_KEY` | staging project key | production project key | PostHog | `production_smoke_test` event appears |
 | `NEXT_PUBLIC_POSTHOG_HOST` | PostHog host | PostHog host | PostHog | capture API 200 |
+
+切換順序：先在 Sandbox 部署的 Secret 管理新增完整 `PAYUNI_SANDBOX_*` 三件組，再發布此程式。正式商店沿用 `PAYUNI_MERCHANT_ID`／`PAYUNI_HASH_KEY`／`PAYUNI_HASH_IV`；確認它們屬於 CelebrateDeal 正式商店後，才在目標環境將 `PAYUNI_ENV` 切成 `production`。切換不會自動取得或改寫金鑰。
+
+## 2026-10-01 staging 正式金流測試決定
+
+指定 staging 的目標設定是 `PAYUNI_ENV=production`，使用 CelebrateDeal 正式商店；平台三個方案 Starter、Growth、Team / Pro 的測試月費分別為 NT$1、NT$2、NT$3，正式站維持原價。受控程式路徑仍在草稿 PR #351；固定 staging 尚未切換。測試價格存於三筆獨立且停用的 staging 專用方案，原本三筆方案與正式站資料不改。`PAYUNI_STAGING_PLAN_TEST_ENABLED=true` 只在已審查的 Preview 部署使用；程式還會核對 staging 資料庫、指定商家、CelebrateDeal 商店代號及短效資料庫許可綁定的唯一部署 URL。一般商品／發票結帳與退款仍封鎖。完整順序見 [三方案正式金流 staging runbook](launch/payuni-staging-live-plan-test.md)。現有「首筆 1 元綁卡＋第二筆 1 元扣款」探針是另一條受控流程，不能視為三方案付款已通過。
 
 PayUni 不另外設定 `PAYUNI_NOTIFY_URL`、`PAYUNI_RETURN_URL` 或自訂 webhook secret。每筆 UPP checkout 會從 `NEXT_PUBLIC_APP_URL` 組合 `ReturnURL` 與 `NotifyURL`，回傳則只接受官方 `EncryptInfo`、`HashInfo`、Hash Key 與 Hash IV 驗證。
 

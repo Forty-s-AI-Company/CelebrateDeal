@@ -34,7 +34,7 @@
 | 階段 | owner | 前置條件 | 可接受證據 | 停止條件 | handoff |
 | --- | --- | --- | --- | --- | --- |
 | 1. 商家／owner 身分與唯一責任 | 商家 owner | 商家已指定負責人與替代聯絡流程 | `OWNER_ACCEPTANCE_REQUIRED` 的去識別 owner 確認；每個商家僅有一個主要責任歸屬 | 無法確認誰可接受風險，標示 `BLOCKED` | 商家 owner 把責任範圍交接給平台管理員與 Release owner |
-| 2. 密碼、session、MFA、recovery 與最小權限 | 商家 owner、平台管理員 | owner 可使用受控帳號；安全設定頁與政策已可用 | `LOCAL_EVIDENCE`：密碼、session 撤銷、MFA、recovery 與角色保護的相關測試；`MANUAL_REQUIRED`：真人完成受控設定 | 沒有 MFA、recovery 保存確認，或權限較需求寬鬆 | 平台管理員回填安全狀態，不傳遞任何憑證 |
+| 2. 密碼、session、自願 MFA 與最小權限 | 商家 owner、平台管理員 | owner 可使用受控帳號；安全設定頁與政策已可用 | `LOCAL_EVIDENCE`：密碼、session 撤銷、自願 MFA、recovery 與角色保護的相關測試；`MANUAL_REQUIRED`：真人決定是否啟用 MFA | 已啟用 MFA 卻無法完成驗證／保存 recovery，或權限較需求寬鬆；未啟用 MFA 本身不阻擋 onboarding | 平台管理員回填安全狀態，不傳遞任何憑證 |
 | 3. 成員邀請、角色與 active owner | 商家 owner | 階段 2 完成；角色需求已寫明 | `LOCAL_EVIDENCE`：owner/admin/accountant 邊界與最後一位 owner 保護；`MANUAL_REQUIRED`：至少一位 active owner 可登入 | 無 active owner、邀請不明或要求共用帳號 | 商家 owner 確認角色清單後交給平台管理員覆核 |
 | 4. 品牌與 tracking | 商家 admin | 商家 owner 已指定品牌與追蹤責任 | `LOCAL_EVIDENCE`：設定入口與 dashboard checklist；`MANUAL_REQUIRED`：去識別畫面檢查 | 未定義追蹤目的／同意基礎，或設定無法辨識 | 商家 admin 交接設定摘要與未決決策給 owner |
 | 5. 商品、直播、表單、互動角色與腳本 | 商家 admin | 階段 3 已確認角色；可用 synthetic 內容 | `LOCAL_EVIDENCE`：dashboard checklist 的商品、直播、互動角色、互動腳本項目；`MANUAL_REQUIRED`：synthetic journey 演練 | 缺少必要內容、角色無權限或流程無法演練 | 商家 admin 提供去識別的 readiness 摘要給商家 owner |

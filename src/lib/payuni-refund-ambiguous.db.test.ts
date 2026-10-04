@@ -26,7 +26,7 @@ afterAll(async () => {
 });
 
 describe("PayUni ambiguous refund disposable PostgreSQL", () => {
-  it("releases a paid transaction reservation only after a verified no-refund snapshot", async () => {
+  it("keeps an ambiguous reservation locked when a cumulative provider snapshot still says paid", async () => {
     const transactionId = `g756_tx_paid_${suffix}`;
     const refundId = `g756_refund_paid_${suffix}`;
     await db.paymentTransaction.create({
@@ -65,14 +65,14 @@ describe("PayUni ambiguous refund disposable PostgreSQL", () => {
         status: "paid",
       },
       actor: { id: "g7-56-finance", label: "platform_admin" },
-    })).resolves.toMatchObject({ disposition: "provider_not_refunded", refundedAmountCents: 0 });
+    })).rejects.toMatchObject({ reason: "local_state_ambiguous" });
 
-    await expect(db.refundRecord.findUnique({ where: { id: refundId } })).resolves.toMatchObject({ status: "failed" });
+    await expect(db.refundRecord.findUnique({ where: { id: refundId } })).resolves.toMatchObject({ status: "pending" });
     await expect(db.paymentTransaction.findUnique({ where: { id: transactionId } })).resolves.toMatchObject({ status: "paid", refundedAmountCents: 0 });
-    await expect(db.auditLog.count({ where: { vendorId, targetId: transactionId, action: "resolve_payuni_refund_not_processed" } })).resolves.toBe(1);
+    await expect(db.auditLog.count({ where: { vendorId, targetId: transactionId, action: "resolve_payuni_refund_not_processed" } })).resolves.toBe(0);
   });
 
-  it("preserves processed partial totals while releasing only the unconfirmed reservation", async () => {
+  it("preserves processed partial totals and the ambiguous remaining reservation", async () => {
     const transactionId = `g756_tx_partial_${suffix}`;
     const processedId = `g756_refund_processed_${suffix}`;
     const pendingId = `g756_refund_pending_${suffix}`;
@@ -124,11 +124,11 @@ describe("PayUni ambiguous refund disposable PostgreSQL", () => {
         status: "partially_refunded",
       },
       actor: { id: "g7-56-finance", label: "platform_admin" },
-    })).resolves.toMatchObject({ disposition: "provider_not_refunded", refundedAmountCents: 4_000 });
+    })).rejects.toMatchObject({ reason: "local_state_ambiguous" });
 
     await expect(db.refundRecord.findUnique({ where: { id: processedId } })).resolves.toMatchObject({ status: "processed" });
-    await expect(db.refundRecord.findUnique({ where: { id: pendingId } })).resolves.toMatchObject({ status: "failed" });
-    await expect(db.refundRecord.count({ where: { paymentTransactionId: transactionId, status: "pending" } })).resolves.toBe(0);
+    await expect(db.refundRecord.findUnique({ where: { id: pendingId } })).resolves.toMatchObject({ status: "pending" });
+    await expect(db.refundRecord.count({ where: { paymentTransactionId: transactionId, status: "pending" } })).resolves.toBe(1);
     await expect(db.paymentTransaction.findUnique({ where: { id: transactionId } })).resolves.toMatchObject({ status: "partially_refunded", refundedAmountCents: 4_000 });
   });
 

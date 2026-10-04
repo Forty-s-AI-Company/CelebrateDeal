@@ -12,9 +12,7 @@
 - [ ] PayUni sandbox HashKey / HashIV 已取得。External required
 - [ ] `PAYMENT_PROVIDER=payuni`
 - [ ] `PAYUNI_ENV=sandbox`
-- [ ] `PAYUNI_MERCHANT_ID` 已設定
-- [ ] `PAYUNI_HASH_KEY` 已設定
-- [ ] `PAYUNI_HASH_IV` 已設定
+- [ ] `PAYUNI_SANDBOX_MERCHANT_ID`、`PAYUNI_SANDBOX_HASH_KEY`、`PAYUNI_SANDBOX_HASH_IV` 已設定；Sandbox 不使用正式站的 `PAYUNI_MERCHANT_ID`／`PAYUNI_HASH_KEY`／`PAYUNI_HASH_IV`
 - [ ] callback URL 指向已確認公開、非 Production 的 staging host（不得使用本機 tunnel）
 - [ ] **Staging 版號 Gate 已通過**：alias 指向目前 workspace 的最新 `READY` deployment；已記錄 project、deployment ID／URL、revision／digest、route status 與 timestamp。若不是最新版本，先更新 staging 再開始任何測試。
 

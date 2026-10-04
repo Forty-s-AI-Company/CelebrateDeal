@@ -1,5 +1,9 @@
 import { createCipheriv, createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 import { PaymentWebhookPayload } from "@/lib/payment-webhooks";
+import { getDb } from "@/lib/db";
+import { activePayUniCredentials } from "@/lib/payuni-credentials";
+import { payUniStagingPlanSessionAllowed } from "@/lib/payuni-staging-plan-test";
+import { payUniSetupNonce } from "@/lib/payuni-setup-correlation";
 import {
   PaymentQueryProviderError,
   type PaymentMethodReferenceRevocationInput,
@@ -127,11 +131,7 @@ function payUniWebhookAuditSnapshot(rawPayload: Record<string, unknown>) {
 }
 
 function payUniKeyMaterial() {
-  const key = process.env.PAYUNI_HASH_KEY?.trim();
-  const iv = process.env.PAYUNI_HASH_IV?.trim();
-  if (!key || !iv || Buffer.byteLength(key) !== 32 || Buffer.byteLength(iv) !== 16) {
-    throw new Error("PAYUNI_HASH_KEY and PAYUNI_HASH_IV must use the required byte lengths.");
-  }
+  const { key, iv } = activePayUniCredentials();
   return { key, iv };
 }
 
@@ -329,12 +329,10 @@ async function queryPayUniTransaction({ transaction }: QueryPaymentInput) {
   if (environment !== "sandbox" && environment !== "production") {
     throw new PaymentQueryProviderError("request_contract");
   }
-  const merchantId = process.env.PAYUNI_MERCHANT_ID?.trim();
   const orderNumber = typeof transaction.orderNumber === "string" ? transaction.orderNumber.trim() : "";
   const providerTradeNo = typeof transaction.providerTradeNo === "string" ? transaction.providerTradeNo.trim() : "";
   if (
-    !merchantId
-    || !orderNumber
+    !orderNumber
     || transaction.orderNumber !== orderNumber
     || !PAYUNI_ORDER_NUMBER.test(orderNumber)
     || transaction.providerName !== "payuni"
@@ -345,6 +343,10 @@ async function queryPayUniTransaction({ transaction }: QueryPaymentInput) {
   ) {
     throw new PaymentQueryProviderError("request_contract");
   }
+
+  let merchantId: string;
+  try { merchantId = activePayUniCredentials().merchantId; }
+  catch { throw new PaymentQueryProviderError("authentication"); }
 
   const payload = await fetchPayUniQueryPayload(environment, merchantId, orderNumber);
   if (optionalPayloadText(payload.Status) !== "SUCCESS") {
@@ -421,15 +423,17 @@ async function fetchPayUniQueryPayload(environment: "sandbox" | "production", me
 
 /** Observe an unreferenced Sandbox order. Null means authenticated not-found, never permission to retry payment. */
 async function queryUnreferencedPayUniSandboxPayment({ transaction }: QueryPaymentInput) {
-  const merchantId = process.env.PAYUNI_MERCHANT_ID?.trim();
   const orderNumber = transaction.orderNumber;
   if (process.env.PAYUNI_ENV !== "sandbox" || process.env.VERCEL_ENV !== "preview"
-    || process.env.WP4_SANDBOX_EXECUTOR_ENABLED !== "true" || !merchantId
+    || process.env.WP4_SANDBOX_EXECUTOR_ENABLED !== "true"
     || transaction.providerName !== "payuni" || transaction.providerTradeNo !== null
     || transaction.status !== "pending" || !orderNumber || !PAYUNI_ORDER_NUMBER.test(orderNumber)
     || !Number.isSafeInteger(transaction.grossAmountCents) || transaction.grossAmountCents <= 0) {
     throw new PaymentQueryProviderError("request_contract");
   }
+  let merchantId: string;
+  try { merchantId = activePayUniCredentials().merchantId; }
+  catch { throw new PaymentQueryProviderError("authentication"); }
   const payload = await fetchPayUniQueryPayload("sandbox", merchantId, orderNumber);
   // Only the authenticated encrypted status can establish absence; unsigned outer errors cannot.
   if (optionalPayloadText(payload.Status) === "QUERY03001") return null;
@@ -445,9 +449,11 @@ async function queryUnreferencedPayUniSandboxPayment({ transaction }: QueryPayme
  * leak into Server Action responses or runtime logs.
  */
 async function refundPayUniTransaction({ transaction, refundAmountCents }: RefundPaymentInput) {
-  const merchantId = process.env.PAYUNI_MERCHANT_ID?.trim();
   const tradeNo = transaction.providerTradeNo?.trim();
-  if (!merchantId || !tradeNo) throw new RefundProviderError("request_contract");
+  if (!tradeNo) throw new RefundProviderError("request_contract");
+  let merchantId: string;
+  try { merchantId = activePayUniCredentials().merchantId; }
+  catch { throw new RefundProviderError("authentication"); }
 
   const amount = payUniTradeAmount(refundAmountCents);
   const encrypted = encryptInfo({
@@ -521,13 +527,15 @@ async function refundPayUniTransaction({ transaction, refundAmountCents }: Refun
 }
 
 async function revokePayUniPaymentMethod({ providerPaymentMethodRef }: PaymentMethodReferenceRevocationInput) {
-  const merchantId = process.env.PAYUNI_MERCHANT_ID?.trim();
+  const merchantId = activePayUniCredentials().merchantId;
   if (!merchantId) throw new Error("PayUni payment method revocation is not configured.");
 
   const encrypted = encryptInfo({
     MerID: merchantId,
     Timestamp: Math.floor(Date.now() / 1000),
     UseTokenType: 1,
+    // Match the single-merchant token scope used by the setup request.
+    CreditTokenType: 2,
     BindVal: payUniOpaqueReference(providerPaymentMethodRef),
   });
 
@@ -594,10 +602,116 @@ function payUniCallbackUrl(appUrl: string, source: "notify" | "return") {
   return url.toString();
 }
 
+function payUniSetupCallbackUrl(appUrl: string, source: "notify" | "return") {
+  const url = new URL("/api/webhooks/payment-methods", appUrl);
+  url.searchParams.set("provider", "payuni");
+  url.searchParams.set("source", source);
+  return url.toString();
+}
+
+export type PayUniLiveProbeChargeResult =
+  | { status: "confirmed"; providerTradeNo: string }
+  | { status: "failed" | "ambiguous" };
+
+/** Verifies a delayed Credit API notification without retaining card fields. */
+export function normalizePayUniLiveProbeCallback(rawBody: string) {
+  try {
+    const envelope = parseRawPayload(rawBody);
+    const merchantId = activePayUniCredentials().merchantId;
+    const encrypted = requiredPayloadText(envelope.EncryptInfo, "probe notification");
+    const version = optionalPayloadText(envelope.Version);
+    if (!merchantId || optionalPayloadText(envelope.MerID) !== merchantId
+      || (version !== "1.2" && version !== "1.3")
+      || !safeEqual(optionalPayloadText(envelope.HashInfo) ?? "", hashInfo(encrypted))) return null;
+    const payload = decryptInfo(encrypted);
+    const orderNumber = optionalPayloadText(payload.MerTradeNo);
+    if (optionalPayloadText(payload.MerID) !== merchantId
+      || !orderNumber || !/^pc[A-Za-z0-9_-]{22}$/.test(orderNumber)
+      || optionalPayloadText(payload.TradeAmt) !== "1") return null;
+    if (optionalPayloadText(envelope.Status) !== "SUCCESS"
+      || optionalPayloadText(payload.Status) !== "SUCCESS"
+      || optionalPayloadText(payload.TradeStatus) !== "1"
+      || optionalPayloadText(payload.PaymentType) !== "1") return { orderNumber, status: "unconfirmed" as const };
+    const providerTradeNo = requiredPayloadText(payload.TradeNo, "probe trade number");
+    return { orderNumber, status: "confirmed" as const, providerTradeNo };
+  } catch {
+    return null;
+  }
+}
+
+/** One already-reserved, one-dollar live probe. Callers must never retry an ambiguous result. */
+export async function chargePayUniLiveProbe(input: {
+  orderNumber: string;
+  creditHash: string;
+  appUrl: string;
+}): Promise<PayUniLiveProbeChargeResult> {
+  if (process.env.PAYUNI_ENV !== "production" || !/^pc[A-Za-z0-9_-]{22}$/.test(input.orderNumber)) {
+    throw new Error("PayUni live probe is unavailable.");
+  }
+  const merchantId = activePayUniCredentials().merchantId;
+  if (!merchantId) throw new Error("PayUni live probe merchant is unavailable.");
+  const encrypted = encryptInfo({
+    MerID: merchantId,
+    MerTradeNo: input.orderNumber,
+    TradeAmt: 1,
+    Timestamp: Math.floor(Date.now() / 1000),
+    ProdDesc: "CelebrateDeal one-time payment method verification",
+    CreditHash: payUniOpaqueReference(input.creditHash),
+    NotifyURL: new URL("/api/webhooks/payuni-live-probe", input.appUrl).toString(),
+  });
+  const form = new URLSearchParams({
+    MerID: merchantId,
+    Version: "1.3",
+    EncryptInfo: encrypted,
+    HashInfo: hashInfo(encrypted),
+  });
+  let response: Response;
+  try {
+    response = await fetch(`${payUniApiBaseUrl()}/credit`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "user-agent": "payuni" },
+      body: form,
+      redirect: "error",
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    // The provider may have received the request. Never send it a second time.
+    return { status: "ambiguous" };
+  }
+  if (!response.ok) return { status: "ambiguous" };
+  let body: string;
+  try {
+    body = await response.text();
+    if (body.length > 65_536) return { status: "ambiguous" };
+    const envelope = parseRawPayload(body);
+    const encryptedResponse = requiredPayloadText(envelope.EncryptInfo, "probe response");
+    if (optionalPayloadText(envelope.MerID) !== merchantId
+      || !safeEqual(optionalPayloadText(envelope.HashInfo) ?? "", hashInfo(encryptedResponse))) {
+      return { status: "ambiguous" };
+    }
+    const result = decryptInfo(encryptedResponse);
+    if (optionalPayloadText(result.MerID) !== merchantId
+      || optionalPayloadText(result.MerTradeNo) !== input.orderNumber
+      || optionalPayloadText(result.TradeAmt) !== "1") return { status: "ambiguous" };
+    if (optionalPayloadText(envelope.Status) === "SUCCESS"
+      && optionalPayloadText(result.Status) === "SUCCESS"
+      && optionalPayloadText(result.TradeStatus) === "1"
+      && optionalPayloadText(result.PaymentType) === "1") {
+      return { status: "confirmed", providerTradeNo: requiredPayloadText(result.TradeNo, "probe trade number") };
+    }
+    if (optionalPayloadText(envelope.Status) === "UNKNOWN"
+      || optionalPayloadText(result.Status) === "UNKNOWN") return { status: "ambiguous" };
+    return { status: "failed" };
+  } catch {
+    return { status: "ambiguous" };
+  }
+}
+
 function verifyPayUniSignature(rawBody: string) {
   try {
     const outerPayload = parseRawPayload(rawBody);
-    const merchantId = process.env.PAYUNI_MERCHANT_ID?.trim();
+    const merchantId = activePayUniCredentials().merchantId;
     const outerMerchantId = optionalPayloadText(outerPayload.MerID);
     const version = optionalPayloadText(outerPayload.Version);
     const encryptPayload = optionalPayloadText(outerPayload.EncryptInfo);
@@ -629,26 +743,22 @@ function verifyPayUniSignature(rawBody: string) {
 export const payUniPaymentProvider: PaymentProviderAdapter = {
   id: "payuni",
   checkoutReadiness() {
-    if (!process.env.PAYUNI_MERCHANT_ID?.trim()) return "unavailable";
+    // Preview + live merchant is reserved exclusively for the consented probe.
+    if (process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production") return "unavailable";
     try {
-      payUniKeyMaterial();
+      activePayUniCredentials();
       payUniApiBaseUrl();
       return "ready";
     } catch {
       return "unavailable";
     }
   },
-  async createCheckoutSession({ transaction, product, billingPlan, description, appUrl, returnAppUrl }) {
-    const merchantId = process.env.PAYUNI_MERCHANT_ID;
-    if (!merchantId) {
-      return {
-        provider: "payuni",
-        mode: "manual",
-        checkoutUrl: null,
-        nextAction: "payuni_missing_merchant_id",
-        externalRequired: true,
-      };
+  async createCheckoutSession({ transaction, product, billingPlan, description, vendor, appUrl, returnAppUrl }) {
+    if (process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production"
+      && (product || description || !payUniStagingPlanSessionAllowed(vendor.id, billingPlan, transaction))) {
+      throw new Error("General PayUni checkout is disabled in live-probe Preview.");
     }
+    const merchantId = activePayUniCredentials().merchantId;
 
     const productDescription = product?.name ?? billingPlan?.name ?? description;
     if (!productDescription) {
@@ -680,6 +790,82 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
       },
       nextAction: "submit_payuni_upp_form",
       externalRequired: process.env.PAYUNI_ENV === "production",
+    };
+  },
+  async createPaymentMethodSetupSession({ intentId, setupNonce, appUrl }) {
+    const merchantId = activePayUniCredentials().merchantId;
+    if (!merchantId || setupNonce !== payUniSetupNonce(intentId)) {
+      throw new Error("PayUni setup is unavailable.");
+    }
+    // UPP requires a first authorized transaction. The payer may decline the
+    // optional agreement on PAYUNi's page; that result must not create a token.
+    const encrypted = encryptInfo({
+      MerID: merchantId,
+      MerTradeNo: intentId,
+      TradeAmt: 1,
+      Timestamp: Math.floor(Date.now() / 1000),
+      ProdDesc: "CelebrateDeal payment method verification",
+      TradeLExpireSec: 600,
+      Credit: 1,
+      CreditToken: setupNonce,
+      UseTokenType: 1,
+      CreditTokenType: 2,
+      ReturnURL: payUniSetupCallbackUrl(appUrl, "return"),
+      NotifyURL: payUniSetupCallbackUrl(appUrl, "notify"),
+    });
+    return {
+      provider: "payuni",
+      mode: "form_post",
+      setupUrl: null,
+      formAction: `${payUniApiBaseUrl()}/upp`,
+      formMethod: "POST",
+      formPayload: {
+        MerID: merchantId,
+        Version: PAYUNI_UPP_VERSION,
+        EncryptInfo: encrypted,
+        HashInfo: hashInfo(encrypted),
+      },
+      nextAction: "submit_payuni_upp_setup_form",
+      externalRequired: process.env.PAYUNI_ENV === "production",
+    };
+  },
+  async verifyPaymentMethodSetupSignature(_request, rawBody) {
+    return verifyPayUniSignature(rawBody);
+  },
+  async normalizePaymentMethodSetupPayload(rawBody) {
+    const envelope = parseRawPayload(rawBody);
+    const decrypted = decryptInfo(requiredPayloadText(envelope.EncryptInfo, "setup payload"));
+    const intentId = requiredPayloadText(decrypted.MerTradeNo, "setup order number");
+    const merchantId = activePayUniCredentials().merchantId;
+    if (optionalPayloadText(envelope.Status) !== "SUCCESS"
+      || optionalPayloadText(decrypted.Status) !== "SUCCESS"
+      || optionalPayloadText(decrypted.MerID) !== merchantId
+      || optionalPayloadText(decrypted.PaymentType) !== "1"
+      || optionalPayloadText(decrypted.TradeStatus) !== "1"
+      || optionalPayloadText(decrypted.TradeAmt) !== "1") {
+      throw new Error("PayUni setup transaction is not a paid one-dollar card authorization.");
+    }
+    const tradeNo = requiredPayloadText(decrypted.TradeNo, "setup trade number");
+    const creditHash = payUniOpaqueReference(requiredPayloadText(decrypted.CreditHash, "CreditHash"));
+    const intent = await getDb().paymentMethodSetupIntent.findUnique({
+      where: { id: intentId },
+      select: { id: true, vendorId: true, providerName: true, scopeType: true, teamId: true, membershipId: true },
+    });
+    if (!intent || intent.providerName !== "payuni"
+      || (intent.scopeType !== "VENDOR" && intent.scopeType !== "MEMBERSHIP")) {
+      throw new Error("PayUni setup intent is unavailable.");
+    }
+    return {
+      setupIntentId: intent.id,
+      setupNonce: payUniSetupNonce(intent.id),
+      providerName: "payuni",
+      eventId: `setup:${tradeNo}`,
+      vendorId: intent.vendorId,
+      scopeType: intent.scopeType,
+      teamId: intent.teamId,
+      membershipId: intent.membershipId,
+      providerPaymentMethodRef: creditHash,
+      verifiedAt: new Date().toISOString(),
     };
   },
   async verifySignature(_request, rawBody) {
@@ -733,6 +919,9 @@ export const payUniPaymentProvider: PaymentProviderAdapter = {
     return revokePayUniPaymentMethod(input);
   },
   async refundPayment(input) {
+    if (process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production") {
+      throw new RefundProviderError("request_contract");
+    }
     return refundPayUniTransaction(input);
   },
   async queryPayment(input) {

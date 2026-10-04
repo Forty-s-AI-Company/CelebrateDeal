@@ -113,7 +113,7 @@ describe("PayUni refund reconciliation", () => {
     )).not.toThrow();
   });
 
-  it("releases one ambiguous pending reservation when PayUni proves no refund occurred", async () => {
+  it("does not infer no refund from an eventually consistent paid snapshot", async () => {
     accountingMocks.applyPaymentRefundAccounting.mockClear();
     const { db, tx, refunds, transaction, auditLogs } = fakeDb({
       transaction: { ...fakeDb().transaction, status: "paid", refundedAmountCents: 0 },
@@ -126,18 +126,12 @@ describe("PayUni refund reconciliation", () => {
       providerSnapshot: paidSnapshot,
       actor: { id: "admin-1", label: "platform_admin" },
       now: new Date("2026-08-02T00:00:00.000Z"),
-    })).resolves.toEqual({
-      disposition: "provider_not_refunded",
-      transactionId: "tx-1",
-      processedRefundRecordCount: 0,
-      refundedAmountCents: 0,
-    });
-    expect(refunds[0]?.status).toBe("failed");
+    })).rejects.toMatchObject({ reason: "local_state_ambiguous" });
+    expect(refunds[0]?.status).toBe("pending");
     expect(transaction.status).toBe("paid");
     expect(tx.paymentTransaction.update).not.toHaveBeenCalled();
     expect(accountingMocks.applyPaymentRefundAccounting).not.toHaveBeenCalled();
-    expect(auditLogs).toHaveLength(1);
-    expect(auditLogs[0]?.action).toBe("resolve_payuni_refund_not_processed");
+    expect(auditLogs).toHaveLength(0);
   });
 
   it("keeps an in-flight request reservation locked when PayUni currently reports no refund", async () => {

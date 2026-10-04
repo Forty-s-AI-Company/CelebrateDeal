@@ -1,12 +1,14 @@
 import { Badge, Card, PageHeader } from "@/components/ui";
 import { CsrfField } from "@/components/csrf-field";
 import { FormSubmitButton } from "@/components/form-submit-button";
+import { PaymentMethodSetupStartForm } from "@/components/payment-method-setup-start-form";
 import { requireVendorFinance } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import { formatDateTime } from "@/lib/format";
 import { hasPaymentMethodSetupCapability } from "@/lib/payment-method-setup";
-import { revokePaymentMethodReferenceAction, startPaymentMethodSetupAction } from "@/app/actions/payment-method-actions";
+import { payUniLiveProbeAvailable } from "@/lib/payuni-live-probe";
+import { revokePaymentMethodReferenceAction } from "@/app/actions/payment-method-actions";
 
 type PaymentMethodsSearchParams = { error?: string | string[]; status?: string | string[] };
 
@@ -18,12 +20,13 @@ function queryValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function providerSetupState() {
+function providerSetupState(vendorId: string) {
   try {
     const provider = getPaymentProvider(process.env.PAYMENT_PROVIDER ?? "demo");
     return {
       id: provider.id,
-      available: hasPaymentMethodSetupCapability(provider),
+      available: hasPaymentMethodSetupCapability(provider)
+        && (provider.id !== "payuni" || process.env.PAYUNI_ENV !== "production" || payUniLiveProbeAvailable(vendorId)),
     };
   } catch {
     return { id: "未設定", available: false };
@@ -34,6 +37,8 @@ function errorMessage(error: string | undefined) {
   switch (error) {
     case "invalid_scope":
       return "付款方式設定對象無效，請從目前商家帳號重新選擇。";
+    case "consent_required":
+      return "請先確認付款方式綁定及未來扣款授權範圍。";
     case "provider_not_configured":
       return "目前尚未設定可用的付款 provider。尚未完成前不會啟用扣款。";
     case "provider_setup_unsupported":
@@ -109,7 +114,7 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
   const params = searchParams ? await searchParams : {};
   const message = errorMessage(queryValue(params.error));
   const status = statusMessage(queryValue(params.status));
-  const provider = providerSetupState();
+  const provider = providerSetupState(vendor.id);
   const membershipNames = new Map(
     memberships.map((membership) => [membership.id, `${membership.team.name} · ${membership.vendorMember.user.name}`]),
   );
@@ -148,11 +153,7 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
             <p className="mt-1 text-sm text-slate-500">用於商店層級的平台方案、用量與扣款流程。設定完成前，相關流程會安全停止。</p>
           </div>
           {provider.available ? (
-            <form action={startPaymentMethodSetupAction}>
-              <CsrfField />
-              <input type="hidden" name="scopeType" value="VENDOR" />
-              <FormSubmitButton pendingChildren="建立中…" pendingMessage="正在建立商店付款方式驗證 session，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark">開始商店驗證</FormSubmitButton>
-            </form>
+            <PaymentMethodSetupStartForm scopeType="VENDOR" providerId={provider.id} liveProbeAvailable={payUniLiveProbeAvailable(vendor.id)} csrfField={<CsrfField />} />
           ) : (
             <p role="status" className="rounded-md bg-orange-50 px-3 py-2 text-sm font-medium text-orange-800">
               目前沒有可用的安全設定流程
@@ -175,13 +176,13 @@ export default async function PaymentMethodsPage({ searchParams }: PaymentMethod
                   <p className="mt-1 text-xs text-slate-500">此成員的驗證狀態會獨立檢查，不會沿用商店 reference。</p>
                 </div>
                 {provider.available ? (
-                  <form action={startPaymentMethodSetupAction}>
-                    <CsrfField />
-                    <input type="hidden" name="scopeType" value="MEMBERSHIP" />
-                    <input type="hidden" name="teamId" value={membership.teamId} />
-                    <input type="hidden" name="membershipId" value={membership.id} />
-                    <FormSubmitButton pendingChildren="建立中…" pendingMessage="正在建立成員付款方式驗證 session，請勿重複送出。" className="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">開始成員驗證</FormSubmitButton>
-                  </form>
+                  <PaymentMethodSetupStartForm
+                    scopeType="MEMBERSHIP"
+                    providerId={provider.id}
+                    teamId={membership.teamId}
+                    membershipId={membership.id}
+                    csrfField={<CsrfField />}
+                  />
                 ) : (
                   <p role="status" className="text-sm font-medium text-orange-800">
                     等待 provider 提供安全設定流程
