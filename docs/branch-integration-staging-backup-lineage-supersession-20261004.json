@@ -1,0 +1,92 @@
+{
+  "master": "fc28e1b8dcdba9ca3926f11d27153de048f597da",
+  "disposition": "CONTENT_SUPERSEDED",
+  "heads": [
+    {
+      "head": "cd3571dd818444e51e9c8fec9b3992126ffafd6b",
+      "refs": [
+        "refs/heads/codex/wp4-lineage-candidate-fix-20260903"
+      ],
+      "paths": [
+        {
+          "path": "scripts/secure-staging-runner.mjs",
+          "source_sha256": "057fe23a9862e050313772434e01350e9036409716e3c62141d334d382f8ef59",
+          "master_sha256": "05f160d3354c804581234fb9eb2ed811048984f19f3987714a5d7e951ea3f2ca"
+        },
+        {
+          "path": "scripts/secure-staging-runner.test.mjs",
+          "source_sha256": "822a496420e8c91216c841a74e7e1e99bbf2a37681d08f078ae45e6711e6a01f",
+          "master_sha256": "ff7f33cba68dfc0acf90662a7d4b48b083f260ea0472545725bf2f6fb4301dbb"
+        },
+        {
+          "path": "src/lib/payment-providers/payuni.test.ts",
+          "source_sha256": "0a4499659e84965f6d00431bbe0ee2e64858aa5a9c95968ad0a15637b3e632fa",
+          "master_sha256": "50ee4b87e6b81e47e5934fd3f9c040facf5f65e43ad3086cce817914b00e65cc"
+        },
+        {
+          "path": "src/lib/payment-providers/payuni.ts",
+          "source_sha256": "4405ff88f3ea52461994688ca5d607ab0782e82f45e2ccc7db297091f5da6e96",
+          "master_sha256": "c648324837e868673737d5ed302e457d0e3fe517715f6c7537475541d23d604d"
+        }
+      ]
+    },
+    {
+      "head": "f669d5b502cebcabbc4d25db50dbdd980d283c71",
+      "refs": [
+        "refs/heads/codex/staging-backup-gate-20260925",
+        "refs/remotes/origin/codex/staging-backup-gate-20260925"
+      ],
+      "paths": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "source_sha256": "e1f60e3b181d454a722da99010a08ab8e19cd5d106f316f119b74896b48079f1",
+          "master_sha256": "f11a5601507c61f297e139655ed621050782f0e0663324a4f913b07f9bf00a0f"
+        },
+        {
+          "path": ".github/workflows/secure-staging-validation.yml",
+          "source_sha256": "1e54c1696f308671dc4d7f37fcb9e2ab94bf93dee706075e655911f3b6a45890",
+          "master_sha256": "43417b691bce4ec485b3f1d3579bcd5f8a8084b9d810fc5e17accbab533ab705"
+        },
+        {
+          "path": "docs/launch/secure-staging-runner.md",
+          "source_sha256": "6c45f145ec64ad3da96e94e17b37390cd6f13a779e7c9d06a0a68f01bf1522bf",
+          "master_sha256": "0752687c72fc643daa4e4b542009efa6ae699271ce736d59929b74db74b1b784"
+        },
+        {
+          "path": "scripts/secure-staging-runner.mjs",
+          "source_sha256": "09883cd3144fa723f06972f4547b60dfff839e6695d37015c088654226d232da",
+          "master_sha256": "05f160d3354c804581234fb9eb2ed811048984f19f3987714a5d7e951ea3f2ca"
+        },
+        {
+          "path": "scripts/secure-staging-runner.test.mjs",
+          "source_sha256": "bba86ca0afeb8ddafe8f87b36809665b51d16ab1c401c4189805507a5e677625",
+          "master_sha256": "ff7f33cba68dfc0acf90662a7d4b48b083f260ea0472545725bf2f6fb4301dbb"
+        },
+        {
+          "path": "scripts/secure-staging-workflow-contract.test.mjs",
+          "source_sha256": "857edffabf2a1d6c1d493864af65ed6f13127fa0dda049b2d3122c7548dee8ca",
+          "master_sha256": "6e36f393b98a2360c1e831a2539a047e2918fb54a650f5e62971d56cc11f696c"
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    "來源 lineage、GitHub唯讀且有界pagination、Preview/DB identity、read-only transaction、隔離restore、checksum和cleanup保留。",
+    "cd357 的兩個PayUni檔相較已核對177554來源，只差舊版缺少/api的query URL及非string欄位trim；主線保留已驗證較完整版本，query supersession證據可據此延伸。",
+    "backup source固定919332而非任意SHA，從immutable migration manifest導出79總數；來源可有少於79條已套用且無失敗/checksum差異，明確標示MIGRATIONS_PENDING而非UP_TO_DATE，backup不授權migration。",
+    "新active history名稱重複與source snapshot count drift檢查保留；rollback需有同名同checksum完成counterpart，restore數量對應實際source。",
+    "保留獨立staging age recipient加密artifact及固定檔案驗證；不使用Production recipient、不保存raw dump。retention recoverability為NOT_PROVEN、migrationAuthorization為BLOCKED，公鑰加密不等於恢復證明。",
+    "retained recovery以固定source及獨立pinned migration tree驗證，不依未來HEAD；ancestor/squash-equivalence原路徑仍保留，wrong source/tree fail closed。",
+    "workflow保留protected master、固定allowlist、secret injection前下載工具及source驗證、bounded egress、receipt驗證、失敗強制exit；新payment-only受同等約束及獨立receipt gate。",
+    "CI新增bounded Stream contract，其他原有checks保留；文件明列密文保存30天和需另行解密還原證明，無新增未執行PASS。"
+  ],
+  "validation": {
+    "command": "node --test scripts/secure-staging-runner.test.mjs scripts/secure-staging-workflow-contract.test.mjs",
+    "tests": 40,
+    "passed": 40,
+    "skipped": 0,
+    "external_operations": false
+  },
+  "payuni_prior_evidence": "docs/branch-integration-payuni-query-supersession-20261004.json",
+  "original_branches_deleted": false
+}

@@ -53,6 +53,7 @@ describe("AppShell role navigation", () => {
     expect(links).toContain("/billing/course-payouts");
     expect(links).toContain("/team-performance");
     expect(links).not.toContain("/forms");
+    expect(links).not.toContain("/landing-pages");
     expect(links).not.toContain("/settings/brand");
     expect(links).not.toContain("/admin/billing/dashboard");
   });
@@ -79,6 +80,7 @@ describe("AppShell role navigation", () => {
     const links = linksFor(role);
 
     expect(links).toContain("/forms");
+    expect(links).toContain("/landing-pages");
     expect(links).toContain("/onboarding");
     expect(links).toContain("/settings/brand");
     expect(links).toContain("/settings/automations");
@@ -89,6 +91,8 @@ describe("AppShell role navigation", () => {
     const links = linksFor("owner", false, ["funnel_builder"]);
 
     expect(links).toContain("/forms");
+    expect(links).toContain("/landing-pages");
+    expect(linksFor("owner", false, ["live_webinar"])).not.toContain("/landing-pages");
     expect(links).toContain("/settings/features");
     expect(links).not.toContain("/lives");
     expect(links).not.toContain("/affiliates");

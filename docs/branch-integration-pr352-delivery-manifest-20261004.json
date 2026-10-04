@@ -1,0 +1,143 @@
+{
+  "integration_base": "40db1781aa9d2bf17013c328a390dfecef7eee11",
+  "published_head": "e4d726fd4fefdda6c6c142349d5dce261d8d753e",
+  "scope": "Five reviewed product files plus owned integration evidence and future-work documentation",
+  "publication": "MERGED",
+  "files": [
+    {
+      "path": "docs/branch-integration-audit-20261004.json",
+      "candidate_sha256": "ac8e9f0eb7a8cc7bed29a40c214b411575de365f652c90cc46a522f14641d951"
+    },
+    {
+      "path": "docs/branch-integration-closed-pr-evidence-20261004.json",
+      "candidate_sha256": "fdab9bf30a8e19b0879c5eba6196085509bcabf5a047b7fc6493bff6c1403924"
+    },
+    {
+      "path": "docs/branch-integration-conflict-decisions-20261004.md",
+      "candidate_sha256": "c0010d57f56e045a45e7277ec59c05f921f9d01cc6c8c6e5030b75d8650bcf89"
+    },
+    {
+      "path": "docs/branch-integration-content-supersession-20261004.json",
+      "candidate_sha256": "f1489ae976ed16bfd534424a3dea19304a8888207d58b68342e8906d3b90b261"
+    },
+    {
+      "path": "docs/branch-integration-deferred-work-20261004.json",
+      "candidate_sha256": "1842f545c3c9a142ca7cbe1ad9ed8a83e721134ca314bf09d2a3ec228f4c2c99"
+    },
+    {
+      "path": "docs/branch-integration-delivery-state-20261004.json",
+      "candidate_sha256": "27c85286bc576d6b6dd92bc7ea4b426ae7a6ec39d9c752ba7d10f5538dbb46e1"
+    },
+    {
+      "path": "docs/branch-integration-dispositions-20261004.md",
+      "candidate_sha256": "30a133d542e24d545b7b1cd5512d5d7477354e8c7566eea9d42c51440eb3ff92"
+    },
+    {
+      "path": "docs/branch-integration-feature-pr-deltas-20261004.json",
+      "candidate_sha256": "2413b72e076806331573c5c21d12fe5e45aecdce41eb7e844b959fbc7f64d801"
+    },
+    {
+      "path": "docs/branch-integration-future-work.md",
+      "candidate_sha256": "b9f4d551bb019850913c58d40d722a5effe80adca055cf8db769c825dd4c0f11"
+    },
+    {
+      "path": "docs/branch-integration-inventory-20261004.md",
+      "candidate_sha256": "65c7d0bf9615ef1cf2159aa99428218691ec60ffa3297e256d40100f9de857e9"
+    },
+    {
+      "path": "docs/branch-integration-patch-application-proof-20261004.json",
+      "candidate_sha256": "b9d2a535dcd758c5996116f31b4b42aaf7e145bc55689b7f2b2aebdc680d2759"
+    },
+    {
+      "path": "docs/branch-integration-payuni-query-supersession-20261004.json",
+      "candidate_sha256": "5f0113077aeb9c9def25255b2da280a533797f5879215ef3baab7de9361f1e0d"
+    },
+    {
+      "path": "docs/branch-integration-pending-lineage-20261004.json",
+      "candidate_sha256": "ee30fa93c62ef578307df36fc150e9b7227098abb7a442c5b7dd9daf38bef32d"
+    },
+    {
+      "path": "docs/branch-integration-pr-index-20261004.json",
+      "candidate_sha256": "e8d89e93db4a84cd40895020147ddc4d68f9510a9b3fa49414a2ef08b807a8b1"
+    },
+    {
+      "path": "docs/branch-integration-pr13-preview-20261004.patch",
+      "candidate_sha256": "487d9eb5d7d45e9af5e8560f271986fa8cb6cfe0face10aac9850d7d7f5be236"
+    },
+    {
+      "path": "docs/branch-integration-pr13-preview-manifest-20261004.json",
+      "candidate_sha256": "11e15006f1687df8255652b042879301523344ba36dc8659fe4e16516a8567e7"
+    },
+    {
+      "path": "docs/branch-integration-pr211-stack-delta-20261004.json",
+      "candidate_sha256": "50f3d6b5b4eef7e5107a4114794a403dcd47953047f23045939b0dda640e0db5"
+    },
+    {
+      "path": "docs/branch-integration-pr211-tests-20261004.patch",
+      "candidate_sha256": "27ce1ac85dad96d042ccace4b464d03de78efda29ae51742a393b8c56ad21bb4"
+    },
+    {
+      "path": "docs/branch-integration-pr211-tests-manifest-20261004.json",
+      "candidate_sha256": "9f85515c7debc849c676ed9cd5f89fac46c383cb2bb5490d984c68352d59b3c9"
+    },
+    {
+      "path": "docs/branch-integration-pr351-acceptance-20261004.json",
+      "candidate_sha256": "2e0c581c9059ee8a69009e2784e91816f11eac0c8fae0eee624506ef6cda4230"
+    },
+    {
+      "path": "docs/branch-integration-pr351-current-manifest-20261004.json",
+      "candidate_sha256": "0dd271ad99694b0e6cc695efab84730dd59931b4ef06d029ef2354084fa7aa33"
+    },
+    {
+      "path": "docs/branch-integration-pr351-fix-20261004.patch",
+      "candidate_sha256": "29a467085dac4a2273fe85f1814d5e99f436039b770b4d859bfaa4afcab25342"
+    },
+    {
+      "path": "docs/branch-integration-pr351-fix-manifest-20261004.json",
+      "candidate_sha256": "26f8167070146337bd28bb06e1678bde77453e9f95fb0b7946248272a9e4454d"
+    },
+    {
+      "path": "docs/branch-integration-pr351-remote-ci-20261004.json",
+      "candidate_sha256": "fd5ce5ee0b7fd56c3e3dcb26f9333a2048c1e839aa03bf43c8e1154c5ca8c168"
+    },
+    {
+      "path": "docs/branch-integration-publication-20261004.json",
+      "candidate_sha256": "8a51e89e483c9150b0916a327581835aff5dd7ce11fe6924998d29889a0a92a0"
+    },
+    {
+      "path": "docs/branch-integration-remote-heads-20261004.json",
+      "candidate_sha256": "7382d2da359673c38f1bf13e7a16d5d7af3b50df618614e1f3dec3a3b3b56c31"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-commerce-element.test.tsx",
+      "candidate_sha256": "d25d2cf1b3f7bd4c69ba86d1cf745f7d3af5ef152ec38fcb1b5b3f3f197ef10c"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-webinar-experience.test.tsx",
+      "candidate_sha256": "37bce358bf892c0dde5b8cbf64f5c5ae81fe52cc8528f8b1ea3b1b75c4a70799"
+    },
+    {
+      "path": "src/components/landing-pages/landing-page-interactive-blocks.test.tsx",
+      "candidate_sha256": "552b64c8ab92d95159830ad6349f20b9580af3bc01c681c260ef7515124bdafe"
+    },
+    {
+      "path": "src/lib/live-preview.test.ts",
+      "candidate_sha256": "da6b680c1520ab6f79beba4c84d4e8ec05d71e40b7c126d394e924d55aca13bf"
+    },
+    {
+      "path": "src/lib/live-preview.ts",
+      "candidate_sha256": "586005d1cd663a0d5dea5d1c2898c1f62be2ea3223b5076297f28da18a0111b3"
+    }
+  ],
+  "merge": {
+    "headRefOid": "e4d726fd4fefdda6c6c142349d5dce261d8d753e",
+    "mergeCommit": {
+      "oid": "fc28e1b8dcdba9ca3926f11d27153de048f597da"
+    },
+    "mergedAt": "2026-10-04T13:03:37Z",
+    "state": "MERGED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/352"
+  },
+  "merge_method": "squash_required_by_linear_history",
+  "merged_tree_equals_accepted_head": true
+}

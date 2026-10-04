@@ -1,0 +1,193 @@
+{
+  "source_pr": 211,
+  "source_head": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "base": "42bce600e9c6b88003bd3b2a924d0ea96c70aee8",
+  "files": {
+    "src/components/lead-form.tsx": "377c83ef924c70318dbe55cdb360b77fa0f4c9c722dbea1d28fc32fb8766e960",
+    "src/components/app-shell.tsx": "e4ec934a98dddc665ceb731420207e77c2f0d9be77aacc85388e05827b002076",
+    "src/components/app-shell.test.ts": "d7c08804e98e2b3ee88598aaf58b1aebbcfa9c1290ace8655c56d6948f9bb663",
+    "tests/e2e/smoke.spec.ts": "2ab148cf9983398c236d23a059511365f3e864c084ac80778d4509b3a826be54",
+    "src/app/form/[slug]/page.tsx": "483e1e1a17ce23034c4657c6c13d5be9d91c44d56f9b5f0074fef7440ec7e1a3",
+    "src/app/form/[slug]/page.test.tsx": "e788c992c26c55796baae89a2bf596985c1b6fb2b10a45973bdae043f0959745"
+  },
+  "browser": {
+    "status": "PASS",
+    "phases": [
+      {
+        "name": "local_image",
+        "exit": 0
+      },
+      {
+        "name": "create_disposable",
+        "exit": 0
+      },
+      {
+        "name": "verify_loopback_port",
+        "exit": 0
+      },
+      {
+        "name": "fresh_migrations",
+        "exit": 0
+      },
+      {
+        "name": "typecheck",
+        "exit": 0
+      }
+    ],
+    "production_operations": false,
+    "synthetic_data_only": true,
+    "source_base": "42bce600e9c6b88003bd3b2a924d0ea96c70aee8",
+    "browser": {
+      "exit": 0,
+      "stats": {
+        "startTime": "2026-10-04T14:44:43.515Z",
+        "duration": 98469.278,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "file": "smoke.spec.ts",
+          "line": 1500,
+          "title": "public form can submit a lead",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "retry": 0,
+              "duration": 841
+            }
+          ]
+        }
+      ]
+    },
+    "cleanup": "PASS"
+  },
+  "unit": {
+    "numTotalTests": 26,
+    "numPassedTests": 26,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true,
+    "exit": 0
+  },
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "funnel-form-recovery",
+    "signals": {
+      "task_type": "implement",
+      "complexity": "low",
+      "risk": "low",
+      "risk_score": 0,
+      "engineering_profile": "routine",
+      "large_workload": false,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "low",
+      "risk_requirement": "low",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "implement",
+    "difficulty": "low",
+    "requested_team": "ai-team",
+    "team": "ai-team",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "42bce600e9c6b88003bd3b2a924d0ea96c70aee8",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [
+      "new-head-ci-quality"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "low",
+    "effort_floor": "low",
+    "effort_reason": null,
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "low",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "low",
+      "effort_floor": "low",
+      "effort_reason": null,
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": true,
+    "finding_escalation": null
+  },
+  "review": {
+    "security": "Request schema and trusted attribution remain unchanged; sidebar reuses manager/feature filtering.",
+    "performance": "Synchronous ref stops redundant HTTP requests; no dependency added.",
+    "readability": "Guard has comment and explicit failure reset.",
+    "maintainability": "FormData construction is inside try so serialization exceptions allow retry; success keeps lock closed.",
+    "findings": []
+  },
+  "limitations": [
+    "Browser validates public submission; sidebar was added after browser build and checked with SSR role/feature tests.",
+    "First browser attempt failed due to ambiguous alert locator; scoped selector fixed and rerun passed.",
+    "Puck CSS functionality is supplied by installed runtime; no CSS change shipped.",
+    "Public form liveId change added after targeted browser run; final head CI and updated SSR tests required."
+  ],
+  "whole_goal": "IN_PROGRESS",
+  "scope_addition": "Recover selected public webinar session behavior from PR211. Only sessions returned by public-registration-form are selectable; missing/foreign IDs return 404; SSR regression checks immutable input."
+}

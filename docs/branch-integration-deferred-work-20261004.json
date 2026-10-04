@@ -1,6 +1,6 @@
 {
   "inventory_base": "bdbae2f53491afd518b97ee597e117d6a585b55c",
-  "status": "DEFERRED_NOT_ACCEPTED_OR_MERGED",
+  "status": "IN_PROGRESS",
   "owner": "main agent",
   "packages": {
     "funnel": {
@@ -36,20 +36,21 @@
         "refs/heads/codex/staging-browser-diagnostic-20260925",
         "refs/remotes/origin/codex/staging-browser-diagnostic-20260925"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         "scripts/staging-browser-smoke.mjs",
         "scripts/staging-browser-smoke.test.mjs"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "Original intent retained by current master; behavior review and 16 passing mocked contract tests recorded. Historical branch kept for provenance.",
+      "evidence": "branch-integration-staging-browser-supersession-20261004.json"
     },
     {
       "head": "0f44aea78434a3850ecb8c38ba6fb25586cbd0d4",
       "refs": [
         "refs/heads/codex/staging-browser-flow-20260925"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         ".github/workflows/staging-browser-smoke.yml",
@@ -57,7 +58,8 @@
         "scripts/staging-browser-smoke.mjs",
         "scripts/staging-browser-smoke.test.mjs"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "Browser flow, attestation, scoped session cleanup, hydration/navigation and request guards preserved in current master with stricter diagnostics; branch retained.",
+      "evidence": "branch-integration-staging-browser-supersession-20261004.json"
     },
     {
       "head": "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
@@ -239,14 +241,15 @@
       "refs": [
         "refs/heads/codex/payuni-success-idempotency-20260925"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         "docs/codex-goal/API_CONTRACT_REGISTRY.md",
         "scripts/mvp-payuni-sandbox-e2e.mjs",
         "scripts/mvp-payuni-sandbox-e2e.test.mjs"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "原付款成功與duplicate callback驗證已完整保留於主線，現行固定server契約與分離receipt較完整；三檔內容核對及65個mock測試已驗證。",
+      "evidence": "docs/branch-integration-payuni-idempotency-supersession-20261004.json"
     },
     {
       "head": "2cceebba802dec508faaad166e37fa1e51b09ed5",
@@ -541,7 +544,7 @@
       "refs": [
         "refs/remotes/origin/codex/staging-browser-flow-20260925"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         ".github/workflows/staging-browser-smoke.yml",
@@ -549,14 +552,15 @@
         "scripts/staging-browser-smoke.mjs",
         "scripts/staging-browser-smoke.test.mjs"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "Browser flow, attestation, scoped session cleanup, hydration/navigation and request guards preserved in current master with stricter diagnostics; branch retained.",
+      "evidence": "branch-integration-staging-browser-supersession-20261004.json"
     },
     {
       "head": "4c44431c9769bef50704bb6183707655eb34883c",
       "refs": [
         "refs/heads/codex/staging-migration-compat-preflight-20260925"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         "docs/launch/staging-migration-compat-preflight.md",
@@ -565,7 +569,8 @@
         "scripts/staging-migration-isolated-replay.mjs",
         "scripts/staging-migration-isolated-replay.test.mjs"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "舊意圖已由主線完整保留並加強，逐檔核對及測試證據已保存；不回退已知來源 rollback 與跨 collation 修正。",
+      "evidence": "docs/branch-integration-staging-replay-supersession-20261004.json"
     },
     {
       "head": "4fac54930808b3184331aad342dd40cb232d228e",
@@ -573,13 +578,14 @@
         "refs/heads/codex/staging-observability-20260926",
         "refs/remotes/origin/codex/staging-observability-20260926"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         "scripts/staging-browser-smoke.mjs",
         "scripts/staging-browser-smoke.test.mjs"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "Original intent retained by current master; behavior review and 16 passing mocked contract tests recorded. Historical branch kept for provenance.",
+      "evidence": "branch-integration-staging-browser-supersession-20261004.json"
     },
     {
       "head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
@@ -1766,7 +1772,7 @@
       "refs": [
         "refs/remotes/origin/codex/staging-runtime-provider-probe-20260925"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         "docs/codex-goal/API_CONTRACT_REGISTRY.md",
@@ -1774,28 +1780,30 @@
         "scripts/staging-provider-readonly-probe.mjs",
         "scripts/staging-provider-readonly-probe.test.mjs"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "Read-only probe intent retained with stricter boolean-only response validation; source branch preserved.",
+      "evidence": "branch-integration-staging-provider-supersession-20261004.json"
     },
     {
       "head": "6d63dd9793091309208f55b5ec132699ec839d0e",
       "refs": [
         "refs/remotes/origin/codex/payuni-success-idempotency-20260925"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         "docs/codex-goal/API_CONTRACT_REGISTRY.md",
         "scripts/mvp-payuni-sandbox-e2e.mjs",
         "scripts/mvp-payuni-sandbox-e2e.test.mjs"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "原付款成功與duplicate callback驗證已完整保留於主線，現行固定server契約與分離receipt較完整；三檔內容核對及65個mock測試已驗證。",
+      "evidence": "docs/branch-integration-payuni-idempotency-supersession-20261004.json"
     },
     {
       "head": "708a8d77072f6e7d7090c0cbb09721b78a247bd0",
       "refs": [
         "refs/heads/codex/staging-apply-gate-v2-20260925"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         ".github/workflows/staging-migration-apply.yml",
@@ -1803,14 +1811,15 @@
         "scripts/staging-migration-apply.mjs",
         "scripts/staging-migration-apply.test.mjs"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "Current master retains protected additive apply flow and replaces obsolete dispatch declaration with documented autonomous non-Production policy; adds stricter connection checks and timeouts.",
+      "evidence": "branch-integration-staging-apply-supersession-20261004.json"
     },
     {
       "head": "7dba71b835ad1d40b8b7c149fe16e55477a084f6",
       "refs": [
         "refs/heads/codex/staging-runtime-provider-probe-20260925"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         "docs/codex-goal/API_CONTRACT_REGISTRY.md",
@@ -1818,7 +1827,8 @@
         "scripts/staging-provider-readonly-probe.mjs",
         "scripts/staging-provider-readonly-probe.test.mjs"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "Read-only probe intent retained with stricter boolean-only response validation; source branch preserved.",
+      "evidence": "branch-integration-staging-provider-supersession-20261004.json"
     },
     {
       "head": "7f1b3fd26e48a41e9e003c848594fa102000f220",
@@ -2278,7 +2288,7 @@
       "refs": [
         "refs/remotes/origin/codex/staging-apply-gate-v2-20260925"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         ".github/workflows/staging-migration-apply.yml",
@@ -2286,7 +2296,8 @@
         "scripts/staging-migration-apply.mjs",
         "scripts/staging-migration-apply.test.mjs"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "Current master retains protected additive apply flow and replaces obsolete dispatch declaration with documented autonomous non-Production policy; adds stricter connection checks and timeouts.",
+      "evidence": "branch-integration-staging-apply-supersession-20261004.json"
     },
     {
       "head": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
@@ -4836,7 +4847,7 @@
       "refs": [
         "refs/heads/codex/wp4-lineage-candidate-fix-20260903"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         "scripts/secure-staging-runner.mjs",
@@ -4844,7 +4855,8 @@
         "src/lib/payment-providers/payuni.test.ts",
         "src/lib/payment-providers/payuni.ts"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "原source lineage與backup gate意圖已保留，主線新增固定source/tree、加密備份及明確未證明recoverability限制；逐檔差異與40個contracts已驗證。",
+      "evidence": "docs/branch-integration-staging-backup-lineage-supersession-20261004.json"
     },
     {
       "head": "d8c85fbbb39e1a72668fa49df171df49e5ef45d1",
@@ -4852,14 +4864,15 @@
         "refs/heads/ai-team/isolated-write-smoke-20260712-0405",
         "refs/remotes/origin/ai-team/isolated-write-smoke-20260712-0405"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "historical-smoke",
       "remaining_paths_at_inventory": [
         ".github/workflows/ci.yml",
         "docs/ai-team-smoke/isolated-write-smoke.md",
         "package-lock.json"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "Documentation-only historical smoke; current CI and actual protected PR delivery fulfill its intent while retaining current dependency versions. Historical document preserved by source ref.",
+      "evidence": "branch-integration-historical-smoke-supersession-20261004.json"
     },
     {
       "head": "de515182fc5fbcccbefa348f33ee7fad1d6ca715",
@@ -6061,7 +6074,7 @@
         "refs/heads/codex/staging-backup-gate-20260925",
         "refs/remotes/origin/codex/staging-backup-gate-20260925"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_SUPERSEDED",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         ".github/workflows/ci.yml",
@@ -6071,7 +6084,8 @@
         "scripts/secure-staging-runner.test.mjs",
         "scripts/secure-staging-workflow-contract.test.mjs"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "原source lineage與backup gate意圖已保留，主線新增固定source/tree、加密備份及明確未證明recoverability限制；逐檔差異與40個contracts已驗證。",
+      "evidence": "docs/branch-integration-staging-backup-lineage-supersession-20261004.json"
     }
   ],
   "head_count": 42,
@@ -6080,5 +6094,6 @@
     "hash_verified_files": 118,
     "status": "PRESERVED_NOT_CHECKPOINTED",
     "next_action": "按 AI Team、Funnel／登入、非 Production 驗證工具分開對照最新 master，精確 staging；禁止覆寫或清理未知變更。"
-  }
+  },
+  "remaining_unaccepted_heads": 28
 }
