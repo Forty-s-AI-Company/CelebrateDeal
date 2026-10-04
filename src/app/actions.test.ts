@@ -3075,6 +3075,15 @@ describe("sendPasswordResetSmokeAction", () => {
 });
 
 describe("verifyMfaAction", () => {
+  it("preserves the requested destination when an unenrolled user needs setup first", async () => {
+    mocks.requireAuth.mockResolvedValue({ user: { id: "owner-1", mfaFactor: null }, isPlatformAdmin: false });
+    const formData = mfaVerifyFormData("123456", "/orders?status=paid");
+    await expect(verifyMfaAction(formData)).rejects.toThrow("redirect:/mfa/setup?next=%2Forders%3Fstatus%3Dpaid");
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
+    expect(mocks.markCurrentSessionMfaVerified).not.toHaveBeenCalled();
+    expect(mocks.verifyTotpCode).not.toHaveBeenCalled();
+  });
+
   it("limits a verified user's MFA attempts by both user ID and forwarded source IP before validating the code", async () => {
     const formData = mfaVerifyFormData();
 

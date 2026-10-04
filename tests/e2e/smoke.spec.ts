@@ -1257,6 +1257,36 @@ test("vendor finance roles cannot enter the cross-tenant platform admin area", a
   await expect(page.getByRole("heading", { name: "財務總覽" })).toHaveCount(0);
 });
 
+for (const width of [1440, 390]) {
+  mfaTest(`MFA enrollment preserves return navigation at ${width}px`, async ({ page, mfaUser }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const destination = "/admin/billing/dashboard?from=mfa-return";
+    await loginMfaAdmin(page, mfaUser, /\/admin\/billing\/dashboard$/);
+    await page.goto(`/mfa/setup?next=${encodeURIComponent(destination)}`);
+    await page.getByRole("button", { name: "開始建立 TOTP" }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get("updated")).toBe("mfa_started");
+    expect(new URL(page.url()).searchParams.get("next")).toBe(destination);
+    await expect(page.getByAltText("CelebrateDeal TOTP 設定 QR Code")).toBeVisible();
+    const seed = (await page.locator("p.font-mono").textContent())?.trim();
+    if (!seed) throw new Error("Synthetic MFA setup did not provide a seed.");
+    await page.getByLabel("6 位數驗證碼").fill(invalidTotpCode(seed));
+    await page.getByRole("button", { name: "啟用 MFA", exact: true }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get("error")).toBe("mfa_code");
+    expect(new URL(page.url()).searchParams.get("next")).toBe(destination);
+    expect(await db.userMfaFactor.count({ where: { userId: mfaUser.id } })).toBe(0);
+    await page.getByLabel("6 位數驗證碼").fill(totpCodeForTimestamp(seed));
+    await page.getByRole("button", { name: "啟用 MFA", exact: true }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get("updated")).toBe("mfa_enabled");
+    expect(new URL(page.url()).searchParams.get("next")).toBe(destination);
+    await expect(page.getByRole("button", { name: "我已保存 recovery codes" })).toBeVisible();
+    await page.getByRole("button", { name: "我已保存 recovery codes" }).click();
+    await expect(page).toHaveURL(`/mfa/verify?next=${encodeURIComponent(destination)}`);
+    await verifyMfa(page, totpCodeForTimestamp(seed));
+    await expect(page).toHaveURL(destination);
+    await expect(page.getByRole("heading", { name: "財務總覽", exact: true })).toBeVisible();
+  });
+}
+
 mfaTest("platform admin can enable TOTP, rejects an incorrect code, and enters admin after verification", async ({ page, mfaUser }) => {
   const totpSeed = await enrollMfa(page, mfaUser);
 

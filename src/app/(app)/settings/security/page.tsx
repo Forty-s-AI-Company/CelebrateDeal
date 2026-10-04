@@ -1,5 +1,9 @@
+import { MfaReturnField } from "@/components/mfa-return-field";
+import { safeMfaReturnPath } from "@/lib/mfa-return-path";
 import { isPasswordResetSmokeEnabled } from "@/lib/password-reset-smoke-policy";
 import { cookies } from "next/headers";
+import Image from "next/image";
+import QRCode from "qrcode";
 import {
   createVendorMemberAction,
   deactivateVendorMemberAction,
@@ -66,11 +70,12 @@ const updatedMessages: Record<string, string> = {
 export default async function SecuritySettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ updated?: string; error?: string }>;
+  searchParams: Promise<{ updated?: string; error?: string; next?: string }>;
 }) {
   await applyE2eLoadingDelay();
   const params = await searchParams;
-  const auth = await requireAuth();
+  const nextPath = safeMfaReturnPath(params.next);
+  const auth = await requireAuth({ nextPath });
   const db = getDb();
   const vendorId = auth.vendor?.id;
   const isOwner = auth.member?.role === "owner";
@@ -79,6 +84,15 @@ export default async function SecuritySettingsPage({
   const pendingMfa = parsedPendingMfa?.userId === auth.user.id ? parsedPendingMfa : null;
   const recoveryCodes = parseRecoveryCodes(cookieStore.get(MFA_RECOVERY_COOKIE)?.value);
   const mfaUri = pendingMfa ? generateTotpUri({ email: auth.user.email, secret: pendingMfa.secret }) : null;
+  // Generate locally from this user's pending setup; never send the secret to an external QR service.
+  const mfaQrCode = mfaUri
+    ? await QRCode.toDataURL(mfaUri, {
+        errorCorrectionLevel: "M",
+        margin: 1,
+        width: 224,
+        color: { dark: "#0f172a", light: "#ffffff" },
+      })
+    : null;
   const activeRecoveryCodeCount = auth.user.recoveryCodes.filter((code) => !code.usedAt).length;
   // The local and E2E PostgreSQL instances intentionally use a one-connection
   // pool. Keep these independent reads serial so a Server Action cannot wait
@@ -147,17 +161,31 @@ export default async function SecuritySettingsPage({
             </div>
           ) : pendingMfa ? (
             <div className="grid gap-4">
-              <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-4">
-                <p className="text-sm font-semibold text-slate-900">手動輸入密鑰</p>
-                <p className="mt-2 font-mono text-sm text-slate-700">{pendingMfa.secret}</p>
-                <p className="mt-3 text-xs text-slate-500">若你的驗證器 App 支援手動輸入，Issuer 請填 `CelebrateDeal`。</p>
-                {mfaUri ? <p className="mt-3 break-all text-xs text-slate-500">{mfaUri}</p> : null}
+              <div className="grid justify-items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/70 p-5 text-center">
+                <p className="text-sm font-semibold text-slate-900">使用驗證器 App 掃描 QR Code</p>
+                {mfaQrCode ? (
+                  <Image
+                    src={mfaQrCode}
+                    alt="CelebrateDeal TOTP 設定 QR Code"
+                    width={224}
+                    height={224}
+                    unoptimized
+                    className="rounded-xl bg-white p-2 shadow-sm"
+                  />
+                ) : null}
+                <p className="text-xs text-slate-600">掃描後，請輸入 App 顯示的 6 位數驗證碼完成啟用。</p>
               </div>
-              <MfaEnrollmentForm csrfField={<CsrfField />} />
+              <details className="rounded-lg border border-slate-200 bg-slate-50/70 p-4">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-700">無法掃描 QR Code？顯示手動密鑰</summary>
+                <p className="mt-3 font-mono text-sm text-slate-700">{pendingMfa.secret}</p>
+                <p className="mt-2 text-xs text-slate-500">Issuer 請填 `CelebrateDeal`。</p>
+              </details>
+              <MfaEnrollmentForm csrfField={<CsrfField />} nextPath={nextPath} />
             </div>
           ) : (
             <form action="/api/settings/security/mfa/start" method="post" className="grid gap-3">
               <CsrfField />
+                  <MfaReturnField nextPath={nextPath} />
               <p className="rounded-lg border border-orange-100 bg-orange-50 p-4 text-sm text-orange-800">
                 尚未啟用 MFA。你可以繼續使用目前的帳號權限，也可以選擇啟用以加強登入保護。
               </p>
@@ -177,6 +205,7 @@ export default async function SecuritySettingsPage({
               </div>
                 <form action="/api/settings/security/mfa/recovery-codes/dismiss" method="post" className="mt-4">
                 <CsrfField />
+                  <MfaReturnField nextPath={nextPath} />
                 <SubmitButton>我已保存 recovery codes</SubmitButton>
               </form>
             </>
@@ -188,6 +217,7 @@ export default async function SecuritySettingsPage({
               {auth.user.mfaFactor ? (
                 <form action={regenerateRecoveryCodesAction} className="grid gap-3">
                   <CsrfField />
+                  <MfaReturnField nextPath={nextPath} />
                   <label className="grid gap-1.5 text-sm font-medium text-slate-700">
                     目前 TOTP 驗證碼
                     <input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required className="h-10 rounded-md border border-border px-3 tracking-[0.2em]" placeholder="123456" />

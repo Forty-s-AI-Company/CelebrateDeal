@@ -11,6 +11,18 @@ import { POST } from "./route";
 describe("MFA recovery-code regeneration route", () => {
   beforeEach(() => mocks.regenerateMfaRecoveryCodes.mockReset());
 
+  it.each([true, false])("preserves the requested return when regeneration success=%s", async (ok) => {
+    mocks.regenerateMfaRecoveryCodes.mockResolvedValue({ ok, destination: "/mfa/setup", ...(!ok ? { error: "mfa_code" } : {}) });
+    const body = new FormData();
+    body.set("next", "/orders?status=paid");
+    const response = await POST(new Request("https://app.example.test/api/settings/security/mfa/recovery-codes/regenerate", { method: "POST", body }));
+    const url = new URL(response.headers.get("location")!);
+    expect(url.origin).toBe("https://app.example.test");
+    expect(url.searchParams.get(ok ? "updated" : "error")).toBe(ok ? "recovery_regenerated" : "mfa_code");
+    expect(url.searchParams.get("next")).toBe("/orders?status=paid");
+    expect(mocks.regenerateMfaRecoveryCodes).toHaveBeenCalledWith(body);
+  });
+
   it("keeps the browser origin for the successful native redirect", async () => {
     mocks.regenerateMfaRecoveryCodes.mockResolvedValue({ ok: true, destination: "/mfa/setup" });
     const formData = new FormData();

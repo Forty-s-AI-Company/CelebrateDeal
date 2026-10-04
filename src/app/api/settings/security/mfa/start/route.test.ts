@@ -15,6 +15,18 @@ describe("MFA start route", () => {
     mocks.startMfaEnrollment.mockReset();
   });
 
+  it.each(["/orders?status=paid", "//outside.invalid"])("preserves only a validated return: %s", async (next) => {
+    mocks.startMfaEnrollment.mockResolvedValue({ destination: "/mfa/setup", updated: "mfa_started" });
+    const body = new FormData();
+    body.set("next", next);
+    const response = await POST(new Request("https://app.example.test/api/settings/security/mfa/start", { method: "POST", body }));
+    const location = new URL(response.headers.get("location")!);
+    expect(location.origin).toBe("https://app.example.test");
+    expect(location.pathname).toBe("/mfa/setup");
+    expect(location.searchParams.get("updated")).toBe("mfa_started");
+    expect(location.searchParams.get("next")).toBe(next.startsWith("//") ? null : next);
+  });
+
   it("keeps the validated browser origin on the native redirect", async () => {
     mocks.startMfaEnrollment.mockResolvedValue({ destination: "/mfa/setup", updated: "mfa_started" });
     const formData = new FormData();
