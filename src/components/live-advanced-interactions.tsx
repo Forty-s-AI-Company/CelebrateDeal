@@ -41,6 +41,12 @@ function metadata(value: unknown): AdvancedInteractionMetadata | null {
   return value as AdvancedInteractionMetadata;
 }
 
+class InteractionRequestError extends Error {
+  constructor(public status: number) {
+    super(status === 409 ? "這個互動已結束，或你已經參加過了。" : "互動連線暫時忙碌，請再試一次。");
+  }
+}
+
 async function interactionRequest(body: Record<string, unknown>, signal?: AbortSignal) {
   const response = await fetch("/api/live-interactions", {
     method: "POST",
@@ -48,7 +54,7 @@ async function interactionRequest(body: Record<string, unknown>, signal?: AbortS
     headers: { "content-type": "application/json", "x-celebratedeal-client": "web" },
     body: JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(response.status === 409 ? "這個互動已結束，或你已經參加過了。" : "互動連線暫時忙碌，請再試一次。");
+  if (!response.ok) throw new InteractionRequestError(response.status);
   return await response.json() as { run?: PublicRun | null };
 }
 
@@ -111,6 +117,7 @@ function ActiveLiveAdvancedInteractions({
   events: AdvancedEvent[];
   enabled: boolean;
 }) {
+  const [admissionLost, setAdmissionLost] = useState(false);
   const [run, setRun] = useState<PublicRun | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [displayName, setDisplayName] = useState("");
@@ -134,25 +141,37 @@ function ActiveLiveAdvancedInteractions({
     const controller = new AbortController();
     submissionController.current = controller;
     return () => controller.abort();
-  }, [run?.id, scriptedEvent?.id]);
+  }, [run?.id, scriptedEvent?.id, admissionLost]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || admissionLost) return;
     // 依序輪詢，切換直播或事件時中止舊請求，避免過期結果覆蓋新狀態。
     const controller = new AbortController();
     const { signal } = controller;
     let timer: number;
     async function refresh() {
       try {
+        let scriptedRun: PublicRun | null = null;
         if (scriptedEvent) {
-          const payload = await interactionRequest({ action: "open", vendorId, liveId, eventId: scriptedEvent.id }, signal);
-          if (!signal.aborted) setRun(payload.run ?? null);
+          try {
+            const payload = await interactionRequest({ action: "open", vendorId, liveId, eventId: scriptedEvent.id }, signal);
+            scriptedRun = payload.run ?? null;
+          } catch (error) {
+            if (error instanceof InteractionRequestError && error.status === 401) {
+              if (!signal.aborted) setAdmissionLost(true);
+              return;
+            }
+            // 排定事件已結束或暫時失敗，仍讀取手動互動與精選問題。
+          }
         }
+        if (signal.aborted) return;
         const response = await fetch(`/api/live-interactions?vendorId=${encodeURIComponent(vendorId)}&liveId=${encodeURIComponent(liveId)}`, { cache: "no-store", signal });
+        if (signal.aborted) return;
+        if (response.status === 401) { setAdmissionLost(true); return; }
         if (!response.ok) return;
         const payload = await response.json() as { runs?: PublicRun[]; spotlight?: PublicSpotlight | null };
         if (signal.aborted) return;
-        if (!scriptedEvent) setRun(payload.runs?.[0] ?? null);
+        setRun(scriptedRun ?? payload.runs?.[0] ?? null);
         setSpotlight(payload.spotlight ?? null);
       } catch {
         // 暫時斷線不影響播放；下一輪重新讀取伺服器結果。
@@ -165,7 +184,7 @@ function ActiveLiveAdvancedInteractions({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [enabled, liveId, scriptedEvent, vendorId]);
+  }, [enabled, admissionLost, liveId, scriptedEvent, vendorId]);
 
   useEffect(() => {
     if (!run) return;
@@ -183,7 +202,7 @@ function ActiveLiveAdvancedInteractions({
   }
 
   async function respond(value: string | string[]) {
-    if (!run || isSubmitting) return;
+    if (!run || isSubmitting || admissionLost) return;
     const signal = submissionController.current?.signal;
     if (!signal || signal.aborted) return;
     setIsSubmitting(true);
@@ -200,6 +219,7 @@ function ActiveLiveAdvancedInteractions({
             : "已收到，結果會即時更新。",
       );
     } catch (error) {
+      if (!signal.aborted && error instanceof InteractionRequestError && error.status === 401) setAdmissionLost(true);
       if (!signal.aborted) setMessage(error instanceof Error ? error.message : "互動失敗，請再試一次。");
     } finally {
       setIsSubmitting(false);
@@ -207,7 +227,7 @@ function ActiveLiveAdvancedInteractions({
   }
 
   async function askQuestion() {
-    if (isSubmitting || !questionBody.trim()) return;
+    if (isSubmitting || admissionLost || !questionBody.trim()) return;
     setIsSubmitting(true);
     setQuestionMessage("");
     try {
@@ -216,6 +236,7 @@ function ActiveLiveAdvancedInteractions({
         headers: { "content-type": "application/json", "x-celebratedeal-client": "web" },
         body: JSON.stringify({ action: "ask_question", vendorId, liveId, body: questionBody.trim(), ...(questionName.trim() ? { displayName: questionName.trim() } : {}) }),
       });
+      if (response.status === 401) { setAdmissionLost(true); return; }
       if (!response.ok) throw new Error(response.status === 429 ? "提問有點太快了，請稍後再送。" : "問題暫時送不出去，請再試一次。");
       setQuestionBody("");
       setQuestionMessage("問題已送出，等待助教審核。");
@@ -330,6 +351,8 @@ function ActiveLiveAdvancedInteractions({
       ) : null}
     </>);
   }
+
+  if (admissionLost) return <aside role="alert">入場驗證已失效。<button type="button" onClick={() => window.location.reload()}>重新驗證入場</button></aside>;
 
   return (
     <>
