@@ -1,0 +1,52 @@
+[
+  {
+    "pr": 13,
+    "comments": [
+      {
+        "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/13#issuecomment-4972817014",
+        "body": "外層最終 diff review 發現預覽 CTA 可能誤送出表單，且大量商品會讓手機預覽無界增長。保留原 commit，改由新的 bounded repair cycle 產生含完整 QA／review receipts 的替代 PR。"
+      }
+    ]
+  },
+  {
+    "pr": 213,
+    "comments": []
+  },
+  {
+    "pr": 234,
+    "comments": [
+      {
+        "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/234#issuecomment-5748004765",
+        "body": "Superseded by merged PR #236; source contract was reworked from latest master with scoped Live idempotency and fail-closed runtime boundaries."
+      }
+    ]
+  },
+  {
+    "pr": 284,
+    "comments": []
+  },
+  {
+    "pr": 285,
+    "comments": []
+  },
+  {
+    "pr": 299,
+    "comments": []
+  },
+  {
+    "pr": 301,
+    "comments": []
+  },
+  {
+    "pr": 302,
+    "comments": []
+  },
+  {
+    "pr": 303,
+    "comments": []
+  },
+  {
+    "pr": 320,
+    "comments": []
+  }
+]

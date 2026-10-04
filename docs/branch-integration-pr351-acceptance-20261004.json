@@ -1,0 +1,261 @@
+{
+  "decision": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "pr351-current-20261004",
+    "signals": {
+      "task_type": "release",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "billing",
+        "payment"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "release",
+    "difficulty": "high",
+    "requested_team": "auto",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "required": true,
+        "fallback_events": [
+          {
+            "model": "opus",
+            "reason": "unavailable"
+          }
+        ],
+        "status": "planned",
+        "model_key": "astra",
+        "model": "gpt-6-astra",
+        "provider": "native_agent",
+        "reasoning_effort": "high",
+        "effort_floor": null,
+        "effort_reason": null,
+        "sandbox_mode": "read-only",
+        "execution": "native_agent_handoff_only",
+        "candidate_findings_only": false,
+        "may_spawn": false,
+        "astra_reason": "critical_review_no_equivalent"
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:db5c29aafb0ed1e080eb721af1c1dfb2d9e272cb64192a3df9f3929f7becf88c",
+    "snapshot_root": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal",
+    "snapshot_files": [
+      ".ai-team/tmp/pr351-integration-20261004/src/lib/payment-providers/payuni.ts",
+      ".ai-team/tmp/pr351-integration-20261004/src/lib/payment-providers/payuni.test.ts",
+      ".ai-team/tmp/pr351-integration-20261004/src/lib/payment-providers/payuni-setup.test.ts",
+      ".ai-team/tmp/pr351-integration-20261004/.github/workflows/payuni-live-probe.yml",
+      ".ai-team/tmp/pr351-integration-20261004/src/app/api/webhooks/payments/route.ts",
+      ".ai-team/tmp/pr351-integration-20261004/src/app/api/webhooks/payments/route.test.ts"
+    ],
+    "required_checks": [
+      "targeted-tests",
+      "scoped-eslint",
+      "manual-only-payment-workflow",
+      "new-head-ci-quality"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "release",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "read-only",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "release",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "read-only",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "release",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "evidence": {
+    "checks": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "targeted-tests",
+        "revision": "sha256:db5c29aafb0ed1e080eb721af1c1dfb2d9e272cb64192a3df9f3929f7becf88c",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 8.047,
+        "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr351-current-evidence-20261004\\targeted-tests.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "scoped-eslint",
+        "revision": "sha256:db5c29aafb0ed1e080eb721af1c1dfb2d9e272cb64192a3df9f3929f7becf88c",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 15.187,
+        "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr351-current-evidence-20261004\\scoped-eslint.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "manual-only-payment-workflow",
+        "revision": "sha256:db5c29aafb0ed1e080eb721af1c1dfb2d9e272cb64192a3df9f3929f7becf88c",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 0.047,
+        "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr351-current-evidence-20261004\\manual-only-payment-workflow.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "new-head-ci-quality",
+        "revision": "sha256:db5c29aafb0ed1e080eb721af1c1dfb2d9e272cb64192a3df9f3929f7becf88c",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 2.484,
+        "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr351-published-evidence-20261004\\new-head-ci-quality.json"
+      }
+    ],
+    "findings": [
+      {
+        "severity": "MINOR",
+        "disposition": "unresolved",
+        "issue": "CreditLife expiry follow-up retained"
+      }
+    ],
+    "review": {
+      "kind": "review",
+      "source": "desktop_native",
+      "revision": "sha256:db5c29aafb0ed1e080eb721af1c1dfb2d9e272cb64192a3df9f3929f7becf88c",
+      "status": "PASS",
+      "independent": true,
+      "role": "critical_review",
+      "model": "gpt-6-astra",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "reviewer": "/root/pr351_review",
+      "head": "ff9f446751d37be64bf2cf423e2e7c055135e0ce",
+      "reviewed_files": {
+        "src/lib/payment-providers/payuni.ts": "c648324837e868673737d5ed302e457d0e3fe517715f6c7537475541d23d604d",
+        "src/lib/payment-providers/payuni.test.ts": "50ee4b87e6b81e47e5934fd3f9c040facf5f65e43ad3086cce817914b00e65cc",
+        "src/lib/payment-providers/payuni-setup.test.ts": "2eea6aa98fd9fea951c5d3de7edf9aea58057a9c6d037c12b33bacad8d8b58b1",
+        ".github/workflows/payuni-live-probe.yml": "491baf1b798e7e863d68aa694a1986a7c02572b922b1605b2ce83595a88fae2c",
+        "src/app/api/webhooks/payments/route.ts": "b6009ac8b45d0b0d88e972c220d534b1081fd41a7b66234d6c160320ba357193",
+        "src/app/api/webhooks/payments/route.test.ts": "c965a563996cabb007cd67160e4f4c80915d27de03e952facc76f76d118b8baf"
+      },
+      "scope": "Original 123-file full review plus prior four-file fix review; new independent two-file webhook return delta review from b3ddc37b to ff9f4467. Original four files unchanged.",
+      "new_delta_findings": [],
+      "major_closed": [
+        "token_scope_mismatch",
+        "automatic_live_charge_schedule"
+      ],
+      "minor_deferred": [
+        "CreditLife_expiry_not_persisted"
+      ],
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr351-current-evidence-20261004\\review.json"
+    },
+    "execution": {
+      "kind": "execution",
+      "source": "desktop_native",
+      "revision": "sha256:db5c29aafb0ed1e080eb721af1c1dfb2d9e272cb64192a3df9f3929f7becf88c",
+      "status": "COMPLETED",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "scope": "Reviewed candidate committed and pushed through PR #351",
+      "head": "ff9f446751d37be64bf2cf423e2e7c055135e0ce",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr351-published-evidence-20261004\\execution.json"
+    }
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:db5c29aafb0ed1e080eb721af1c1dfb2d9e272cb64192a3df9f3929f7becf88c"
+  },
+  "remote_ci": {
+    "head": "ff9f446751d37be64bf2cf423e2e7c055135e0ce",
+    "run_id": 37200997791,
+    "status": "PASS"
+  },
+  "publication": "MERGED",
+  "merge": {
+    "headRefOid": "ff9f446751d37be64bf2cf423e2e7c055135e0ce",
+    "mergeCommit": {
+      "oid": "40db1781aa9d2bf17013c328a390dfecef7eee11"
+    },
+    "mergedAt": "2026-10-04T12:33:14Z",
+    "state": "MERGED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/351"
+  },
+  "merge_method": "squash_required_by_linear_history",
+  "merged_tree_equals_accepted_head": true
+}

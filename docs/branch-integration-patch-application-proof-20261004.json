@@ -1,0 +1,71 @@
+{
+  "correction": "Earlier subdirectory-only apply checks were invalid; this actual application plus content hashes supersedes them.",
+  "patches": [
+    {
+      "manifest": "branch-integration-pr351-fix-manifest-20261004.json",
+      "base": "863218bba4d64ee2f97e8db43c19583ea9fdccd8",
+      "patch_sha256": "29a467085dac4a2273fe85f1814d5e99f436039b770b4d859bfaa4afcab25342",
+      "method": "Applied patch to fresh source-bound isolated files from repository root with explicit directory and per-command core.autocrlf=false for byte-exact LF verification. No Git config, index or refs changed.",
+      "result": "PASS",
+      "files": [
+        {
+          "path": "src/lib/payment-providers/payuni.ts",
+          "actual_applied_sha256": "c648324837e868673737d5ed302e457d0e3fe517715f6c7537475541d23d604d"
+        },
+        {
+          "path": "src/lib/payment-providers/payuni.test.ts",
+          "actual_applied_sha256": "50ee4b87e6b81e47e5934fd3f9c040facf5f65e43ad3086cce817914b00e65cc"
+        },
+        {
+          "path": "src/lib/payment-providers/payuni-setup.test.ts",
+          "actual_applied_sha256": "2eea6aa98fd9fea951c5d3de7edf9aea58057a9c6d037c12b33bacad8d8b58b1"
+        },
+        {
+          "path": ".github/workflows/payuni-live-probe.yml",
+          "actual_applied_sha256": "491baf1b798e7e863d68aa694a1986a7c02572b922b1605b2ce83595a88fae2c"
+        }
+      ],
+      "receipt": "Checking patch .ai-team/tmp/branch-patch-apply-proof-lf-85ss9cpa/src/lib/payment-providers/payuni.ts...\nChecking patch .ai-team/tmp/branch-patch-apply-proof-lf-85ss9cpa/src/lib/payment-providers/payuni.test.ts...\nChecking patch .ai-team/tmp/branch-patch-apply-proof-lf-85ss9cpa/src/lib/payment-providers/payuni-setup.test.ts...\nChecking patch .ai-team/tmp/branch-patch-apply-proof-lf-85ss9cpa/.github/workflows/payuni-live-probe.yml...\nApplied patch .ai-team/tmp/branch-patch-apply-proof-lf-85ss9cpa/src/lib/payment-providers/payuni.ts cleanly.\nApplied patch .ai-team/tmp/branch-patch-apply-proof-lf-85ss9cpa/src/lib/payment-providers/payuni.test.ts cleanly.\nApplied patch .ai-team/tmp/branch-patch-apply-proof-lf-85ss9cpa/src/lib/payment-providers/payuni-setup.test.ts cleanly.\nApplied patch .ai-team/tmp/branch-patch-apply-proof-lf-85ss9cpa/.github/workflows/payuni-live-probe.yml cleanly.\n"
+    },
+    {
+      "manifest": "branch-integration-pr211-tests-manifest-20261004.json",
+      "base": "bdbae2f53491afd518b97ee597e117d6a585b55c",
+      "patch_sha256": "27ce1ac85dad96d042ccace4b464d03de78efda29ae51742a393b8c56ad21bb4",
+      "method": "Applied patch to fresh source-bound isolated files from repository root with explicit directory and per-command core.autocrlf=false for byte-exact LF verification. No Git config, index or refs changed.",
+      "result": "PASS",
+      "files": [
+        {
+          "path": "src/components/landing-pages/funnel-commerce-element.test.tsx",
+          "actual_applied_sha256": "d25d2cf1b3f7bd4c69ba86d1cf745f7d3af5ef152ec38fcb1b5b3f3f197ef10c"
+        },
+        {
+          "path": "src/components/landing-pages/funnel-webinar-experience.test.tsx",
+          "actual_applied_sha256": "37bce358bf892c0dde5b8cbf64f5c5ae81fe52cc8528f8b1ea3b1b75c4a70799"
+        },
+        {
+          "path": "src/components/landing-pages/landing-page-interactive-blocks.test.tsx",
+          "actual_applied_sha256": "552b64c8ab92d95159830ad6349f20b9580af3bc01c681c260ef7515124bdafe"
+        }
+      ],
+      "receipt": "Checking patch .ai-team/tmp/branch-patch-apply-proof-lf-g03qehur/src/components/landing-pages/funnel-commerce-element.test.tsx...\nChecking patch .ai-team/tmp/branch-patch-apply-proof-lf-g03qehur/src/components/landing-pages/funnel-webinar-experience.test.tsx...\nChecking patch .ai-team/tmp/branch-patch-apply-proof-lf-g03qehur/src/components/landing-pages/landing-page-interactive-blocks.test.tsx...\nApplied patch .ai-team/tmp/branch-patch-apply-proof-lf-g03qehur/src/components/landing-pages/funnel-commerce-element.test.tsx cleanly.\nApplied patch .ai-team/tmp/branch-patch-apply-proof-lf-g03qehur/src/components/landing-pages/funnel-webinar-experience.test.tsx cleanly.\nApplied patch .ai-team/tmp/branch-patch-apply-proof-lf-g03qehur/src/components/landing-pages/landing-page-interactive-blocks.test.tsx cleanly.\n"
+    },
+    {
+      "manifest": "branch-integration-pr13-preview-manifest-20261004.json",
+      "base": "bdbae2f53491afd518b97ee597e117d6a585b55c",
+      "patch_sha256": "487d9eb5d7d45e9af5e8560f271986fa8cb6cfe0face10aac9850d7d7f5be236",
+      "method": "Applied patch to fresh source-bound isolated files from repository root with explicit directory and per-command core.autocrlf=false for byte-exact LF verification. No Git config, index or refs changed.",
+      "result": "PASS",
+      "files": [
+        {
+          "path": "src/lib/live-preview.ts",
+          "actual_applied_sha256": "586005d1cd663a0d5dea5d1c2898c1f62be2ea3223b5076297f28da18a0111b3"
+        },
+        {
+          "path": "src/lib/live-preview.test.ts",
+          "actual_applied_sha256": "da6b680c1520ab6f79beba4c84d4e8ec05d71e40b7c126d394e924d55aca13bf"
+        }
+      ],
+      "receipt": "Checking patch .ai-team/tmp/branch-patch-apply-proof-lf-b9674fwo/src/lib/live-preview.ts...\nChecking patch .ai-team/tmp/branch-patch-apply-proof-lf-b9674fwo/src/lib/live-preview.test.ts...\nApplied patch .ai-team/tmp/branch-patch-apply-proof-lf-b9674fwo/src/lib/live-preview.ts cleanly.\nApplied patch .ai-team/tmp/branch-patch-apply-proof-lf-b9674fwo/src/lib/live-preview.test.ts cleanly.\n"
+    }
+  ]
+}

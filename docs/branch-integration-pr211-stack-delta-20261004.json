@@ -1,0 +1,2028 @@
+{
+  "base": "e1f38be324e349969a657be376aa1602e804c2dd",
+  "head": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "master": "bdbae2f53491afd518b97ee597e117d6a585b55c",
+  "counts": {
+    "UNCHANGED_BASE_IN_MASTER": 187,
+    "BOTH_CHANGED": 66,
+    "EXACT_IN_MASTER": 35
+  },
+  "files": [
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/checkpoint.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "c143d032863fa733b0c70398efbbe1c1f9841292",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/commerce-transport-mock.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "49053c3511f801456836a34c215317e5f3d00778",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-04e868e53ece.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "00f76132a046cf44e0f49d32d2f4063282456be6",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-0dfd2b159e20.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "038f98ebf0e095d322ce9103e7b9cb60dcf72632",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-13847096444d.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "12a88217387aa90cd674e26280cc96494a295947",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-138b2122352e.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "4f7b6b9e24abca6fb29e35a77cedde528aa574bb",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-401539c4d6a9.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "380aea3949bd73ab800a7336331fbc6f8fd3c3c9",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-44ffc06d7346.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "c4821c37ac45e5d4acb353dc1d196f4ac768b550",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-5b280f3c993b.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "8fe29ddb0febba8363d5061de7bab236af63476b",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-5d0460940e60.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "d357a152534c3429868e7f757bd9b47f91d5a973",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-614fe0da8b10.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "c61efe8f898f0aac499b8e786d7d79822c467714",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-63e797d32225.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "43b6f2473cff9d626ebdbd164b16fad4427fe248",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-65872a419f42.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "d962c2c47a80cf3df49c056500b127d0dd5e1d51",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-6e90012b35d2.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "808f92e6541e6b910e56266d8ce694c6d0b07f3b",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-7974bd3f3b99.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "264d34ce74f4ed46cdde5a070d7e17c8a9bef820",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-83b2456046c9.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "12dc6f692d1ce9f4577836caf0dccce442e111f8",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-9a6e2df4b194.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "1f795f890ab80079cb6cc0f0dba4c6e05b1d9703",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-9c91953d4b75.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "267f71d381e94b11109a1d21fb0bd56aaa18a2f0",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-a26786e83398.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "38a20964cbeac5376cca60e290ebfc76f95a77e0",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-affa0fb26ed4.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "0659e98345213a303d4479e5dccd7e75edad5767",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-b3b41bf8f603.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "00f76132a046cf44e0f49d32d2f4063282456be6",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-b68afda15c12.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "5c2dc3c7cd522de98cd0f8d9e56782c92bccc422",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-bdc42a92bac9.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "d47694dae1e5710536b23ab0b8af02f771ef1da9",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-beb67fcd68af.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "140c623ef82c3fa9e3d1d75771d9855fa211f231",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-c87e86cc5852.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "a046e2b7d0dfaa4220ab20cf463dcb74faf32f2b",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-d4d1e5d718e7.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "bc9627430ebe678b1def78cef3907abb5b083bbd",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-f2b557079751.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "8c25c119539262a5e60eeced85c80bf3c7f7e630",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "12a88217387aa90cd674e26280cc96494a295947",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/landing-page-editor-20260913/editor.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "214e753190c0c0abb9c9469fe371c7b2c935a7bc",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/landing-page-editor-20260913/public.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "1687600dbae294207afe9a885714b82e5a1349d8",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/landing-style-20260913/landing-page-editor.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "b6c4ce561c26b453ee450def229332219f5b67f2",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/landing-style-20260913/landing-page-public-desktop.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "07d776688fc750131969c640c7fca502fbffa106",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/landing-style-20260913/landing-page-public-mobile.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "41b86daf9f99c9d7df8fd27ce96f847814cbdb70",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/landing-style-20260913/receipt-54bddba5656e.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "d8f7a5d1c8d999391b3b829500667bff30fc0348",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/landing-style-20260913/receipt-55e947ef0e5b.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "dd3601c4f2a748ee5ed0d5f5ef7a31c761f98598",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/landing-style-20260913/receipt-a33f8ba4247c.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "272d0f1aae3135cae5a5f7295d8c150382848605",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/landing-style-20260913/receipt-d0a270a73492.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "d8f7a5d1c8d999391b3b829500667bff30fc0348",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/landing-style-20260913/receipt-e88d7688524e.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "dd3601c4f2a748ee5ed0d5f5ef7a31c761f98598",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/landing-style-20260913/receipt-initial-test-wait-failure.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "46ceffd6bba9d7df97425c779e6f7a47933e7ad7",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/landing-style-20260913/receipt.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "dd3601c4f2a748ee5ed0d5f5ef7a31c761f98598",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/README.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "200c9220d853fe7819cbd74ef44572db99a342a1",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt-241c257344c2.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "d8e2a557632a675204af5634dbd3407d0a41a9df",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt-2fdde2e2d3ae.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "dd23ebdb31d66fcc798971b15b0308d8211a0579",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt-309866a24163.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "61829a47c64a579ec3fbe611d4660aecc66b6308",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt-747a80f556c5.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "dd23ebdb31d66fcc798971b15b0308d8211a0579",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt-8bbcc1790727.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "61829a47c64a579ec3fbe611d4660aecc66b6308",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt-8e24b3570166.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "ed3456f809cafe9c291097e2d24545bce3b0de2e",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt-96bb10e45b46.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "bce0b905b72249880eb6effb86ca93fd750b5a46",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt-994c37242740.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "61829a47c64a579ec3fbe611d4660aecc66b6308",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt-b4085d0d7136.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "798afcc44485ff57b030453f7a762c946ef409f9",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt-c17f7daf1ac0.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "4e4edd712f645900476389e8945393de2745f287",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt-e6b6873fa9fe.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "a7ab74c7e64e4e7505de930223478b524e9a1491",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt-ec1b2519f3f3.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "dd23ebdb31d66fcc798971b15b0308d8211a0579",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt-f841bff37cfb.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "61829a47c64a579ec3fbe611d4660aecc66b6308",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/receipt.json",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "798afcc44485ff57b030453f7a762c946ef409f9",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/webinar-broadcast-mobile.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "f993c01caa6d82a530bb2ef097fc4b86102bd3d6",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/webinar-editor.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "48a34c8680096956209e453d957b0c9557ea1b6b",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/webinar-inactive-mobile.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "9575a7c05509bbe89f189e80042e335af405f710",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/webinar-inspector.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "c5553be795a9a08022b3e5369a1347f4c46671e2",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/webinar-registration-mobile.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "65116c0647995f3f87b85466549e4cf8d7f5ae91",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/webinar-save-failure.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "eef8abc55f75d23d61a115eee0558954ca5e9fa8",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/evidence/webinar-funnel-20260917/webinar-thank-you-mobile.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "a861da52ff66e1412fa8a5409db6ef7bd2ac7506",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/funnel-editor-plan-20260917.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "1ff034b539687ee5983cf7bb56b14006d6015e3b",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/landing-page-editor-delivery-20260913.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "541251dec93a0968dff64860d851dc38a00f3a65",
+      "master_blob": null
+    },
+    {
+      "path": "docs/ai-team/landing-page-style-validation-20260913.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "e1ed584313b5241f0b26ec6f403f7af95468e814",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/funnel-commerce.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "655dccb98c8154c4320a7ee9e148a532f5ab8268",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/funnel-editor-implementation.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "272ed5237bb297201629817c4ba745e4b01140a2",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/README.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "684582bff291878d92b95e8182f6091a8a52f56a",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/editor-blocks-inventory.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "9cf2f550477d18b87e880c7a34d8f2e6486dd7e0",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/editor-elements-inventory.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "45f8e701d8147d853038315265f20b58f57cde93",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/editor-interactions.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "efd7f9128c563355aaf86fab4b09114e5846787e",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/editor-toolbar.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "e27758a7f76449be2d80792373a3e0a42746981d",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/funnel-flows.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "4d2e93b0056773eb368ea58a47faec82d8613893",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/funnel-goals-and-templates.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "21638eaf3292f95d2a75c2944e987c148ffc7083",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/parity-matrix.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "f21672455a599b722b958db492eb8043107cc7ce",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/popups-and-settings.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "75f3470dbf7d8944899d8bd8eb1eab71d186dcd0",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/01-funnels-list.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "74d1b63a4ac13dc6c426eb20d1568527bd9a37de",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/02-create-funnel-goals.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "943d20c272c920f2ebc5468805f9e55399970c59",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/02a-create-goal-sell-selected.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "e2188eabfa3f6f91a8381f3eef903163ce26883d",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/02b-create-goal-audience-selected.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "87ea0bff07d1f0748f34ddc946d32176edbcc859",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/02c-create-goal-custom-selected.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "401dd7086326787025f656236e51f1c6aa199744",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/02d-create-goal-webinar-selected.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "1849ed0c1e7a4982e266b6a881e7c47ef003f80b",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/02e-sell-currency-options.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "ba62ce51a5c847b2521911567ca271249dffb9d7",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/03-sell-create-form-filled.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "391f6c76937860f495c9ae1c0139c20467c21fc9",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/04-funnels-list-one-created.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "d2d24d4422064a2ed7a6bd271f0ec63e189ada93",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/05-sell-order-form-template-picker.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "117a2320fd8b417de792c67b4d9d7e841e20f379",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/06-sell-template-1-preview.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "b26fd9a318deb1f73fce6781464cef5949231cac",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/07-sell-template-2-preview.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "80824af7e025a82610e763f4b8b31ce5c1434101",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/08-sell-template-3-preview.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "34d7b9989555dd23750eb886224cd4e584686dfe",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/09-sell-step-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "cb106816fd3c27d4c379252869ded25adc5bb0f4",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/10-sell-view-funnel-step.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "585b60a29028c798c06aa5d256ee4a3fdc304a79",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/11-editor-toolbar-elements.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "0a4183f10600266b40fae9dff45b9cd48833c727",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/12-editor-blocks-categories.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "1d4a2259d01c0c28715210c4b561893f236c530f",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/13-editor-blocks-order-forms.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "9f9d7cc73cd4a3e45b3415af33c1bfcf4a2ff39d",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/14-editor-blocks-optin-forms.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "9edd82c3dfbef425d89bb1d4b8adc21e45c9b74b",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/15-editor-blocks-features.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "3c564f896e603dff2a1ac63b6eb173b9b26040b9",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/16-editor-blocks-page-footers.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "49a1461387baa17499ac10975a5cbcae227f4aa6",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/17-editor-blocks-team.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "c20b51862b9200b309b3d1a1ae6d5912a809b7ad",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/18-editor-blocks-welcome.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "71b8e3bbeb8e319b1091da6607e71d1807af26fb",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/19-editor-blocks-price-plans.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "c20324efd1d7a909cb68dd2ecbf44b1d08576d62",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/20-editor-blocks-page-headers.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "42c55189d986eb91147e956227951a9a52323fb7",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/21-editor-blocks-testimonials.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "33e7c997fabb6102063ccf99294525eaf0d5c519",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/22-editor-block-added-testimonial.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "95c86c9a4db5c052b51c921e2f73aed88f61f479",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/23-editor-text-settings-edited.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "82c813c6fb04de748d7a14d24ff1fdc791fc8ca8",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/24-editor-mobile-view.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "2277ed6f874288b23aa22da68b9784479baf0877",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/25-editor-preview-page.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "c41652e891149ae9116a7ff76c6dc1c210c00e95",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/26-editor-popups-empty.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "b386e05dea83a09e44ebe55c52098af066a6828b",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/27-editor-popup-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "8033ed64cc94b18bb6ec12587cfa5897ae34538f",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/28-editor-page-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "7ac00f1bfb6cada233f2831492f6a560ad4e031b",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/29-editor-exit-unsaved-prompt.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "dddf73eb8ceaf286d1e64dc8cccd097ea36edb07",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/30-change-template-warning.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "993b21d4718ba7d49184791356596c290cb78aae",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/31-change-template-result.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "cad24d3fe4f810d8cecf20e086ca63bb2e755b57",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/32-audience-create-form.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "85e07478b76b21a353ecce6cec5924e66a3457c2",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/33-audience-template-picker.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "1922c6cc8b1cb552aab3c809cc80611f035e9322",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/34-audience-template-1-preview.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "b2117c2b09e791509dca7eb49204d86bf2a7448b",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/35-audience-template-2-preview.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "bfdcbca6c9913085e8afe4f90c3956e549a35f82",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/37-audience-step-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "a97610048a95b35af6a253fcac01fec8451b96eb",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/38-audience-view-step.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "987c7e80cce659c6ba8df81571f5c424b5605e11",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/39-custom-create-form.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "3b241abe29e98667a4554e54546a49e6dba9b77f",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/40-custom-empty-detail.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "52a6c725026e4fd5a482aaa8521100cfa030a43c",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/41-custom-step-types.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "ee79bec9b0bc208006a54967a447a1ccc93c51c3",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/42-custom-info-template-picker.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "cbf1147e61302be44f8be67504dc7855b74960ed",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/43-custom-template-1-preview.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "9772f20f67bf083c36715e6ea7d0fec426d68090",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/44-custom-template-2-preview.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "2c6487d1ff0b3fb70fa1d5573d15992e82bea4ab",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/45-custom-template-3-preview.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "0914c668d2d365715af59ea0d02bb8726dd6b7da",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/46-custom-step-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "aed80ad75ba1b005b2f715379f408f32e4b516a0",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/47-webinar-create-form.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "aecf45e41575edd8e7faa5b0873b51c37ba1efd6",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/48-free-plan-limit-webinar.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "ac666356241003ac943a05e75c0a9c832d2a66a0",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/49-funnels-list-three-limit.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "720376950502de6b13fed953e342001296cd8ffc",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/50-block-added-optin-form.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "f626e822551e73f35172af13038861e2e03f8777",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/51-block-added-features.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "2ca793170a9747a00618ebc9fffedb3adbcbf38f",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/52-block-added-page-footer.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "4f29bef86cd885476a02ca58a3c41ffa124279fa",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/53-block-added-team.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "be44157d5e475b45174d1004e696e7b29cda55a7",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/54-block-added-welcome.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "727feb4577bdab8d756be7cbd7d351cd9ada3641",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/55-block-added-price-plans.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "733cbb65ddd41bb1a690f3c3e5a14020d3f8cab5",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/56-block-added-page-header.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "494c02c200e7d7b44bd06aa2b1bbb140d673edd0",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/57-block-added-testimonials-second-page.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "6ffbec9daeced039ab758b5eb140f33eb8ca2413",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/58-blocks-representatives-saved.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "1e705c0edae42a11ade611b81d05b221d154a2d9",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/59-blocks-order-forms-picker.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "fff74b7b398b9dfaca2eac15a4a277e94986ae16",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/60-block-added-order-form.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "77ec23da3d463cf0cd4e1e18a1180f4d829e994c",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/61-order-form-block-text-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "d316942ce66c6bbebac55068fc08810510adde9c",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/62-element-form-added.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "51019dd5f830c08457c4eabee9966a751decff9a",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/63-element-form-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "440e90028d892f158105a71a6bbef14fa9e4d5b0",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/64-element-image-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "27c82bb1c658c66f77222016d18c6da70b2cc09d",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/65-element-video-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "65bd03b0f493c2b57efe1136f40c37e4d58d3976",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/66-element-audio-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "2a9504281d9e06442649104931d14b309cbcedc9",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/67-element-carousel-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "bb6b16e741edf11dce73b26636f9738650a5e9bc",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/68-element-countdown-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "3a9ada7442c61a3c3496536e4c739f943764d358",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/69-element-raw-html-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "a1b707193710b3804b5d764383b5290949717ba8",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/70-element-faq-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "ca95c2394b16c05de7ab4feeb7e0a3568c96b4ec",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/71-custom-funnel-deleted-slot-released.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "b626c057384cc655858e1700a0fe06159235ba41",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/72-webinar-plan-limit-after-slot-release.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "4eb9a7978b0dc8d0192cdbc5d5d518a4db71443a",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/73-audience-template-26049-view.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "c1349b978f8d643c9e3820747928afbb63463404",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/74-audience-template-26049-edited.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "3cf382c9044d97c1cb8abf80d37eb4e1bb80f520",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/75-audience-template-26048-view.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "d17dd8ee7e73e2980b32757a1e32d7e1a6c7f449",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/76-audience-template-26048-edited.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "067be88b51d76121b0f1748ed8c7f05ac54ad22b",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/77-element-form-input-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "31fec42bb7440199cbf0e63132e0ea960b53a114",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/78-editor-element-button.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "95b3fa60a33146931fe28910873f43a0f0a914e4",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/79-editor-button-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "9953f10c8b7283a6195f269b27e8bcbcfae8e9aa",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/80-editor-checkbox-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "91519a2a2ecdeb2fa2fed872fd4d382d05ff5aa4",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/81-editor-recaptcha-insert.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "454594547f5bfa3c52b0a05f2d79f7674822e11d",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/82-funnel-automation-rules.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "0083fb97dff8ae4333cbd8c3e6e5d606c1baf0e9",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/83-funnel-ab-test.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "146a35a6d765f0796edb8c8105e26e75584d6840",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/84-funnel-stats.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "4991dff536c8c104a64302cc347ddfdccdc652d5",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/85-funnel-leads.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "3f7349c792a19244ebd3e777dfeea21e3f641694",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/86-funnel-sales.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "7042b78c4169a3f1d425d19b4f0fc2e1f5e3c7b0",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/87-funnel-deadline-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "5167237c39a86c4be53d3ebbf8d3f1a54270941a",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/88-funnel-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "0a2959d5c2b54dcb85a9e9fcba1c0993bc88983d",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/89-funnel-step-menu.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "d51b8ad12be84acec395301ca9ed50be8b79e40e",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/90-editor-popup-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "afe54da4a31fee314577643de2b5e482ee411ace",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/91-popup-preview-triggered.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "180a0db3935759eca5bd92c944cb5adabd925fa8",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/92-sell-offer-price-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "25fad746d7ab6aec3dcf4edcb92c4342212d0cdf",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/93-sell-payment-method-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "9238575954dd5829fc37064ac587790c55e3d7db",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/94-sell-payment-button-settings.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "1272bffe39e173effadd35a5fe2d40f421b7b6ff",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/95-editor-calendar-insert.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "166d91834075ebf16b3e502e5d9f155070c5a839",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/systeme-reference/screenshots/96-editor-x-share-insert.png",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "6cdef4db56ed5328808dab4f4777fe2c1333c068",
+      "master_blob": null
+    },
+    {
+      "path": "docs/product/webinar-funnel.md",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "d17d7edfd2a6b1189ae5bddde8b4bc005feeb659",
+      "master_blob": null
+    },
+    {
+      "path": "package-lock.json",
+      "status": "BOTH_CHANGED",
+      "base_blob": "7fd2a3bb8c9a2fab7e7f9f91ad0b35dd6c4ceab0",
+      "head_blob": "4703634e106e6f7b8610a49d780d600ec78c9cc8",
+      "master_blob": "fdde524df92666c92921e924113fc3eba5914cd2"
+    },
+    {
+      "path": "package.json",
+      "status": "BOTH_CHANGED",
+      "base_blob": "09f0f1060b0ea10d6b13a19785d459cf2a00468a",
+      "head_blob": "0ec94961b3632d16ec8541e335d28c79308e52d3",
+      "master_blob": "cde85ac0ddef764fe744ff29b3170524bd5cf7d9"
+    },
+    {
+      "path": "prisma/migrations/20260912103000_sales_workspace_onboarding/migration.sql",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "19765044f3e46e1bd9dff4137a736e2701461def",
+      "master_blob": "ae6e80f025b22ac92e43cdc47887714d40053634"
+    },
+    {
+      "path": "prisma/migrations/20260913100000_landing_pages/migration.sql",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "6ed946d60f45f7cfdffae269f588142ef0738e48",
+      "master_blob": "6ed946d60f45f7cfdffae269f588142ef0738e48"
+    },
+    {
+      "path": "prisma/migrations/20260917093000_inventory_reservation_items_snapshot/migration.sql",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "b3ae5fbbb1c7f0dc6a2fd7ed99fd4eaa5b9274b5",
+      "master_blob": null
+    },
+    {
+      "path": "prisma/schema.prisma",
+      "status": "BOTH_CHANGED",
+      "base_blob": "c40b11328bdaf41461a8b760cfbccaf0bd8ea0e3",
+      "head_blob": "7037433bc5e9f1d050e3b330ce4b24e381b6ee7a",
+      "master_blob": "60d97be7a1c0af97c82b2a5486b46967399c303f"
+    },
+    {
+      "path": "scripts/funnel-commerce-disposable-qa.mjs",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "ce929ff6c7ec0d88bf2c60cb04c8e458dc110159",
+      "master_blob": null
+    },
+    {
+      "path": "scripts/landing-page-disposable-qa.mjs",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "9e00a4e2de42ca3b26488dcdb887011c36f073a7",
+      "master_blob": null
+    },
+    {
+      "path": "scripts/webinar-funnel-disposable-qa.mjs",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "d97dbe7f16ed0724240c9c17698a483bc56c281b",
+      "master_blob": null
+    },
+    {
+      "path": "src/app/(app)/forms/[id]/edit/page.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": "21b2bcb0cf6f69086f18e92c7753845c180ebe48",
+      "head_blob": "caadb1a113a3df08baec7993b74b8d813dc3e519",
+      "master_blob": "854fcd3ae7e5e12c966caa7c872fde0b26c3258d"
+    },
+    {
+      "path": "src/app/(app)/forms/new/page.test.tsx",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": "96df714070db616c932d6ceea8cf553f10e0f072",
+      "head_blob": "953201ba36c4628c28872daf632f52fe1face8d5",
+      "master_blob": "96df714070db616c932d6ceea8cf553f10e0f072"
+    },
+    {
+      "path": "src/app/(app)/forms/new/page.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": "a8d5f99bad3573314713b2b3a122ec7162e2948f",
+      "head_blob": "afb78bee39919a1344b7841a8f1a7972413d930f",
+      "master_blob": "3e388c2d69324c4050fd9d1896d432e5def51690"
+    },
+    {
+      "path": "src/app/(app)/landing-pages/[id]/page.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "f2c5230da9feda03593466b61cf44cd0af9d31d2",
+      "master_blob": "e000f9910058ae9477fb5649fbd07add87ba8d42"
+    },
+    {
+      "path": "src/app/(app)/landing-pages/layout.tsx",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "c613861bb5785144213da0e97de3b29fd946104c",
+      "master_blob": null
+    },
+    {
+      "path": "src/app/(app)/landing-pages/new/page.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "954963c5dbf07c5d6d7f78649af939e8c07eb019",
+      "master_blob": "d977049431681c8bddabbf0bacffae6bea9dc27a"
+    },
+    {
+      "path": "src/app/(app)/landing-pages/page.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "7d575ae3d59dd33e1e8026b56608142b2b267f13",
+      "master_blob": "04975aa40322e987bcf057d3bd2fcaf5effb6c4b"
+    },
+    {
+      "path": "src/app/actions/landing-page-actions.test.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "7594dc564b1633da4d23363d8519ea1025026371",
+      "master_blob": "7594dc564b1633da4d23363d8519ea1025026371"
+    },
+    {
+      "path": "src/app/actions/landing-page-actions.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "a88db978aeaa6f68617ac94c88429c7ee5def376",
+      "master_blob": "065e87b259687b9433c3ac8db77ee2315eae5262"
+    },
+    {
+      "path": "src/app/api/form-submissions/route.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": "7b5a013b9e0dace5e6ece4c101e7f97b0c89e554",
+      "head_blob": "5f73ef5c3f7ff7f437789cafb581144e3d16ccd7",
+      "master_blob": "396c19a2465dd594d208014d3f6e0df9943fbf83"
+    },
+    {
+      "path": "src/app/api/payments/checkout/route.test.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": "2408dc9515c964c77bc0beef5a6385e7a52808ae",
+      "head_blob": "77d5097658f2e763920b3ff9d28b9e74ac8f1861",
+      "master_blob": "ef73d878ce781fe6a4116a92ee68b77e30b2a4a8"
+    },
+    {
+      "path": "src/app/api/payments/checkout/route.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": "48ce17aa18c231ebf7f7156ad9ec1d492e381283",
+      "head_blob": "7fa7fd07316f8b78789695719dc6e703bfd3ecdd",
+      "master_blob": "4d5c5e49d6cd81fba25f86388fb15e7636026833"
+    },
+    {
+      "path": "src/app/form/[slug]/page.test.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": "31810877536b7b0e3a3986a5929723d78186581b",
+      "head_blob": "f67f4e936fceed6f829f51480f961ba4ea76155c",
+      "master_blob": "31e539a312a1478148e8b82b50b9f32039f8dc2f"
+    },
+    {
+      "path": "src/app/form/[slug]/page.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": "df97e04cc8b008a3465981dd424ef0d5f01e2068",
+      "head_blob": "a683b5b5f13a4720c27b30085da93805a9095cf4",
+      "master_blob": "cdfb85072314b5f60f7bf5e01eb723e58ff214a6"
+    },
+    {
+      "path": "src/app/lp/[slug]/[stepPath]/checkout/page.test.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "abd40921533fafa67ce53cc8969886c57491c5cb",
+      "master_blob": "0126fa3eec9d33eca6be0f54d73cacae3b99d5bf"
+    },
+    {
+      "path": "src/app/lp/[slug]/[stepPath]/checkout/page.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "21eeaf637c34c99f8af70e7dd9d734d2a40a2ecd",
+      "master_blob": "f0ae40b10a747519ca871c5e8ad276daccb39b92"
+    },
+    {
+      "path": "src/app/lp/[slug]/[stepPath]/page.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "638246ae0aa45c0b51e0896bc8555650242b687c",
+      "master_blob": "fd792b3c458e13e516fb9aa20059e82af6eeb9c2"
+    },
+    {
+      "path": "src/app/lp/[slug]/[stepPath]/play/route.test.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "359ac1f6b2f00c3e1bdb6dd7dd0ae705c6c24f4b",
+      "master_blob": "facd154e5f7c172051c9182c4bc0a870acbda5c1"
+    },
+    {
+      "path": "src/app/lp/[slug]/[stepPath]/play/route.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "80ae298ba75a96a7dd434874a9c04ba6fc8090fa",
+      "master_blob": "8aa972d8f766ecca05b87df7a5a1af39ce44e558"
+    },
+    {
+      "path": "src/app/lp/[slug]/page.test.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "009c1fdda21c939bf4c0f5f3bc22345629722ad0",
+      "master_blob": "cc4f9b30867c45e4f58a2881ec799c8bead44508"
+    },
+    {
+      "path": "src/app/lp/[slug]/page.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "e44cf933349e9be9ea2bea4ac4bbb6f936b86b70",
+      "master_blob": "edc334ca13f41290abfcdd5c7ce219d09addd201"
+    },
+    {
+      "path": "src/components/app-shell.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": "d616c2ab2de174fc91ea33f8ca31aad1e644940f",
+      "head_blob": "bddb1180a66300750a757186f952c27d770b9e4e",
+      "master_blob": "cd76212bf2553868552ea986302587bab8cb0d22"
+    },
+    {
+      "path": "src/components/commerce-checkout-form.test.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": "fe2bf176f7939eaf2a67b464f23f277a59e076c1",
+      "head_blob": "7691ade60736b67f902877137e3c9103ce856397",
+      "master_blob": "63097b8763f031ed7fd259cf5461efe5873f1d9a"
+    },
+    {
+      "path": "src/components/commerce-checkout-form.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": "7b84065b3a48ad6991a59a93148a0c20950b27a5",
+      "head_blob": "d4e9c5c8ece4cbd4493f409e1ea816cb4b88d970",
+      "master_blob": "18282a824f9dbc6e79fbdf02aa34d1524f1c2541"
+    },
+    {
+      "path": "src/components/fixed-registration-form-builder.tsx",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "f0a3bc2d74b1328820bcd7b8c3ec710c6e0df9a4",
+      "master_blob": null
+    },
+    {
+      "path": "src/components/landing-page-link.tsx",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "e672179a1342f377587361fb22038a8e75c6d10e",
+      "master_blob": "e672179a1342f377587361fb22038a8e75c6d10e"
+    },
+    {
+      "path": "src/components/landing-page-workspace.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "4a4640a535a91f3edd6ccf45c5e6a1fdc4e2cbea",
+      "master_blob": "ba44b5a1a27bfa993e3d5c3770a2b3ece465037a"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-commerce-element.test.tsx",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "bc94a6e781ecf6e615f7148f0e4bd4d7e9f7e230",
+      "master_blob": null
+    },
+    {
+      "path": "src/components/landing-pages/funnel-commerce-element.tsx",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "3703ee2e7ee1b97879f5b439c666988b17846bb4",
+      "master_blob": "3703ee2e7ee1b97879f5b439c666988b17846bb4"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-commerce-settings.tsx",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "dde35bd32097a6cd45f12d0f04f1402e6036a2ef",
+      "master_blob": "dde35bd32097a6cd45f12d0f04f1402e6036a2ef"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-element-inspector.test.tsx",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "e44a0e18d38c8bd3ea52d9768ace64ae7e10ff69",
+      "master_blob": "e44a0e18d38c8bd3ea52d9768ace64ae7e10ff69"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-element-inspector.tsx",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "5ebc4967d8b91faf41a493441691794caf76a70a",
+      "master_blob": "5ebc4967d8b91faf41a493441691794caf76a70a"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-goal-picker.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "cf6ff75478e90fa3a5053ade41ede54546cb19dc",
+      "master_blob": "496c4b1d6c5fb843e4c27eb8e23433e4de62f7dd"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-list.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "48df285fe3d368c2dc7827cc70c2259223694d31",
+      "master_blob": "991bd29e260fcb307bb6ee6153ae4ea9daab957b"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-page-document-renderer.test.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "11aee79f35b49ae6be759542d2cc5090157ba1c0",
+      "master_blob": "065df95c9e4310bdee4a255a536e2ba22ece55de"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-page-document-renderer.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "fe1fa5ba625d62030f88e06a6fcdf408319adb58",
+      "master_blob": "cb730eb6960bd3d9b99a971f72d4a6874b91798d"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-page-editor.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "3620513e2b5fa4866a15eaade79e5506293a0eee",
+      "master_blob": "fb39234b6b8d731b47a7201a028a0c363d259c9d"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-popup-preview.test.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "fc9238449113fe40435a45229fa12a5b9d95d106",
+      "master_blob": "a59a368ac1d1bbc8ce3f822daf0ae85317a56cb7"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-popup-preview.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "6ec4c94511bf3920a86b95ce40820591167359ae",
+      "master_blob": "e6ed17228471c105b52621b5d72949547061c128"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-step-pages-editor.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "8a414847c91cb08950ba944b1bf43b8d24aa64e1",
+      "master_blob": "30d16c5a136c7077b43946a36fbffe538439113b"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-webinar-experience.test.tsx",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "1cf4a61aff723e6c64295d13dd068b9cd6a08fd8",
+      "master_blob": null
+    },
+    {
+      "path": "src/components/landing-pages/funnel-webinar-experience.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "d4412e11a9e633a8a798b61fa056d3e9adf1d217",
+      "master_blob": "31fc0d902ab44b57f57470f06e457c8f0946c9e8"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-webinar-settings.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "e2215834e6f7b91e807347dd3a9cba566e40756e",
+      "master_blob": "01598341a95abf882b1f7890b8d6ad71bc0586a0"
+    },
+    {
+      "path": "src/components/landing-pages/landing-page-editor.tsx",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "7d4de3a1b85a869585413a3a3f8b440e8d0837cb",
+      "master_blob": "7d4de3a1b85a869585413a3a3f8b440e8d0837cb"
+    },
+    {
+      "path": "src/components/landing-pages/landing-page-interactive-blocks.test.tsx",
+      "status": "UNCHANGED_BASE_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "89387c45c9d6a906383692032a839adfcbda01d9",
+      "master_blob": null
+    },
+    {
+      "path": "src/components/landing-pages/landing-page-interactive-blocks.tsx",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "256cdbd560f9f1884a4f078f52a3e466ec669775",
+      "master_blob": "256cdbd560f9f1884a4f078f52a3e466ec669775"
+    },
+    {
+      "path": "src/components/landing-pages/landing-page-puck-config.tsx",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "152161c5768b1ec4f55e289684adeac77f0beeed",
+      "master_blob": "152161c5768b1ec4f55e289684adeac77f0beeed"
+    },
+    {
+      "path": "src/components/landing-pages/landing-page-renderer.tsx",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "11bd5ad38ee3de6d9be88653d24e748220dc29ec",
+      "master_blob": "11bd5ad38ee3de6d9be88653d24e748220dc29ec"
+    },
+    {
+      "path": "src/components/landing-pages/public-funnel-document.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "2735905ba9b6db26cd463d98b894d70e04ba05b5",
+      "master_blob": "6b328da4999dc201880c33b39a9b8ecfdab8df14"
+    },
+    {
+      "path": "src/components/lead-form.tsx",
+      "status": "BOTH_CHANGED",
+      "base_blob": "9a0112a5118ee1638417ca0e5147cf41fefbd079",
+      "head_blob": "ce055c0f4156eecac4678bc6541442a2ca7057b3",
+      "master_blob": "b4d47858675c0658f3a36a94c94db348069eb7db"
+    },
+    {
+      "path": "src/lib/commerce-checkout.test.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": "92610df240a4bb91bb5af8ed2375b4b01d9bf5b5",
+      "head_blob": "c05f59f603d1013e1ab168d22ec0c2cabefc2709",
+      "master_blob": "1d92b6595895112d8dfa63e863ff8cada093b82b"
+    },
+    {
+      "path": "src/lib/commerce-checkout.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": "292856fec61b5a957fd6db37577df54839df6cf1",
+      "head_blob": "f63ca9a5a5c67ecf773c2d2248b09394bffc773c",
+      "master_blob": "f8623f9b4830bc69efff0983dde726d96a4c7b01"
+    },
+    {
+      "path": "src/lib/commerce-orders.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": "1dbb6cc15bed3e3206327859485236376d9b69a3",
+      "head_blob": "716070a1c91262c24e13453acecf2cf5dcb5cc99",
+      "master_blob": "48e81d2aecddc00290171c48555e7cb5bf35fe38"
+    },
+    {
+      "path": "src/lib/funnel-block-library.test.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "6c9960233ba7a49986efcf8980134de581cf14e6",
+      "master_blob": "dba1f76516e21cf9c4ddb8b7c5b8a98c1df37b08"
+    },
+    {
+      "path": "src/lib/funnel-block-library.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "04a2241a1aa2566fa766a89a29a178b966a96cfa",
+      "master_blob": "6832045213ab5b819de46d8a38a68930871eb533"
+    },
+    {
+      "path": "src/lib/funnel-commerce-service.test.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "2c83d28165dbdb28f025ea3881c8ff28ee79e087",
+      "master_blob": "28147f3d94c0b4cb9424fe63c319bdcd99e5dc89"
+    },
+    {
+      "path": "src/lib/funnel-commerce-service.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "1d18fd657b93fe030ba128bb5187f7322d488456",
+      "master_blob": "9a1433b7eb219f7966f2fe18d47c4d2ed9c5b244"
+    },
+    {
+      "path": "src/lib/funnel-commerce.test.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "161e81c3ad0d5728bb196fe578188986d85ca639",
+      "master_blob": "161e81c3ad0d5728bb196fe578188986d85ca639"
+    },
+    {
+      "path": "src/lib/funnel-commerce.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "ce432e2fb3e76af0681e62320b5e22fcd3037a08",
+      "master_blob": "ce432e2fb3e76af0681e62320b5e22fcd3037a08"
+    },
+    {
+      "path": "src/lib/funnel-element-inspector.test.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "ffe5e636bfab00428e01cfd999483a99b794c20b",
+      "master_blob": "ffe5e636bfab00428e01cfd999483a99b794c20b"
+    },
+    {
+      "path": "src/lib/funnel-element-inspector.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "bed2c1db73d2a5a491f7b5fa0eb712a954acae10",
+      "master_blob": "bed2c1db73d2a5a491f7b5fa0eb712a954acae10"
+    },
+    {
+      "path": "src/lib/funnel-flow.test.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "2c85d2e4508b629d1508802c90d5245896056539",
+      "master_blob": "66b19d6f755a5d54d4ae6fd7843e79c92d9af376"
+    },
+    {
+      "path": "src/lib/funnel-flow.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "b0dafbc9aeb62979079f40f6e4301908ba21f972",
+      "master_blob": "b10f89befeacd90cb67c0a2c52c8256a3b83ab0c"
+    },
+    {
+      "path": "src/lib/funnel-goal-step-pages.test.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "ca5c8b7a2a4c392e281e30069e80cacfe179285b",
+      "master_blob": "c5e0089202f8671da2783616e069c4730cb7415b"
+    },
+    {
+      "path": "src/lib/funnel-goal-step-pages.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "9e3ffb4e657c9cb4effae1f0be87bc0d741edb5b",
+      "master_blob": "44bd5294ae6aad6bce7928a683145324e0b0f35f"
+    },
+    {
+      "path": "src/lib/funnel-page-document.test.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "ff5121390a19953a54060fe2421373842d0a1c09",
+      "master_blob": "ff5121390a19953a54060fe2421373842d0a1c09"
+    },
+    {
+      "path": "src/lib/funnel-page-document.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "00c8c10cabc1be81e8a804abf0c4ee2e034d4f56",
+      "master_blob": "788080402b685749e4572547946d81e1a2abb078"
+    },
+    {
+      "path": "src/lib/funnel-page-history.test.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "f522bf071f2c386274a55d8024a4d3365472e569",
+      "master_blob": "f522bf071f2c386274a55d8024a4d3365472e569"
+    },
+    {
+      "path": "src/lib/funnel-page-history.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "c569593be6ff6e5bca21f6a1dae3e9b2651a655e",
+      "master_blob": "c569593be6ff6e5bca21f6a1dae3e9b2651a655e"
+    },
+    {
+      "path": "src/lib/funnel-popup.test.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "57f53a7b4ee4e42e5c66e7c6d29f7286ee9298e3",
+      "master_blob": "5634566949ccaf5dbd275cb6fc244718c052de52"
+    },
+    {
+      "path": "src/lib/funnel-popup.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "793aea895b04ddefdfc52142b6aca45344f465fa",
+      "master_blob": "e4c0925041ec5ea56175124466a6d711e12106a7"
+    },
+    {
+      "path": "src/lib/funnel-public-page.test.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "61cc57559e8242ee49273753b578359bcb1a9240",
+      "master_blob": "a3521fb857ba056a4e5e06c83f13c2164aad5e9a"
+    },
+    {
+      "path": "src/lib/funnel-public-page.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "f40161a99dc442d66095e66733ed166f24b96fa6",
+      "master_blob": "4a9aa1f091f9f209615f0f2a84ef199af02c0c02"
+    },
+    {
+      "path": "src/lib/funnel-step-pages-history.test.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "0cdc4618b9fb0385bb7a3bd108289bba846d60e4",
+      "master_blob": "0cdc4618b9fb0385bb7a3bd108289bba846d60e4"
+    },
+    {
+      "path": "src/lib/funnel-step-pages-history.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "561333ace8b4f612c77c8490fecafedbfe2106f2",
+      "master_blob": "561333ace8b4f612c77c8490fecafedbfe2106f2"
+    },
+    {
+      "path": "src/lib/funnel-step-pages.test.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "a08b7d897870db7e2040808a48fbb5c8482a92ba",
+      "master_blob": "63eb067e79a412407f1cf56d1fdb3cccd4ea468c"
+    },
+    {
+      "path": "src/lib/funnel-step-pages.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "6375e9170db5aeb94a9ff08427a98f06f0a64dc2",
+      "master_blob": "6375e9170db5aeb94a9ff08427a98f06f0a64dc2"
+    },
+    {
+      "path": "src/lib/funnel-template-gallery.test.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "42d34098cb2b23dc4e10ececf548c3e8da521065",
+      "master_blob": "53635d5995fead1c18570b3a52a3a8d25e50a0c1"
+    },
+    {
+      "path": "src/lib/funnel-template-gallery.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "8feed8d59cf1ba1891e590aff197f16137a06ce6",
+      "master_blob": "dca436b574bb4c8b0b73b6239c6924c8e5c30f42"
+    },
+    {
+      "path": "src/lib/funnel-template-transaction.test.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "2ebba4be289bc6b53a3d45391a7d4652dfbfdf54",
+      "master_blob": "2ebba4be289bc6b53a3d45391a7d4652dfbfdf54"
+    },
+    {
+      "path": "src/lib/funnel-template-transaction.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "24f7a9b15515f8d5e31daeb6fc823795eba48e44",
+      "master_blob": "24f7a9b15515f8d5e31daeb6fc823795eba48e44"
+    },
+    {
+      "path": "src/lib/funnel-webinar-media.test.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "71f3cf5c498a12f095ab7fd3ee4965f6c4e460ca",
+      "master_blob": "71f3cf5c498a12f095ab7fd3ee4965f6c4e460ca"
+    },
+    {
+      "path": "src/lib/funnel-webinar-media.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "1fa01e62128b3abb6f63d4eaf7c3bfcf6532bf3f",
+      "master_blob": "1fa01e62128b3abb6f63d4eaf7c3bfcf6532bf3f"
+    },
+    {
+      "path": "src/lib/funnel-webinar.test.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "8191155ba79750164cdfa4aef6bf796268bbd341",
+      "master_blob": "8191155ba79750164cdfa4aef6bf796268bbd341"
+    },
+    {
+      "path": "src/lib/funnel-webinar.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "f8c13a55a579515b3d6e8c8da459d571b2935e8e",
+      "master_blob": "f8c13a55a579515b3d6e8c8da459d571b2935e8e"
+    },
+    {
+      "path": "src/lib/inventory-reservations.test.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": "ce671b088a96d39eacb15930f3bfcfac9cba2696",
+      "head_blob": "f67f03723ea6cdbc7360606ba7fa7940f1336262",
+      "master_blob": "94986f3c1ad375c10e68028c23e81c239419bed8"
+    },
+    {
+      "path": "src/lib/inventory-reservations.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": "0edd249f19594619f27a652ec3a4119f15499b0c",
+      "head_blob": "535efe607ed6f34188bce781cb7b9591a4039863",
+      "master_blob": "535efe607ed6f34188bce781cb7b9591a4039863"
+    },
+    {
+      "path": "src/lib/landing-page-attribution.test.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "22de5ea80f67e228318d7d8763530d612237bb4c",
+      "master_blob": "22de5ea80f67e228318d7d8763530d612237bb4c"
+    },
+    {
+      "path": "src/lib/landing-page-attribution.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "598ed3dd29832d42c406b66f7c08d6b78bdb98c3",
+      "master_blob": "598ed3dd29832d42c406b66f7c08d6b78bdb98c3"
+    },
+    {
+      "path": "src/lib/landing-page-content.test.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "2e2f4964f72bb875baab47cc14ec02893b0d71bb",
+      "master_blob": "2e2f4964f72bb875baab47cc14ec02893b0d71bb"
+    },
+    {
+      "path": "src/lib/landing-page-content.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "3779bf04078606c12c562f9c81fb4ec4372edecb",
+      "master_blob": "3779bf04078606c12c562f9c81fb4ec4372edecb"
+    },
+    {
+      "path": "src/lib/landing-page-service.test.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "fa05e0459c797dae1a691957294956842aa9d066",
+      "master_blob": "2ef4ef0dcc07b0be70b505d04d8268f24f61c309"
+    },
+    {
+      "path": "src/lib/landing-page-service.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "28f6fd09bb754003d2003e7aa6965e5da220e801",
+      "master_blob": "f34ed0aadb10d059fd2e654019029d275a87e617"
+    },
+    {
+      "path": "src/lib/registration-form-fields.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": "4a62f930e66157aa0a9a20a31ab88da960d53b55",
+      "head_blob": "ce3436da1958e33fff6d6149e9bb0e752e6e4cc5",
+      "master_blob": "7336f2efc0f6798ddd860a950975c6d3a6143b76"
+    },
+    {
+      "path": "src/lib/sales-project-scope.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "a37e8d11b917b0d73b698915704c40c49092fe04",
+      "master_blob": "aaa248618cc0fd41e7b5a406721ea0ff8b61db88"
+    },
+    {
+      "path": "src/lib/vendor-feature-toggles.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": "d0f5d0715b38c47e874d0a16372d2fdd6a0e3314",
+      "head_blob": "189949e3ed2720625fde9361a427722b8f78be74",
+      "master_blob": "deb0dd3f5f3ea0cb96e933fa060da7fe392c4500"
+    },
+    {
+      "path": "tests/e2e/funnel-commerce.spec.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "bf1b589c329e2fd880d0432bbf2e04cf86b82a0f",
+      "master_blob": "7cc3bdb4e1d1b355ddca2383a491684b8f80437d"
+    },
+    {
+      "path": "tests/e2e/landing-page-flow.spec.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "5d7efd7ff92786697d0633964301caad0b460cb3",
+      "master_blob": "23f6006db887ef7dc8aa904006e66859e000fe95"
+    },
+    {
+      "path": "tests/e2e/webinar-funnel-flow.spec.ts",
+      "status": "BOTH_CHANGED",
+      "base_blob": null,
+      "head_blob": "4445d1d7b552b4c5e10b3aabd4c1f8978eff339c",
+      "master_blob": "5ceb166d446d6f2fe6c19f9c4928cc6fade54afb"
+    },
+    {
+      "path": "tests/fixtures/funnel-commerce.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "4f876501092059bcd257e59c9e6a3c30857d1e37",
+      "master_blob": "4f876501092059bcd257e59c9e6a3c30857d1e37"
+    },
+    {
+      "path": "tests/fixtures/landing-page.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "d06f67647e85f5ab795c7c2e6037f5e68ba4c506",
+      "master_blob": "d06f67647e85f5ab795c7c2e6037f5e68ba4c506"
+    },
+    {
+      "path": "tests/fixtures/webinar-funnel.ts",
+      "status": "EXACT_IN_MASTER",
+      "base_blob": null,
+      "head_blob": "035aaa8c0ba16c6f228da172881f2dfa22a38aca",
+      "master_blob": "035aaa8c0ba16c6f228da172881f2dfa22a38aca"
+    }
+  ]
+}

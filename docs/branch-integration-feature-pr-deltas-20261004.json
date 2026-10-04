@@ -1,0 +1,673 @@
+{
+  "master": "bdbae2f53491afd518b97ee597e117d6a585b55c",
+  "rows": [
+    {
+      "pr": 135,
+      "source_head": "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+      "integrated_feature_commit": "8c1da5e8ef73b0e1e6034c5aab68dc57b01237a1",
+      "feature_base": "2e29c7a97e398b2d03e35e2ec9021cbd45caa719",
+      "own_paths": [
+        "src/app/api/payments/checkout/route.test.ts",
+        "src/app/api/payments/checkout/route.ts"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 2,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr135/src/app/api/payments/checkout/route.ts...\nerror: while searching for:\n    return NextResponse.json({ error: \"Unable to start checkout\" }, { status: 502 });\n  }\n\n  const response = NextResponse.json(\n    {\n      ok: true,\n      provider: checkoutSession.provider,\n      orderNumber: order,\n      transactionId: transaction.id,\n      amountCents: product.priceCents,\n      currency: product.currency,\n      checkoutUrl: checkoutSession.checkoutUrl,\n      formAction: checkoutSession.formAction,\n      formMethod: checkoutSession.formMethod,\n      formPayload: checkoutSession.formPayload,\n      nextAction: checkoutSession.nextAction,\n      externalRequired: checkoutSession.externalRequired ?? false,\n    },\n    { headers: { \"Cache-Control\": \"no-store\" } },\n  );\n\n  if (formSubmissionId) {\n    response.cookies.set(FORM_SUBMISSION_COOKIE, \"\", {\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr135/src/app/api/payments/checkout/route.ts:155\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr135/src/app/api/payments/checkout/route.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr135/src/app/api/payments/checkout/route.test.ts...\nerror: while searching for:\n  }));\n}\n\ndescribe(\"successful checkout response\", () => {\n  it(\"prevents caching while preserving the checkout payload\", async () => {\n    createCheckoutSession.mockResolvedValue({\n      provider: \"demo\",\n      mode: \"form\",\n      checkoutUrl: \"https://provider.example.test/checkout/fake-provider-session-token\",\n      formAction: \"https://provider.example.test/submit\",\n      formMethod: \"POST\",\n      formPayload: { MerchantOrderNo: \"example-order\", HashKey: \"fake-form-payload-value\" },\n      nextAction: \"submit_provider_form\",\n      externalRequired: true,\n    });\n\n    const response = await POST(checkoutRequest());\n\n    expect(response.status).toBe(200);\n    expect(response.headers.get(\"Cache-Control\")).toBe(\"no-store\");\n    await expect(response.json()).resolves.toStrictEqual({\n      ok: true,\n      provider: \"demo\",\n      orderNumber: expect.stringMatching(/^CD-\\d{14}-[A-Z0-9]{6}$/),\n      transactionId: \"transaction-1\",\n      amountCents: 1200,\n      currency: \"TWD\",\n      checkoutUrl: \"https://provider.example.test/checkout/fake-provider-session-token\",\n      formAction: \"https://provider.example.test/submit\",\n      formMethod: \"POST\",\n      formPayload: { MerchantOrderNo: \"example-order\", HashKey: \"fake-form-payload-value\" },\n      nextAction: \"submit_provider_form\",\n      externalRequired: true,\n    });\n  });\n});\n\ndescribe(\"checkout affiliate click attribution\", () => {\n  const visitorId = \"visitor-123456789012345\";\n\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr135/src/app/api/payments/checkout/route.test.ts:67\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr135/src/app/api/payments/checkout/route.test.ts: patch does not apply\n",
+      "semantic_review": {
+        "status": "OWN_INTENT_COVERED",
+        "conclusion": "checkoutResponse retains no-store and payload test. Static review only; inherited sandbox base remains pending.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md"
+      },
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs",
+        "scripts/payuni-sandbox-external-qa.test.mjs"
+      ]
+    },
+    {
+      "pr": 134,
+      "source_head": "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+      "integrated_feature_commit": "2e29c7a97e398b2d03e35e2ec9021cbd45caa719",
+      "feature_base": "6bdb34c0c55cc331b5144bff3833c3fe830aad52",
+      "own_paths": [
+        "src/app/api/payments/checkout/route.test.ts",
+        "src/app/api/payments/checkout/route.ts"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 2,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr134/src/app/api/payments/checkout/route.ts...\nerror: while searching for:\n      },\n    });\n  } catch {\n    try {\n      await db.paymentTransaction.update({\n        where: { id: transaction.id },\n        data: { status: \"failed\" },\n      });\n    } catch {\n      // Keep the metadata persistence failure response generic when the recovery write also fails.\n    }\n    return NextResponse.json({ error: \"Unable to start checkout\" }, { status: 502 });\n  }\n\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr134/src/app/api/payments/checkout/route.ts:144\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr134/src/app/api/payments/checkout/route.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr134/src/app/api/payments/checkout/route.test.ts...\nHunk #1 succeeded at 1255 (offset -1002 lines).\nHunk #2 succeeded at 1281 (offset -1002 lines).\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs",
+        "scripts/payuni-sandbox-external-qa.test.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_SUPERSEDED",
+        "conclusion": "Metadata write failure invokes scoped pending-payment compensation and inventory release; compensation failure preserves generic 502.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 133,
+      "source_head": "ded82898a687220496add74827691676e84c8b31",
+      "integrated_feature_commit": "6bdb34c0c55cc331b5144bff3833c3fe830aad52",
+      "feature_base": "135dba89c5fc6f8105d2f471542868a662307257",
+      "own_paths": [
+        "src/app/api/payments/checkout/route.test.ts",
+        "src/app/api/payments/checkout/route.ts"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 2,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr133/src/app/api/payments/checkout/route.ts...\nerror: while searching for:\n      })\n    : null;\n  const formSubmissionId = formSubmission?.id;\n  // Checkout attribution must come from the server-validated click only. Request\n  // data can contain a forged referralCode and must never affect the transaction\n  // or payment-provider metadata.\n  const referralCode = affiliateAttribution?.referralCode;\n  const transactionMetadata = {\n    productId: parsed.data.productId,\n    productName: product.name,\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr133/src/app/api/payments/checkout/route.ts:66\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr133/src/app/api/payments/checkout/route.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr133/src/app/api/payments/checkout/route.test.ts...\nerror: while searching for:\n  return `celebratedeal_attribution=${Buffer.from(JSON.stringify(value)).toString(\"base64url\")}`;\n}\n\nfunction expectNoAffiliateAttribution() {\n  const transaction = db.paymentTransaction.create.mock.calls[0]?.[0];\n  expect(transaction?.data.metadata).not.toHaveProperty(\"affiliateClickId\");\n  expect(transaction?.data.metadata).not.toHaveProperty(\"referralCode\");\n  expect(createCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({\n    referralCode: undefined,\n  }));\n}\n\ndescribe(\"checkout affiliate click attribution\", () => {\n  const visitorId = \"visitor-123456789012345\";\n\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr133/src/app/api/payments/checkout/route.test.ts:58\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr133/src/app/api/payments/checkout/route.test.ts: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs",
+        "scripts/payuni-sandbox-external-qa.test.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_COVERED",
+        "conclusion": "Request referralCode cannot choose attribution; provider receives server-validated referral only.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 132,
+      "source_head": "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+      "integrated_feature_commit": "135dba89c5fc6f8105d2f471542868a662307257",
+      "feature_base": "ce2b09f931fb43b41c8ea7a7beecb7b11647a1cc",
+      "own_paths": [
+        "src/components/live-playback.test.tsx",
+        "src/components/live-playback.tsx"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 2,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr132/src/components/live-playback.tsx...\nerror: while searching for:\n  const [currentSeconds, setCurrentSeconds] = useState(0);\n  const [reportedProgress, setReportedProgress] = useState<Set<number>>(() => new Set());\n  const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);\n  const [checkoutError, setCheckoutError] = useState<string | null>(null);\n  const chatRef = useRef<HTMLDivElement>(null);\n  const checkoutSubmissionRef = useRef(false);\n  const visitorId = useMemo(\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr132/src/components/live-playback.tsx:135\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr132/src/components/live-playback.tsx: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr132/src/components/live-playback.test.tsx...\nerror: while searching for:\n  ));\n}\n\nfunction checkoutErrors(tree: unknown) {\n  return findElements(tree, (element) => element.props[\"aria-live\"] === \"polite\");\n}\n\ndescribe(\"LivePlayback checkout\", () => {\n  afterEach(() => {\n    vi.unstubAllGlobals();\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr132/src/components/live-playback.test.tsx:97\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr132/src/components/live-playback.test.tsx: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs",
+        "scripts/payuni-sandbox-external-qa.test.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_COVERED",
+        "conclusion": "Checkout failure text retained as role=alert with retry guidance; current navigation flow adds timeout-specific message.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 131,
+      "source_head": "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+      "integrated_feature_commit": "ce2b09f931fb43b41c8ea7a7beecb7b11647a1cc",
+      "feature_base": "a3d43a67bdd9404869045d75f75dadbe64704c3f",
+      "own_paths": [
+        "src/app/api/payments/checkout/route.test.ts",
+        "src/app/api/payments/checkout/route.ts",
+        "src/lib/payment-webhooks.test.ts",
+        "src/lib/payment-webhooks.ts"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 4,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr131/src/lib/payment-webhooks.ts...\nerror: while searching for:\n  return typeof referralCode === \"string\" && referralCode.trim().length > 0 ? referralCode.trim() : null;\n}\n\nfunction affiliateClickIdFromMetadata(metadata: unknown) {\n  const affiliateClickId = metadataObject(metadata).affiliateClickId;\n  return typeof affiliateClickId === \"string\" && affiliateClickId.length > 0 ? affiliateClickId : null;\n}\n\nasync function findVendor(payload: PaymentWebhookPayloadInput) {\n  const db = getDb();\n\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr131/src/lib/payment-webhooks.ts:47\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr131/src/lib/payment-webhooks.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr131/src/lib/payment-webhooks.test.ts...\nerror: while searching for:\n    expect(commissions.find((commission) => commission.affiliateId === forgedAffiliate.id)).toBeUndefined();\n  });\n\n  it(\"marks only the checkout's matching affiliate click on paid events and ignores retries, failures, refunds, and mismatches\", async () => {\n    const suffix = `${Date.now()}-affiliate-click-conversion`;\n    const { db, vendor, affiliate } = await createFixture(suffix);\n    const click = await db.affiliateClick.create({\n      data: {\n        vendorId: vendor.id,\n        affiliateId: affiliate.id,\n        referralCode: affiliate.code,\n        visitorId: `visitor-${suffix}`,\n        landingPath: \"/test\",\n      },\n    });\n    const orderNumber = `ORDER-AFFILIATE-CLICK-${suffix}`;\n    await db.paymentTransaction.create({\n      data: {\n        vendorId: vendor.id,\n        providerName: \"checkout\",\n        orderNumber,\n        paymentMode: \"platform\",\n        grossAmountCents: 100000,\n        netAmountCents: 100000,\n        currency: \"TWD\",\n        status: \"pending\",\n        metadata: { affiliateClickId: click.id, referralCode: affiliate.code },\n      },\n    });\n    const paidPayload = PaymentWebhookPayload.parse({\n      provider: \"demo\",\n      eventId: `evt-affiliate-click-paid-${suffix}`,\n      eventType: \"paid\",\n      vendorId: vendor.id,\n      orderNumber,\n      grossAmountCents: 100000,\n      referralCode: \"FORGEDCODE\",\n    });\n\n    await processPaymentWebhook(paidPayload);\n    const convertedAt = (await db.affiliateClick.findUniqueOrThrow({ where: { id: click.id } })).convertedAt;\n    expect(convertedAt).not.toBeNull();\n\n    await processPaymentWebhook(PaymentWebhookPayload.parse({ ...paidPayload, eventId: `evt-affiliate-click-retry-${suffix}` }));\n    expect((await db.affiliateClick.findUniqueOrThrow({ where: { id: click.id } })).convertedAt).toEqual(convertedAt);\n\n    const rejectedClick = await db.affiliateClick.create({\n      data: {\n        vendorId: vendor.id,\n        affiliateId: affiliate.id,\n        referralCode: affiliate.code,\n        visitorId: `visitor-rejected-${suffix}`,\n        landingPath: \"/test\",\n      },\n    });\n    const rejectedCases = [\n      { label: \"failed\", eventType: \"failed\" as const, metadata: { affiliateClickId: rejectedClick.id, referralCode: affiliate.code } },\n      { label: \"refunded\", eventType: \"refunded\" as const, metadata: { affiliateClickId: rejectedClick.id, referralCode: affiliate.code } },\n      { label: \"mismatch\", eventType: \"paid\" as const, metadata: { affiliateClickId: rejectedClick.id, referralCode: \"MISMATCH\" } },\n    ];\n    for (const rejected of rejectedCases) {\n      await db.paymentTransaction.create({\n        data: {\n          vendorId: vendor.id,\n          providerName: \"checkout\",\n          orderNumber: `ORDER-AFFILIATE-CLICK-${rejected.label}-${suffix}`,\n          paymentMode: \"platform\",\n          grossAmountCents: 100000,\n          netAmountCents: 100000,\n          currency: \"TWD\",\n          status: \"pending\",\n          metadata: rejected.metadata,\n        },\n      });\n      await processPaymentWebhook(PaymentWebhookPayload.parse({\n        provider: \"demo\",\n        eventId: `evt-affiliate-click-${rejected.label}-${suffix}`,\n        eventType: rejected.eventType,\n        vendorId: vendor.id,\n        orderNumber: `ORDER-AFFILIATE-CLICK-${rejected.label}-${suffix}`,\n        grossAmountCents: 100000,\n        refundAmountCents: rejected.eventType === \"refunded\" ? 100000 : 0,\n      }));\n    }\n    expect((await db.affiliateClick.findUniqueOrThrow({ where: { id: rejectedClick.id } })).convertedAt).toBeNull();\n  });\n\n  it(\"rejects dual vendor identifiers when either identifier cannot be resolved\", async () => {\n    const suffix = `${Date.now()}-vendor-missing`;\n    const { db, vendor } = await createFixture(suffix);\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr131/src/lib/payment-webhooks.test.ts:434\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr131/src/lib/payment-webhooks.test.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr131/src/app/api/payments/checkout/route.ts...\nerror: while searching for:\nimport { getPaymentProvider } from \"@/lib/payment-providers\";\nimport type { CheckoutSessionResult } from \"@/lib/payment-providers/types\";\nimport { checkRateLimit } from \"@/lib/rate-limit\";\nimport {\n  ATTRIBUTION_TTL_SECONDS,\n  attributionCookieFromRequest,\n  normalizeReferralCode,\n  visitorIdFromRequest,\n} from \"@/lib/team-funnel-attribution\";\n\nconst CheckoutRequest = z.object({\n  vendorId: z.string().min(1),\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr131/src/app/api/payments/checkout/route.ts:6\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr131/src/app/api/payments/checkout/route.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr131/src/app/api/payments/checkout/route.test.ts...\nerror: while searching for:\n\nconst db = {\n  product: { findFirst: vi.fn() },\n  affiliateClick: { findFirst: vi.fn() },\n  formSubmission: { findFirst: vi.fn() },\n  paymentTransaction: { create: vi.fn(), update: vi.fn() },\n};\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr131/src/app/api/payments/checkout/route.test.ts:2\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr131/src/app/api/payments/checkout/route.test.ts: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs",
+        "scripts/payuni-sandbox-external-qa.test.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_COVERED",
+        "conclusion": "Checkout attribution uses validated visitor/click/vendor/affiliate metadata; paid webhook conversion uses existing transaction metadata and ignores provider metadata replacement. Webhook evidence is static only this turn.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 130,
+      "source_head": "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+      "integrated_feature_commit": "a3d43a67bdd9404869045d75f75dadbe64704c3f",
+      "feature_base": "62026bf1b335233f8cfb6ecca9c583c977bbe9b8",
+      "own_paths": [
+        "src/components/live-playback.test.tsx",
+        "src/components/live-playback.tsx",
+        "tests/e2e/smoke.spec.ts"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 3,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr130/tests/e2e/smoke.spec.ts...\nerror: while searching for:\nconst previousCredential = [\"Previous\", \"Credential\", \"123!\"].join(\"\");\nconst replacementCredential = [\"Replacement\", \"Credential\", \"123!\"].join(\"\");\nconst undersizedCredential = [\"too\", \"short\"].join(\"-\");\nconst stamp = Date.now();\n// 每次 Playwright 程序都使用不同識別碼，避免重試或中斷後的假資料互相衝突。\nconst e2eRunId = `${stamp.toString(36)}-${process.pid.toString(36)}-${randomUUID().slice(0, 8)}`;\nconst resetReference = [\"e2e\", \"invalid\", \"reset\", e2eRunId].join(\"-\");\nconst rateLimitRunId = stamp.toString(16).slice(-12).padStart(12, \"0\");\nconst e2eOrigin = new URL(\n  process.env.E2E_BASE_URL ?? `http://127.0.0.1:${process.env.E2E_PORT ?? \"31023\"}`,\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr130/tests/e2e/smoke.spec.ts:11\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr130/tests/e2e/smoke.spec.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr130/src/components/live-playback.tsx...\nerror: while searching for:\n  const [panel, setPanel] = useState<\"chat\" | \"products\" | \"form\">(\"chat\");\n  const [currentSeconds, setCurrentSeconds] = useState(0);\n  const [reportedProgress, setReportedProgress] = useState<Set<number>>(() => new Set());\n  const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);\n  const chatRef = useRef<HTMLDivElement>(null);\n  const checkoutSubmissionRef = useRef(false);\n  const visitorId = useMemo(\n    () => (typeof window === \"undefined\" ? \"server\" : getOrCreateVisitorId(() => crypto.randomUUID(), () => window.localStorage)),\n    [],\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr130/src/components/live-playback.tsx:134\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr130/src/components/live-playback.tsx: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr130/src/components/live-playback.test.tsx...\nerror: while searching for:\nimport { afterEach, beforeEach, describe, expect, it, vi } from \"vitest\";\n\nconst hookState = vi.hoisted(() => ({\n  cursor: 0,\n  refCursor: 0,\n  values: [] as unknown[],\n  refs: [] as Array<{ current: unknown }>,\n}));\n\nvi.mock(\"react\", async (importOriginal) => {\n  const react = await importOriginal<typeof import(\"react\")>();\n\n  return {\n    ...react,\n    useEffect: () => undefined,\n    useMemo: <Value,>(factory: () => Value) => factory(),\n    useRef: <Value,>(initialValue: Value) => {\n      const index = hookState.refCursor++;\n      if (!hookState.refs[index]) hookState.refs[index] = { current: initialValue };\n      return hookState.refs[index] as { current: Value };\n    },\n    useState: <Value,>(initialValue: Value | (() => Value)) => {\n      const index = hookState.cursor++;\n      if (hookState.values.length === index) {\n        hookState.values.push(typeof initialValue === \"function\" ? (initialValue as () => Value)() : initialValue);\n      }\n\n      const setValue = (nextValue: Value | ((currentValue: Value) => Value)) => {\n        const currentValue = hookState.values[index] as Value;\n        hookState.values[index] = typeof nextValue === \"function\"\n          ? (nextValue as (currentValue: Value) => Value)(currentValue)\n          : nextValue;\n      };\n\n      return [hookState.values[index] as Value, setValue] as const;\n    },\n  };\n});\n\nvi.mock(\"@/lib/client-analytics\", () => ({ trackClientAnalytics: vi.fn() }));\nvi.mock(\"@/lib/visitor-id\", () => ({ getOrCreateVisitorId: () => \"test-fixture-visitor-id\" }));\n\nimport { LivePlayback, requestCheckout, submitCheckout } from \"./live-playback\";\n\ntype ElementNode = {\n  type: unknown;\n  props: Record<string, unknown>;\n};\n\nfunction isElementNode(value: unknown): value is ElementNode {\n  return typeof value === \"object\" && value !== null && \"props\" in value && \"type\" in value;\n}\n\nfunction findElements(value: unknown, predicate: (element: ElementNode) => boolean): ElementNode[] {\n  if (Array.isArray(value)) return value.flatMap((child) => findElements(child, predicate));\n  if (!isElementNode(value)) return [];\n\n  return [\n    ...(predicate(value) ? [value] : []),\n    ...findElements(value.props.children, predicate),\n  ];\n}\n\nfunction textContent(value: unknown): string {\n  if (typeof value === \"string\" || typeof value === \"number\") return String(value);\n  if (Array.isArray(value)) return value.map(textContent).join(\"\");\n  return isElementNode(value) ? textContent(value.props.children) : \"\";\n}\n\nconst live = {\n  id: \"test-fixture-live-1\",\n  title: \"測試直播\",\n  slug: \"test-fixture-live\",\n  description: null,\n  accentCopy: null,\n  heroImageUrl: null,\n  videoUrl: null,\n  vendorId: \"test-fixture-vendor-1\",\n  brand: { name: \"測試品牌\", logoUrl: null, primaryColor: \"#000000\", ctaColor: \"#f97316\" },\n  form: null,\n  interactionEvents: [],\n  products: [\n    { id: \"test-fixture-product-1\", name: \"測試商品一\", description: null, priceCents: 1000, compareAtCents: null, currency: \"TWD\", imageUrl: null, checkoutUrl: null, offerLabel: null },\n    { id: \"test-fixture-product-2\", name: \"測試商品二\", description: null, priceCents: 2000, compareAtCents: null, currency: \"TWD\", imageUrl: null, checkoutUrl: null, offerLabel: null },\n  ],\n};\n\nfunction renderLive() {\n  hookState.cursor = 0;\n  hookState.refCursor = 0;\n  return LivePlayback({ live });\n}\n\nfunction checkoutButtons(tree: unknown) {\n  return findElements(tree, (element) => (\n    element.type === \"button\" && [\"立即搶購\", \"結帳送出中...\", \"買\", \"送出中\"].includes(textContent(element.props.children))\n  ));\n}\n\ndescribe(\"LivePlayback checkout\", () => {\n  afterEach(() => {\n    vi.unstubAllGlobals();\n  });\n\n  beforeEach(() => {\n    hookState.cursor = 0;\n    hookState.refCursor = 0;\n    hookState.values = [];\n    hookState.refs = [];\n    vi.clearAllMocks();\n  });\n\n  it(\"submits every PayUni form-post field without redirecting to the product checkout URL\", () => {\n    const inputs: Array<{ type: string; name: string; value: string }> = [];\n    const form = {\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr130/src/components/live-playback.test.tsx:1\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr130/src/components/live-playback.test.tsx: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs",
+        "scripts/payuni-sandbox-external-qa.test.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_SUPERSEDED",
+        "conclusion": "Shared checkout navigation lock plus disabled/busy buttons prevents duplicate navigation, keeps internal transition locked until overlay or timeout; external confirmation also has a synchronous lock.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 129,
+      "source_head": "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3",
+      "integrated_feature_commit": "62026bf1b335233f8cfb6ecca9c583c977bbe9b8",
+      "feature_base": "802ec84d9fb6c61dd414a9ad5ccb58f5a1e06036",
+      "own_paths": [
+        "src/components/live-playback.test.tsx",
+        "src/components/live-playback.tsx"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 2,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr129/src/components/live-playback.tsx...\nerror: while searching for:\n  return false;\n}\n\nexport async function requestCheckout({\n  vendorId,\n  productId,\n  referralCode,\n}: {\n  vendorId: string;\n  productId: string;\n  referralCode: string | null;\n}) {\n  try {\n    const checkoutResponse = await fetch(\"/api/payments/checkout\", {\n      method: \"POST\",\n      headers: clientHeaders,\n      body: JSON.stringify({ vendorId, productId, referralCode: referralCode ?? undefined }),\n    });\n\n    if (!checkoutResponse.ok) return false;\n\n    return submitCheckout(await checkoutResponse.json() as CheckoutResponse);\n  } catch {\n    return false;\n  }\n}\n\nexport function LivePlayback({ live }: { live: LivePageData }) {\n  const [panel, setPanel] = useState<\"chat\" | \"products\" | \"form\">(\"chat\");\n  const [currentSeconds, setCurrentSeconds] = useState(0);\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr129/src/components/live-playback.tsx:106\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr129/src/components/live-playback.tsx: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr129/src/components/live-playback.test.tsx...\nerror: while searching for:\nimport { afterEach, describe, expect, it, vi } from \"vitest\";\nimport { requestCheckout, submitCheckout } from \"./live-playback\";\n\ndescribe(\"LivePlayback checkout\", () => {\n  afterEach(() => {\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr129/src/components/live-playback.test.tsx:1\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr129/src/components/live-playback.test.tsx: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs",
+        "scripts/payuni-sandbox-external-qa.test.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_SUPERSEDED",
+        "conclusion": "Checkout opens internal owned checkout page. Explicit safe external product URLs require separate user-confirmed navigation intent; no automatic external fallback after internal checkout failure.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 128,
+      "source_head": "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+      "integrated_feature_commit": "802ec84d9fb6c61dd414a9ad5ccb58f5a1e06036",
+      "feature_base": "2033a24c123e69eac7c0843e8101b78addc41d47",
+      "own_paths": [
+        "src/app/api/payments/checkout/route.test.ts",
+        "src/app/api/payments/checkout/route.ts"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 2,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr128/src/app/api/payments/checkout/route.ts...\nerror: while searching for:\n\n  const order = orderNumber();\n  const provider = getPaymentProvider(process.env.PAYMENT_PROVIDER ?? \"demo\");\n  let transaction;\n  try {\n    transaction = await db.paymentTransaction.create({\n      data: {\n        vendorId: parsed.data.vendorId,\n        providerName: provider.id,\n        orderNumber: order,\n        paymentMode: \"platform\",\n        grossAmountCents: product.priceCents,\n        netAmountCents: product.priceCents,\n        currency: product.currency,\n        status: \"pending\",\n        metadata: transactionMetadata,\n      },\n    });\n  } catch {\n    return NextResponse.json({ error: \"Unable to start checkout\" }, { status: 502 });\n  }\n  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;\n  let checkoutSession: CheckoutSessionResult;\n  try {\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr128/src/app/api/payments/checkout/route.ts:68\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr128/src/app/api/payments/checkout/route.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr128/src/app/api/payments/checkout/route.test.ts...\nerror: while searching for:\n});\n\ndescribe(\"checkout provider failures\", () => {\n  it(\"returns a generic 502 and does not create a provider checkout when transaction creation fails\", async () => {\n    const databaseError = new Error(\n      \"database create failed for order CD-20330101010101-ABC123 via payuni: fake-database-secret-token\",\n    );\n    db.paymentTransaction.create.mockRejectedValue(databaseError);\n\n    const response = await POST(checkoutRequest());\n    const serializedResponse = await response.text();\n\n    expect(response.status).toBe(502);\n    expect(serializedResponse).toBe('{\"error\":\"Unable to start checkout\"}');\n    expect(serializedResponse).not.toContain(\"CD-20330101010101-ABC123\");\n    expect(serializedResponse).not.toContain(\"payuni\");\n    expect(serializedResponse).not.toContain(\"fake-database-secret-token\");\n    expect(createCheckoutSession).not.toHaveBeenCalled();\n    expect(db.paymentTransaction.update).not.toHaveBeenCalled();\n  });\n\n  it(\"returns a generic 502 after marking the transaction failed without leaking provider details\", async () => {\n    const providerError = new Error(\"provider checkout failed: fake-provider-secret-token\");\n    createCheckoutSession.mockRejectedValue(providerError);\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr128/src/app/api/payments/checkout/route.test.ts:106\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr128/src/app/api/payments/checkout/route.test.ts: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs",
+        "scripts/payuni-sandbox-external-qa.test.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_SUPERSEDED",
+        "conclusion": "Atomic reserved-payment creation catches failure; typed inventory/product/voucher errors handled; remaining failure returns generic 502.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 127,
+      "source_head": "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+      "integrated_feature_commit": "2033a24c123e69eac7c0843e8101b78addc41d47",
+      "feature_base": "3256618139369e0db5a1f4bc71d113eaa95b7821",
+      "own_paths": [
+        "src/app/api/payments/checkout/route.test.ts",
+        "src/app/api/payments/checkout/route.ts"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 2,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr127/src/app/api/payments/checkout/route.ts...\nerror: while searching for:\n    return NextResponse.json({ error: \"Unable to start checkout\" }, { status: 502 });\n  }\n\n  try {\n    await db.paymentTransaction.update({\n      where: { id: transaction.id },\n      data: {\n        metadata: {\n          ...transactionMetadata,\n          checkoutSession: {\n            provider: checkoutSession.provider,\n            mode: checkoutSession.mode,\n            nextAction: checkoutSession.nextAction,\n            externalRequired: checkoutSession.externalRequired ?? false,\n          },\n        } as Prisma.InputJsonObject,\n      },\n    });\n  } catch {\n    return NextResponse.json({ error: \"Unable to start checkout\" }, { status: 502 });\n  }\n\n  const response = NextResponse.json({\n    ok: true,\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr127/src/app/api/payments/checkout/route.ts:111\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr127/src/app/api/payments/checkout/route.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr127/src/app/api/payments/checkout/route.test.ts...\nerror: while searching for:\n    });\n    expect(db.paymentTransaction.update).toHaveBeenCalledTimes(1);\n  });\n\n  it(\"returns a generic 502 without a checkout payload when checkout-session metadata persistence fails\", async () => {\n    const databaseError = new Error(\"database update failed: fake-database-secret-token\");\n    db.paymentTransaction.update.mockRejectedValueOnce(databaseError);\n    createCheckoutSession.mockResolvedValue({\n      provider: \"demo\",\n      mode: \"redirect\",\n      checkoutUrl: \"https://provider.example.test/checkout/fake-provider-session-token\",\n      nextAction: \"continue_with_provider\",\n      externalRequired: true,\n    });\n\n    const response = await POST(checkoutRequest());\n    const serializedResponse = await response.text();\n\n    expect(response.status).toBe(502);\n    expect(serializedResponse).toBe('{\"error\":\"Unable to start checkout\"}');\n    expect(serializedResponse).not.toContain(\"fake-database-secret-token\");\n    expect(serializedResponse).not.toContain(\"fake-provider-session-token\");\n    expect(JSON.parse(serializedResponse)).not.toMatchObject({\n      ok: true,\n      provider: expect.anything(),\n      orderNumber: expect.anything(),\n      transactionId: expect.anything(),\n      checkoutUrl: expect.anything(),\n      nextAction: expect.anything(),\n    });\n    expect(db.paymentTransaction.update).toHaveBeenCalledTimes(1);\n  });\n});\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr127/src/app/api/payments/checkout/route.test.ts:146\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr127/src/app/api/payments/checkout/route.test.ts: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs",
+        "scripts/payuni-sandbox-external-qa.test.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_COVERED",
+        "conclusion": "Metadata persistence failure is caught and does not expose provider checkout details.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 126,
+      "source_head": "39b8dedf2ea140bc264088c9d1843d99196586ff",
+      "integrated_feature_commit": "3256618139369e0db5a1f4bc71d113eaa95b7821",
+      "feature_base": "fb7e46afe913fe557315239a85936e4680d5aaca",
+      "own_paths": [
+        "src/app/api/payments/checkout/route.test.ts",
+        "src/app/api/payments/checkout/route.ts"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 2,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr126/src/app/api/payments/checkout/route.ts...\nerror: while searching for:\n          externalRequired: true,\n        };\n  } catch {\n    try {\n      await db.paymentTransaction.update({\n        where: { id: transaction.id },\n        data: { status: \"failed\" },\n      });\n    } catch {\n      // Keep the provider failure response generic when the recovery write also fails.\n    }\n    return NextResponse.json({ error: \"Unable to start checkout\" }, { status: 502 });\n  }\n\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr126/src/app/api/payments/checkout/route.ts:100\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr126/src/app/api/payments/checkout/route.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr126/src/app/api/payments/checkout/route.test.ts...\nerror: while searching for:\n      update: db.paymentTransaction.update.mock.calls,\n    })).not.toContain(\"fake-provider-secret-token\");\n  });\n\n  it(\"returns the same generic 502 when marking the transaction failed also fails\", async () => {\n    const providerError = new Error(\"provider checkout failed: fake-provider-secret-token\");\n    const databaseError = new Error(\"database update failed: fake-database-secret-token\");\n    createCheckoutSession.mockRejectedValue(providerError);\n    db.paymentTransaction.update.mockRejectedValue(databaseError);\n\n    const response = await POST(checkoutRequest());\n    const serializedResponse = await response.text();\n\n    expect(response.status).toBe(502);\n    expect(serializedResponse).toBe('{\"error\":\"Unable to start checkout\"}');\n    expect(serializedResponse).not.toContain(\"fake-provider-secret-token\");\n    expect(serializedResponse).not.toContain(\"fake-database-secret-token\");\n    expect(db.paymentTransaction.update).toHaveBeenCalledWith({\n      where: { id: \"transaction-1\" },\n      data: { status: \"failed\" },\n    });\n    expect(db.paymentTransaction.update).toHaveBeenCalledTimes(1);\n  });\n});\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr126/src/app/api/payments/checkout/route.test.ts:126\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr126/src/app/api/payments/checkout/route.test.ts: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs",
+        "scripts/payuni-sandbox-external-qa.test.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_COVERED",
+        "conclusion": "Compensation failure is caught so provider errors keep the generic 502 response.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 125,
+      "source_head": "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
+      "integrated_feature_commit": "cadaa9eb36d0214cfb9d1bd03c02276d24ddefd9",
+      "feature_base": "85863897e95f587b8ded1e9a13338e58347b9750",
+      "own_paths": [
+        "src/app/api/payments/checkout/route.test.ts",
+        "src/app/api/payments/checkout/route.ts"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 2,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr125/src/app/api/payments/checkout/route.ts...\nerror: while searching for:\nimport { readJsonBody, requireSameOriginRequest } from \"@/lib/api-security\";\nimport { getDb } from \"@/lib/db\";\nimport { getPaymentProvider } from \"@/lib/payment-providers\";\nimport type { CheckoutSessionResult } from \"@/lib/payment-providers/types\";\nimport { checkRateLimit } from \"@/lib/rate-limit\";\n\nconst CheckoutRequest = z.object({\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr125/src/app/api/payments/checkout/route.ts:4\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr125/src/app/api/payments/checkout/route.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr125/src/app/api/payments/checkout/route.test.ts...\nerror: while searching for:\n    expect(response.headers.getSetCookie()).toEqual([]);\n  });\n});\n\ndescribe(\"checkout provider failures\", () => {\n  it(\"marks the transaction failed and does not persist provider error details\", async () => {\n    const providerError = new Error(\"provider checkout failed: fake-provider-secret-token\");\n    createCheckoutSession.mockRejectedValue(providerError);\n\n    await expect(POST(checkoutRequest())).rejects.toThrow(providerError);\n\n    expect(db.paymentTransaction.update).toHaveBeenCalledWith({\n      where: { id: \"transaction-1\" },\n      data: { status: \"failed\" },\n    });\n    expect(JSON.stringify(db.paymentTransaction.update.mock.calls)).not.toContain(\"fake-provider-secret-token\");\n    expect(db.paymentTransaction.update).toHaveBeenCalledTimes(1);\n  });\n});\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr125/src/app/api/payments/checkout/route.test.ts:104\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr125/src/app/api/payments/checkout/route.test.ts: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs",
+        "scripts/payuni-sandbox-external-qa.test.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_SUPERSEDED",
+        "conclusion": "Provider session failure invokes failPendingCheckoutAndReleaseInventory rather than only marking a transaction failed; generic 502 response retained.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 124,
+      "source_head": "30230f4ab63c65481324a128ff1369deee073c83",
+      "integrated_feature_commit": "5a217ec905381b6e29bea2c3068adbd8dca6fbf0",
+      "feature_base": "ec2b6fb9d22b362b1362991cd3e64dc0e48b12f9",
+      "own_paths": [
+        "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+        "src/app/(app)/lives/[id]/analytics/page.tsx"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 2,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr124/src/app/(app)/lives/[id]/analytics/page.tsx...\nerror: while searching for:\n        <Card>\n          <h2 className=\"mb-4 text-lg font-semibold text-slate-950\">最近事件</h2>\n          <div className=\"grid gap-2\">\n            {recentEvents.length === 0 ? (\n              <p role=\"status\" className=\"text-sm text-slate-500\">目前沒有最近事件。</p>\n            ) : (\n              recentEvents.map((event) => (\n                <div key={event.id} className=\"flex items-center justify-between rounded-md border border-border p-3 text-sm\">\n                  <span className=\"flex items-center gap-2\"><Badge tone=\"blue\">{event.eventType}</Badge>{event.visitorId}</span>\n                  <span className=\"text-slate-500\">{formatDateTime(event.createdAt)}</span>\n                </div>\n              ))\n            )}\n          </div>\n        </Card>\n        <Card>\n          <h2 className=\"mb-4 text-lg font-semibold text-slate-950\">聯盟來源</h2>\n          <div className=\"grid gap-2\">\n            {live.affiliateClicks.length === 0 ? (\n              <p role=\"status\" className=\"text-sm text-slate-500\">目前沒有聯盟來源資料。</p>\n            ) : (\n              live.affiliateClicks.map((click) => (\n                <div key={click.id} className=\"rounded-md border border-border p-3 text-sm\">\n                  <p className=\"font-semibold text-slate-950\">{click.referralCode ?? \"unknown\"}</p>\n                  <p className=\"text-slate-500\">{click.convertedAt ? \"已轉換\" : \"尚未轉換\"} · {formatDateTime(click.createdAt)}</p>\n                </div>\n              ))\n            )}\n          </div>\n        </Card>\n      </div>\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr124/src/app/(app)/lives/[id]/analytics/page.tsx:83\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr124/src/app/(app)/lives/[id]/analytics/page.tsx: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr124/src/app/(app)/lives/[id]/analytics/page.test.tsx...\nerror: while searching for:\nconst live = {\n  id: \"live-current\",\n  title: \"夏季直播\",\n  affiliateClicks: [{\n    id: \"affiliate-click-1\",\n    referralCode: \"summer-partner\",\n    convertedAt: null,\n    createdAt: new Date(\"2026-07-30T12:00:00.000Z\"),\n  }],\n};\n\nconst recentEvents = Array.from({ length: 30 }, (_, index) => ({\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr124/src/app/(app)/lives/[id]/analytics/page.test.tsx:23\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr124/src/app/(app)/lives/[id]/analytics/page.test.tsx: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_COVERED",
+        "conclusion": "Recent-event empty state retained; affiliate empty state now describes expanded scoped attribution table.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 123,
+      "source_head": "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
+      "integrated_feature_commit": "ec2b6fb9d22b362b1362991cd3e64dc0e48b12f9",
+      "feature_base": "19e6d963d979a138b465fc4726d79432915807b7",
+      "own_paths": [
+        "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+        "src/app/(app)/lives/[id]/analytics/page.tsx"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 2,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr123/src/app/(app)/lives/[id]/analytics/page.tsx...\nerror: while searching for:\nexport default async function LiveAnalyticsPage({ params }: { params: Promise<{ id: string }> }) {\n  const vendor = await requireVendor();\n  const { id } = await params;\n  const db = getDb();\n  const live = await db.live.findFirst({\n    where: { id, vendorId: vendor.id },\n    include: {\n      affiliateClicks: true,\n    },\n  });\n  if (!live) notFound();\n\n  const trackedEventTypes = [\"page_view\", \"product_click\", \"cta_click\", \"play_progress\"];\n  const [eventCounts, submissionCount, recentEvents] = await Promise.all([\n    db.analyticsEvent.groupBy({\n      by: [\"eventType\"],\n      where: { vendorId: vendor.id, liveId: live.id, eventType: { in: trackedEventTypes } },\n      _count: { _all: true },\n    }),\n    db.formSubmission.count({ where: { liveId: live.id } }),\n    db.analyticsEvent.findMany({\n      where: { vendorId: vendor.id, liveId: live.id },\n      orderBy: { createdAt: \"desc\" },\n      take: 30,\n    }),\n  ]);\n  const eventCountByType = new Map(eventCounts.map((eventCount) => [eventCount.eventType, eventCount._count._all]));\n  const pageViews = eventCountByType.get(\"page_view\") ?? 0;\n  const productClicks = eventCountByType.get(\"product_click\") ?? 0;\n  const ctaClicks = eventCountByType.get(\"cta_click\") ?? 0;\n  const progressEvents = eventCountByType.get(\"play_progress\") ?? 0;\n  const funnel = calculateAnalyticsFunnel({\n    views: pageViews,\n    productClicks,\n    ctaClicks,\n    submissions: submissionCount,\n  });\n\n  return (\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr123/src/app/(app)/lives/[id]/analytics/page.tsx:8\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr123/src/app/(app)/lives/[id]/analytics/page.tsx: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr123/src/app/(app)/lives/[id]/analytics/page.test.tsx...\nerror: while searching for:\nimport { renderToStaticMarkup } from \"react-dom/server\";\nimport { beforeEach, describe, expect, it, vi } from \"vitest\";\n\nconst mocks = vi.hoisted(() => ({\n  requireVendor: vi.fn(),\n  liveFindFirst: vi.fn(),\n  analyticsGroupBy: vi.fn(),\n  analyticsFindMany: vi.fn(),\n  formSubmissionCount: vi.fn(),\n}));\n\nvi.mock(\"@/lib/auth\", () => ({ requireVendor: mocks.requireVendor }));\nvi.mock(\"@/lib/db\", () => ({\n  getDb: () => ({\n    live: { findFirst: mocks.liveFindFirst },\n    analyticsEvent: { groupBy: mocks.analyticsGroupBy, findMany: mocks.analyticsFindMany },\n    formSubmission: { count: mocks.formSubmissionCount },\n  }),\n}));\n\nimport LiveAnalyticsPage from \"./page\";\n\nconst live = {\n  id: \"live-current\",\n  title: \"夏季直播\",\n  affiliateClicks: [],\n};\n\nconst recentEvents = Array.from({ length: 30 }, (_, index) => ({\n  id: `recent-${index + 1}`,\n  eventType: \"page_view\",\n  visitorId: `visitor-${index + 1}`,\n  createdAt: new Date(`2026-07-${String(30 - index).padStart(2, \"0\")}T12:00:00.000Z`),\n}));\n\nbeforeEach(() => {\n  vi.clearAllMocks();\n  mocks.requireVendor.mockResolvedValue({ id: \"vendor-current\" });\n  mocks.liveFindFirst.mockResolvedValue(live);\n  mocks.analyticsGroupBy.mockResolvedValue([\n    { eventType: \"page_view\", _count: { _all: 40 } },\n    { eventType: \"product_click\", _count: { _all: 8 } },\n    { eventType: \"cta_click\", _count: { _all: 6 } },\n    { eventType: \"play_progress\", _count: { _all: 5 } },\n  ]);\n  mocks.formSubmissionCount.mockResolvedValue(4);\n  mocks.analyticsFindMany.mockResolvedValue(recentEvents);\n});\n\ndescribe(\"/lives/[id]/analytics route\", () => {\n  it(\"uses full live-scoped event totals for KPIs and the conversion funnel when more than 30 events exist\", async () => {\n    const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));\n\n    expect(mocks.analyticsGroupBy).toHaveBeenCalledWith({\n      by: [\"eventType\"],\n      where: {\n        vendorId: \"vendor-current\",\n        liveId: live.id,\n        eventType: { in: [\"page_view\", \"product_click\", \"cta_click\", \"play_progress\"] },\n      },\n      _count: { _all: true },\n    });\n    expect(mocks.formSubmissionCount).toHaveBeenCalledWith({ where: { liveId: live.id } });\n    expect(html).toMatch(/觀看<\\/p><p[^>]*>40<\\/p>/);\n    expect(html).toMatch(/商品點擊<\\/p><p[^>]*>8<\\/p>/);\n    expect(html).toMatch(/CTA 點擊<\\/p><p[^>]*>6<\\/p>/);\n    expect(html).toMatch(/播放進度<\\/p><p[^>]*>5<\\/p>/);\n    expect(html).toContain('aria-label=\"商品點擊：8，相對觀看轉換率 20%\"');\n    expect(html).toContain('aria-label=\"CTA 點擊：6，相對觀看轉換率 15%\"');\n    expect(html).toContain('aria-label=\"名單：4，相對觀看轉換率 10%\"');\n  });\n\n  it(\"keeps the recent-event list limited to 30 live-scoped events\", async () => {\n    const html = renderToStaticMarkup(await LiveAnalyticsPage({ params: Promise.resolve({ id: live.id }) }));\n\n    expect(mocks.analyticsFindMany).toHaveBeenCalledWith({\n      where: { vendorId: \"vendor-current\", liveId: live.id },\n      orderBy: { createdAt: \"desc\" },\n      take: 30,\n    });\n    expect(html).toContain(\"visitor-1\");\n    expect(html).toContain(\"visitor-30\");\n  });\n});\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr123/src/app/(app)/lives/[id]/analytics/page.test.tsx:1\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr123/src/app/(app)/lives/[id]/analytics/page.test.tsx: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_SUPERSEDED",
+        "conclusion": "KPI population separated from recent-30 list; master counts trusted distinct admitted sessions and verified leads with vendor/project scoping.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 122,
+      "source_head": "638707f9f043498136107b38968e49a0c38e9133",
+      "integrated_feature_commit": "19e6d963d979a138b465fc4726d79432915807b7",
+      "feature_base": "d52fece819496cb455c0d68ca272a20ceec5b5a8",
+      "own_paths": [
+        "src/app/actions.test.ts",
+        "src/app/actions.ts",
+        "src/components/interaction-script-form.test.tsx",
+        "src/components/interaction-script-form.tsx"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 4,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr122/src/components/interaction-script-form.tsx...\nerror: while searching for:\n\"use client\";\n\nimport Image from \"next/image\";\nimport { useMemo, useState, type DragEvent, type FormEvent, type MouseEvent } from \"react\";\nimport type { InteractionEvent, InteractionRole, InteractionScript, Live, Product, Video } from \"@prisma/client\";\nimport { BadgeCheck, ChevronDown, ChevronUp, GripVertical, Link2Off, Plus, Trash2, VideoIcon } from \"lucide-react\";\nimport { unbindInteractionScriptFromLiveAction, upsertInteractionScriptAction } from \"@/app/actions\";\nimport { CSRF_FIELD_NAME } from \"@/lib/csrf-constants\";\nimport {\n  INTERACTION_TIME_FORMAT_ERROR,\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr122/src/components/interaction-script-form.tsx:1\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr122/src/components/interaction-script-form.tsx: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr122/src/components/interaction-script-form.test.tsx...\nerror: while searching for:\nimport { beforeEach, describe, expect, it, vi } from \"vitest\";\n\nconst hookState = vi.hoisted(() => ({\n  cursor: 0,\n  values: [] as unknown[],\n}));\n\nconst actionMocks = vi.hoisted(() => ({\n  unbindInteractionScriptFromLiveAction: vi.fn(),\n  upsertInteractionScriptAction: vi.fn(),\n}));\n\nvi.mock(\"react\", async (importOriginal) => {\n  const react = await importOriginal<typeof import(\"react\")>();\n\n  return {\n    ...react,\n    useMemo: <Value,>(factory: () => Value) => factory(),\n    useState: <Value,>(initialValue: Value) => {\n      const index = hookState.cursor++;\n      if (hookState.values.length === index) hookState.values.push(initialValue);\n\n      const setValue = (nextValue: Value | ((currentValue: Value) => Value)) => {\n        const currentValue = hookState.values[index] as Value;\n        hookState.values[index] = typeof nextValue === \"function\"\n          ? (nextValue as (currentValue: Value) => Value)(currentValue)\n          : nextValue;\n      };\n\n      return [hookState.values[index] as Value, setValue];\n    },\n  };\n});\n\nvi.mock(\"@/app/actions\", () => actionMocks);\n\nimport { InteractionScriptForm } from \"./interaction-script-form\";\n\ntype ElementNode = {\n  type: unknown;\n  props: Record<string, unknown>;\n};\n\nfunction isElementNode(value: unknown): value is ElementNode {\n  return typeof value === \"object\" && value !== null && \"props\" in value && \"type\" in value;\n}\n\nfunction findElements(value: unknown, predicate: (element: ElementNode) => boolean): ElementNode[] {\n  if (Array.isArray(value)) return value.flatMap((child) => findElements(child, predicate));\n  if (!isElementNode(value)) return [];\n\n  return [\n    ...(predicate(value) ? [value] : []),\n    ...findElements(value.props.children, predicate),\n  ];\n}\n\nfunction textContent(value: unknown): string {\n  if (typeof value === \"string\" || typeof value === \"number\") return String(value);\n  if (Array.isArray(value)) return value.map(textContent).join(\"\");\n  return isElementNode(value) ? textContent(value.props.children) : \"\";\n}\n\nfunction renderForm() {\n  hookState.cursor = 0;\n  return InteractionScriptForm({\n    script: {\n      id: \"test-fixture-script-1\",\n      vendorId: \"test-fixture-vendor-1\",\n      name: \"測試留言組\",\n      description: null,\n      status: \"draft\",\n      createdAt: new Date(\"2026-07-01T00:00:00.000Z\"),\n      updatedAt: new Date(\"2026-07-01T00:00:00.000Z\"),\n      events: [],\n    },\n    roles: [],\n    products: [],\n    boundLives: [{\n      id: \"test-fixture-live-1\",\n      vendorId: \"test-fixture-vendor-1\",\n      videoId: null,\n      formId: null,\n      messageTemplateId: null,\n      interactionScriptId: \"test-fixture-script-1\",\n      teamId: null,\n      seminarOwnerMembershipId: null,\n      title: \"七月新品直播\",\n      slug: \"test-fixture-july-live\",\n      description: null,\n      scheduledAt: new Date(\"2026-07-01T00:00:00.000Z\"),\n      status: \"scheduled\",\n      heroImageUrl: null,\n      accentCopy: null,\n      replayEnabled: true,\n      streamMode: \"vod\",\n      cloudflareLiveInputUid: null,\n      quotaPolicy: null,\n      createdAt: new Date(\"2026-07-01T00:00:00.000Z\"),\n      updatedAt: new Date(\"2026-07-01T00:00:00.000Z\"),\n      video: null,\n    }],\n    csrfToken: \"test-fixture-csrf-token\",\n  });\n}\n\ndescribe(\"InteractionScriptForm\", () => {\n  beforeEach(() => {\n    hookState.cursor = 0;\n    hookState.values = [];\n    vi.unstubAllGlobals();\n  });\n\n  it(\"shows the bound live and submits its identifier to the unbind action after confirmation\", () => {\n    const form = renderForm();\n    const boundLive = findElements(form, (candidate) => candidate.props[\"data-testid\"] === \"bound-live\");\n    const unbindButton = findElements(form, (candidate) => (\n      candidate.type === \"button\" && candidate.props.formAction === actionMocks.unbindInteractionScriptFromLiveAction\n    )).at(0);\n\n    expect(textContent(boundLive)).toContain(\"七月新品直播\");\n    expect(unbindButton).toMatchObject({\n      props: expect.objectContaining({\n        type: \"submit\",\n        name: \"liveId\",\n        value: \"test-fixture-live-1\",\n      \nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr122/src/components/interaction-script-form.test.tsx:1\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr122/src/components/interaction-script-form.test.tsx: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr122/src/app/actions.ts...\nerror: while searching for:\n  redirect(\"/interaction-scripts\");\n}\n\nexport async function unbindInteractionScriptFromLiveAction(formData: FormData) {\n  await assertServerActionSecurity(formData);\n  const vendor = await requireVendor();\n  const scriptId = text(formData, \"id\");\n  const liveId = text(formData, \"liveId\");\n\n  if (!scriptId || !liveId) {\n    throw new Error(\"直播不存在或未綁定此互動腳本。\");\n  }\n\n  const updateResult = await getDb().live.updateMany({\n    where: {\n      id: liveId,\n      vendorId: vendor.id,\n      interactionScriptId: scriptId,\n      interactionScript: { is: { id: scriptId, vendorId: vendor.id } },\n    },\n    data: { interactionScriptId: null },\n  });\n\n  if (updateResult.count !== 1) {\n    throw new Error(\"直播不存在或未綁定此互動腳本。\");\n  }\n\n  revalidatePath(\"/interaction-scripts\");\n  revalidatePath(`/interaction-scripts/${scriptId}/edit`);\n  revalidatePath(\"/lives\");\n  revalidatePath(`/lives/${liveId}/edit`);\n}\n\nexport async function duplicateInteractionScriptAction(formData: FormData) {\n  await assertServerActionSecurity(formData);\n  const vendor = await requireVendor();\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr122/src/app/actions.ts:1219\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr122/src/app/actions.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr122/src/app/actions.test.ts...\nerror: while searching for:\n  interactionRoleFindMany: vi.fn(),\n  interactionScriptCreate: vi.fn(),\n  interactionScriptUpdate: vi.fn(),\n  liveUpdateMany: vi.fn(),\n  markCurrentSessionMfaVerified: vi.fn(),\n  paymentTransactionUpdate: vi.fn(),\n  redirect: vi.fn(),\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr122/src/app/actions.test.ts:15\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr122/src/app/actions.test.ts: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_COVERED",
+        "conclusion": "Live/script/vendor matching detach preserved with count check and all revalidation paths; master adds manager role, bounded IDs and audit event.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 121,
+      "source_head": "62fb1655dc47c7156a68a09ee18b42d4120d9b61",
+      "integrated_feature_commit": "d52fece819496cb455c0d68ca272a20ceec5b5a8",
+      "feature_base": "a0eb3c79ce1f8b6767727ef3a796d00dde8d0082",
+      "own_paths": [
+        "src/app/api/auth/password-reset/request/route.test.ts",
+        "src/app/api/auth/password-reset/request/route.ts"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 2,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr121/src/app/api/auth/password-reset/request/route.ts...\nerror: while searching for:\n  }\n\n  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;\n  let reset: Awaited<ReturnType<typeof sendPasswordResetLink>> = null;\n  try {\n    reset = await sendPasswordResetLink({\n      email: parsed.data.email,\n      appUrl,\n      ipAddress: request.headers.get(\"x-forwarded-for\")?.split(\",\")[0]?.trim() ?? null,\n      userAgent: request.headers.get(\"user-agent\"),\n    });\n  } catch {\n    // Preserve the generic success response when the email provider is unavailable.\n  }\n\n  const response: Record<string, unknown> = { ok: true };\n  if (reset && process.env.NODE_ENV !== \"production\") {\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr121/src/app/api/auth/password-reset/request/route.ts:21\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr121/src/app/api/auth/password-reset/request/route.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr121/src/app/api/auth/password-reset/request/route.test.ts...\nerror: while searching for:\n    await expect(unknownAccountResponse.json()).resolves.toEqual({ ok: true });\n  });\n\n  it(\"returns generic success when the reset email service rejects\", async () => {\n    sendPasswordResetLink.mockRejectedValue(new Error(\"test-fixture-email-provider-failure\"));\n\n    const response = await POST(passwordResetRequest());\n\n    expect(response.status).toBe(200);\n    await expect(response.json()).resolves.toEqual({ ok: true });\n  });\n\n  it(\"forwards the email, first forwarded IP, user agent, and configured app URL to the reset service\", async () => {\n    const response = await POST(passwordResetRequest(\n      { email: \"member@example.test\" },\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr121/src/app/api/auth/password-reset/request/route.test.ts:88\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr121/src/app/api/auth/password-reset/request/route.test.ts: patch does not apply\n",
+      "semantic_review": {
+        "status": "OWN_INTENT_SUPERSEDED",
+        "conclusion": "Background reset scheduler catches provider failure after generic response; canonical URL and reset URL confidentiality retained. Static review only; inherited sandbox base remains pending.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md"
+      },
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs"
+      ]
+    },
+    {
+      "pr": 120,
+      "source_head": "3ace54c10b581285a297c5e95e677178314e1c52",
+      "integrated_feature_commit": "a0eb3c79ce1f8b6767727ef3a796d00dde8d0082",
+      "feature_base": "3808c6c2b9166d08c60a395c42d8a5577580dbb5",
+      "own_paths": [
+        "src/app/(app)/settings/security/page.tsx",
+        "src/app/actions.test.ts",
+        "src/app/actions.ts",
+        "src/components/vendor-member-deactivation-confirmation.test.tsx",
+        "src/components/vendor-member-deactivation-confirmation.tsx"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 5,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr120/src/components/vendor-member-deactivation-confirmation.tsx...\nerror: while searching for:\nimport { CsrfField } from \"@/components/csrf-field\";\n\ntype VendorMemberDeactivationAction = (formData: FormData) => void | Promise<void>;\n\nexport type VendorMemberForDeactivation = {\n  id: string;\n  userId: string;\n  status: string;\n  user: {\n    name: string;\n    email: string;\n  };\n};\n\nexport function VendorMemberDeactivationConfirmation({\n  action,\n  currentUserId,\n  isOwner,\n  member,\n  csrfToken,\n}: {\n  action: VendorMemberDeactivationAction;\n  currentUserId: string;\n  isOwner: boolean;\n  member: VendorMemberForDeactivation;\n  csrfToken?: string;\n}) {\n  const canDeactivate = isOwner && member.status === \"active\" && member.userId !== currentUserId;\n\n  if (!canDeactivate) return null;\n\n  return (\n    <form action={action} className=\"grid justify-items-end gap-2\">\n      {csrfToken ? <input type=\"hidden\" name=\"_csrf\" value={csrfToken} /> : <CsrfField />}\n      <input type=\"hidden\" name=\"id\" value={member.id} />\n      <label className=\"grid gap-1 text-left text-xs text-slate-600\">\n        <span>輸入 {member.user.email} 以確認停用</span>\n        <input\n          aria-label={`確認停用 ${member.user.name}`}\n          className=\"h-8 w-52 rounded-md border border-red-200 bg-white px-2 text-xs outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100\"\n          name=\"confirmation\"\n          type=\"email\"\n          autoComplete=\"off\"\n          required\n        />\n      </label>\n      <button className=\"rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50\">確認停用</button>\n    </form>\n  );\n}\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr120/src/components/vendor-member-deactivation-confirmation.tsx:1\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr120/src/components/vendor-member-deactivation-confirmation.tsx: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr120/src/components/vendor-member-deactivation-confirmation.test.tsx...\nerror: while searching for:\nimport { renderToStaticMarkup } from \"react-dom/server\";\nimport { describe, expect, it } from \"vitest\";\nimport { VendorMemberDeactivationConfirmation } from \"./vendor-member-deactivation-confirmation\";\n\nconst action = async () => {};\nconst csrfToken = \"csrf-test-token\";\nconst member = {\n  id: \"member-2\",\n  userId: \"user-2\",\n  status: \"active\",\n  user: { name: \"王小明\", email: \"member@example.com\" },\n};\n\nfunction renderConfirmation(overrides: Partial<React.ComponentProps<typeof VendorMemberDeactivationConfirmation>> = {}) {\n  return renderToStaticMarkup(\n    <VendorMemberDeactivationConfirmation\n      action={action}\n      currentUserId=\"owner-1\"\n      csrfToken={csrfToken}\n      isOwner\n      member={member}\n      {...overrides}\n    />,\n  );\n}\n\ndescribe(\"VendorMemberDeactivationConfirmation\", () => {\n  it(\"renders a confirmation field and submit action for another active member\", () => {\n    const html = renderConfirmation();\n\n    expect(html).toContain(\"輸入 member@example.com 以確認停用\");\n    expect(html).toContain('name=\"confirmation\"');\n    expect(html).toMatch(/type=\"email\"[^>]*autoComplete=\"off\"[^>]*required=\"\"[^>]*name=\"confirmation\"/);\n    expect(html).toContain('name=\"id\" value=\"member-2\"');\n    expect(html).toContain('name=\"_csrf\" value=\"csrf-test-token\"');\n    expect(html).toContain(\"確認停用\");\n  });\n\n  it(\"does not render a submittable deactivation action for the current user or inactive member\", () => {\n    expect(renderConfirmation({ currentUserId: member.userId })).toBe(\"\");\n    expect(renderConfirmation({ member: { ...member, status: \"inactive\" } })).toBe(\"\");\n  });\n});\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr120/src/components/vendor-member-deactivation-confirmation.test.tsx:1\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr120/src/components/vendor-member-deactivation-confirmation.test.tsx: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr120/src/app/actions.ts...\nerror: while searching for:\n  await assertServerActionSecurity(formData);\n  const auth = await requireVendorOwner();\n  const id = text(formData, \"id\");\n  const confirmation = normalizedEmail(text(formData, \"confirmation\"));\n  const db = getDb();\n  const member = await db.vendorMember.findFirst({\n    where: { id, vendorId: auth.vendor.id },\n    include: { user: true },\n  });\n\n  if (!member || member.status !== \"active\" || member.user.platformRole !== \"none\") {\n    redirect(\"/settings/security?error=member_not_found\");\n  }\n\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr120/src/app/actions.ts:805\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr120/src/app/actions.ts: patch does not apply\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr120/src/app/actions.test.ts...\nHunk #1 succeeded at 456 (offset -262 lines).\nHunk #2 succeeded at 3638 (offset -2753 lines).\nChecking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr120/src/app/(app)/settings/security/page.tsx...\nerror: while searching for:\n  updatePasswordAction,\n} from \"@/app/actions\";\nimport { CsrfField } from \"@/components/csrf-field\";\nimport { VendorMemberDeactivationConfirmation } from \"@/components/vendor-member-deactivation-confirmation\";\nimport { Badge, Card, DangerButton, Field, PageHeader, SelectField, SubmitButton } from \"@/components/ui\";\nimport { getDb } from \"@/lib/db\";\nimport { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from \"@/lib/mfa\";\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr120/src/app/(app)/settings/security/page.tsx:14\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr120/src/app/(app)/settings/security/page.tsx: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_COVERED",
+        "conclusion": "Email confirmation required in both UI and server action; active non-self owner scope preserved; pending submit feedback added.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 119,
+      "source_head": "2cceebba802dec508faaad166e37fa1e51b09ed5",
+      "integrated_feature_commit": "3808c6c2b9166d08c60a395c42d8a5577580dbb5",
+      "feature_base": "197df95e584ebdcad066afe0fb660c022de87812",
+      "own_paths": [
+        "src/app/actions.test.ts"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 1,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr119/src/app/actions.test.ts...\nerror: while searching for:\n  vendorMemberFindFirst: vi.fn(),\n  vendorMemberFindMany: vi.fn(),\n  vendorMemberFindUnique: vi.fn(),\n  vendorMemberCount: vi.fn(),\n  vendorMemberUpdate: vi.fn(),\n  vendorMemberUpsert: vi.fn(),\n  userSessionFindMany: vi.fn(),\n  userSessionUpdateMany: vi.fn(),\n  writeAuditLog: vi.fn(),\n}));\n\n\nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr119/src/app/actions.test.ts:48\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr119/src/app/actions.test.ts: patch does not apply\n",
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs"
+      ],
+      "semantic_review": {
+        "status": "OWN_INTENT_COVERED",
+        "conclusion": "Member deactivation and no-write rejection cases retained. Master additionally uses serializable owner-count/deactivation and scoped update to prevent concurrent last-owner removal.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md",
+        "whole_branch_disposition": "INHERITED_BASE_PENDING"
+      }
+    },
+    {
+      "pr": 118,
+      "source_head": "7f1b3fd26e48a41e9e003c848594fa102000f220",
+      "integrated_feature_commit": "7af17a1eaa9ae7b99ab6c5a24477b565864a3362",
+      "feature_base": "2008cb5a7a129ab7c88fa8bda08e5b01e994b19a",
+      "own_paths": [
+        "src/components/live-stepper-form.test.tsx"
+      ],
+      "own_paths_exact_master": [],
+      "reverse_patch_check_on_master": "NO_PROOF",
+      "note": "Only PR delta; inherited feature-base changes are not accepted by this check.",
+      "check_method": "repo-root with explicit directory and verbose expected-file count; no skipped patches",
+      "checked_files": 1,
+      "check_exit": 1,
+      "check_output": "Checking patch .ai-team/tmp/feature-pr-delta-check-20261004/pr118/src/components/live-stepper-form.test.tsx...\nerror: while searching for:\nimport { renderToStaticMarkup } from \"react-dom/server\";\nimport type { ReactElement } from \"react\";\nimport type { Product } from \"@prisma/client\";\nimport { beforeEach, describe, expect, it, vi } from \"vitest\";\n\nconst hookState = vi.hoisted(() => ({\n  cursor: 0,\n  values: [] as unknown[],\n}));\n\nvi.mock(\"react\", async (importOriginal) => {\n  const react = await importOriginal<typeof import(\"react\")>();\n\n  return {\n    ...react,\n    useState: <Value,>(initialValue: Value) => {\n      const index = hookState.cursor++;\n      if (hookState.values.length === index) hookState.values.push(initialValue);\n\n      const setValue = (nextValue: Value | ((currentValue: Value) => Value)) => {\n        const currentValue = hookState.values[index] as Value;\n        hookState.values[index] = typeof nextValue === \"function\"\n          ? (nextValue as (currentValue: Value) => Value)(currentValue)\n          : nextValue;\n      };\n\n      return [hookState.values[index] as Value, setValue];\n    },\n  };\n});\n\nvi.mock(\"@/app/actions\", () => ({ upsertLiveAction: vi.fn() }));\n\nimport { LiveStepperForm } from \"./live-stepper-form\";\n\ntype ElementNode = {\n  type: unknown;\n  props: Record<string, unknown>;\n};\n\nfunction isElementNode(value: unknown): value is ElementNode {\n  return typeof value === \"object\" && value !== null && \"props\" in value && \"type\" in value;\n}\n\nfunction findElement(value: unknown, predicate: (element: ElementNode) => boolean): ElementNode | undefined {\n  if (Array.isArray(value)) {\n    for (const child of value) {\n      const matchingChild = findElement(child, predicate);\n      if (matchingChild) return matchingChild;\n    }\n    return undefined;\n  }\n\n  if (!isElementNode(value)) return undefined;\n  if (predicate(value)) return value;\n  return findElement(value.props.children, predicate);\n}\n\nfunction textContent(value: unknown): string {\n  if (typeof value === \"string\" || typeof value === \"number\") return String(value);\n  if (Array.isArray(value)) return value.map(textContent).join(\"\");\n  return isElementNode(value) ? textContent(value.props.children) : \"\";\n}\n\nconst products: Product[] = [\n  {\n    id: \"test-fixture-product-1\",\n    vendorId: \"test-fixture-vendor-1\",\n    name: \"亮白精華組\",\n    slug: \"test-fixture-brightening-serum\",\n    description: null,\n    priceCents: 128000,\n    compareAtCents: null,\n    currency: \"TWD\",\n    imageUrl: null,\n    checkoutUrl: null,\n    inventory: 12,\n    isActive: true,\n    createdAt: new Date(\"2026-01-01T00:00:00.000Z\"),\n    updatedAt: new Date(\"2026-01-01T00:00:00.000Z\"),\n  },\n  {\n    id: \"test-fixture-product-2\",\n    vendorId: \"test-fixture-vendor-1\",\n    name: \"保濕修護霜\",\n    slug: \"test-fixture-repair-cream\",\n    description: null,\n    priceCents: 98000,\n    compareAtCents: null,\n    currency: \"TWD\",\n    imageUrl: null,\n    checkoutUrl: null,\n    inventory: 8,\n    isActive: true,\n    createdAt: new Date(\"2026-01-01T00:00:00.000Z\"),\n    updatedAt: new Date(\"2026-01-01T00:00:00.000Z\"),\n  },\n  {\n    id: \"test-fixture-product-3\",\n    vendorId: \"test-fixture-vendor-1\",\n    name: \"夜間舒緩面膜\",\n    slug: \"test-fixture-night-mask\",\n    description: null,\n    priceCents: 68000,\n    compareAtCents: null,\n    currency: \"TWD\",\n    imageUrl: null,\n    checkoutUrl: null,\n    inventory: 20,\n    isActive: true,\n    createdAt: new Date(\"2026-01-01T00:00:00.000Z\"),\n    updatedAt: new Date(\"2026-01-01T00:00:00.000Z\"),\n  },\n];\n\nfunction renderForm(availableProducts: Product[] = products) {\n  hookState.cursor = 0;\n  return LiveStepperForm({\n    videos: [],\n    products: availableProducts,\n    forms: [],\n    templates: [],\n    scripts: [],\n    affiliates: [],\n    csrfToken: \"test-fixture-csrf-token\",\n  });\n}\n\nfunction control(tree: unknown, name: string, value?: string) {\n  const element = findElement(tree, (candidate) => (\n    candidate.type === \"input\" &&\n    candidate.props.name === name &&\n    (value === undefined || candidate.props.value === value)\n  ));\n\n  expect(element).toBeDefined();\n  return element as ElementNode & {\n    props: Record<string, unknown> & {\n     \nerror: patch failed: .ai-team/tmp/feature-pr-delta-check-20261004/pr118/src/components/live-stepper-form.test.tsx:1\nerror: .ai-team/tmp/feature-pr-delta-check-20261004/pr118/src/components/live-stepper-form.test.tsx: patch does not apply\n",
+      "semantic_review": {
+        "status": "OWN_INTENT_COVERED",
+        "conclusion": "Current expanded live-stepper test suite retains original empty and edited-preview cases. Inherited sandbox base remains pending.",
+        "evidence": "branch-integration-conflict-decisions-20261004.md"
+      },
+      "inherited_paths_outside_reviewed_family": [
+        ".ai-team/project.yaml",
+        ".env.example",
+        "docs/ai-team-payuni-sandbox-qa.md",
+        "package.json",
+        "scripts/payuni-sandbox-external-qa.mjs"
+      ]
+    }
+  ],
+  "correction": "Initial subdirectory checks skipped paths and are invalid. Only explicit-directory checks with all expected files are authoritative.",
+  "semantic_validation": {
+    "candidate_source_head": "863218bba4d64ee2f97e8db43c19583ea9fdccd8",
+    "snapshot_files": [
+      {
+        "path": "src/app/actions/vendor-member-actions.ts",
+        "master_sha256": "f26df354670b17e9adcdaff632421622542a2a605a04c050ca316b485334c6ce",
+        "tested_sha256": "f26df354670b17e9adcdaff632421622542a2a605a04c050ca316b485334c6ce",
+        "exact_master": true
+      },
+      {
+        "path": "src/app/actions/interaction-actions.ts",
+        "master_sha256": "a4940f9ba9ad5b783ea0dda2bf3b0f9b57f1b31491f9b30a56fd8bee0ad6afe1",
+        "tested_sha256": "a4940f9ba9ad5b783ea0dda2bf3b0f9b57f1b31491f9b30a56fd8bee0ad6afe1",
+        "exact_master": true
+      },
+      {
+        "path": "src/components/vendor-member-deactivation-confirmation.tsx",
+        "master_sha256": "ef0bc87a57a10b2a42b28f880e4fb2ac42999b81c8531c2739c42ac51072fd75",
+        "tested_sha256": "ef0bc87a57a10b2a42b28f880e4fb2ac42999b81c8531c2739c42ac51072fd75",
+        "exact_master": true
+      },
+      {
+        "path": "src/components/interaction-script-form.tsx",
+        "master_sha256": "5f8e3904440899687378c861fa559c92ac65b9c793f770da0596c478b4d5f4c7",
+        "tested_sha256": "5f8e3904440899687378c861fa559c92ac65b9c793f770da0596c478b4d5f4c7",
+        "exact_master": true
+      },
+      {
+        "path": "src/app/(app)/lives/[id]/analytics/page.tsx",
+        "master_sha256": "bbd9a43a80c92d5e14c4b48bdd1e9acfbf9dc2ff45b3a98846745214736dc7ba",
+        "tested_sha256": "bbd9a43a80c92d5e14c4b48bdd1e9acfbf9dc2ff45b3a98846745214736dc7ba",
+        "exact_master": true
+      },
+      {
+        "path": "src/components/live-playback.tsx",
+        "master_sha256": "d9cff52ced7d35cd1b120e6bb7ecaaa111a3060e6542c281ea71847f4d0ca922",
+        "tested_sha256": "d9cff52ced7d35cd1b120e6bb7ecaaa111a3060e6542c281ea71847f4d0ca922",
+        "exact_master": true
+      },
+      {
+        "path": "src/app/api/payments/checkout/route.ts",
+        "master_sha256": "6a53c757932b7e5e077684f860595cf090bece07920fff251f057b366e34ebc0",
+        "tested_sha256": "6a53c757932b7e5e077684f860595cf090bece07920fff251f057b366e34ebc0",
+        "exact_master": true
+      },
+      {
+        "path": "src/app/actions.test.ts",
+        "master_sha256": "bdea15d6a6cd4e98c2efc374b17213955e5d7f50fd0216b4d238da2f0faafec1",
+        "tested_sha256": "ee4b558ba02eaae7845c9a4bbd374ac3a6cb410764b25865712e56df90299cb3",
+        "exact_master": false
+      },
+      {
+        "path": "src/components/vendor-member-deactivation-confirmation.test.tsx",
+        "master_sha256": "c9dfcf165808669ad45a7baea51b06c8cb261e7873919d613e42b1a92bd8bd2a",
+        "tested_sha256": "c9dfcf165808669ad45a7baea51b06c8cb261e7873919d613e42b1a92bd8bd2a",
+        "exact_master": true
+      },
+      {
+        "path": "src/components/interaction-script-form.test.tsx",
+        "master_sha256": "14c1167c8afac3c37789cbac6698fdfe73bde151fb116931efb8bb1c40fc4b0e",
+        "tested_sha256": "14c1167c8afac3c37789cbac6698fdfe73bde151fb116931efb8bb1c40fc4b0e",
+        "exact_master": true
+      },
+      {
+        "path": "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+        "master_sha256": "9d5bd77b375f835b22cca7f8754bdb7e59ea207d7dd7b152b74710cfb565ad17",
+        "tested_sha256": "9d5bd77b375f835b22cca7f8754bdb7e59ea207d7dd7b152b74710cfb565ad17",
+        "exact_master": true
+      },
+      {
+        "path": "src/components/live-playback.test.tsx",
+        "master_sha256": "11c5b63b548fc5eebc3003e96b278e2abfb57cd068e8720f2f9de73a3fa06b25",
+        "tested_sha256": "11c5b63b548fc5eebc3003e96b278e2abfb57cd068e8720f2f9de73a3fa06b25",
+        "exact_master": true
+      },
+      {
+        "path": "src/app/api/payments/checkout/route.test.ts",
+        "master_sha256": "46996590b83b260268873a6820635e4fa3fb458aa77a8115f4f7fcbc0b052ac0",
+        "tested_sha256": "46996590b83b260268873a6820635e4fa3fb458aa77a8115f4f7fcbc0b052ac0",
+        "exact_master": true
+      }
+    ],
+    "command": [
+      "node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "src/app/actions.test.ts",
+      "src/components/vendor-member-deactivation-confirmation.test.tsx",
+      "src/components/interaction-script-form.test.tsx",
+      "src/app/(app)/lives/[id]/analytics/page.test.tsx",
+      "src/components/live-playback.test.tsx",
+      "src/app/api/payments/checkout/route.test.ts"
+    ],
+    "cwd": ".ai-team/tmp/pr351-integration-20261004",
+    "exit_code": 0,
+    "test_files": 6,
+    "tests": 452,
+    "status": "PASS",
+    "scope": "Mocked/local tests only. No provider, real payment, email, DB or browser E2E run. actions.test.ts differs outside reviewed deactivate/unbind describe blocks; both reviewed blocks exactly match master.",
+    "reviewer": "primary agent; no independent review claimed",
+    "acceptance_gate": "NOT_READY_REMOTE_PUBLICATION_AND_CI_PENDING"
+  },
+  "shared_inherited_scope": {
+    "paths": [
+      ".ai-team/project.yaml",
+      ".env.example",
+      "docs/ai-team-payuni-sandbox-qa.md",
+      "package.json",
+      "scripts/payuni-sandbox-external-qa.mjs",
+      "scripts/payuni-sandbox-external-qa.test.mjs"
+    ],
+    "note": "Review once as shared sandbox QA foundation, not 18 independent missing features. .env.example contents were not read; preserve original reference and defer template reconciliation under project secret rules."
+  }
+}
