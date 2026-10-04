@@ -349,7 +349,10 @@ test("active accountant is denied a same-tenant affiliate detail before sensitiv
     await expect(page.getByRole("heading", { name: "聯盟來源摘要", exact: true })).toBeVisible();
     await expect(page.getByText(affiliate.name, { exact: true })).toBeVisible();
     await expect(page.getByText(affiliate.code, { exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: "聯盟佣金", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "開啟工作區與帳號選單", exact: true }).click();
+    const commissionLink = page.getByRole("link", { name: "佣金結算", exact: true });
+    await expect(commissionLink).toBeVisible();
+    await expect(commissionLink).toHaveAttribute("href", "/affiliates/commissions");
     await expect(page.locator('a[href="/affiliates"]')).toHaveCount(0);
     await expect(page.locator(`a[href="${detailPath}"]`)).toHaveCount(0);
     await expect(page.locator(`a[href="${detailPath}/edit"]`)).toHaveCount(0);
