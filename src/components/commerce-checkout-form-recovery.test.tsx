@@ -35,6 +35,24 @@ afterEach(async () => {
 });
 
 describe("pending checkout recovery", () => {
+  it("shows the voucher-specific failure and retains checkout identity for a normal checkout", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ admissionToken, idempotencyKey: key, expiresAt: "2027-01-01T00:00:00.000Z" }) })
+      .mockResolvedValue({ ok: false, status: 409, json: async () => ({ code: "LIVE_VOUCHER_ALREADY_USED", error: "untrusted raw diagnostic" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => { root.render(<CommerceCheckoutForm vendorId="vendor-1" productId="product-1" productName="商品" fulfillmentType="digital" />); });
+    const form = container.querySelector("form")!;
+    form.querySelector<HTMLInputElement>('[name="buyerName"]')!.value = "測試買家";
+    form.querySelector<HTMLInputElement>('[name="buyerEmail"]')!.value = "buyer@example.test";
+    await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+    expect(container.textContent).toContain("優惠券已綁定先前訂單");
+    expect(container.textContent).not.toContain("商品可能已售完");
+    expect(container.textContent).not.toContain("untrusted raw diagnostic");
+    expect(readCheckoutIdempotencyKey(window.sessionStorage, "vendor-1", "product-1")).toBe(key);
+    await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/payments/checkout/admission")).toHaveLength(1);
+  });
+
   it("keeps the original key after a mistyped identity and retries the same order", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ admissionToken, idempotencyKey: key, expiresAt: "2027-01-01T00:00:00.000Z" }) })

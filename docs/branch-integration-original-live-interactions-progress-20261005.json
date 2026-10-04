@@ -146,6 +146,14 @@
       "source": "src/lib/inventory-reservations.ts:applyPaymentInventoryTransition",
       "finding": "paid event can reacquire released inventory; provider failure is not proof that a late paid event cannot arrive",
       "required_policy": "Keep claim bound until provider finality/reconciliation. Do not clear usedOrderId solely because local transaction failed. Prove normal paid repurchase and uncertain failure isolation."
+    },
+    "error_presentation": {
+      "status": "IMPLEMENTED_PENDING_REVIEW",
+      "behavior": "Client parses only allowlisted LIVE_VOUCHER_ALREADY_USED code, presents fixed voucher-specific guidance, preserves admission/idempotency identity; does not render arbitrary API error body.",
+      "tests": 9,
+      "eslint": "PASS",
+      "tsc": "PASS",
+      "remaining": "Paid-order repeat purchase and support/recovery navigation remain pending"
     }
   }
 }

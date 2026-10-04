@@ -8,6 +8,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
   CommerceCheckoutAdmissionResponseSchema,
   checkoutErrorMessage,
+  readCheckoutErrorCode,
   checkoutRequiresPhone,
   checkoutRequiresShipping,
   type CommerceCheckoutFulfillmentType,
@@ -187,9 +188,7 @@ export function CommerceCheckoutForm({
   recoveryOnly = false,
   initialOrderBumpSelected = false,
   priceCents, currency = "TWD",
-  orderBump,
-  funnel,
-  agreementLabel,
+  orderBump, funnel, agreementLabel,
   formMode = "single",
 }: CommerceCheckoutFormProps) {
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
@@ -358,14 +357,15 @@ export function CommerceCheckoutForm({
       });
 
       if (!response.ok) {
-        if (shouldDiscardCheckoutAdmission(response.status)) {
+        const errorCode = await readCheckoutErrorCode(response);
+        if (shouldDiscardCheckoutAdmission(response.status, errorCode)) {
           admission.current = null;
           // A recovery mismatch can be corrected by the buyer. Keep the saved
           // key so the next submission still targets the original order.
           if (!recoveryOnly) clearPersistedCheckoutIdentity();
         }
         setPhase("error");
-        setMessage(checkoutErrorMessage(response.status));
+        setMessage(checkoutErrorMessage(response.status, errorCode));
         return;
       }
 
