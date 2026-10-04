@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({ getDb: vi.fn(), findUnique: vi.fn(), checkRate
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 
+vi.mock("@/lib/app-url", () => ({ getCanonicalAppUrl: () => "https://app.example.test" }));
 import { GET } from "./route";
 
 describe("GET /api/automation/vouchers/redeem", () => {
@@ -13,16 +14,17 @@ describe("GET /api/automation/vouchers/redeem", () => {
     mocks.getDb.mockReturnValue({ automationVoucherGrant: { findUnique: mocks.findUnique } });
   });
 
-  it("exchanges a valid bearer for a protected checkout cookie", async () => {
+  it.each(["https://app.example.test", "http://localhost:31047"])("exchanges a bearer from %s on the trusted public origin with a secure cookie", async (origin) => {
     mocks.findUnique.mockResolvedValue({
       vendorId: "vendor-1", productId: "product-1", usedOrderId: null,
       expiresAt: new Date(Date.now() + 60_000),
     });
-    const response = await GET(new Request(`https://app.example.test/api/automation/vouchers/redeem?token=${"A".repeat(43)}`));
+    const response = await GET(new Request(`${origin}/api/automation/vouchers/redeem?token=${"A".repeat(43)}`));
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("https://app.example.test/checkout/vendor-1/product-1");
     expect(response.headers.get("set-cookie")).toContain("celebratedeal_automation_voucher=");
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(response.headers.get("set-cookie")).toContain("Secure");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
   });
 

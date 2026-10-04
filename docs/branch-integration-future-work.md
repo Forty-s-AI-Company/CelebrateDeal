@@ -125,7 +125,7 @@ AI Team 變更由主代理處理，不啟動正在修改的 AI Team 修改自己
 
 歷史 smoke head `d8c85fbbb39e` 已核對只有 CI、lockfile 與隔離 smoke 文件：所有原依賴仍在現行 lockfile，Next/eslint-config-next/Vitest 已向前更新，原 CI 的驗證行為皆由現行 CI 保留，#351/#352 的實際 protected PR 交付提供 guarded-write 流程證據。來源文件留在原分支，不冒充新執行收據。累計 **9 個 head 已證明替代，剩餘 33 個**；詳见 branch-integration-historical-smoke-supersession-20261004.json。
 
-#354 第三版 head `23fcae9871cec124cdb940a339be806081d5f849`：完整本機 4,210 Vitest tests PASS，Node TAP 找到 G7-55 清單尚未加入第 82 條 migration，精確補正後相關 11 tests PASS。Windows 本機三個 evidence hash failures 為 CRLF，已確認 Git blob 完全吻合既有 hash，無文件內容修改。独立第四次增量 review 無 findings，新 CI run `37207666809` 執行中。
+#354 第三版 head `23fcae9871cec124cdb940a339be806081d5f849`：完整本機 4,210 Vitest tests PASS，Node TAP 找到 G7-55 清單尚未加入第 82 條 migration，精確補正後相關 11 tests PASS。Windows 本機三個 evidence hash failures 為 CRLF，已確認 Git blob 完全吻合既有 hash，無文件內容修改。獨立第四次增量 review 無 findings，新 CI run `37207666809` 執行中。
 
 歷史 migration replay head `4c44431c9769` 五檔已完成內容替代核對；主線保留隔離、checksum、history 與 cleanup contract，改善精確 rollback 與跨 collation table counts 比對。6/6 contracts PASS，未执行外部 migration。證據見 `branch-integration-staging-replay-supersession-20261004.json`，剩餘32個歷史head。
 
@@ -174,3 +174,8 @@ PR #355 的 head `24d9c7c76d6273329e2aff0b27ae9299da04d364` 已於 `2026-10-04T1
 #356 已於 `2026-10-04T15:41:06Z` 透過 protected squash merge 合入 `0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2`。PR CI `37212354565` 與 push CI `37212350358` 成功，canonical gate READY；master tree 與驗收 head 完全相同。來源 `860560079757` 的 parent 在 master，自身四檔 blob 全部相同，歷史待核對 28→27。未操作真實 R2。
 
 學員入口已在 `codex/recover-student-portal-20261004` 開始恢復信箱登入與 dashboard；隔離副本的 16 個 auth/action 測試通過，實際整合初跑 31/32，尚需調整原生課程路由的階段契約、補 CSRF voucher POST、DB／browser／獨立 review 與 CI。這些是進行中狀態，不代表 #210 完成交付。
+
+
+## 2026-10-05 學員入口整合驗證中
+
+已完成信箱登入及現有交付／訂單學員中心候選。修正單筆 checkout grant 升權、開發 mockLink、行銷退訂封鎖登入信、過期信重送與 internal-origin redirect；優惠券須符合原生結帳、交付、庫存及幣別。DB 13 項、登入邊界 browser 2 項及郵件 32 項 targeted tests 通過，獨立 Critical review findings 已關閉。最終 coverage、完整新增 browser 與 protected PR gate 仍執行中，不標為已合併。原生課程播放器／進度／證書、社群、多語言與 PWA 保留原來源，未計入此里程碑完成範圍；PR210、PR211 及其餘 27 historical heads 繼續逐項整合。

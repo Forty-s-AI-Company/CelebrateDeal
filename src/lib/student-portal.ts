@@ -1,3 +1,4 @@
+import { studentPortalVoucherFieldsReady, studentPortalVoucherProductWhere } from "@/lib/student-portal-voucher";
 import type { PrismaClient } from "@prisma/client";
 import { parsePublicHttpsDeliveryUrl, revealOrderItemDeliverySnapshot } from "@/lib/product-delivery";
 
@@ -87,10 +88,10 @@ export async function getStudentPortalDashboard(db: PrismaClient, scope: Student
       select: { id: true, startTime: true, endTime: true, status: true, meetingUrl: true, event: { select: { title: true, description: true, timezone: true } } },
     }),
     db.automationVoucherGrant.findMany({
-      where: { vendorId: scope.vendorId, customerKeyHash: scope.customerKeyHash, redeemedAt: null, expiresAt: { gt: now } },
+      where: { vendorId: scope.vendorId, customerKeyHash: scope.customerKeyHash, redeemedAt: null, usedOrderId: null, product: { is: studentPortalVoucherProductWhere(scope.vendorId) }, expiresAt: { gt: now } },
       orderBy: [{ expiresAt: "asc" }, { id: "asc" }],
       take: 100,
-      select: { id: true, discountType: true, discountValue: true, currency: true, expiresAt: true, product: { select: { id: true, name: true } } },
+      select: { id: true, discountType: true, discountValue: true, currency: true, expiresAt: true, product: { select: { id: true, name: true, currency: true, customCheckoutFields: true } } },
     }),
   ]);
 
@@ -120,8 +121,9 @@ export async function getStudentPortalDashboard(db: PrismaClient, scope: Student
       googleCalendarUrl: googleCalendarUrl(booking),
       icsUrl: `/portal/calendar/${encodeURIComponent(booking.id)}.ics`,
     })),
-    vouchers: vouchers.map((voucher) => ({
+    vouchers: vouchers.filter((voucher) => voucher.currency === voucher.product.currency && studentPortalVoucherFieldsReady(voucher.product.customCheckoutFields)).map((voucher) => ({
       ...voucher,
+      product: { id: voucher.product.id, name: voucher.product.name },
       useUrl: `/portal/vouchers/${encodeURIComponent(voucher.id)}/use`,
     })),
     orders: orders.map((order) => ({

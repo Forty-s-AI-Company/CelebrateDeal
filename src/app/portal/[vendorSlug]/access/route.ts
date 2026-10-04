@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
 import {
   consumeStudentPortalAccessToken,
@@ -13,7 +14,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ vend
   // Only mailbox-delivered capabilities may create an account-wide session.
   const purpose = "magic_link" as const;
   const redirectPrivate = (path: string) => {
-    const response = NextResponse.redirect(new URL(path, url.origin), 303);
+    const response = NextResponse.redirect(new URL(path, getCanonicalAppUrl()), 303);
     response.headers.set("Cache-Control", "private, no-store");
     response.headers.set("Referrer-Policy", "no-referrer");
     return response;

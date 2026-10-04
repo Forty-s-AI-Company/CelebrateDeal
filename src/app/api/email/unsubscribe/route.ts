@@ -56,6 +56,8 @@ export async function POST(request: Request) {
         vendorId: delivery.vendorId,
         recipientHash: delivery.recipientHash,
         status: { in: ["queued", "failed"] },
+        // A voluntary login request is independent of the marketing preference.
+        trigger: { not: "student_portal_magic_link" },
       },
       data: {
         status: "suppressed",

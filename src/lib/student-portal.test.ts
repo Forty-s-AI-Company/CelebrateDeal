@@ -16,7 +16,7 @@ function dbFixture() {
       primaryPaymentTransaction: { providerName: "payuni", paymentMode: "platform" },
     }]) },
     consultationBooking: { findMany: vi.fn(async () => [{ id: "booking-1", startTime: new Date("2026-09-20T02:00:00Z"), endTime: new Date("2026-09-20T03:00:00Z"), status: "scheduled", meetingUrl: "https://meet.google.com/abc-defg-hij", event: { title: "策略諮詢", description: "準備問題", timezone: "Asia/Taipei" } }]) },
-    automationVoucherGrant: { findMany: vi.fn(async () => [{ id: "voucher-1", discountType: "percentage", discountValue: 10, currency: "TWD", expiresAt: new Date("2026-09-30Z"), product: { id: "product-1", name: "成交實戰課" } }]) },
+    automationVoucherGrant: { findMany: vi.fn(async () => [{ id: "voucher-1", discountType: "percentage", discountValue: 10, currency: "TWD", expiresAt: new Date("2026-09-30Z"), product: { id: "product-1", name: "成交實戰課", currency: "TWD" } }]) },
   };
 }
 

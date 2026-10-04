@@ -216,4 +216,4 @@
 
 新增 `StudentPortalAccessToken` 及 additive migration `20261004154500_student_portal_access_tokens`。tokenHash 全域唯一、vendor FK、vendor/customer/expiry 與 vendor/purpose/expiry 索引；CHECK 限制 15 分鐘期限與 digest 格式。RLS 啟用且沒有 anon/authenticated policy，只有 server database role 讀寫。
 
-原始 checkout_redirect purpose 僅保留 enum 相容，公開 access route 只接受 magic_link，單筆訂單 grant 不可取得整個帳戶權限。Consume 必須符合 tenant、customer、purpose、issuedAt、有效期限及 consumedAt=null，透過單次 updateMany 競爭唯一成功者。此段的 DB 併發、完整 browser、獨立審查仍待驗證；不冒稱 Staging/Production 已套用。
+原始 checkout_redirect purpose 僅保留 enum 相容，公開 access route 只接受 magic_link，單筆訂單 grant 不可取得整個帳戶權限。Consume 必須符合 tenant、customer、purpose、issuedAt、有效期限及 consumedAt=null，透過單次 updateMany 競爭唯一成功者。本機 disposable PostgreSQL 17 已 forward-apply 全部 83 條 migration；13 項 DB 測試驗證單次競爭、tenant/customer、expiry/purpose、FK/unique/TTL、RLS catalog 與優惠券商品狀態。2 項登入／登出及 checkout grant 邊界 browser 測試通過；獨立審查 findings 已修正。RLS 證據限 catalog，不宣稱 Data API role 實測；不冒稱 Staging/Production 已套用。

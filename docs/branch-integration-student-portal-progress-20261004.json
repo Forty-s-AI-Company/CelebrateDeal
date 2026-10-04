@@ -1,105 +1,153 @@
 {
-  "status": "IMPLEMENTED_PENDING_DB_BROWSER_REVIEW_CI",
+  "status": "INDEPENDENT_REVIEW_PASS_PENDING_FULL_CI",
   "branch": "codex/recover-student-portal-20261004",
   "integration_base": "0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2",
   "source_head": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
   "dashboard_source": "5fe50e1a950edce15067ca0f4574eacd8ffe6902",
   "scope_files": [
     {
-      "path": "docs/codex-goal/PRISMA_INVARIANTS.md",
-      "sha256": "8dc79062762933dd28679a020b2c4585628581a3afa634cfea0299cddd2cb518"
-    },
-    {
       "path": "prisma/migrations/20261004154500_student_portal_access_tokens/migration.sql",
-      "sha256": "972dfa9876b30e9dadda6ab2fa6b1c5619611416cff6684f17c7a192c6074124"
+      "sha256": "c098d77b81f32771fef34b2e3f863296230f326de51e798626ade856edc85b5d"
     },
     {
       "path": "prisma/schema.prisma",
-      "sha256": "1a78a8bdc51c7a16db5a87bdf7f1ea42b345149b59a5a4ee87deff86fcdfff10"
+      "sha256": "60a71e0b90b474c7b2f40d186f4667235c33a75f6631f4a90dfc2bd88308bbba"
+    },
+    {
+      "path": "scripts/g7-email-operations-browser-qa.test.mjs",
+      "sha256": "206f08eb49d154cfd19e1472201b310b05a395d846806925ac0a7c32a8838bbb"
     },
     {
       "path": "scripts/prisma-invariant-inventory.test.ts",
-      "sha256": "e32d2bf677214e763bd6008915d338a3c2a889675875169ada68ed09ddde9a86"
+      "sha256": "02fdeb78ffd0d9042ccc58b959097ce4551c4f878855ac1e7c80de4744e641ae"
+    },
+    {
+      "path": "scripts/staging-migration-compat-preflight.test.mjs",
+      "sha256": "76b4db06c759c6b1be065e3a774b1d4b0ee970f5f116bd03f68475eb910acaa4"
+    },
+    {
+      "path": "scripts/staging-migration-isolated-replay.test.mjs",
+      "sha256": "f997a0747b89f740eff4a98c723cdff67f61305e9d3b31971fd13279d02795bb"
+    },
+    {
+      "path": "scripts/staging-payuni-management-migrate.test.ts",
+      "sha256": "d7875b3b3339d06d54234333420689ae0c61a56b82f9dff399c406b6efca73ac"
     },
     {
       "path": "src/app/actions/student-portal-actions-boundary.test.ts",
-      "sha256": "9d25dcc6edad6305df0ca791e68a07aff16fc95a4686ae52e95d04de64c34b7f"
+      "sha256": "b0afcd4e1773ac9aa2239247a97a65682fed315ab9f754860568af6180c0298d"
     },
     {
       "path": "src/app/actions/student-portal-actions.test.ts",
-      "sha256": "02d2ca2a1be116a1e8f0018cd643bb17e9d382229668c9e24715b25e62140e6a"
+      "sha256": "6f397d0b0208067e5c32669f6ee771eb3a515d872a5333857099c68c6452fa7f"
     },
     {
       "path": "src/app/actions/student-portal-actions.ts",
-      "sha256": "83ce997926bb2f2cb098c2908989a80e851256f5d93f0212575ab82d32e85f9c"
+      "sha256": "bc7e5b03a871fd20e31c901729ad57d38cc8bf8f7080df0d674bca7ae55774bf"
+    },
+    {
+      "path": "src/app/api/automation/vouchers/redeem/route.test.ts",
+      "sha256": "ae04c64a60dcaa2cc1ffb378ddd10883701115eb4de3105471bd7d3cdb013345"
+    },
+    {
+      "path": "src/app/api/automation/vouchers/redeem/route.ts",
+      "sha256": "daf8b86c8626a1ef21c23f03eff93f4d48dbb185503e5d6ce8224d3602ea5889"
+    },
+    {
+      "path": "src/app/api/email/unsubscribe/route.test.ts",
+      "sha256": "c657e34e048e94a16c6af25fdf2d037292ff8d5351ab58bb685e5a2986062a9d"
+    },
+    {
+      "path": "src/app/api/email/unsubscribe/route.ts",
+      "sha256": "4b5e0a2fcd03db9dc5adfe2e0432243cc5f9cbe73555f0713049eacef6096f78"
     },
     {
       "path": "src/app/checkout/result/page.test.tsx",
-      "sha256": "38d47af8bf699bdfd03a977d3d8a9af382e372a7bf899db0f72cf5ef1a45dd35"
+      "sha256": "66e7cbcfc6845b925401e903cd9cacc0656315dd6e0df13a96d5ce0c3949fd71"
     },
     {
       "path": "src/app/checkout/result/page.tsx",
-      "sha256": "14c160c37f1b4e1b26133dead583dfb073df747389c4a235cbf5d5bfce807e57"
+      "sha256": "1db147feddbd63bb3df16c321db73791d87ff7db60ec00a878951a5f61a04df9"
     },
     {
       "path": "src/app/portal/[vendorSlug]/access/route.test.ts",
-      "sha256": "f03c7f76cfef7b101a12fe3e8d710e59eaf9620fe436c4f2c7d0b987742bbfb3"
+      "sha256": "ed8f41b9906dfb7bb0838a04baf582591450c1eab1455d12f79505b861dd932d"
     },
     {
       "path": "src/app/portal/[vendorSlug]/access/route.ts",
-      "sha256": "6894e4357ccf6f17e5c8b8d0a54f529e73e42d4dce996265d8bd1f95a674c160"
+      "sha256": "26adc1264029814a450951f69f431043a06d8e4734a0ccf811cda79de6ec9ee9"
     },
     {
       "path": "src/app/portal/[vendorSlug]/calendar/[bookingId]/route.test.ts",
-      "sha256": "f22bcda80e849e8a8359336cd8d0f7a68b495f1ebe10214299378ed346d7cf82"
+      "sha256": "889067efd9578ee19e9187162f41eed829c00ffd8558c150ef9ef753f5fc0ea5"
     },
     {
       "path": "src/app/portal/[vendorSlug]/calendar/[bookingId]/route.ts",
-      "sha256": "64df11818861d990870762eb9455f2b35e622443a5dade8c8e6510e55a459f54"
+      "sha256": "890046429b74db01f84d3b27f6475e646aa28a937b7045a88f62acb2c2a7bcd5"
     },
     {
       "path": "src/app/portal/[vendorSlug]/login/page.test.tsx",
-      "sha256": "7019295450292b3b1f91bcaf476ff7722856fbb29fbd94ae8ccc53bf4d6847f2"
+      "sha256": "e1d43d6a622f9cf7ae70aa290a7fe0445493a404488f9d161003911cb3671c24"
     },
     {
       "path": "src/app/portal/[vendorSlug]/login/page.tsx",
-      "sha256": "fe1c3e6677ddd14ae6db61687535ef72cfc3a52364864d88e6901eda1f3e1342"
+      "sha256": "fcc933f481a1565dabd63ff7b3ec516e44f5e3156a1e9a6ed5e70931f2e45fb1"
     },
     {
       "path": "src/app/portal/[vendorSlug]/page.test.tsx",
-      "sha256": "1276e9410703e01caa8b7ad2a2db83e078693d119b8f87e44ba0345e7da97452"
+      "sha256": "1464a8f45bb7b9719ba7c59beda9952df6d2da327db5ed984da90cb3e0e8935f"
     },
     {
       "path": "src/app/portal/[vendorSlug]/page.tsx",
-      "sha256": "ecde2824638f552cc18f80b9520b3e5f76dffa1540d29b239ec17bf4a5af769f"
+      "sha256": "d028fbd17a54014e490f88d16b52b329a0bb217aee4d6ffa6a9ab6084df3e739"
     },
     {
       "path": "src/app/portal/[vendorSlug]/vouchers/[voucherId]/use/route.test.ts",
-      "sha256": "087ce59c270e2165efcc152d09f5cd475abe17662433b66b547e51e0439b0d6e"
+      "sha256": "8815ae5eac9c613fc10f2973cffcda3c82469388c3a5f582e4266e21a11a1092"
     },
     {
       "path": "src/app/portal/[vendorSlug]/vouchers/[voucherId]/use/route.ts",
-      "sha256": "5ed05819064988bef3b8633fc00f9629ac67b3c62a002c29d668f9af7da096d5"
+      "sha256": "d919ee927f53ac244429bbc032c43ac89539590004d99b8478de8435e28d042e"
     },
     {
       "path": "src/components/student-portal-login-form.tsx",
-      "sha256": "cf7ad9d3161873803b3e227d7ece4a49c439e10eccce808e0804315f0e78501a"
+      "sha256": "cf6516560cf2a5d19cf26dbe0cc5947a2788046e3f65fa4186e99f265b8a54c4"
+    },
+    {
+      "path": "src/lib/email-delivery.test.ts",
+      "sha256": "7787930145fedb021a5739d68b18b40bb2e47c21410c2fe3b0d2911c4c1f4762"
+    },
+    {
+      "path": "src/lib/email-delivery.ts",
+      "sha256": "491d8175a75800daa1645a5420b4b5db37f6ed32208674e4bc491f9d3ab77b19"
+    },
+    {
+      "path": "src/lib/student-portal-auth.db.test.ts",
+      "sha256": "07fd9e3827bd39a8bc0a502946479d8f4a976bca4dae5d416ebb0233902c001b"
     },
     {
       "path": "src/lib/student-portal-auth.test.ts",
-      "sha256": "41b049bcbc55e5f322d85264d2844389c06599469befcf7d56933280eaf7b321"
+      "sha256": "9a60681398b38204faa4d616296afc237d453600dbc4e158f90b1d03d9149ad1"
     },
     {
       "path": "src/lib/student-portal-auth.ts",
-      "sha256": "c1fbbb7ac5de933c77c236f28edddd8468ed9528684a5138b281c1deb13ce2b8"
+      "sha256": "b7b98ee1bc89dd4b4b8fd9ab37d81662682eed4b830520bbc73961134917babb"
+    },
+    {
+      "path": "src/lib/student-portal-voucher.ts",
+      "sha256": "021c022529d59ac91023cf2e8cb9897908d3624bbd23ea7f9e2a3f4c46fe57cd"
     },
     {
       "path": "src/lib/student-portal.test.ts",
-      "sha256": "83d95fe9c767475a50fd8fe88b6803c4732886cbffebf0fa0e5af4a612d7c108"
+      "sha256": "c670b5d1837f7939a7b83c7bb4e3f276c76974769aa0fa430bc579d65378c875"
     },
     {
       "path": "src/lib/student-portal.ts",
-      "sha256": "aa31fd1f99b60d7881a27c63b5b7a89c3c9d344a6878c77ebf3031cda1f3adda"
+      "sha256": "c2099339777e7a5b1ac7d6c99a7f1d70d13ef69a6b5953b5596470d38899c653"
+    },
+    {
+      "path": "tests/e2e/student-portal.spec.ts",
+      "sha256": "9fdf671845af28e710feb3bfcad2aa20ca03aa88de0d3e507da30ec19de34f9a"
     }
   ],
   "route": {
@@ -242,7 +290,7 @@
     "finding_escalation": null
   },
   "ownership": "Primary sole writer in managed integration checkout. Original user checkout preserved.",
-  "dispatch_count": 0,
+  "dispatch_count": 2,
   "observed_model": "unknown",
   "observed_effort": "unknown",
   "validation": {
@@ -251,22 +299,96 @@
     "pending": 0,
     "typecheck": "PASS",
     "eslint": {
-      "files": 21,
+      "files": 1673,
       "errors": 0,
-      "warnings": 0
+      "warnings": 4,
+      "note": "Targeted recheck of changed test/helper/exchange files PASS with zero warnings; 3 existing Puck img warnings remain."
     },
-    "prisma_generate": "PASS using explicit config, skipped environment file loading"
+    "prisma_generate": "PASS using explicit config, skipped environment file loading",
+    "database": {
+      "tests": 13,
+      "failed": 0,
+      "postgres": "17 disposable loopback",
+      "migrations_applied": 83,
+      "coverage": [
+        "one winner across 12 concurrent consumes",
+        "replay/expiry/purpose boundaries",
+        "tenant/customer binding",
+        "FK/unique/TTL constraints",
+        "actual dashboard tenant queries",
+        "RLS enabled without public policies (catalog)",
+        "voucher product and currency invalidation with live SQL"
+      ]
+    },
+    "browser": {
+      "tests": 2,
+      "failed": 0,
+      "scope": [
+        "synthetic encrypted mailbox queue -> browser login -> own orders -> logout",
+        "wrong tenant/replay rejection",
+        "single checkout grant cannot log into account"
+      ],
+      "limitations": [
+        "No external email provider dispatch",
+        "Voucher browser expansion pending",
+        "No claim of native player/community completion"
+      ]
+    },
+    "email_regression": {
+      "tests": 32,
+      "failed": 0,
+      "provider": "mock only"
+    },
+    "voucher_regression": {
+      "tests": 24,
+      "failed": 0
+    },
+    "strict_index": "PASS",
+    "voucher_exchange_unit": {
+      "tests": 3,
+      "failed": 0,
+      "scope": "canonical public origin and Secure/HttpOnly cookie behind internal proxy"
+    }
   },
   "remaining": [
-    "Add database-backed one-time token race, RLS and cross-tenant/customer isolation tests; forward apply all83 migrations in disposable PostgreSQL",
-    "End-to-end synthetic local mail delivery -> login -> own dashboard -> logout; checkout cannot impersonate same-email student",
-    "Independent Critical review per route plan, fix findings, full exact-head CI and canonical gate",
-    "Native course player/progress/certificates, community, multilingual/PWA tracked as subsequent feature packages"
+    "Expanded voucher browser flow; final lint/typecheck/full coverage; protected PR exact-head CI and canonical acceptance",
+    "Native course player/progress/certificates, community, multilingual/PWA remain future feature packages; source PR210 not fully integrated"
   ],
   "production_operations": false,
   "original_dirty_preserved": {
     "entries": 120,
     "hashes": 118
   },
-  "whole_goal": "IN_PROGRESS"
+  "whole_goal": "IN_PROGRESS",
+  "review": {
+    "required_role": "critical_review",
+    "reviewer": "/root/portal_review_fallback",
+    "selected_model": "gpt-6.1-sol",
+    "selected_effort": "high",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "fallback_events": [
+      {
+        "model": "opus",
+        "reason": "unavailable"
+      },
+      {
+        "model": "astra",
+        "reason": "quota_exhausted_after_partial_review"
+      }
+    ],
+    "findings_closed": [
+      "marketing unsubscribe must not suppress mailbox authentication",
+      "voucher native checkout availability",
+      "voucher and product currency consistency"
+    ],
+    "remaining_findings": [],
+    "limits": {
+      "max_dispatches": 4,
+      "used_dispatches": 2,
+      "depth": 1,
+      "writers": 1
+    },
+    "scope": "Independent source review plus email and voucher follow-ups. Reviewer did not execute tests. Final increment reviewed canonical voucher exchange, public Cookie protocol, four migration inventory contracts and third browser source."
+  }
 }

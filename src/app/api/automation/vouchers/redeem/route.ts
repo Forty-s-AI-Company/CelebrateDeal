@@ -1,3 +1,4 @@
+import { getCanonicalAppUrl } from "@/lib/app-url";
 import { NextResponse } from "next/server";
 import { AUTOMATION_VOUCHER_COOKIE, hashInteractionBearer } from "@/lib/live-interaction";
 import { getDb } from "@/lib/db";
@@ -26,13 +27,13 @@ export async function GET(request: Request) {
 
   const destination = new URL(
     `/checkout/${encodeURIComponent(grant.vendorId)}/${encodeURIComponent(grant.productId)}`,
-    requestUrl.origin,
+    getCanonicalAppUrl(),
   );
   const response = NextResponse.redirect(destination, 303);
   response.cookies.set(AUTOMATION_VOUCHER_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: requestUrl.protocol === "https:",
+    secure: destination.protocol === "https:",
     path: "/",
     maxAge: Math.max(1, Math.floor((grant.expiresAt.getTime() - now.getTime()) / 1_000)),
   });

@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
       updateMany: vi.fn(),
     },
     emailSuppression: { findUnique: vi.fn() },
+    studentPortalAccessToken: { findFirst: vi.fn() },
     blacklist: { findFirst: vi.fn() },
     liveReminderReconciliationJob: { findFirst: vi.fn() },
     liveNotificationRule: { count: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
@@ -1002,6 +1003,35 @@ describe("email delivery outbox", () => {
       .mockResolvedValueOnce([]);
 
     await expect(processDueEmailDeliveries()).resolves.toEqual([{ deliveryId: "delivery-1", status: "recovered" }]);
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("student portal login delivery", () => {
+  const idempotencyKey = `student-portal:${"ab".repeat(32)}`;
+  it("delivers an explicitly requested valid login despite marketing suppression", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ trigger: "student_portal_magic_link", idempotencyKey }));
+    mocks.db.emailSuppression.findUnique.mockResolvedValue({ resubscribedAt: null });
+    mocks.db.studentPortalAccessToken.findFirst.mockResolvedValue({ id: "portal-token-1" });
+    mocks.sendTransactionalEmail.mockResolvedValue({ id: "synthetic-message" });
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "sent" });
+    expect(mocks.sendTransactionalEmail).toHaveBeenCalledOnce();
+    expect(mocks.db.studentPortalAccessToken.findFirst).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", tokenHash: Buffer.from("ab".repeat(32), "hex").toString("base64url"), purpose: "magic_link", consumedAt: null, issuedAt: { lte: expect.any(Date) }, expiresAt: { gt: expect.any(Date) } }, select: { id: true },
+    });
+  });
+  it("does not send an expired, consumed, foreign or missing portal capability", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ trigger: "student_portal_magic_link", idempotencyKey }));
+    mocks.db.studentPortalAccessToken.findFirst.mockResolvedValue(null);
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "superseded" });
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
+    expect(mocks.db.emailDelivery.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ lastErrorCode: "verification_superseded" }) }));
+  });
+  it("rejects malformed portal identity before database lookup or provider send", async () => {
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ trigger: "student_portal_magic_link", idempotencyKey: "student-portal:invalid" }));
+    await expect(dispatchEmailDelivery("delivery-1")).resolves.toEqual({ status: "superseded" });
+    expect(mocks.db.studentPortalAccessToken.findFirst).not.toHaveBeenCalled();
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
   });
 });
