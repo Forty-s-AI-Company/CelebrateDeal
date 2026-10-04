@@ -35,8 +35,8 @@
     "initial_copy_typecheck": "PASS",
     "post_fix_typecheck": "PASS",
     "targeted_eslint": "PASS",
-    "behavioral_tests": "PENDING",
-    "independent_auth_review": "PENDING",
+    "behavioral_tests": "PASS: registration14, preparing5, PostgreSQL5",
+    "independent_auth_review": "PASS: zero remaining findings",
     "component_browser": {
       "desktop_and_mobile": 2,
       "status": "PASS",
@@ -77,30 +77,27 @@
     ]
   },
   "registration_implementation": {
-    "state": "IMPLEMENTED_PENDING_DB_BROWSER_AND_REVIEW",
+    "state": "LOCAL_VALIDATED_PENDING_PROTECTED_CI",
     "files": [
       "src/app/actions/registration-actions.ts",
       "src/app/actions/registration-actions.test.ts",
       "src/app/register/page.tsx",
       "src/app/login/page.tsx"
     ],
-    "unit_passed": 12,
+    "unit_passed": 14,
     "unit_failed": 0,
     "reviewer": "portal_review_fallback",
-    "review_status": "RUNNING"
+    "review_status": "PASS"
   },
-  "open_review_findings": [
-    "MAJOR: Registration preserves surrounding password whitespace but current login trims it; align contract and prove register/logout/login round trip.",
-    "MINOR: Existing tenant projects without selectedProjectId can complete onboarding but preparation page rejects; reconcile action and page contract."
-  ],
+  "open_review_findings": [],
   "review_fixes": {
     "state": "CLOSED_BY_INDEPENDENT_REVIEW_AND_TESTS",
-    "password": "Trim before hash to match existing login; real round-trip still pending",
+    "password": "Trim before hash to match existing login; real PostgreSQL and desktop/mobile browser round trips PASS",
     "session": "Committed account fallback to /login?registered=1 with recovery message on session/cookie failure",
     "preparing": "Require completed questionnaire and workspace-scoped tasks; no selected-project prerequisite",
-    "unit_verification": "Registration14 tests PASS; preparing initial6 tests PASS, redundant inventory-labelled case consolidated for rerun",
-    "typecheck": "PASS before newest page test",
-    "eslint": "PASS before newest page test"
+    "unit_verification": "Registration14 and preparing5 PASS",
+    "typecheck": "PASS",
+    "eslint": "PASS"
   },
   "registration_database_validation": {
     "status": "PASS",
@@ -114,8 +111,8 @@
     ],
     "typecheck": "PASS",
     "targeted_eslint": "PASS",
-    "full_browser": "PENDING",
-    "independent_rereview": "RUNNING"
+    "full_browser": "PASS: desktop/mobile2",
+    "independent_rereview": "PASS"
   },
   "independent_review": {
     "reviewer": "portal_review_fallback",
@@ -155,5 +152,6 @@
     "src/components/personalized-onboarding-questionnaire.tsx": "1c1d37135f1daded5d5a95d9689b871f36b80778b5e90ef20380526d94fb3fca",
     "src/components/workspace-preparing-progress.tsx": "83e374c7441641fe2cfb9821f7c8eb34e3fbec60593ad768c1f17da9e3c3a47d",
     "tests/e2e/registration-onboarding.spec.ts": "8264c5341b3847de00bd230fbdf644616a0b19c5dff93936e07b0e50526c2532"
-  }
+  },
+  "candidate_hash_format": "SHA256 of local bytes including CRLF"
 }
