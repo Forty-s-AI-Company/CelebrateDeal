@@ -1,4 +1,5 @@
 "use server";
+import { withMfaReturnPath } from "@/lib/mfa-return-path";
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -212,12 +213,12 @@ export async function confirmPasswordResetAction(formData: FormData) {
 
 export async function startMfaEnrollmentAction(formData: FormData) {
   const result = await startMfaEnrollment(formData);
-  redirect(`${result.destination}?updated=${result.updated}`);
+  redirect(withMfaReturnPath(`${result.destination}?updated=${result.updated}`, formData.get("next")));
 }
 
 export async function confirmMfaEnrollmentAction(formData: FormData) {
   const result = await completeMfaEnrollment(formData);
-  redirect(`${result.destination}?${result.ok ? "updated=mfa_enabled" : "error=mfa_code"}`);
+  redirect(withMfaReturnPath(`${result.destination}?${result.ok ? "updated=mfa_enabled" : "error=mfa_code"}`, formData.get("next")));
 }
 
 export async function verifyMfaAction(formData: FormData) {

@@ -1,3 +1,4 @@
+import { safeMfaReturnPath, withMfaReturnPath } from "@/lib/mfa-return-path";
 import { cookies } from "next/headers";
 import { requireAuth, markCurrentSessionMfaVerified } from "@/lib/auth";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
@@ -111,5 +112,7 @@ export async function dismissMfaRecoveryCodes(formData: FormData) {
   const auth = await requireAuth();
   const cookieStore = await cookies();
   cookieStore.delete(MFA_RECOVERY_COOKIE);
-  return { destination: auth.isPlatformAdmin ? "/mfa/verify" : "/settings/security" };
+  const next = safeMfaReturnPath(formData.get("next"));
+  // Keep return navigation behind the verification page, including recovery acknowledgement.
+  return { destination: next ? withMfaReturnPath("/mfa/verify", next) : auth.isPlatformAdmin ? "/mfa/verify" : "/settings/security" };
 }

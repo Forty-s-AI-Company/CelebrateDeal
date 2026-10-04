@@ -1,3 +1,5 @@
+import { MfaReturnField } from "@/components/mfa-return-field";
+import { safeMfaReturnPath, withMfaReturnPath } from "@/lib/mfa-return-path";
 import { isPasswordResetSmokeEnabled } from "@/lib/password-reset-smoke-policy";
 import { cookies } from "next/headers";
 import Image from "next/image";
@@ -35,9 +37,10 @@ const updatedMessages: Record<string, string> = {
 export default async function MfaSetupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ updated?: string; error?: string }>;
+  searchParams: Promise<{ updated?: string; error?: string; next?: string }>;
 }) {
   const params = await searchParams;
+  const nextPath = safeMfaReturnPath(params.next);
   const auth = await requireAuth();
   const cookieStore = await cookies();
   const parsedPendingMfa = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
@@ -79,7 +82,7 @@ export default async function MfaSetupPage({
               <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-900">
                 MFA 已啟用，目前 session {auth.isMfaVerified ? "已完成二次驗證" : "尚未完成二次驗證"}。
                 <br />
-                可用 recovery codes：{activeRecoveryCodeCount}。完成 recovery code 保存後，前往 <Link href="/mfa/verify" className="font-semibold underline">二次驗證頁</Link>。
+                可用 recovery codes：{activeRecoveryCodeCount}。完成 recovery code 保存後，前往 <Link href={withMfaReturnPath("/mfa/verify", nextPath)} className="font-semibold underline">二次驗證頁</Link>。
               </div>
             ) : pendingMfa ? (
               <div className="grid gap-4">
@@ -103,6 +106,7 @@ export default async function MfaSetupPage({
                 </details>
                 <form action="/api/settings/security/mfa/start" method="post" className="justify-self-start">
                   <CsrfField />
+                  <MfaReturnField nextPath={nextPath} />
                   <FormSubmitButton
                     className="text-sm font-semibold text-primary underline underline-offset-4"
                     pendingChildren="重新建立中…"
@@ -111,11 +115,12 @@ export default async function MfaSetupPage({
                     重新建立 TOTP 設定
                   </FormSubmitButton>
                 </form>
-                <MfaEnrollmentForm csrfField={<CsrfField />} />
+                <MfaEnrollmentForm csrfField={<CsrfField />} nextPath={nextPath} />
               </div>
             ) : (
               <form action="/api/settings/security/mfa/start" method="post" className="grid gap-3">
                 <CsrfField />
+                  <MfaReturnField nextPath={nextPath} />
                 <FormSubmitButton
                   className="h-11 rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
                   pendingChildren="建立中…"
@@ -138,6 +143,7 @@ export default async function MfaSetupPage({
                 </div>
                 <form action="/api/settings/security/mfa/recovery-codes/dismiss" method="post" className="mt-4">
                   <CsrfField />
+                  <MfaReturnField nextPath={nextPath} />
                   <FormSubmitButton
                     className="h-10 w-full rounded-md bg-primary text-sm font-semibold text-white hover:bg-primary-dark"
                     pendingChildren="確認中…"

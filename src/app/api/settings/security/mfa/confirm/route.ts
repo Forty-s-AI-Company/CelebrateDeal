@@ -1,3 +1,4 @@
+import { withMfaReturnPath } from "@/lib/mfa-return-path";
 import { NextResponse } from "next/server";
 import { completeMfaEnrollment } from "@/lib/mfa-enrollment";
 
@@ -6,7 +7,8 @@ import { completeMfaEnrollment } from "@/lib/mfa-enrollment";
  * the browser navigation independent from Next 16's Server Action reducer.
  */
 export async function POST(request: Request) {
-  const result = await completeMfaEnrollment(await request.formData());
+  const formData = await request.formData();
+  const result = await completeMfaEnrollment(formData);
   const query = result.ok ? "updated=mfa_enabled" : "error=mfa_code";
   // Next's internal request URL may use the configured canonical host while
   // the browser is using a loopback alias. The origin was already validated by
@@ -15,7 +17,7 @@ export async function POST(request: Request) {
   const browserOrigin = request.headers.get("origin");
   const redirectBase = browserOrigin ? new URL(browserOrigin).origin : new URL(request.url).origin;
   return NextResponse.redirect(
-    new URL(`${result.destination}?${query}`, redirectBase),
+    new URL(withMfaReturnPath(`${result.destination}?${query}`, formData.get("next")), redirectBase),
     303,
   );
 }

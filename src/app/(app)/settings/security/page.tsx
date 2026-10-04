@@ -1,3 +1,5 @@
+import { MfaReturnField } from "@/components/mfa-return-field";
+import { safeMfaReturnPath } from "@/lib/mfa-return-path";
 import { isPasswordResetSmokeEnabled } from "@/lib/password-reset-smoke-policy";
 import { cookies } from "next/headers";
 import Image from "next/image";
@@ -68,10 +70,11 @@ const updatedMessages: Record<string, string> = {
 export default async function SecuritySettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ updated?: string; error?: string }>;
+  searchParams: Promise<{ updated?: string; error?: string; next?: string }>;
 }) {
   await applyE2eLoadingDelay();
   const params = await searchParams;
+  const nextPath = safeMfaReturnPath(params.next);
   const auth = await requireAuth();
   const db = getDb();
   const vendorId = auth.vendor?.id;
@@ -177,11 +180,12 @@ export default async function SecuritySettingsPage({
                 <p className="mt-3 font-mono text-sm text-slate-700">{pendingMfa.secret}</p>
                 <p className="mt-2 text-xs text-slate-500">Issuer 請填 `CelebrateDeal`。</p>
               </details>
-              <MfaEnrollmentForm csrfField={<CsrfField />} />
+              <MfaEnrollmentForm csrfField={<CsrfField />} nextPath={nextPath} />
             </div>
           ) : (
             <form action="/api/settings/security/mfa/start" method="post" className="grid gap-3">
               <CsrfField />
+                  <MfaReturnField nextPath={nextPath} />
               <p className="rounded-lg border border-orange-100 bg-orange-50 p-4 text-sm text-orange-800">
                 尚未啟用 MFA。你可以繼續使用目前的帳號權限，也可以選擇啟用以加強登入保護。
               </p>
@@ -201,6 +205,7 @@ export default async function SecuritySettingsPage({
               </div>
                 <form action="/api/settings/security/mfa/recovery-codes/dismiss" method="post" className="mt-4">
                 <CsrfField />
+                  <MfaReturnField nextPath={nextPath} />
                 <SubmitButton>我已保存 recovery codes</SubmitButton>
               </form>
             </>

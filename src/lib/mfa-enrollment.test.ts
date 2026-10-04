@@ -151,4 +151,18 @@ describe("completeMfaEnrollment", () => {
     expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
     expect(cookieStore.delete).toHaveBeenCalledWith("mfa_recovery_codes");
   });
+
+  it("keeps a requested return behind verification after recovery acknowledgement", async () => {
+    const formData = new FormData();
+    formData.set("next", "/orders?status=paid");
+    expect(await dismissMfaRecoveryCodes(formData)).toEqual({ destination: "/mfa/verify?next=%2Forders%3Fstatus%3Dpaid" });
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledWith(formData);
+    expect(cookieStore.delete).toHaveBeenCalledWith("mfa_recovery_codes");
+  });
+
+  it("discards an external return after recovery acknowledgement", async () => {
+    const formData = new FormData();
+    formData.set("next", "//outside.invalid");
+    expect(await dismissMfaRecoveryCodes(formData)).toEqual({ destination: "/settings/security" });
+  });
 });
