@@ -15,6 +15,7 @@ const AdmissionRequest = z.object({
   vendorId: z.string().trim().min(1).max(128),
   productId: z.string().trim().min(1).max(128),
   idempotencyKey: z.string().uuid().optional(),
+  flashSaleRunId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u).optional(),
 }).strict();
 
 export async function POST(request: Request) {
@@ -70,6 +71,10 @@ export async function POST(request: Request) {
     throw error;
   });
   if (offer instanceof Response) return offer;
+  // URL 中的優惠 ID 只是購買意圖；實際授權仍須有同場的伺服器 claim。
+  if (!existing && parsed.data.flashSaleRunId && offer?.runId !== parsed.data.flashSaleRunId) {
+    return NextResponse.json({ error: "Flash sale changed or unavailable", code: "FLASH_SALE_UNAVAILABLE" }, { status: 409 });
+  }
   let issued;
   try {
     issued = issueCheckoutAdmission({

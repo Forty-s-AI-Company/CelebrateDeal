@@ -364,6 +364,30 @@ function secureInteractionCookie(request: Request) {
   return process.env.NODE_ENV === "production" || new URL(request.url).protocol === "https:";
 }
 
+/** 同一觀眾可換發尚未核銷的憑證；已綁定訂單時只前往原訂單恢復流程。 */
+async function issueFlashSaleClaim(tx: Prisma.TransactionClient, input: {
+  vendorId: string; liveId: string; runId: string; productId: string; participantHash: string; endsAt: Date;
+}) {
+  const existing = await tx.liveInteractionResponse.findUnique({
+    where: { runId_participantHash: { runId: input.runId, participantHash: input.participantHash } },
+    select: { id: true, usedOrderId: true },
+  });
+  if (existing?.usedOrderId) return null;
+  const bearer = createInteractionBearer();
+  const claim = { claimTokenHash: hashInteractionBearer(bearer), productId: input.productId, expiresAt: input.endsAt };
+  if (existing) {
+    const changed = await tx.liveInteractionResponse.updateMany({ where: { id: existing.id, vendorId: input.vendorId, usedOrderId: null }, data: claim });
+    if (changed.count !== 1) throw new Error("INTERACTION_CHANGED");
+  } else {
+    await tx.liveInteractionResponse.create({ data: {
+      vendorId: input.vendorId, liveId: input.liveId, runId: input.runId,
+      participantHash: input.participantHash, eventType: "flash_sale", value: "view_deal", ...claim,
+    } });
+  }
+  await resolveFlashSaleQuote(tx, bearer, input);
+  return bearer;
+}
+
 export async function POST(request: Request) {
   const sameOrigin = requireSameOriginRequest(request, { requireClientHeader: true });
   if (sameOrigin) return sameOrigin;
@@ -417,6 +441,10 @@ export async function POST(request: Request) {
       });
       if (!currentRun) throw new Error("INTERACTION_CHANGED");
       if (!await hasInteractionProductBinding(tx, metadata, run.vendorId, run.liveId)) throw new Error("INTERACTION_CHANGED");
+      if (metadata.kind === "flash_sale") {
+        bearer = await issueFlashSaleClaim(tx, { vendorId: run.vendorId, liveId: run.liveId, runId: run.id, productId: metadata.productId, participantHash: viewer.participantHash, endsAt: run.endsAt });
+        return;
+      }
       const purchasedRegistrationId = metadata.kind === "lucky_draw" && metadata.eligibility === "purchased"
         ? await verifiedPurchasedDrawRegistration(tx, request, { vendorId: run.vendorId, liveId: run.liveId })
         : null;
@@ -428,7 +456,6 @@ export async function POST(request: Request) {
         if (claimed >= metadata.maxClaims) throw new Error("VOUCHER_SOLD_OUT");
         bearer = createInteractionBearer();
       }
-      if (metadata.kind === "flash_sale") bearer = createInteractionBearer();
       await tx.liveInteractionResponse.create({
         data: {
           vendorId: run.vendorId,
@@ -441,13 +468,11 @@ export async function POST(request: Request) {
           ...(purchasedRegistrationId ? { formSubmissionId: purchasedRegistrationId } : {}),
           ...(bearer ? {
             claimTokenHash: hashInteractionBearer(bearer),
-            productId: metadata.kind === "flash_voucher" || metadata.kind === "flash_sale" ? metadata.productId : null,
-            expiresAt: metadata.kind === "flash_sale" ? run.endsAt : new Date(Math.min(run.endsAt.getTime() + FLASH_VOUCHER_TTL_MS, Date.now() + FLASH_VOUCHER_TTL_MS)),
+            productId: metadata.kind === "flash_voucher" ? metadata.productId : null,
+            expiresAt: new Date(Math.min(run.endsAt.getTime() + FLASH_VOUCHER_TTL_MS, Date.now() + FLASH_VOUCHER_TTL_MS)),
           } : {}),
         },
       });
-      // 發放前使用結帳同一套報價檢查；錯誤商品／價格會回滾整個 claim。
-      if (metadata.kind === "flash_sale") await resolveFlashSaleQuote(tx, bearer, { vendorId: run.vendorId, productId: metadata.productId });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (error) {
     if (error instanceof FlashSaleUnavailableError) return NextResponse.json({ error: "Flash sale unavailable" }, { status: 409 });

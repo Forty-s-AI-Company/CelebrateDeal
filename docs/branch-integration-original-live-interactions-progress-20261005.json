@@ -273,8 +273,9 @@
       37236350969,
       37236347033
     ],
-    "status": "in_progress",
-    "note": "Does not cover later local quote/UI/issuer commits."
+    "status": "failure",
+    "failed_step": "Release browser gates",
+    "note": "Earlier unit/coverage failures resolved on this head; detailed browser gate root cause pending. Does not cover newer local commits."
   },
   "flash_sale_reservation_revision_repair": {
     "status": "CORE_VALIDATED_NOT_API_WIRED",
@@ -378,12 +379,40 @@
       "typescript": "PASS",
       "scope": "Actual viewer issue/admission/checkout/payment event/repurchase DB chain plus component browser; not full browser-to-backend chain"
     },
-    "review": "Requested existing independent reviewer; pending",
+    "review": "Zero new findings; original-price display MINOR closed by independent reviewer.",
     "remaining": [
       "Preserve expected sale intent before admission, including missing cookie and previously responded navigation",
       "Full browser-to-backend payment flow",
       "Provider failure recovery policy",
       "Final independent review, exact-head CI and canonical acceptance"
+    ]
+  },
+  "flash_sale_intent_checkpoint": {
+    "status": "LOCAL_VALIDATED_FULL_BROWSER_PENDING",
+    "implemented": [
+      "Native checkout URL and page/form carry bounded expected flashSale run; admission rejects absent/mismatched server claim",
+      "Same viewer can rotate unused claim bearer; old hash invalidated, one claim retained; consumed claim never reissued",
+      "Sale navigation ignores stale external checkout URL; server page also rejects external sale path",
+      "Explicit start-new-purchase action clears old sale query and form intent; ordinary recovery retains original order snapshot"
+    ],
+    "validation": {
+      "passed": 121,
+      "failed": 0,
+      "receipt": ".ai-team/tmp/flash-sale-intent-results.json",
+      "browser_component_scenarios": 6,
+      "eslint": "PASS",
+      "typescript": "PASS"
+    },
+    "review": {
+      "agent": "/root/portal_review_fallback",
+      "findings": "Two path findings fixed; reviewer confirmed zero remaining source findings. New regression tests cover both paths.",
+      "observed_model": "unknown",
+      "observed_effort": "unknown"
+    },
+    "remaining": [
+      "Full browser-to-backend checkout and recovery",
+      "Provider failure recovery policy",
+      "Diagnose previous CI Release browser gates failure, then new exact-head CI and canonical acceptance"
     ]
   }
 }

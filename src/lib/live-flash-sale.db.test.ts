@@ -76,8 +76,19 @@ describe("flash sale authoritative price and reservation", () => {
     const issuedCookie = issued.cookies.get(FLASH_SALE_COOKIE)!;
     expect(issuedCookie).toMatchObject({ httpOnly: true, sameSite: "lax", path: "/" });
     expect((await f.db.liveInteractionResponse.findFirstOrThrow({ where: { runId: f.run.id } })).expiresAt).toEqual(f.run.endsAt);
-    const saleCookie = `${FLASH_SALE_COOKIE}=${issuedCookie.value}`;
-    const admission = await admitCheckout(request("/api/payments/checkout/admission", f.scope, saleCookie));
+    const refreshed = await respondToInteraction(request("/api/live-interactions", { action: "respond", vendorId: f.vendor.id, liveId: f.live.id, runId: f.run.id, value: "buy" }, `${LIVE_VIEWER_SESSION_COOKIE}=${viewer}`));
+    expect(refreshed.status).toBe(200);
+    const refreshedCookie = refreshed.cookies.get(FLASH_SALE_COOKIE)!;
+    expect(refreshedCookie.value).not.toBe(issuedCookie.value);
+    expect(await f.db.liveInteractionResponse.count({ where: { runId: f.run.id } })).toBe(1);
+    expect(await f.db.liveInteractionResponse.count({ where: { claimTokenHash: hashInteractionBearer(issuedCookie.value) } })).toBe(0);
+    const saleCookie = `${FLASH_SALE_COOKIE}=${refreshedCookie.value}`;
+    const saleIntent = { ...f.scope, flashSaleRunId: f.run.id };
+    const lostBeforeAdmission = await admitCheckout(request("/api/payments/checkout/admission", saleIntent, ""));
+    expect(lostBeforeAdmission.status).toBe(409);
+    expect(lostBeforeAdmission.cookies.get(CHECKOUT_ADMISSION_COOKIE)).toBeUndefined();
+    expect((await admitCheckout(request("/api/payments/checkout/admission", { ...saleIntent, flashSaleRunId: "another-run" }, saleCookie))).status).toBe(409);
+    const admission = await admitCheckout(request("/api/payments/checkout/admission", saleIntent, saleCookie));
     expect(admission.status).toBe(200);
     const authorized = await admission.json();
     expect(authorized.offer).toMatchObject({ priceCents: 1000, currency: "TWD" });
@@ -94,6 +105,9 @@ describe("flash sale authoritative price and reservation", () => {
       expect(await f.db.commerceOrder.findFirstOrThrow({ where: { vendorId: f.vendor.id } })).toMatchObject({ totalAmountCents: 1000, subtotalAmountCents: 2000 });
       expect(await f.db.commerceOrderItem.findFirstOrThrow({ where: { vendorId: f.vendor.id } })).toMatchObject({ nonSensitiveSnapshot: { discountAmountCents: 1000 } });
       expect(await f.db.liveInteractionResponse.count({ where: { runId: f.run.id, usedOrderId: { not: null } } })).toBe(1);
+      const usedAgain = await respondToInteraction(request("/api/live-interactions", { action: "respond", vendorId: f.vendor.id, liveId: f.live.id, runId: f.run.id, value: "buy" }, `${LIVE_VIEWER_SESSION_COOKIE}=${viewer}`));
+      expect(usedAgain.status).toBe(200);
+      expect(usedAgain.cookies.get(FLASH_SALE_COOKIE)).toBeUndefined();
       // 未確認付款時不可用新 key 避開核銷；確認 paid 後則可原價再購。
       expect((await admitCheckout(request("/api/payments/checkout/admission", f.scope, saleCookie))).status).toBe(409);
       const order = await f.db.commerceOrder.findFirstOrThrow({ where: { vendorId: f.vendor.id } });

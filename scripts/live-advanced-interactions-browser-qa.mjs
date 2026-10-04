@@ -10,10 +10,11 @@ import {createRoot} from 'react-dom/client';
 import {LiveAdvancedInteractions} from './src/components/live-advanced-interactions';
 window.requests=[];
 window.checkouts=[];
+window.saleIntents=[];
 window.fetch=(url,init={})=>new Promise(resolve=>window.requests.push({url,init,resolve}));
 window.answer=(index,payload,status=200)=>window.requests[index].resolve({ok:status<400,status,json:async()=>payload});
 const root=createRoot(document.getElementById('root'));
-window.renderInteractions=(props)=>root.render(<LiveAdvancedInteractions vendorId="vendor-1" liveId="live-1" currentSeconds={0} events={[]} enabled={false} onCheckout={(productId)=>window.checkouts.push(productId)} {...props}/>);
+window.renderInteractions=(props)=>root.render(<LiveAdvancedInteractions vendorId="vendor-1" liveId="live-1" currentSeconds={0} events={[]} enabled={false} onCheckout={(productId,runId)=>{window.checkouts.push(productId);window.saleIntents.push(runId)}} {...props}/>);
 window.renderInteractions({});
 `;
 const built = await build({ stdin: { contents: source, resolveDir: process.cwd(), loader: "tsx" }, bundle: true, write: false, format: "iife", platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' } });
@@ -104,9 +105,12 @@ try {
     await salePage.evaluate(payload => window.answer(1, payload), { run: { ...sale, responded: true } });
     await expect.poll(() => salePage.evaluate(() => window.checkouts)).toEqual(["bound-product"]);
     await salePage.getByRole("button", { name: "立即搶購特惠方案" }).click();
+    await expect.poll(() => salePage.evaluate(() => window.requests.filter(request => request.init.method === "POST").length)).toBe(2);
+    await salePage.evaluate(payload => window.answer(window.requests.length - 1, payload), { run: { ...sale, responded: true } });
     await expect.poll(() => salePage.evaluate(() => window.checkouts)).toEqual(["bound-product", "bound-product"]);
-    expect(await salePage.evaluate(() => window.requests.filter(request => request.init.method === "POST").length)).toBe(1);
-    results.push({ width, status: "PASS", checks: ["sale invokes bound product checkout only after successful response", "repeat navigation does not duplicate participation"], limitation: "Checkout callback tested; final server price and stock enforcement pending" });
+    expect(await salePage.evaluate(() => window.saleIntents)).toEqual(["sale", "sale"]);
+    expect(await salePage.evaluate(() => window.requests.filter(request => request.init.method === "POST").length)).toBe(2);
+    results.push({ width, status: "PASS", checks: ["sale invokes bound product checkout only after successful response", "repeat navigation refreshes claim and preserves sale intent"], limitation: "Checkout callback tested; full browser-to-server chain excluded" });
     await salePage.close();
   }
   fs.mkdirSync(".ai-team/tmp", { recursive: true });

@@ -36,6 +36,13 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("POST /api/payments/checkout/admission", () => {
+  it("rejects a sale intent with no claim instead of issuing a full-price admission", async () => {
+    const response = await POST(request({ flashSaleRunId: "sale-run" }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "FLASH_SALE_UNAVAILABLE" });
+    expect(response.cookies.get(CHECKOUT_ADMISSION_COOKIE)).toBeUndefined();
+  });
+
   it("rejects missing or cross-origin requests before product access", async () => {
     for (const origin of [null, "https://attacker.example.test"]) {
       const response = await POST(request({}, undefined, origin));

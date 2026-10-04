@@ -25,7 +25,7 @@ function formatPrice(priceCents: number, currency: string) {
 }
 type State =
   | { kind: "loading" | "unavailable" | "finished" | "error" }
-  | { kind: "current" }
+  | { kind: "current"; normalPurchase?: boolean }
   | { kind: "recovered"; terms: Recovery };
 
 function CheckoutContent({ state, current, externalCheckoutUrl, retry, startNewCheckout }: {
@@ -35,7 +35,7 @@ function CheckoutContent({ state, current, externalCheckoutUrl, retry, startNewC
   retry: () => void;
   startNewCheckout: () => void;
 }) {
-  if (state.kind === "current" && current) return <CommerceCheckoutForm key="current" {...current} />;
+  if (state.kind === "current" && current) return <CommerceCheckoutForm key="current" {...current} flashSaleRunId={state.normalPurchase ? undefined : current.flashSaleRunId} />;
   if (state.kind === "recovered") return <>
     <p className="mb-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950">已找到原本的待付款訂單。請重新填入與原訂單相同的聯絡、收件、發票及自訂資料；系統會取回原付款方式，不會再建立新訂單。</p>
     <CommerceCheckoutForm key="recovered" {...state.terms} recoveryOnly />
@@ -66,11 +66,13 @@ export function CommerceCheckoutEntry({
       clearCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname);
       const url = new URL(window.location.href);
       url.searchParams.delete("resume");
+      url.searchParams.delete("flashSale");
       window.history.replaceState(window.history.state, "", url);
     } catch {
       // Storage cleanup is best effort; a new admission still validates scope.
     }
-    setState({ kind: "current" });
+    // 僅在使用者明確確認另購後清除舊優惠意圖，保留原訂單核銷。
+    setState({ kind: "current", normalPurchase: true });
   }
 
   useEffect(() => {

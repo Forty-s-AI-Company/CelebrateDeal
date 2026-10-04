@@ -1428,7 +1428,7 @@ function useExternalNavigationIntent({
   const confirmLockRef = useRef(false);
   const triggerElementRef = useRef<HTMLElement | null>(null);
 
-  async function completeProductCheckout(product: LiveProduct, checkoutUrl?: string) {
+  async function completeProductCheckout(product: LiveProduct, checkoutUrl?: string, flashSaleRunId?: string) {
     if (!checkoutNavigation.begin()) return;
     setCheckoutError(null);
     void trackClientAnalytics({
@@ -1439,7 +1439,7 @@ function useExternalNavigationIntent({
     });
     let keepNavigationLocked = false;
     try {
-      const started = await requestCheckout({ vendorId: live.vendorId, productId: product.id, checkoutUrl, navigateInternal: (path) => router.push(path) });
+      const started = await requestCheckout({ vendorId: live.vendorId, productId: product.id, checkoutUrl, navigateInternal: (path) => router.push(flashSaleRunId ? `${path}?flashSale=${encodeURIComponent(flashSaleRunId)}` : path) });
       if (!started) setCheckoutError("目前無法完成結帳，請稍後再試。");
       else if (!checkoutUrl) {
         keepNavigationLocked = true;
@@ -1461,11 +1461,13 @@ function useExternalNavigationIntent({
     setIntent(nextIntent);
   }
 
-  async function trackProduct(productId: string) {
+  async function trackProduct(productId: string, flashSaleRunId?: string) {
     if (admissionStatus !== "admitted") return setCheckoutError("直播目前無法提供購買，請稍後再試。");
     const product = live.products.find((item) => item.id === productId);
     if (!product) return setCheckoutError("目前無法完成結帳，請稍後再試。");
-    if (!product.checkoutUrl) return completeProductCheckout(product);
+    // 快閃優惠只走原生結帳；不沿用舊播放器快照中的外部付款網址。
+    if (flashSaleRunId) return completeProductCheckout(product, undefined, flashSaleRunId);
+    if (!product.checkoutUrl) return completeProductCheckout(product, undefined, flashSaleRunId);
     const checkoutUrl = parseSafeExternalHttpUrl(product.checkoutUrl);
     if (!checkoutUrl) return setCheckoutError("目前無法完成結帳，請稍後再試。");
     openIntent({ kind: "product", productId: product.id, label: product.name, url: checkoutUrl });
