@@ -25,6 +25,7 @@ vi.mock("@/lib/csrf", () => ({ getCsrfToken: mocks.getCsrfToken }));
 vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 
 import BillingPlansPage from "./page";
+import { PAYUNI_STAGING_RETRY_VENDOR_ID, PAYUNI_STAGING_RETRY_TRANSACTION_ID, PAYUNI_STAGING_RETRY_MERCHANT_ID } from "@/lib/payuni-staging-plan-test";
 
 const plans = [
   {
@@ -106,6 +107,29 @@ function enableLiveStagingPlans() {
 }
 
 describe("/billing/plans route", () => {
+  it("explains the acknowledged one-order retry while preserving the duplicate payment warning", async () => {
+    enableLiveStagingPlans();
+    vi.stubEnv("PAYUNI_MERCHANT_ID", PAYUNI_STAGING_RETRY_MERCHANT_ID);
+    mocks.requireVendorFinance.mockResolvedValue({ vendor: { id: PAYUNI_STAGING_RETRY_VENDOR_ID }, member: { role: "owner" } });
+    mocks.paymentTransactionCount.mockResolvedValue(1);
+    const description = `staging-payuni-plan-v1:${JSON.stringify({
+      deploymentHost: "staging-test.vercel.app", merchantId: PAYUNI_STAGING_RETRY_MERCHANT_ID, vendorId: PAYUNI_STAGING_RETRY_VENDOR_ID,
+      expiresAt: "2099-01-01T00:00:00.000Z", retryAttemptId: "00000000-0000-4000-8000-000000000001", acknowledgedPendingTransactionId: PAYUNI_STAGING_RETRY_TRANSACTION_ID,
+    })}`;
+    mocks.findMany.mockResolvedValue([100, 200, 300].map((cents, index) => ({
+      ...plans[0], id: `retry-plan-${index}`, code: ["staging-payuni-starter", "staging-payuni-growth", "staging-payuni-team-pro"][index],
+      monthlyPriceCents: cents, isActive: false, description,
+    })));
+    const html = renderToStaticMarkup(await BillingPlansPage({}));
+    expect(html).toContain("依您的同意");
+    expect(html).toContain("建立一筆新付款");
+    expect(html).toContain("可能出現兩筆付款");
+    expect(html).toContain("無法再換方案重開");
+    expect(html).not.toContain("不會自動取消、重送或建立替代付款");
+    expect(html).not.toContain(PAYUNI_STAGING_RETRY_TRANSACTION_ID);
+    expect(html).not.toContain('action="https://api.payuni.com.tw/api/upp"');
+  });
+
   it("reports unresolved local checkouts only to the tenant owner without exposing or sending a form", async () => {
     enableLiveStagingPlans();
     mocks.paymentTransactionCount.mockResolvedValue(1);

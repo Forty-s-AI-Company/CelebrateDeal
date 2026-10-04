@@ -109,3 +109,13 @@
 先確認三方案許可與畫面均有效，再到固定 staging `/billing/plans` 選 Starter NT$1。由 owner 自行完成 PAYUNi 付款；只有可信回呼驗證完成後，才核對該 staging 訂閱啟用、交易 paid 與金額一致。提供去敏的成功／錯誤訊息、金額與時間即可，不提供卡號、Token 或完整付款回應。Growth NT$2 與 Team/Pro NT$3 必須在前筆結果明確後分別測試；綁卡及第二筆扣款探針另行驗證。
 
 Chrome 合成 POST 點擊被擴充介面阻擋，瀏覽器交接驗證仍未通過；程式測試及部署成功不能代替這項證據。
+
+### 2026-10-04：owner 明確同意一次新單重試
+
+Owner 最新回答「是」，已同意保留舊 pending 訂單、重新選方案建立新單，並理解可能出現兩筆付款。這項新授權只取代上節對這一筆未明交易的禁止重試結論：商家固定為 `199d96aa-7e6e-48e0-986c-23ba07f5a856`，舊交易固定為 `cmusddjxy0003jt04ov7ylk3h`／`CD-20261003123000-PBHP04`；其他商家、商品、退款與額外 pending 都維持既有保護。
+
+候選 `scripts/staging-payuni-management-permit.ts --enable-retry` 額外要求非 Secret 操作閘門 `STAGING_PAYUNI_PENDING_RETRY_APPROVED=true` 與 `PAYUNI_STAGING_PLAN_TEST_ACKNOWLEDGED_PENDING_TRANSACTION_ID` 精確等於上述舊交易，並保留原有 change gate、linked staging、Preview project／branch、商店與 generated host 核對。SQL 在同一 SERIALIZABLE 交易核對舊 pending 的商家、訂单、平台付款、TWD 100 cents、無 providerTradeNo、原冪等鍵、訂閱／方案與 immutable permit／UPP snapshot，且沒有 PAYUNi callback、額外 pending 付款／訂閱或已使用的 acknowledgment。僅允許三筆停用測試方案的 description 都精確等於該舊 snapshot、且舊 legacy permit 已過期時，原子替換為同一份 30 分鐘的新 permit。不能再次更新 retry permit，也不能以 disable 後 enable-retry 重新延長窗口。
+
+新 permit 含 `acknowledgedPendingTransactionId` 與 DB 產生的 `retryAttemptId`；三種價格共用一次 attempt 的冪等鍵與不可變交易 metadata。任選 NT$1／2／3 只建立一笔新單。雙擊沿用同一筆已建立的新付款；換方案、終態、新 nonce 或 provider setup 失敗都不能再次使用此 acknowledgment，因為 callback／cleanup 即使清掉 transient key，metadata 的使用紀錄仍保留。舊 PaymentTransaction 的 status、orderNumber、key、metadata 不由此重試修改；舊表單不重送也不重新加密。沿用既有 `payment_superseded` 訂閱排序：可信晚到回呼仍可把舊交易記為 paid，但不會把舊方案重新啟用或取代新方案。
+
+此節描述候選控制與 owner 授權，不是部署、許可寫入或付款成功證據。執行前須記錄經審查的 exact SHA／host，並以 staging transaction ROLLBACK 預演核對真實 schema 與 predicates；實際付款由 owner 自行完成。

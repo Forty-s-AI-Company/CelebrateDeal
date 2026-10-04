@@ -10,7 +10,7 @@ import { allowedPaymentUrl, checkoutSessionFromMetadata, metadataObject } from "
 import { DirectEntryAttributionReset } from "@/components/direct-entry-attribution-reset";
 import { ExternalPaymentForm } from "@/components/external-payment-form";
 import { BillingPlanCheckoutForm } from "@/components/billing-plan-checkout-form";
-import { payUniStagingPlanTestAllowed, payUniStagingPlanTestAvailability, PAYUNI_PRODUCTION_UPP_URL } from "@/lib/payuni-staging-plan-test";
+import { payUniStagingPlanRetryPermit, payUniStagingPlanTestAllowed, payUniStagingPlanTestAvailability, PAYUNI_PRODUCTION_UPP_URL } from "@/lib/payuni-staging-plan-test";
 
 type BillingPlansSearchParams = { status?: string | string[]; error?: string | string[]; transactionId?: string | string[]; referral?: string | string[] };
 
@@ -27,6 +27,11 @@ function planVisibility(plans: BillingPlan[], vendorId: string) {
 
 function queryValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function hasAcknowledgedRetry(canManageBilling: boolean, visible: ReturnType<typeof planVisibility>, vendorId: string) {
+  return canManageBilling && !visible.unavailable
+    && visible.plans.some((plan) => payUniStagingPlanRetryPermit(vendorId, plan));
 }
 
 function testAvailabilityMessage(availability: ReturnType<typeof payUniStagingPlanTestAvailability> | null) {
@@ -170,6 +175,7 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
   // Show no purchasable plans until all three database prices are exact.
   const visible = planVisibility(plans, vendor.id);
   const testAvailability = livePreview ? payUniStagingPlanTestAvailability(vendor.id, plans) : null;
+  const acknowledgedRetry = hasAcknowledgedRetry(canManageBilling, visible, vendor.id);
   const status = queryValue(query.status);
   const error = queryValue(query.error);
   const checkout = pendingCheckout;
@@ -230,7 +236,9 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
       {unresolvedCount > 0 ? (
         <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           尚有待確認的 PAYUNi 付款紀錄。這是系統內的結帳紀錄，不代表 PAYUNi 已收到交易或付款成功。
-          請先核對原付款結果；系統會保留紀錄，不會自動取消、重送或建立替代付款。
+          {acknowledgedRetry
+            ? "本次許可依您的同意，允許保留原紀錄並重新選擇方案建立一筆新付款。原交易仍可能成功，可能出現兩筆付款；新付款建立後，請沿用該筆結果，無法再換方案重開。"
+            : "請先核對原付款結果；系統會保留紀錄，不會自動取消、重送或建立替代付款。"}
         </p>
       ) : null}
       <Card className="mb-4 border-violet-200 bg-violet-50/60">

@@ -16,7 +16,14 @@ import {
   PLATFORM_REFERRAL_COOKIE,
 } from "@/lib/platform-referral";
 import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transaction";
-import { payUniStagingPlanTestAllowed, PAYUNI_PRODUCTION_UPP_URL } from "@/lib/payuni-staging-plan-test";
+import {
+  payUniStagingAcknowledgedPendingAllowed,
+  payUniStagingPlanRetryPermit,
+  payUniStagingPlanSessionAllowed,
+  payUniStagingPlanTestAllowed,
+  PAYUNI_PRODUCTION_UPP_URL,
+  type PayUniStagingRetryPermit,
+} from "@/lib/payuni-staging-plan-test";
 
 const PLAN_CHANGE_MAX_ATTEMPTS = 3;
 const DEFAULT_BILLING_PAYMENT_MODE = "platform";
@@ -38,7 +45,9 @@ export function platformPlanCheckoutPath(result: PlatformPlanCheckoutResult) {
   return `/billing/plans?${params.toString()}`;
 }
 
-function platformPlanCheckoutIdempotencyKey(vendorId: string, planId: string) {
+function platformPlanCheckoutIdempotencyKey(vendorId: string, planId: string, retry?: PayUniStagingRetryPermit | null) {
+  // All three test plans share one attempt key; switching plan cannot spend it twice.
+  if (retry) return `platform-plan:staging-retry:v1:${vendorId}:${retry.retryAttemptId}`;
   return `platform-plan:v1:${vendorId}:${planId}`;
 }
 
@@ -79,6 +88,7 @@ function canReusePlanCheckout(input: {
   stagingLivePlan: boolean;
 }) {
   const metadata = metadataObject(input.transaction.metadata);
+  const retry = input.stagingLivePlan ? payUniStagingPlanRetryPermit(input.vendorId, input.plan) : null;
   const previewLivePayUni = process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production";
   return (!previewLivePayUni || input.stagingLivePlan)
     && input.subscription?.vendorId === input.vendorId
@@ -87,8 +97,83 @@ function canReusePlanCheckout(input: {
     && billingPlanIdFromMetadata(metadata) === input.plan.id
     && input.transaction.grossAmountCents === input.plan.monthlyPriceCents
     && hasStoredCheckoutSession(metadata)
+    && (!retry || (input.transaction.id !== retry.acknowledgedPendingTransactionId
+      && metadata.stagingPayUniRetryAttemptId === retry.retryAttemptId
+      && metadata.stagingPayUniAcknowledgedPendingTransactionId === retry.acknowledgedPendingTransactionId
+      && payUniStagingPlanSessionAllowed(input.vendorId, input.plan, input.transaction)))
     && (!input.stagingLivePlan || (hasScopedLiveCheckoutSession(metadata)
       && metadata.stagingPayUniPlanPermit === input.plan.description));
+}
+
+async function stagingRetryContext(tx: Prisma.TransactionClient, vendorId: string, retry: PayUniStagingRetryPermit) {
+  // Callback/failure cleanup can clear the transient key. The immutable marker
+  // consumes this acknowledgment across every status and future permit nonce.
+  const existingCheckout = await tx.paymentTransaction.findFirst({
+    where: {
+      vendorId,
+      metadata: { path: ["stagingPayUniAcknowledgedPendingTransactionId"], equals: retry.acknowledgedPendingTransactionId },
+    },
+  });
+  if (existingCheckout && (existingCheckout.status !== "pending"
+    || metadataObject(existingCheckout.metadata).stagingPayUniRetryAttemptId !== retry.retryAttemptId)) return null;
+
+  const acknowledged = await tx.paymentTransaction.findUnique({ where: { id: retry.acknowledgedPendingTransactionId } });
+  if (!acknowledged || acknowledged.vendorId !== vendorId) return null;
+  const acknowledgedSubscriptionId = platformSubscriptionIdFromMetadata(acknowledged.metadata);
+  const acknowledgedSubscription = acknowledgedSubscriptionId
+    ? await tx.vendorSubscription.findUnique({ where: { id: acknowledgedSubscriptionId }, include: { plan: true } })
+    : null;
+  if (!acknowledgedSubscription || acknowledgedSubscription.vendorId !== vendorId) return null;
+  if (!existingCheckout) {
+    if (!payUniStagingAcknowledgedPendingAllowed(retry, acknowledged, acknowledgedSubscription)) return null;
+    // No callback receipt is proof of failure; a receipt instead closes the
+    // narrow unresolved exception until its result is reviewed.
+    if (await tx.webhookEvent.count({ where: { vendorId, provider: "payuni" } }) > 0) return null;
+  }
+
+  const excludedTransactions = [retry.acknowledgedPendingTransactionId, ...(existingCheckout ? [existingCheckout.id] : [])];
+  if (await tx.paymentTransaction.findFirst({
+    where: { vendorId, providerName: "payuni", paymentMode: "platform", status: "pending", id: { notIn: excludedTransactions } },
+    select: { id: true },
+  })) return null;
+  const existingSubscriptionId = existingCheckout ? platformSubscriptionIdFromMetadata(existingCheckout.metadata) : null;
+  const excludedSubscriptions = [acknowledgedSubscription.id, ...(existingSubscriptionId ? [existingSubscriptionId] : [])];
+  if (await tx.vendorSubscription.findFirst({
+    where: { vendorId, status: "pending_payment", id: { notIn: excludedSubscriptions } },
+    select: { id: true },
+  })) return null;
+  return { existingCheckout };
+}
+
+async function existingPlanCheckout(tx: Prisma.TransactionClient, input: {
+  vendorId: string;
+  plan: BillingPlan;
+  stagingLivePlan: boolean;
+  stagingRetry: PayUniStagingRetryPermit | null;
+  retryContext: Awaited<ReturnType<typeof stagingRetryContext>>;
+}) {
+  const checkoutIdempotencyKey = platformPlanCheckoutIdempotencyKey(input.vendorId, input.plan.id, input.stagingRetry);
+  const existingCheckout = input.retryContext?.existingCheckout ?? await tx.paymentTransaction.findUnique({
+    where: { vendorId_checkoutIdempotencyKey: { vendorId: input.vendorId, checkoutIdempotencyKey } },
+  });
+  if (existingCheckout?.status === "pending") {
+    const subscriptionId = platformSubscriptionIdFromMetadata(existingCheckout.metadata);
+    const subscription = subscriptionId
+      ? await tx.vendorSubscription.findUnique({ where: { id: subscriptionId }, include: { plan: true } })
+      : null;
+    if (canReusePlanCheckout({ ...input, transaction: existingCheckout, subscription })) {
+      return { outcome: "reuse" as const, plan: input.plan, subscription, transaction: existingCheckout };
+    }
+    // Mismatched pending snapshots never release their key or regenerate forms.
+    return { outcome: "conflict" as const };
+  }
+  if (existingCheckout) {
+    if (input.stagingRetry) return { outcome: "conflict" as const };
+    // Generic terminal checkouts retain their provider order and callback
+    // history while releasing the normal plan key for a later attempt.
+    await tx.paymentTransaction.update({ where: { id: existingCheckout.id }, data: { checkoutIdempotencyKey: null } });
+  }
+  return null;
 }
 
 function isStagingLivePlan(providerId: string, vendorId: string, plan: BillingPlan) {
@@ -213,13 +298,18 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
         const plan = await tx.billingPlan.findFirst({ where: { id: planId } });
         if (!plan) return { outcome: "unavailable" as const };
         const stagingLivePlan = isStagingLivePlan(provider.id, vendor.id, plan);
+        const stagingRetry = stagingLivePlan ? payUniStagingPlanRetryPermit(vendor.id, plan) : null;
         // Test plans stay inactive so older Preview deployments cannot sell them.
         if (!plan.isActive && !stagingLivePlan) return { outcome: "unavailable" as const };
 
+        let retryContext: Awaited<ReturnType<typeof stagingRetryContext>> = null;
         if (process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production") {
-          // A superseded PAYUNi form can still be paid externally. Never
-          // replace an unresolved form with another live plan checkout.
-          if (await hasConflictingPendingLivePayUniPayment(tx, vendor.id, plan.id)) return { outcome: "conflict" as const };
+          // Only the DB-held owner acknowledgment can exempt the fixed old
+          // transaction. Every additional unresolved payment remains blocking.
+          if (stagingRetry) {
+            retryContext = await stagingRetryContext(tx, vendor.id, stagingRetry);
+            if (!retryContext) return { outcome: "conflict" as const };
+          } else if (await hasConflictingPendingLivePayUniPayment(tx, vendor.id, plan.id)) return { outcome: "conflict" as const };
         }
 
         const activeSubscriptions = await tx.vendorSubscription.findMany({
@@ -244,45 +334,8 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
         const requiresPayment = plan.monthlyPriceCents > 0;
 
         if (requiresPayment) {
-          const checkoutIdempotencyKey = platformPlanCheckoutIdempotencyKey(vendor.id, plan.id);
-          const existingCheckout = await tx.paymentTransaction.findUnique({
-            where: {
-              vendorId_checkoutIdempotencyKey: {
-                vendorId: vendor.id,
-                checkoutIdempotencyKey,
-              },
-            },
-          });
-          if (existingCheckout?.status === "pending") {
-            const existingMetadata = metadataObject(existingCheckout.metadata);
-            const existingSubscriptionId = platformSubscriptionIdFromMetadata(existingMetadata);
-            const existingSubscription = existingSubscriptionId
-              ? await tx.vendorSubscription.findUnique({
-                  where: { id: existingSubscriptionId },
-                  include: { plan: true },
-                })
-              : null;
-            if (canReusePlanCheckout({ plan, transaction: existingCheckout, subscription: existingSubscription, vendorId: vendor.id, stagingLivePlan })) {
-              return {
-                outcome: "reuse" as const,
-                plan,
-                subscription: existingSubscription,
-                transaction: existingCheckout,
-              };
-            }
-            // A pending key with an invalid or mismatched server snapshot is
-            // never silently reused or overwritten; fail closed instead.
-            return { outcome: "conflict" as const };
-          }
-          if (existingCheckout) {
-            // Terminal transactions no longer reserve the plan's retry key.
-            // The provider order remains immutable and late callbacks still
-            // resolve against that order without reopening the subscription.
-            await tx.paymentTransaction.update({
-              where: { id: existingCheckout.id },
-              data: { checkoutIdempotencyKey: null },
-            });
-          }
+          const existing = await existingPlanCheckout(tx, { plan, vendorId: vendor.id, stagingLivePlan, stagingRetry, retryContext });
+          if (existing) return existing;
         }
 
         if (requiresPayment) {
@@ -359,13 +412,17 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
                 netAmountCents: plan.monthlyPriceCents,
                 currency: "TWD",
                 status: "pending",
-                checkoutIdempotencyKey: platformPlanCheckoutIdempotencyKey(vendor.id, plan.id),
+                checkoutIdempotencyKey: platformPlanCheckoutIdempotencyKey(vendor.id, plan.id, stagingRetry),
                 metadata: {
                   billingPurpose: PLATFORM_BILLING_PURPOSE,
                   platformSubscriptionId: subscription.id,
                   billingPlanId: plan.id,
                   billingPlanCode: plan.code,
                   ...(stagingLivePlan ? { stagingPayUniPlanPermit: plan.description } : {}),
+                  ...(stagingRetry ? {
+                    stagingPayUniRetryAttemptId: stagingRetry.retryAttemptId,
+                    stagingPayUniAcknowledgedPendingTransactionId: stagingRetry.acknowledgedPendingTransactionId,
+                  } : {}),
                   ...(wp4SourceBoundTransactionMetadata("platform_subscription", { planId: plan.id }) ?? {}),
                 } as Prisma.InputJsonObject,
               },
@@ -458,6 +515,9 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
           where: { id: result.transaction.id },
           data: {
             metadata: {
+              // Preserve the server-owned attempt marker even if a later
+              // provider callback clears its checkout idempotency key.
+              ...metadataObject(result.transaction.metadata),
               billingPurpose: PLATFORM_BILLING_PURPOSE,
               platformSubscriptionId: result.subscription.id,
               billingPlanId: result.plan.id,

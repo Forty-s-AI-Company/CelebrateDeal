@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assertPermitEnvironment, buildPermitSql, permitChildFailure, runPermit } from "./staging-payuni-management-permit";
+import { PAYUNI_STAGING_RETRY_VENDOR_ID, PAYUNI_STAGING_RETRY_TRANSACTION_ID, PAYUNI_STAGING_RETRY_ORDER_NUMBER } from "../src/lib/payuni-staging-plan-test";
 
 const vendorId = "00000000-0000-4000-8000-000000000001";
 const host = "celebrate-deal-staging-jtozttm8m-a25814740s-projects.vercel.app";
@@ -24,6 +25,47 @@ function environment(): NodeJS.ProcessEnv {
 }
 
 describe("fixed staging PAYUNi Management API permit", () => {
+  it("requires a separate explicit approval and the exact unresolved payment for retry mode", () => {
+    const retryEnv = { ...environment(), PAYUNI_STAGING_PLAN_TEST_VENDOR_ID: PAYUNI_STAGING_RETRY_VENDOR_ID,
+      PAYUNI_STAGING_PLAN_TEST_ACKNOWLEDGED_PENDING_TRANSACTION_ID: PAYUNI_STAGING_RETRY_TRANSACTION_ID,
+      STAGING_PAYUNI_PENDING_RETRY_APPROVED: "true" };
+    expect(() => assertPermitEnvironment(retryEnv, "enable-retry")).not.toThrow();
+    for (const changes of [
+      { STAGING_PAYUNI_PENDING_RETRY_APPROVED: "false" },
+      { STAGING_PAYUNI_TEST_CHANGE_APPROVED: "false" },
+      { PAYUNI_STAGING_PLAN_TEST_VENDOR_ID: vendorId },
+      { PAYUNI_STAGING_PLAN_TEST_ACKNOWLEDGED_PENDING_TRANSACTION_ID: "another-pending" },
+      { NEXT_PUBLIC_SUPABASE_URL: "https://awigitueyqdqaqwbjdgu.supabase.co" },
+      { PAYUNI_STAGING_PLAN_TEST_MERCHANT_ID: "OTHER" },
+    ]) expect(() => assertPermitEnvironment({ ...retryEnv, ...changes }, "enable-retry")).toThrow();
+    expect(() => buildPermitSql("enable-retry", { vendorId, host, merchantId })).toThrow("PERMIT_RETRY_TARGET_INVALID");
+  });
+
+  it("atomically replaces only the fixed old expired permit and never edits a payment or subscription", () => {
+    const sql = buildPermitSql("enable-retry", { vendorId: PAYUNI_STAGING_RETRY_VENDOR_ID, host, merchantId });
+    expect(sql).toContain(`payment."id" = '${PAYUNI_STAGING_RETRY_TRANSACTION_ID}'`);
+    expect(sql).toContain(`payment."orderNumber" = '${PAYUNI_STAGING_RETRY_ORDER_NUMBER}'`);
+    expect(sql).toContain('payment."providerTradeNo" IS NULL');
+    expect(sql).toContain('payment."grossAmountCents" = 100');
+    expect(sql).toContain('payment."metadata"->>\'billingPlanId\' = plan."id"');
+    expect(sql).toContain('plan."description" = original_permit_text');
+    expect(sql).toContain('AND "description" = original_permit_text AND "isActive" = false');
+    expect(sql).toContain("(original_permit->>'expiresAt')::timestamptz > CURRENT_TIMESTAMP");
+    expect(sql).toContain("original_permit ? 'retryAttemptId'");
+    expect(sql).toContain("PERMIT_RETRY_ALREADY_USED");
+    expect(sql).toContain("PERMIT_RETRY_CALLBACK_EXISTS");
+    expect(sql).toContain("PERMIT_RETRY_PENDING_SUBSCRIPTION_EXISTS");
+    expect(sql).toContain(`AND "id" <> '${PAYUNI_STAGING_RETRY_TRANSACTION_ID}'`);
+    expect(sql).toContain("'expiresAt', CURRENT_TIMESTAMP + interval '30 minutes'");
+    expect(sql).toContain("'retryAttemptId', pg_catalog.gen_random_uuid()::text");
+    expect(sql).toContain(`'acknowledgedPendingTransactionId', '${PAYUNI_STAGING_RETRY_TRANSACTION_ID}'`);
+    expect(sql).not.toMatch(/(?:UPDATE|INSERT INTO|DELETE FROM)\s+public\."(?:PaymentTransaction|VendorSubscription|WebhookEvent)"/iu);
+    expect(sql).not.toContain("'awigitueyqdqaqwbjdgu'");
+    for (const guard of ["PERMIT_RETRY_OLD_PAYMENT_INVALID", "PERMIT_RETRY_OLD_PERMIT_INVALID", "PERMIT_RETRY_ALREADY_USED", "PERMIT_RETRY_CALLBACK_EXISTS", "PERMIT_RETRY_PENDING_SUBSCRIPTION_EXISTS"]) {
+      expect(permitChildFailure({ stderr: `ERROR: ${guard} private output` })).toBe(guard);
+    }
+  });
+
   it("distinguishes database guards from authentication without leaking child output", () => {
     expect(permitChildFailure({ stderr: "ERROR: PERMIT_TEST_PLANS_INVALID (SQLSTATE P0001) sensitive SQL" })).toBe("PERMIT_TEST_PLANS_INVALID");
     expect(permitChildFailure({ stdout: "PERMIT_PENDING_PAYMENT_EXISTS" })).toBe("PERMIT_PENDING_PAYMENT_EXISTS");

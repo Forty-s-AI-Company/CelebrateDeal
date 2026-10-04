@@ -5,8 +5,14 @@ import {
   payUniStagingPlanTestAllowed,
   payUniStagingPlanTestAvailability,
   payUniStagingPlanTestScope,
+  payUniStagingPlanRetryPermit,
+  payUniStagingAcknowledgedPendingAllowed,
   PAYUNI_STAGING_APP_ORIGIN,
   PAYUNI_STAGING_PLAN_PERMIT_PREFIX,
+  PAYUNI_STAGING_RETRY_VENDOR_ID,
+  PAYUNI_STAGING_RETRY_TRANSACTION_ID,
+  PAYUNI_STAGING_RETRY_ORDER_NUMBER,
+  PAYUNI_STAGING_RETRY_MERCHANT_ID,
 } from "@/lib/payuni-staging-plan-test";
 
 const ref = "ocbugvgojrunvenozsbx";
@@ -47,6 +53,46 @@ const transaction = {
 } as unknown as PaymentTransaction;
 
 describe("staging live plan scope", () => {
+  it("accepts only a complete retry permit bound to the fixed owner acknowledgment", () => {
+    const retryData = {
+      deploymentHost, merchantId: PAYUNI_STAGING_RETRY_MERCHANT_ID, vendorId: PAYUNI_STAGING_RETRY_VENDOR_ID,
+      expiresAt: "2099-01-01T00:00:00.000Z", retryAttemptId: "00000000-0000-4000-8000-000000000001",
+      acknowledgedPendingTransactionId: PAYUNI_STAGING_RETRY_TRANSACTION_ID,
+    };
+    const env = { ...environment(), PAYUNI_MERCHANT_ID: PAYUNI_STAGING_RETRY_MERCHANT_ID };
+    const retryPlan = { ...plan, description: PAYUNI_STAGING_PLAN_PERMIT_PREFIX + JSON.stringify(retryData) };
+    expect(payUniStagingPlanRetryPermit(PAYUNI_STAGING_RETRY_VENDOR_ID, retryPlan, env)).toEqual(retryData);
+    for (const change of [
+      { acknowledgedPendingTransactionId: "another-pending" }, { retryAttemptId: "not-a-uuid" },
+      { retryAttemptId: undefined }, { acknowledgedPendingTransactionId: undefined },
+      { vendorId: "another-vendor" }, { merchantId: "OTHER-MERCHANT" },
+    ]) {
+      const altered = { ...retryPlan, description: PAYUNI_STAGING_PLAN_PERMIT_PREFIX + JSON.stringify({ ...retryData, ...change }) };
+      expect(payUniStagingPlanTestAllowed(PAYUNI_STAGING_RETRY_VENDOR_ID, altered, env)).toBe(false);
+      expect(payUniStagingPlanRetryPermit(PAYUNI_STAGING_RETRY_VENDOR_ID, altered, env)).toBeNull();
+    }
+    const subscription = { id: "old-subscription", vendorId: retryData.vendorId, planId: plan.id, status: "pending_payment", plan: retryPlan };
+    const oldMetadata = {
+      ...transaction.metadata as object, platformSubscriptionId: subscription.id,
+      stagingPayUniPlanPermit: PAYUNI_STAGING_PLAN_PERMIT_PREFIX + JSON.stringify({ deploymentHost, merchantId: retryData.merchantId, vendorId: retryData.vendorId, expiresAt: "2000-01-01T00:00:00.000Z" }),
+      checkoutSession: { provider: "payuni", mode: "form_post", formMethod: "POST", formAction: "https://api.payuni.com.tw/api/upp", formPayload: { MerID: retryData.merchantId } },
+    };
+    const old = { ...transaction, id: PAYUNI_STAGING_RETRY_TRANSACTION_ID, vendorId: retryData.vendorId,
+      orderNumber: PAYUNI_STAGING_RETRY_ORDER_NUMBER, providerTradeNo: null,
+      checkoutIdempotencyKey: `platform-plan:v1:${retryData.vendorId}:${plan.id}`, metadata: oldMetadata };
+    expect(payUniStagingAcknowledgedPendingAllowed(retryData, old, subscription)).toBe(true);
+    for (const change of [{ id: "other" }, { orderNumber: "other" }, { providerName: "demo" }, { status: "paid" }, { providerTradeNo: "known" }, { grossAmountCents: 200 }, { checkoutIdempotencyKey: null }]) {
+      expect(payUniStagingAcknowledgedPendingAllowed(retryData, { ...old, ...change }, subscription)).toBe(false);
+    }
+    expect(payUniStagingAcknowledgedPendingAllowed(retryData, old, { ...subscription, id: "other-subscription" })).toBe(false);
+    expect(payUniStagingAcknowledgedPendingAllowed(retryData, old, { ...subscription, status: "active" })).toBe(false);
+    expect(payUniStagingPlanSessionAllowed(retryData.vendorId, retryPlan, old, env)).toBe(false);
+    const newOrder = { ...old, id: "new-order", metadata: { ...oldMetadata, stagingPayUniPlanPermit: retryPlan.description,
+      stagingPayUniRetryAttemptId: retryData.retryAttemptId, stagingPayUniAcknowledgedPendingTransactionId: retryData.acknowledgedPendingTransactionId } };
+    expect(payUniStagingPlanSessionAllowed(retryData.vendorId, retryPlan, newOrder, env)).toBe(true);
+    expect(payUniStagingPlanSessionAllowed(retryData.vendorId, retryPlan, { ...newOrder, metadata: { ...newOrder.metadata, stagingPayUniRetryAttemptId: "wrong-attempt" } }, env)).toBe(false);
+  });
+
   it("explains expired and deployment-bound permits without enabling checkout", () => {
     const env = environment();
     const tests = Object.entries({ "staging-payuni-starter": 100, "staging-payuni-growth": 200, "staging-payuni-team-pro": 300 })

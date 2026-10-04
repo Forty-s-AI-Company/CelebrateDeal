@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   platformReferralAttributionDeleteMany: vi.fn(),
   createCheckoutSession: vi.fn(),
   checkoutReadiness: vi.fn(),
+  webhookEventCount: vi.fn(),
 }));
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
@@ -52,6 +53,12 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { selectBillingPlanAction } from "./actions";
+import {
+  PAYUNI_STAGING_RETRY_VENDOR_ID,
+  PAYUNI_STAGING_RETRY_TRANSACTION_ID,
+  PAYUNI_STAGING_RETRY_ORDER_NUMBER,
+  PAYUNI_STAGING_RETRY_MERCHANT_ID,
+} from "@/lib/payuni-staging-plan-test";
 
 const plan = {
   id: "plan-pro",
@@ -117,6 +124,7 @@ beforeEach(() => {
   mocks.paymentTransactionCreate.mockResolvedValue(createdTransaction);
   mocks.paymentTransactionFindUnique.mockResolvedValue(null);
   mocks.paymentTransactionFindFirst.mockResolvedValue(null);
+  mocks.webhookEventCount.mockResolvedValue(0);
   mocks.paymentTransactionUpdate.mockResolvedValue(createdTransaction);
   mocks.createCheckoutSession.mockResolvedValue({
     provider: "demo",
@@ -153,9 +161,146 @@ beforeEach(() => {
       update: mocks.paymentTransactionUpdate,
     },
     platformReferralAttribution: { deleteMany: mocks.platformReferralAttributionDeleteMany },
+    webhookEvent: { count: mocks.webhookEventCount },
     vendorUsageLimit: { upsert: mocks.usageLimitUpsert },
     auditLog: { create: mocks.auditLogCreate },
   }));
+});
+
+const retryAttemptId = "00000000-0000-4000-8000-000000000001";
+
+function enableAcknowledgedRetry(cents = 100) {
+  enableStagingLivePlanTest();
+  vi.stubEnv("PAYUNI_MERCHANT_ID", PAYUNI_STAGING_RETRY_MERCHANT_ID);
+  mocks.requireVendorOwnerFinance.mockResolvedValue({
+    vendor: { id: PAYUNI_STAGING_RETRY_VENDOR_ID }, member: { id: "member-owner", role: "owner" },
+  });
+  const permitData = {
+    deploymentHost: "staging-test.vercel.app", merchantId: PAYUNI_STAGING_RETRY_MERCHANT_ID,
+    vendorId: PAYUNI_STAGING_RETRY_VENDOR_ID, expiresAt: "2099-01-01T00:00:00.000Z",
+  };
+  const permit = `staging-payuni-plan-v1:${JSON.stringify({ ...permitData, retryAttemptId, acknowledgedPendingTransactionId: PAYUNI_STAGING_RETRY_TRANSACTION_ID })}`;
+  const oldPermit = `staging-payuni-plan-v1:${JSON.stringify({ ...permitData, expiresAt: "2000-01-01T00:00:00.000Z" })}`;
+  const selectedPlan = {
+    ...plan, code: cents === 100 ? "staging-payuni-starter" : cents === 200 ? "staging-payuni-growth" : "staging-payuni-team-pro",
+    monthlyPriceCents: cents, isActive: false, description: permit,
+  };
+  const acknowledgedSubscription = {
+    id: "acknowledged-subscription", vendorId: PAYUNI_STAGING_RETRY_VENDOR_ID, planId: "acknowledged-plan", status: "pending_payment",
+    plan: { ...plan, id: "acknowledged-plan", code: "staging-payuni-starter", monthlyPriceCents: 100, isActive: false },
+  };
+  const acknowledged = {
+    ...createdTransaction, id: PAYUNI_STAGING_RETRY_TRANSACTION_ID, vendorId: PAYUNI_STAGING_RETRY_VENDOR_ID,
+    orderNumber: PAYUNI_STAGING_RETRY_ORDER_NUMBER, providerName: "payuni", providerTradeNo: null, currency: "TWD", grossAmountCents: 100,
+    checkoutIdempotencyKey: `platform-plan:v1:${PAYUNI_STAGING_RETRY_VENDOR_ID}:acknowledged-plan`,
+    metadata: {
+      billingPurpose: "platform_subscription_checkout", platformSubscriptionId: acknowledgedSubscription.id,
+      billingPlanId: "acknowledged-plan", billingPlanCode: "staging-payuni-starter", stagingPayUniPlanPermit: oldPermit,
+      checkoutSession: { provider: "payuni", mode: "form_post", formMethod: "POST", formAction: "https://api.payuni.com.tw/api/upp", formPayload: { MerID: PAYUNI_STAGING_RETRY_MERCHANT_ID, EncryptInfo: "old-synthetic-never-resubmit" } },
+    },
+  };
+  const subscription = { ...createdSubscription, vendorId: PAYUNI_STAGING_RETRY_VENDOR_ID, plan: selectedPlan };
+  mocks.billingPlanFindFirst.mockResolvedValue(selectedPlan);
+  mocks.subscriptionFindMany.mockResolvedValue([]);
+  mocks.subscriptionFindUnique.mockImplementation(async ({ where }) => where.id === acknowledgedSubscription.id ? acknowledgedSubscription : subscription);
+  mocks.paymentTransactionFindUnique.mockImplementation(async ({ where }) => where.id === acknowledged.id ? acknowledged : null);
+  mocks.subscriptionCreate.mockResolvedValue(subscription);
+  mocks.paymentTransactionCreate.mockImplementation(async ({ data }) => ({ ...createdTransaction, currency: "TWD", ...data }));
+  return { acknowledged, acknowledgedSubscription, selectedPlan, subscription, permit };
+}
+
+describe("one owner-acknowledged staging retry", () => {
+  it.each([100, 200, 300])("creates one new %i-cent order while preserving the unresolved old payment", async (cents) => {
+    const { acknowledged, permit } = enableAcknowledgedRetry(cents);
+    const originalSnapshot = structuredClone(acknowledged);
+    await expect(selectBillingPlanAction(formData())).rejects.toThrow("status=checkout");
+    const data = mocks.paymentTransactionCreate.mock.calls[0]?.[0].data;
+    expect(data.grossAmountCents).toBe(cents);
+    expect(data.orderNumber).not.toBe(PAYUNI_STAGING_RETRY_ORDER_NUMBER);
+    expect(data.checkoutIdempotencyKey).toBe(`platform-plan:staging-retry:v1:${PAYUNI_STAGING_RETRY_VENDOR_ID}:${retryAttemptId}`);
+    expect(data.metadata).toMatchObject({
+      stagingPayUniPlanPermit: permit, stagingPayUniRetryAttemptId: retryAttemptId,
+      stagingPayUniAcknowledgedPendingTransactionId: PAYUNI_STAGING_RETRY_TRANSACTION_ID,
+    });
+    expect(mocks.paymentTransactionUpdate).toHaveBeenCalledWith({
+      where: { id: createdTransaction.id }, data: { metadata: expect.objectContaining(data.metadata) },
+    });
+    expect(mocks.subscriptionUpdateMany).toHaveBeenCalledWith({
+      where: { vendorId: PAYUNI_STAGING_RETRY_VENDOR_ID, status: "pending_payment" },
+      data: { status: "payment_superseded", endedAt: expect.any(Date) },
+    });
+    expect(acknowledged).toEqual(originalSnapshot);
+    expect(mocks.paymentTransactionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.createCheckoutSession.mock.calls[0]?.[0].transaction.id).toBe(createdTransaction.id);
+    expect(JSON.stringify(mocks.createCheckoutSession.mock.calls)).not.toContain("old-synthetic-never-resubmit");
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable" });
+  });
+
+  it("reuses only the same new order on a second submission, including after a late old result", async () => {
+    const fixture = enableAcknowledgedRetry();
+    await expect(selectBillingPlanAction(formData())).rejects.toThrow("status=checkout");
+    const data = mocks.paymentTransactionCreate.mock.calls[0]?.[0].data;
+    const saved = { ...createdTransaction, currency: "TWD", ...data, metadata: mocks.paymentTransactionUpdate.mock.calls[0]?.[0].data.metadata };
+    mocks.paymentTransactionFindFirst.mockImplementation(async ({ where }) => where.metadata ? saved : null);
+    fixture.acknowledged.status = "paid";
+    fixture.acknowledgedSubscription.status = "payment_superseded";
+    await expect(selectBillingPlanAction(formData())).rejects.toThrow("status=checkout");
+    expect(mocks.paymentTransactionCreate).toHaveBeenCalledOnce();
+    expect(mocks.subscriptionCreate).toHaveBeenCalledOnce();
+    expect(mocks.createCheckoutSession).toHaveBeenCalledOnce();
+  });
+
+  it("blocks switching plan after a new pending order exists", async () => {
+    const fixture = enableAcknowledgedRetry();
+    await expect(selectBillingPlanAction(formData())).rejects.toThrow("status=checkout");
+    const data = mocks.paymentTransactionCreate.mock.calls[0]?.[0].data;
+    const saved = { ...createdTransaction, currency: "TWD", ...data, metadata: mocks.paymentTransactionUpdate.mock.calls[0]?.[0].data.metadata };
+    mocks.paymentTransactionFindFirst.mockImplementation(async ({ where }) => where.metadata ? saved : null);
+    mocks.billingPlanFindFirst.mockResolvedValue({ ...fixture.selectedPlan, id: "growth-id", code: "staging-payuni-growth", monthlyPriceCents: 200 });
+    const switched = formData(); switched.set("planId", "growth-id");
+    await expect(selectBillingPlanAction(switched)).rejects.toThrow("error=conflict");
+    expect(mocks.paymentTransactionCreate).toHaveBeenCalledOnce();
+    expect(mocks.paymentTransactionUpdate).toHaveBeenCalledOnce();
+  });
+
+  it.each(["paid", "failed", "refunded"])("keeps the acknowledgment spent after %s clears the transient key", async (status) => {
+    const fixture = enableAcknowledgedRetry();
+    mocks.paymentTransactionFindFirst.mockResolvedValueOnce({ id: "spent-new-order", status, checkoutIdempotencyKey: null,
+      metadata: { stagingPayUniRetryAttemptId: retryAttemptId, stagingPayUniAcknowledgedPendingTransactionId: PAYUNI_STAGING_RETRY_TRANSACTION_ID } });
+    await expect(selectBillingPlanAction(formData())).rejects.toThrow("error=conflict");
+    expect(mocks.paymentTransactionCreate).not.toHaveBeenCalled();
+    expect(fixture.acknowledged.status).toBe("pending");
+  });
+
+  it("keeps a spent acknowledgment closed even under a different permit nonce", async () => {
+    enableAcknowledgedRetry();
+    mocks.paymentTransactionFindFirst.mockResolvedValueOnce({ status: "pending", metadata: { stagingPayUniRetryAttemptId: "different-attempt" } });
+    await expect(selectBillingPlanAction(formData())).rejects.toThrow("error=conflict");
+    expect(mocks.paymentTransactionCreate).not.toHaveBeenCalled();
+  });
+
+  it.each(["extra-payment", "extra-subscription", "callback", "altered-old-scope"])("blocks %s without changing the old payment", async (reason) => {
+    const fixture = enableAcknowledgedRetry();
+    if (reason === "extra-payment") mocks.paymentTransactionFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "additional-pending" });
+    if (reason === "extra-subscription") mocks.subscriptionFindFirst.mockResolvedValueOnce({ id: "additional-subscription" });
+    if (reason === "callback") mocks.webhookEventCount.mockResolvedValueOnce(1);
+    if (reason === "altered-old-scope") fixture.acknowledged.orderNumber = "wrong-order";
+    await expect(selectBillingPlanAction(formData())).rejects.toThrow("error=conflict");
+    expect(mocks.paymentTransactionCreate).not.toHaveBeenCalled();
+    expect(mocks.subscriptionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.paymentTransactionUpdate).not.toHaveBeenCalled();
+  });
+
+  it("preserves the spent attempt marker if provider setup fails", async () => {
+    enableAcknowledgedRetry();
+    mocks.createCheckoutSession.mockRejectedValueOnce(new Error("setup failed"));
+    await expect(selectBillingPlanAction(formData())).rejects.toThrow("error=checkout");
+    const created = mocks.paymentTransactionCreate.mock.calls[0]?.[0].data;
+    expect(created.metadata.stagingPayUniRetryAttemptId).toBe(retryAttemptId);
+    mocks.paymentTransactionFindFirst.mockResolvedValueOnce({ ...created, id: createdTransaction.id, status: "failed", checkoutIdempotencyKey: null });
+    await expect(selectBillingPlanAction(formData())).rejects.toThrow("error=conflict");
+    expect(mocks.paymentTransactionCreate).toHaveBeenCalledOnce();
+  });
 });
 
 afterEach(() => vi.unstubAllEnvs());
