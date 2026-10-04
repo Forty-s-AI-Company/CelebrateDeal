@@ -33,7 +33,10 @@
   "production": "Not operated",
   "review_findings": {
     "run_close_race": "Source independently reviewed; real DB interleaving PASS",
-    "purchased_identity": "Use verified signed chat session claim, no raw-cookie fallback; reviewer confirmed signature/cookie lifecycle. True verify-route then checkout then draw integration still pending. Single-browser registration replacement/expiry remains a capability limitation; evaluate buyer support grant fallback if needed."
+    "purchased_identity": "Use verified signed chat session claim, no raw-cookie fallback; reviewer confirmed signature/cookie lifecycle. True verify-route then checkout then draw integration still pending. Single-browser registration replacement/expiry remains a capability limitation; evaluate buyer support grant fallback if needed.",
+    "stale_submission": "Fixed with run/event-scoped AbortController; browser regression PASS desktop/mobile; independent recheck pending",
+    "unbound_product_voucher": "OPEN MAJOR: server open/respond must verify current live product binding; public metadata omission is not authorization",
+    "flash_sale_checkout": "OPEN: inspect and connect actual checkout navigation and truthful offer price/stock semantics"
   },
   "database_verified": [
     "Concurrent last-voucher requests produce one200 and one409, exactly one response and one cookie",
@@ -65,6 +68,25 @@
         "Sequential abortable polling; obsolete polling results ignored",
         "Winner animation uses generic reveal messages without fictitious participant names"
       ]
+    },
+    "browser_validation": {
+      "status": "PASS",
+      "viewports": [
+        1440,
+        390
+      ],
+      "runner": "scripts/live-advanced-interactions-browser-qa.mjs",
+      "scope": "Actual React component in Chromium with controlled synthetic fetch; no full-server/payment/CSS claim",
+      "checks": [
+        "admission disabled",
+        "sequential polling",
+        "cross-live abort and stale response rejection",
+        "stale submitted response cannot replace new run",
+        "poll submission",
+        "admission loss unmount"
+      ],
+      "tsc": "PASS",
+      "eslint": "PASS"
     }
   }
 }

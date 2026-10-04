@@ -1,7 +1,7 @@
 "use client";
 
 import { BarChart3, Flame, Gift, MessageCircleQuestion, PartyPopper, Sparkles, Trophy, X, Zap } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AdvancedInteractionMetadata } from "@/lib/interaction-event";
 
 type AdvancedEvent = {
@@ -129,6 +129,13 @@ function ActiveLiveAdvancedInteractions({
     return config && event.triggerSec <= currentSeconds && currentSeconds < event.triggerSec + config.durationSec;
   }), [currentSeconds, events]);
 
+  const submissionController = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    submissionController.current = controller;
+    return () => controller.abort();
+  }, [run?.id, scriptedEvent?.id]);
+
   useEffect(() => {
     if (!enabled) return;
     // 依序輪詢，切換直播或事件時中止舊請求，避免過期結果覆蓋新狀態。
@@ -177,10 +184,13 @@ function ActiveLiveAdvancedInteractions({
 
   async function respond(value: string | string[]) {
     if (!run || isSubmitting) return;
+    const signal = submissionController.current?.signal;
+    if (!signal || signal.aborted) return;
     setIsSubmitting(true);
     setMessage("");
     try {
-      const payload = await interactionRequest({ action: "respond", vendorId, liveId, runId: run.id, value, ...(displayName.trim() ? { displayName: displayName.trim() } : {}) });
+      const payload = await interactionRequest({ action: "respond", vendorId, liveId, runId: run.id, value, ...(displayName.trim() ? { displayName: displayName.trim() } : {}) }, signal);
+      if (signal.aborted) return;
       if (payload.run) setRun(payload.run);
       setMessage(
         run.eventType === "flash_voucher"
@@ -190,7 +200,7 @@ function ActiveLiveAdvancedInteractions({
             : "已收到，結果會即時更新。",
       );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "互動失敗，請再試一次。");
+      if (!signal.aborted) setMessage(error instanceof Error ? error.message : "互動失敗，請再試一次。");
     } finally {
       setIsSubmitting(false);
     }
