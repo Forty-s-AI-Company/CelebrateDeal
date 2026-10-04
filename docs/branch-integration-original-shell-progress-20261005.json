@@ -1,0 +1,278 @@
+{
+  "state": "LOCAL_VALIDATED_PENDING_PROTECTED_PR_CI",
+  "branch": "codex/integrate-original-shell-20261005",
+  "base": "5e6c962a28427f56702f4a56102520c2ad259eb1",
+  "tests": {
+    "files": 2,
+    "tests": 22,
+    "status": "PASS"
+  },
+  "decisions": [
+    "Manager-only project/onboarding reads and client props",
+    "Keep platform MFA navigation and public support/policy footer",
+    "Use current schema form/publication gate and active product/verifiedAt requirements"
+  ],
+  "files": [
+    {
+      "path": "src/app/(app)/layout.tsx",
+      "sha256": "ff9e618365e1e92899e49fceb170136d93f2110d0e8a056d3ed585c007c0835a"
+    },
+    {
+      "path": "src/app/(app)/layout.test.tsx",
+      "sha256": "681fa4072356bbd270033807f9c6220fcb4c222519620f69c36978c92588d0fa"
+    },
+    {
+      "path": "src/components/app-shell.tsx",
+      "sha256": "74ccc449f3152294f2188de94343cea5cc55ae09088542b90d28cf862cecd4ca"
+    },
+    {
+      "path": "src/components/app-shell.test.ts",
+      "sha256": "b37d45ecba13af4a3f17cd7cdd7fb855639617b4ffc66792aa7738c4d868251e"
+    },
+    {
+      "path": "src/components/app-shell-account-menu.tsx",
+      "sha256": "069b791a9b3c6ef38ff343b811c38d7d3dbb1e24db7f96691aa17ad3a8783195"
+    },
+    {
+      "path": "src/components/app-shell-nav-link.tsx",
+      "sha256": "7aec338b4d0716a5fc180bc16e6d6b376ba9b8666971eec145d36ed28f42dbae"
+    },
+    {
+      "path": "src/components/app-shell-nav-group.tsx",
+      "sha256": "bb46f4a52305e3d18f31711e1488b37aaf7b38a5a586a7e36220d4a0ae58f081"
+    },
+    {
+      "path": "src/components/workspace-project-switcher.tsx",
+      "sha256": "fc931f6b0da0392f62ae6b8daeb6fcfe73ac5bfcceea17d37cd1e82941e0163f"
+    },
+    {
+      "path": "src/components/onboarding-task-panel.tsx",
+      "sha256": "5e34a2b161a88296f87e3d61abb2cc7ece07cff986d96b301f7a96254d392404"
+    }
+  ],
+  "remaining": [
+    "Independent permission review and remediation",
+    "Interactive desktop/mobile browser validation",
+    "Update dependent navigation E2E labels without weakening authorization assertions",
+    "Protected PR exact-head CI and canonical acceptance",
+    "Additional guide preference edge-case coverage"
+  ],
+  "production_operations": false,
+  "validation_scope": [
+    "Role read boundary",
+    "Selected project constrained to tenant-scoped project list",
+    "Foreign preference falls back to workspace with no project-specific reads",
+    "Current MFA, public footer and logout assertions retained"
+  ],
+  "review": {
+    "agent": "/root/portal_review_fallback",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "status": "OPEN",
+        "issue": "Project onboarding create product/form links do not persist selected-project relationships."
+      },
+      {
+        "severity": "MINOR",
+        "status": "FIXED_PENDING_REVIEW",
+        "issue": "Completed panel cannot reopen",
+        "fix": "Use allComplete only for initial collapse; user toggle controls state. Unique ARIA IDs; accurate skipped/archived terminal copy."
+      }
+    ]
+  },
+  "panel_browser": {
+    "scenarios": 4,
+    "status": "PASS",
+    "scope": "Actual component Chromium interactions at desktop/mobile sizes; Next routing/server mutations stubbed. Not full application/CSS acceptance.",
+    "receipt": ".ai-team/tmp/panel-browser-20261005.json"
+  },
+  "project_binding_progress": {
+    "state": "WIRED_PENDING_REVIEW_AND_DB_BROWSER_VALIDATION",
+    "implementation": [
+      "Validated explicit project scope on both new pages",
+      "Create-only hidden fields through product and form builder clients",
+      "Product/link atomic transaction; form/project atomic transaction",
+      "Project-specific draft scope and task links"
+    ],
+    "tests": {
+      "files": 3,
+      "count": 46,
+      "status": "PASS"
+    },
+    "typecheck": "PASS",
+    "remaining": [
+      "Real PostgreSQL rollback and foreign-tenant invariants",
+      "Full browser task completion and navigation regression",
+      "Independent re-review"
+    ]
+  },
+  "layout_refresh_followup": {
+    "implementation": "Successful form/product Server Actions invalidate /(app) layout before redirect; failures do not invalidate.",
+    "targeted_tests": {
+      "passed": 46,
+      "failed": 0
+    },
+    "eslint": "PASS",
+    "browser_no_reload_verification": "PENDING"
+  },
+  "independent_review_remaining": [
+    "MAJOR: project_live creation lacks validated project binding; implement complete create-only path.",
+    "Real PostgreSQL rollback and cross-tenant invariants pending.",
+    "Full browser navigation and task-completion flow pending."
+  ],
+  "live_binding_followup": {
+    "state": "IMPLEMENTED_PENDING_INDEPENDENT_REVIEW_DB_AND_BROWSER",
+    "behavior": [
+      "project shortcut supplies project ID",
+      "draft payload preserves optional scope without adding a field to legacy payloads",
+      "resume validates stored scope and rejects conflicting query",
+      "create transaction validates tenant/non-archived project before consuming draft and writing live",
+      "existing live cannot be moved through create context",
+      "successful save invalidates app layout"
+    ],
+    "validation": {
+      "tests_passed": 398,
+      "tests_failed": 0,
+      "typecheck": "PASS",
+      "targeted_eslint": "PASS"
+    },
+    "remaining": [
+      "Independent review",
+      "Real PostgreSQL rollback and cross-tenant isolation",
+      "Full browser project task completion without manual reload",
+      "Audit consultation project task path"
+    ],
+    "sha256": {
+      "src/app/actions.ts": "5b846ba598d7e8811fc3c2d0ee13b1849d27ac329812513db016f58c791a4b69",
+      "src/app/actions.test.ts": "915d8e7d9ead5de43dde063afaee0f962b061d4dc147416bef890a306d965c79",
+      "src/app/(app)/lives/new/page.tsx": "1f23f5ea08635cd7da76b91ce4aeff1adce782259ed3351777df4c602e549fb7",
+      "src/app/(app)/lives/new/page.test.tsx": "1786c07f31be817564e2649406939ae3db880593e729bf7e40973742d589d516",
+      "src/components/live-stepper-form.tsx": "d9755d68e916b61750c4444eaf0194772b56bd8fbefcaa1998bb99e0fb0569d8",
+      "src/lib/live-studio-draft.ts": "cbe88c101ad0959d3cbdb08b01f2f2df58aa48d802027e4de9e3a19915e5bda1",
+      "src/lib/live-studio-draft-client.ts": "f11432ea9b7160fb76d2e989d04f796e7eb13c0862cced293a08326863be09ec",
+      "src/lib/live-studio-draft-client.test.ts": "e59ab8443f99dbf2610a320d66457ba5cc6007b178a7f17dd4bbe1e3cdc05f21"
+    }
+  },
+  "resource_database_validation": {
+    "status": "PASS",
+    "passed": 11,
+    "failed": 0,
+    "scope": "real PostgreSQL product/form writes, tenant/archived rejection and real transaction rollback with injected project-link failure",
+    "container": "celebratedeal-project-binding-20261005",
+    "loopback_port": 54463,
+    "synthetic_data_only": true,
+    "migration_deploy_exit": 0,
+    "live_database_flow": "PASS: one-shot create, real rollback after draft claim, foreign/archived rejection, CAS project tampering rejection, legacy project-less draft compatibility",
+    "browser_flow": "PENDING",
+    "source_sha256": "6cbb36464824d015acf3654fced76d20cea63237e61273d6b26150919e7fc990",
+    "typecheck": "PASS",
+    "targeted_eslint": "PASS",
+    "migration_count": 83
+  },
+  "review_final_minor_fixes": {
+    "state": "IMPLEMENTED_PENDING_REREVIEW",
+    "changes": [
+      "Consultation create/update/toggle refresh app layout",
+      "Project publish task points to selected project details"
+    ],
+    "tests_passed": 18,
+    "tests_failed": 0
+  },
+  "remaining_acceptance": [
+    "Independent review of final minor fixes and new database tests",
+    "Full browser shell navigation, mobile rendering and project task completion without manual reload",
+    "Refresh manifests and canonical acceptance before protected PR merge",
+    "Original dirty and historical branch reconciliation remains unfinished"
+  ],
+  "final_independent_review": {
+    "reviewer": "portal_review_fallback",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "findings": [],
+    "scope": "Final consultation layout refresh and project publish href; database test source and 11-test receipt",
+    "limitation": "Read-only review; full browser not verified"
+  },
+  "browser_validation": {
+    "state": "PASS",
+    "session": 37524,
+    "test_file": "tests/e2e/project-shell-binding.spec.ts",
+    "viewport_widths": [
+      1440,
+      390
+    ],
+    "environment": "env-free source mirror, localhost 31027, disposable PostgreSQL 54463",
+    "typecheck": "PASS",
+    "targeted_eslint": "PASS",
+    "stats": {
+      "startTime": "2026-10-04T17:51:37.705Z",
+      "duration": 57107.322,
+      "expected": 2,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "verified": [
+      "Desktop 1440px and mobile 390px login to real protected layout",
+      "Selected project task opens project-bound form",
+      "Save form via actual server action persists correct project",
+      "Sidebar next task changes to live creation without manual reload",
+      "Project switcher persists aggregate selection and shows workspace tasks"
+    ],
+    "limitations": [
+      "Local development Next server; release build and CI remain pending",
+      "Browser scenario covers form creation and scope switch; live transaction tested through real PostgreSQL, not complete eight-step browser authoring"
+    ]
+  },
+  "candidate_hashes": {
+    "src/app/(app)/forms/new/page.tsx": "271c49c4204f9a6d111a885cbc7937892d32578ed5318071a1bd439844aa32a0",
+    "src/app/(app)/layout.tsx": "5bd4cf7a3f912237188b88392ab8c84dcbea2845acf7bc5cd00323cff84605b1",
+    "src/app/(app)/lives/new/page.test.tsx": "1786c07f31be817564e2649406939ae3db880593e729bf7e40973742d589d516",
+    "src/app/(app)/lives/new/page.tsx": "1f23f5ea08635cd7da76b91ce4aeff1adce782259ed3351777df4c602e549fb7",
+    "src/app/(app)/products/new/page.tsx": "cc93431b87903d6c78c87605ee116dfe3ed50cb2ce3e6b448d6f983f513ee1f4",
+    "src/app/actions.test.ts": "915d8e7d9ead5de43dde063afaee0f962b061d4dc147416bef890a306d965c79",
+    "src/app/actions.ts": "5b846ba598d7e8811fc3c2d0ee13b1849d27ac329812513db016f58c791a4b69",
+    "src/app/actions/consultation-actions.test.ts": "6801c359828557c4ffb8ca24715b06e052c16da660c4e608514045d5100aacc1",
+    "src/app/actions/consultation-actions.ts": "bbd9ad845771d365433fdfa41c6ed3d2778b5c7c942275565aafcfe30a3f7929",
+    "src/app/actions/form-actions.test.ts": "60f4b427dc82358381258aa8fcb1b20e780d920feb82938b2faebf11cf247a64",
+    "src/app/actions/form-actions.ts": "1499990c933398eb5774654e2bbe6082fe1da39e8f42b7125bde2a9e858979f3",
+    "src/app/actions/product-actions.test.ts": "5c45d4932b4dcbb63c3c6874a34944d7bfcbbd3fdd56419a42d8ed31a562c9e6",
+    "src/app/actions/product-actions.ts": "5db25ccc298048d5230d7f0944ce4a0a631a18bb08844a1d4036e04393ef0279",
+    "src/app/actions/product-server-actions.ts": "073e5bbf9eb6fc48e578f812aadf270869e50ed9e62d260808f2401f9053335e",
+    "src/components/app-shell.test.ts": "b37d45ecba13af4a3f17cd7cdd7fb855639617b4ffc66792aa7738c4d868251e",
+    "src/components/app-shell.tsx": "74ccc449f3152294f2188de94343cea5cc55ae09088542b90d28cf862cecd4ca",
+    "src/components/form-builder-client.tsx": "eea17e87c32b14dabc6cb0fdcc39c27e9551d7835f7e0d9093c94d715c08979b",
+    "src/components/form-builder.tsx": "596ed109f41c634629c07931bed9663adfabaa5a25d8282300a92f0effe888c2",
+    "src/components/live-stepper-form.tsx": "d9755d68e916b61750c4444eaf0194772b56bd8fbefcaa1998bb99e0fb0569d8",
+    "src/components/product-form-client.tsx": "521d8098b9fbf16bd88d401fe6c1d2372a6fa6dd28871feeef9fe438764ee0eb",
+    "src/components/product-form.tsx": "bb133d6db1d99288567beda49ad1f165e5361ec9764d04a48c2148af7aa1d5b4",
+    "src/lib/live-studio-draft-client.test.ts": "e59ab8443f99dbf2610a320d66457ba5cc6007b178a7f17dd4bbe1e3cdc05f21",
+    "src/lib/live-studio-draft-client.ts": "f11432ea9b7160fb76d2e989d04f796e7eb13c0862cced293a08326863be09ec",
+    "src/lib/live-studio-draft.ts": "cbe88c101ad0959d3cbdb08b01f2f2df58aa48d802027e4de9e3a19915e5bda1",
+    "src/app/(app)/layout.test.tsx": "ea778917ba5edd6d57a6cda8eaa3a4b3797d3d42b261482b24816fab99c7afe7",
+    "src/app/actions/project-resource-binding.db.test.ts": "6cbb36464824d015acf3654fced76d20cea63237e61273d6b26150919e7fc990",
+    "src/components/app-shell-account-menu.tsx": "069b791a9b3c6ef38ff343b811c38d7d3dbb1e24db7f96691aa17ad3a8783195",
+    "src/components/app-shell-nav-group.tsx": "bb46f4a52305e3d18f31711e1488b37aaf7b38a5a586a7e36220d4a0ae58f081",
+    "src/components/app-shell-nav-link.tsx": "7aec338b4d0716a5fc180bc16e6d6b376ba9b8666971eec145d36ed28f42dbae",
+    "src/components/onboarding-task-panel.tsx": "5e34a2b161a88296f87e3d61abb2cc7ece07cff986d96b301f7a96254d392404",
+    "src/components/workspace-project-switcher.tsx": "fc931f6b0da0392f62ae6b8daeb6fcfe73ac5bfcceea17d37cd1e82941e0163f",
+    "src/lib/sales-project-binding.test.ts": "b053edbdeaa6ffb5ed068baef8a74ed396a5ca3cf31763861188dd9a6de42f15",
+    "src/lib/sales-project-binding.ts": "750f654fb9b77d0a7ad1d9558204a4223c7c8964d6df797d652e6b7211b401bd",
+    "tests/e2e/project-shell-binding.spec.ts": "d996f4d7ce034de551dc31e881d8086ddd2bbf7b68ff50b407baab05a75442fd"
+  },
+  "handoff": {
+    "requested_team": "autonomous integration",
+    "effective_team": "primary writer and independent read-only reviewer",
+    "selected_model": "inherited primary; reviewer preset",
+    "observed_model": "unknown",
+    "reasoning": "tenant-boundary integration requires independent review and database/browser evidence",
+    "fallback_events": [
+      "Previous Astra reviewer quota failure; existing Sol reviewer used"
+    ],
+    "review_plan": "completed source review; exact-head CI and acceptance pending",
+    "ownership": "primary sole writer in managed worktree; original checkout preserved",
+    "dispatch_depth_limits": "one reused reviewer; no recursive dispatch",
+    "next_step": "Publish integration branch, exact-head CI, canonical acceptance, protected PR merge"
+  }
+}

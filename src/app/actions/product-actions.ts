@@ -1,3 +1,4 @@
+import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -437,8 +438,14 @@ export async function mutateProduct(
   let persistenceError: ProductActionError | null;
   try {
     persistenceError = await db.$transaction(async (tx) => {
+      // Binding is create-only; never move an existing product via a forged field.
+      if (request.id && formData.get("projectId")) throw new SalesProjectBindingError();
+      const projectId = await resolveSalesProjectBinding(tx, vendorId, formData.get("projectId"));
       const productError = await persistProduct(tx, vendorId, request, data);
       if (productError) return productError;
+      if (projectId) {
+        await tx.salesProjectProduct.create({ data: { vendorId, projectId, productId } });
+      }
       await persistProductDelivery(tx, {
         vendorId,
         productId,
@@ -450,7 +457,9 @@ export async function mutateProduct(
       return null;
     });
   } catch (error) {
-    if (error instanceof ProductDeliveryConflictError || hasPrismaErrorCode(error, "P2002")) {
+    if (error instanceof SalesProjectBindingError) {
+      persistenceError = "not_found";
+    } else if (error instanceof ProductDeliveryConflictError || hasPrismaErrorCode(error, "P2002")) {
       persistenceError = request.id ? "conflict" : "duplicate_slug";
     } else {
       throw error;

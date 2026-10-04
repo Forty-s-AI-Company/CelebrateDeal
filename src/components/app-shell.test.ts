@@ -8,6 +8,9 @@ const formStatuses = vi.hoisted(() => ({
   values: [] as Array<{ pending: boolean; data: FormData | null; action: null; method: null }>,
 }));
 vi.mock("@/app/actions", () => ({ logoutAction: mocks.logoutAction }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/dashboard", useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("@/app/actions/sales-workspace-actions", () => ({ controlOnboardingGuideAction: vi.fn() }));
+
 vi.mock("@/components/csrf-field", () => ({
   CsrfField: () => createElement("input", { type: "hidden", name: "csrfToken", value: "synthetic-csrf-token" }),
 }));

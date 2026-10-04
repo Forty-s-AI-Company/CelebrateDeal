@@ -118,6 +118,7 @@ const mocks = vi.hoisted(() => ({
   teamMembershipFindFirst: vi.fn(),
   teamMembershipFindMany: vi.fn(),
   teamMembershipRelationshipFindMany: vi.fn(),
+  projectFindFirst: vi.fn(),
   transaction: vi.fn(),
   userCreate: vi.fn(),
   userFindUnique: vi.fn(),
@@ -273,6 +274,7 @@ vi.mock("@/lib/db", () => ({
       deleteMany: mocks.liveNotificationRuleDeleteMany,
     },
     emailDelivery: { updateMany: mocks.emailDeliveryUpdateMany },
+    salesProject: { findFirst: mocks.projectFindFirst },
     liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany },
     product: { findMany: mocks.productFindMany },
     video: {
@@ -781,6 +783,7 @@ beforeEach(() => {
   mocks.messageTemplateUpdate.mockResolvedValue({ id: "template-1" });
   mocks.liveFindFirst.mockResolvedValue(null);
   mocks.liveFindMany.mockResolvedValue([]);
+  mocks.projectFindFirst.mockResolvedValue(null);
   mocks.liveStudioDraftUpdateMany.mockResolvedValue({ count: 1 });
   mocks.liveUpdate.mockResolvedValue({ id: "live-1" });
   mocks.liveUpdateMany.mockResolvedValue({ count: 1 });
@@ -864,6 +867,7 @@ beforeEach(() => {
       update: mocks.interactionScriptUpdate,
     },
     auditLog: { create: mocks.auditLogCreate },
+    salesProject: { findFirst: mocks.projectFindFirst },
     liveStudioDraft: { updateMany: mocks.liveStudioDraftUpdateMany },
     live: { create: mocks.liveCreate, findFirst: mocks.liveFindFirst, findMany: mocks.liveFindMany, update: mocks.liveUpdate, updateMany: mocks.liveUpdateMany },
     messageTemplate: { create: mocks.messageTemplateCreate, update: mocks.messageTemplateUpdate },
@@ -1697,6 +1701,35 @@ describe("upsertLiveAction", () => {
     });
     mocks.liveCreate.mockResolvedValue({ id: "live-1" });
   }
+
+  it("binds a new live to a tenant project before consuming the draft", async () => {
+    allowCurrentVendorLiveReferences();
+    mocks.projectFindFirst.mockResolvedValue({ id: "project-1" });
+    const data = liveFormData(); data.set("projectId", "project-1");
+    await expect(upsertLiveAction(data)).rejects.toThrow("redirect:/lives/live-1/preview");
+    expect(mocks.projectFindFirst).toHaveBeenCalledWith({ where: { id: "project-1", vendorId: "vendor-1", status: { not: "archived" } }, select: { id: true } });
+    expect(mocks.liveCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ projectId: "project-1", vendorId: "vendor-1" }) });
+    expect(mocks.projectFindFirst.mock.invocationCallOrder[0]).toBeLessThan(mocks.liveStudioDraftUpdateMany.mock.invocationCallOrder[0]);
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/(app)", "layout");
+  });
+
+  it("rejects unavailable project scope without consuming the draft or creating a live", async () => {
+    allowCurrentVendorLiveReferences();
+    const data = liveFormData(); data.set("projectId", "foreign-project");
+    await expect(upsertLiveAction(data)).rejects.toThrow("error=invalid_reference");
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveCreate).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("cannot move an existing live using forged project context", async () => {
+    allowCurrentVendorLiveReferences();
+    const data = liveFormData(); data.set("id", "live-1"); data.set("projectId", "project-1");
+    await expect(upsertLiveAction(data)).rejects.toThrow("error=invalid_draft");
+    expect(mocks.projectFindFirst).not.toHaveBeenCalled();
+    expect(mocks.liveStudioDraftUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.liveUpdate).not.toHaveBeenCalled();
+  });
 
   it("creates a live only after every relation is verified against the current vendor", async () => {
     allowCurrentVendorLiveReferences();

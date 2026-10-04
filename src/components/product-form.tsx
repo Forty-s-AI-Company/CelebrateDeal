@@ -19,10 +19,12 @@ type ProductWithDeliveryConfig = Product & {
 
 export async function ProductForm({
   product,
+  projectId,
   memberships = [],
   error,
 }: {
   product?: ProductWithDeliveryConfig;
+  projectId?: string | null;
   memberships?: CourseMembershipOption[];
   error?: string;
 }) {
@@ -64,6 +66,7 @@ export async function ProductForm({
   return (
     <Card>
       <ProductFormClient
+        projectId={projectId}
         csrfToken={csrfToken}
         product={serializedProduct}
         memberships={memberships}

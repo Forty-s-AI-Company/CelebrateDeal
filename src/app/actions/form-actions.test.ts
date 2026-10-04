@@ -7,8 +7,11 @@ const mocks = vi.hoisted(() => ({
   updateMany: vi.fn(),
   imageAssetFindFirst: vi.fn(),
   videoFindFirst: vi.fn(),
+  revalidatePath: vi.fn(),
   redirect: vi.fn((path: string) => { throw new Error(`redirect:${path}`); }),
   db: {
+    $transaction: vi.fn(),
+    salesProject: { findFirst: vi.fn() },
     registrationForm: { create: vi.fn(), updateMany: vi.fn() },
     imageAsset: { findFirst: vi.fn() },
     video: { findFirst: vi.fn() },
@@ -19,6 +22,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertSecurity }));
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
+vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
 import { upsertFormBuilderAction, type FormBuilderActionState } from "./form-actions";
@@ -49,6 +53,8 @@ function formData(id?: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.db.salesProject.findFirst.mockResolvedValue(null);
+  mocks.db.$transaction.mockImplementation((callback: (tx: typeof mocks.db) => unknown) => callback(mocks.db));
   mocks.getDb.mockReset();
   mocks.imageAssetFindFirst.mockReset();
   mocks.videoFindFirst.mockReset();
@@ -68,6 +74,32 @@ beforeEach(() => {
 });
 
 describe("upsertFormBuilderAction", () => {
+  it("creates a form with the validated project inside the transaction", async () => {
+    mocks.db.salesProject.findFirst.mockResolvedValue({ id: "project-1" });
+    const data = formData(); data.set("projectId", "project-1");
+    await expect(upsertFormBuilderAction(idleState, data)).rejects.toThrow("redirect:/forms");
+    expect(mocks.db.$transaction).toHaveBeenCalledOnce();
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/(app)", "layout");
+    expect(mocks.db.salesProject.findFirst).toHaveBeenCalledWith({ where: { id: "project-1", vendorId: "vendor-1", status: { not: "archived" } }, select: { id: true } });
+    expect(mocks.create).toHaveBeenCalledWith({ data: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1" }) });
+  });
+
+  it("rejects foreign project scope before creating the form", async () => {
+    const data = formData(); data.set("projectId", "foreign-project");
+    const result = await upsertFormBuilderAction(idleState, data);
+    expect(result.status).toBe("error");
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("does not move an existing form through a forged project scope", async () => {
+    const data = formData("form-1"); data.set("projectId", "project-1");
+    const result = await upsertFormBuilderAction(idleState, data);
+    expect(result.status).toBe("error");
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+    expect(mocks.db.salesProject.findFirst).not.toHaveBeenCalled();
+  });
+
   it("creates a validated form under the authenticated vendor and redirects", async () => {
     await expect(upsertFormBuilderAction(idleState, formData())).rejects.toThrow("redirect:/forms");
 

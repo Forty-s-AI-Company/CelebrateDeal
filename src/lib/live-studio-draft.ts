@@ -17,6 +17,8 @@ export const LIVE_STUDIO_FLOW_VERSION = 2 as const;
 export const LIVE_STUDIO_STEP_COUNT = 8;
 
 const liveStudioDraftFields = {
+  // Optional for existing saved drafts; ownership is checked at final creation.
+  projectId: z.string().regex(/^[A-Za-z0-9_-]{1,191}$/u).optional(),
   studioPreset: z.enum(["CONTENT", "COMMERCE", "CUSTOM"]).default("CUSTOM"),
   title: z.string().trim().max(200).default(""),
   slug: z.string().trim().max(200).default(""),

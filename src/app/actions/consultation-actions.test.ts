@@ -87,6 +87,7 @@ describe("consultation management actions", () => {
 
     await expect(createConsultationEventAction(eventForm())).rejects.toThrow("redirect:/consultations?error=sales_project_required");
     expect(runtime.eventCreate).not.toHaveBeenCalled();
+    expect(runtime.revalidate).not.toHaveBeenCalled();
   });
 
   it("requires event and booking writes to match the server-selected project", async () => {
@@ -112,11 +113,13 @@ describe("consultation management actions", () => {
       data: expect.objectContaining({ vendorId: "vendor-1", title: "策略諮詢" }),
     }));
     expect(runtime.revalidate).toHaveBeenCalledWith("/consultations");
+    expect(runtime.revalidate).toHaveBeenCalledWith("/(app)", "layout");
   });
 
   it("does not let a cross-tenant event or booking id mutate a current vendor record", async () => {
     const toggle = form({ eventId: "event-from-another-vendor", isActive: "false", vendorId: "attacker-vendor" });
     await expect(toggleConsultationEventAction(toggle)).rejects.toThrow("redirect:/consultations?updated=event_status");
+    expect(runtime.revalidate).toHaveBeenCalledWith("/(app)", "layout");
     expect(runtime.eventUpdateMany).toHaveBeenCalledWith({
       where: { id: "event-from-another-vendor", vendorId: "vendor-1" }, data: { isActive: false },
     });
@@ -132,6 +135,7 @@ describe("consultation management actions", () => {
     const data = eventForm();
     data.set("eventId", "event-from-another-vendor");
     await expect(updateConsultationEventAction(data)).rejects.toThrow("redirect:/consultations?updated=saved");
+    expect(runtime.revalidate).toHaveBeenCalledWith("/(app)", "layout");
     expect(runtime.eventUpdateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "event-from-another-vendor", vendorId: "vendor-1" },
       data: expect.objectContaining({ title: "策略諮詢" }),

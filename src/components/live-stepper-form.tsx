@@ -975,6 +975,7 @@ export function LiveStepperForm({
   initialDraft,
   initialValues: suppliedInitialValues,
   liveId = "",
+  projectId,
   currentStatus = "draft",
   timeZone,
 }: {
@@ -991,6 +992,7 @@ export function LiveStepperForm({
   initialDraft?: LiveStudioDraftEnvelope;
   initialValues?: LiveStudioDraftPayload;
   liveId?: string;
+  projectId?: string | null;
   currentStatus?: string;
   timeZone: string;
 }) {
@@ -1098,6 +1100,7 @@ export function LiveStepperForm({
       onSubmit={(event) => submitOnlyAfterLatestDraft(event, activeStep, draft, formRef.current)}
     >
       <input type="hidden" name={CSRF_FIELD_NAME} value={csrfToken} />
+      {!liveId && projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
       {liveId ? <input type="hidden" name="id" value={liveId} /> : null}
       <input type="hidden" name="liveDraftId" value={draft.draftId} readOnly />
       <input type="hidden" name="liveDraftRevision" value={draft.revision ?? ""} readOnly />
