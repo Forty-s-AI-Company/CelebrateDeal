@@ -181,5 +181,23 @@
     "Real verification-issued cookie through checkout/paid transaction into purchased draw eligibility",
     "Full isolated browser checkout flow and provider failure recovery policy",
     "Exact-head protected CI and canonical acceptance; draft not ready"
-  ]
+  ],
+  "verified_registration_draw_bridge": {
+    "status": "PARTIAL_CHAIN_VERIFIED",
+    "real_database_tests": 15,
+    "checks": [
+      "Actual verification API marks registration verified and issues signed chat cookie",
+      "Verified but unpaid rejected",
+      "Raw registration id cookie rejected even after payment fixture exists",
+      "Tampered signed cookie rejected",
+      "Valid issued cookie plus same-live bound product paid order fixture accepts and records verified submission id"
+    ],
+    "isolation": "Synthetic PostgreSQL only; email enqueue and rate limiter mocked; real verification domain, cryptography and draw API",
+    "limitations": [
+      "Paid order/transaction are seeded, not produced by real checkout/provider/webhook",
+      "Full checkout chain remains a merge blocker"
+    ],
+    "eslint": "PASS",
+    "tsc": "PASS"
+  }
 }

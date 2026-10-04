@@ -4,10 +4,15 @@ import { getDb } from "@/lib/db";
 import * as dbModule from "@/lib/db";
 import { consumeCheckoutVoucherClaim, VoucherClaimConflictError } from "@/lib/checkout-voucher-claim";
 import { resolveEligibleVoucherClaim, LiveVoucherAlreadyUsedError } from "@/lib/live-interaction";
+import { createFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
+import { FORM_SUBMISSION_CHAT_SESSION_COOKIE } from "@/lib/form-submission-chat-session";
 import { hashLiveViewerToken, LIVE_VIEWER_SESSION_COOKIE } from "@/lib/live-quota-admission";
 
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+// 只驗證註冊身分與資料庫狀態，不排程或寄送郵件。
+vi.mock("@/lib/email-delivery", () => ({ ensureRegistrationConfirmationDelivery: vi.fn(), ensureLiveReminderDelivery: vi.fn() }));
 import { POST } from "./route";
+import { POST as verifyRegistration } from "../form-submissions/verify/route";
 
 const vendors: string[] = [];
 beforeEach(() => vi.stubEnv("CSRF_SECRET", "disposable-interaction-database-secret-over-thirty-two-bytes"));
@@ -32,6 +37,38 @@ async function fixture() {
 }
 
 describe("advanced interactions isolated PostgreSQL", () => {
+  it("uses the actual verification-issued signed cookie for paid draw identity", async () => {
+    const { db, run, tokens } = await fixture();
+    const live = await db.live.findUniqueOrThrow({ where: { id: run.liveId } });
+    const expiresAt = new Date(Date.now() + 600_000);
+    const submission = await db.formSubmission.create({ data: { formId: live.formId!, liveId: live.id, name: "Synthetic buyer", email: `${randomUUID()}@example.test`, verificationExpiresAt: expiresAt } });
+    const form = new FormData();
+    form.set("token", createFormSubmissionVerificationToken({ submissionId: submission.id, expiresAt, version: submission.verificationVersion }));
+    const verified = await verifyRegistration(new Request("https://app.example.test/api/form-submissions/verify", { method: "POST", headers: { origin: "https://app.example.test" }, body: form }));
+    expect(verified.status).toBe(303);
+    const cookie = verified.cookies.get(FORM_SUBMISSION_CHAT_SESSION_COOKIE);
+    expect(cookie?.value).toBeTruthy();
+    expect((await db.formSubmission.findUniqueOrThrow({ where: { id: submission.id } })).verificationStatus).toBe("VERIFIED");
+    await db.liveInteractionRun.update({ where: { id: run.id }, data: { eventType: "lucky_draw", configuration: { kind: "lucky_draw", durationSec: 60, eligibility: "purchased", slogan: "entry" } } });
+    const enter = (identityCookie: string) => POST(new Request("https://app.example.test/api/live-interactions", { method: "POST", headers: { origin: "https://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web", cookie: `${LIVE_VIEWER_SESSION_COOKIE}=${tokens[0]}; ${identityCookie}` }, body: JSON.stringify({ action: "respond", vendorId: run.vendorId, liveId: run.liveId, runId: run.id, value: "entry" }) }));
+    const identity = `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${cookie!.value}`;
+    expect((await enter(identity)).status).toBe(403);
+    const product = await db.product.create({ data: { vendorId: run.vendorId, name: "Purchased product", slug: randomUUID(), priceCents: 1000 } });
+    await db.liveProduct.create({ data: { vendorId: run.vendorId, liveId: run.liveId, productId: product.id } });
+    // 此處種入合成已付款紀錄；不宣稱已覆蓋 checkout/provider/webhook 全鏈。
+    const payment = await db.paymentTransaction.create({ data: { vendorId: run.vendorId, providerName: "demo", status: "paid", grossAmountCents: 1000, netAmountCents: 1000, metadata: { formSubmissionId: submission.id } } });
+    await db.commerceOrder.create({ data: {
+      vendorId: run.vendorId, orderNumber: randomUUID(), checkoutIdempotencyKey: randomUUID(), checkoutIdentityHash: randomBytes(32).toString("base64url"),
+      primaryPaymentTransactionId: payment.id, status: "paid", paidAt: new Date(), paidAmountCents: 1000, subtotalAmountCents: 1000, totalAmountCents: 1000,
+      buyerEncryptedEnvelope: "synthetic", buyerMaskedName: "Fixture", buyerMaskedEmail: "fixture@example.test",
+      items: { create: { productId: product.id, lineIndex: 0, productName: product.name, productSlug: product.slug, commerceDomain: "merchant", fulfillmentType: "physical", unitPriceCents: 1000, quantity: 1, lineTotalCents: 1000, nonSensitiveSnapshot: {} } },
+    } });
+    expect((await enter(`celebratedeal_form_submission=${submission.id}`)).status).toBe(403);
+    expect((await enter(`${identity}tampered`)).status).toBe(403);
+    expect((await enter(identity)).status).toBe(200);
+    expect(await db.liveInteractionResponse.findFirst({ where: { runId: run.id }, select: { formSubmissionId: true } })).toEqual({ formSubmissionId: submission.id });
+  });
+
   it("allows repurchase only after the consumed voucher order is confirmed paid", async () => {
     const { db, run, tokens, respond } = await fixture();
     const response = await respond(tokens[0]!);
