@@ -447,7 +447,7 @@ export function CommerceCheckoutForm({
       }
 
       admission.current = null;
-      clearPersistedCheckoutIdentity();
+      // 沒有付款跳轉不代表交易已完成；保留原訂單，供重新整理與重送恢復。
       setPhase("success");
       setMessage(`訂單 ${checkout.orderNumber} 已建立；目前付款服務尚未要求進一步操作。`);
     } catch {

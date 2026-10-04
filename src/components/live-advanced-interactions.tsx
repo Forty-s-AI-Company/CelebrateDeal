@@ -390,7 +390,8 @@ function ActiveLiveAdvancedInteractions({
 }
 
 /** 入場失效時卸載互動；跨租戶或直播時重新建立所有參與狀態。 */
-export function LiveAdvancedInteractions(props: Parameters<typeof ActiveLiveAdvancedInteractions>[0]) {
+export function LiveAdvancedInteractions(props: Parameters<typeof ActiveLiveAdvancedInteractions>[0] & { obscured?: boolean }) {
   if (!props.enabled) return null;
-  return <ActiveLiveAdvancedInteractions key={`${props.vendorId}:${props.liveId}`} {...props} />;
+  // 商品／報名面板及結帳優先取得操作空間；保留互動狀態，避免遮住購買按鈕。
+  return <div key={`${props.vendorId}:${props.liveId}`} hidden={props.obscured}><ActiveLiveAdvancedInteractions {...props} /></div>;
 }

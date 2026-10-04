@@ -117,5 +117,8 @@ describe("pending checkout recovery", () => {
       .map(([, init]) => JSON.parse(init.body as string) as { idempotencyKey: string });
     expect(checkoutBodies).toHaveLength(2);
     expect(checkoutBodies.map((body) => body.idempotencyKey)).toEqual([key, key]);
+    expect(container.textContent).toContain("訂單 CD-1 已建立");
+    expect(readCheckoutIdempotencyKey(window.sessionStorage, "vendor-1", "product-1")).toBe(key);
+    expect(window.location.search).toContain("resume=1");
   });
 });

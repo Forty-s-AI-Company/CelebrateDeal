@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { canUseLiveAdvancedInteractions, LiveAdvancedInteractions } from "./live-advanced-interactions";
 
 describe("advanced interaction admission", () => {
+  it("hides floating controls when another panel owns interaction space without changing the state key", () => {
+    const props = { vendorId: "vendor", liveId: "live", currentSeconds: 0, events: [], enabled: true };
+    const visible = LiveAdvancedInteractions(props)!;
+    const obscured = LiveAdvancedInteractions({ ...props, obscured: true })!;
+    expect(obscured.props.hidden).toBe(true);
+    expect(obscured.key).toBe(visible.key);
+    expect(obscured.props.children).toBeTruthy();
+  });
+
   it.each([
     [true, "checking", true],
     [true, "blocked", true],

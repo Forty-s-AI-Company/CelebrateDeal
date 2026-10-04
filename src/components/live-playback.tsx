@@ -1521,6 +1521,10 @@ function useExternalNavigationIntent({
   };
 }
 
+function interactionControlsObscured(panel: PlaybackPanel, isCheckoutOverlay: boolean, navigationPending: boolean) {
+  return panel !== "chat" || isCheckoutOverlay || navigationPending;
+}
+
 export function LivePlayback({ live }: { live: LivePageData }) {
   const router = useRouter(); const pathname = usePathname();
   const isCheckoutOverlay = isInternalCheckoutPath(pathname);
@@ -1718,6 +1722,7 @@ export function LivePlayback({ live }: { live: LivePageData }) {
         currentSeconds={currentSeconds}
         events={live.interactionEvents}
         onCheckout={externalNavigation.trackProduct}
+        obscured={interactionControlsObscured(panel, isCheckoutOverlay, externalNavigation.isPending)}
         enabled={canUseLiveAdvancedInteractions(isPlayableRuntime, admissionStatus, live.admissionRequired)}
       />
       <DirectEntryAttributionReset enabled={isPlayableRuntime} />

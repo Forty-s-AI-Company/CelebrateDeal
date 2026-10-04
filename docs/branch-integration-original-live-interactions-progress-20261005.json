@@ -414,5 +414,40 @@
       "Provider failure recovery policy",
       "Diagnose previous CI Release browser gates failure, then new exact-head CI and canonical acceptance"
     ]
+  },
+  "full_browser_checkpoint": {
+    "status": "LOCAL_BROWSER_PASS_REMOTE_ACCEPTANCE_PENDING",
+    "fixes": [
+      "Seed a complete publishable live fixture",
+      "Hide interaction controls while checkout/product panels obscure playback without unmounting participant state",
+      "Retain checkout recovery identity when provider returns no redirect; pending order is not payment completion"
+    ],
+    "validation": {
+      "eslint": "PASS",
+      "typescript": "PASS",
+      "targeted_tests": {
+        "passed": 6,
+        "failed": 0,
+        "receipt": ".ai-team/tmp/checkout-retain-pending-results.json"
+      },
+      "browser": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "receipt": ".ai-team/tmp/wp7-live-results.json",
+        "started_at": "2026-10-04T22:15:35.891Z"
+      }
+    },
+    "browser_scope": [
+      "Desktop and mobile actual admission, sale claim, discounted order creation and refreshed original-order recovery",
+      "One-stop registration verification and mobile purchase",
+      "Direct/refreshed checkout does not invent playback"
+    ],
+    "remaining": [
+      "Provider failure recovery policy",
+      "Independent review of pending-order retention",
+      "Exact-head CI and canonical acceptance"
+    ],
+    "production_operations": false
   }
 }
