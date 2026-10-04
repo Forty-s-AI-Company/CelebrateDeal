@@ -1,5 +1,5 @@
 {
-  "state": "LOCAL_VALIDATED_PENDING_PARENT_PR360_AND_PROTECTED_CI",
+  "state": "LOCAL_VALIDATED_PARENT_MERGED_PENDING_PROTECTED_CI",
   "dependency_pr": 360,
   "scope": "Restore missing registration and personalized welcome UI while preserving current auth and tenant safeguards",
   "recovered_files": [
@@ -21,8 +21,6 @@
     }
   ],
   "remaining": [
-    "Wait PR360 protected merge",
-    "Refresh original-content reconciliation and acceptance handoff",
     "Publish exact-scope PR with immutable manifest",
     "Exact-head CI and canonical acceptance before protected merge"
   ],
@@ -153,5 +151,6 @@
     "src/components/workspace-preparing-progress.tsx": "83e374c7441641fe2cfb9821f7c8eb34e3fbec60593ad768c1f17da9e3c3a47d",
     "tests/e2e/registration-onboarding.spec.ts": "8264c5341b3847de00bd230fbdf644616a0b19c5dff93936e07b0e50526c2532"
   },
-  "candidate_hash_format": "SHA256 of local bytes including CRLF"
+  "candidate_hash_format": "SHA256 of local bytes including CRLF",
+  "dependency_merge": "11541b6ac097ea957f2152710e7d9f405b4bfccb"
 }
