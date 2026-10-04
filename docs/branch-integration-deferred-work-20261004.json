@@ -1883,7 +1883,7 @@
       "refs": [
         "refs/heads/codex/staging-provider-binding-attestation-20260925"
       ],
-      "status": "PRESERVED_FUTURE_WORK",
+      "status": "CONTENT_IN_MASTER",
       "work_package": "staging",
       "remaining_paths_at_inventory": [
         ".github/workflows/staging-provider-binding-attestation.yml",
@@ -1891,7 +1891,8 @@
         "scripts/staging-provider-binding-attestation.mjs",
         "scripts/staging-provider-binding-attestation.test.mjs"
       ],
-      "not_merged_reason": "需要在現行主線上完成內容核對與獨立可驗收段落；舊分支與原始變更完整保留。"
+      "not_merged_reason": "Four source delta blobs delivered exactly via protected PR356; original parent already an ancestor of master. Original source SHA/ref retained.",
+      "evidence": "branch-integration-provider-binding-recovery-20261004.json"
     },
     {
       "head": "937f796d25d0e27db753b7786ea77ea3e773a686",
@@ -6133,5 +6134,5 @@
     "status": "PRESERVED_NOT_CHECKPOINTED",
     "next_action": "按 AI Team、Funnel／登入、非 Production 驗證工具分開對照最新 master，精確 staging；禁止覆寫或清理未知變更。"
   },
-  "remaining_unaccepted_heads": 28
+  "remaining_unaccepted_heads": 27
 }

@@ -1,6 +1,6 @@
 # 分支整合：未來處理與接手報告
 
-日期：2026-10-04（Asia/Taipei）。狀態：**四個交付段落完成 / #351、#352、#354、#355 已通過新 CI、canonical gate 並合入 master；#353 的兩檔內容已由 #352 完整交付。原 42 個歷史 head 已有 14 個完成替代核對，剩餘 28 個與原有未提交工作持續整合，整體 Goal 尚未全部完成**。
+日期：2026-10-04（Asia/Taipei）。狀態：**五個交付段落完成 / #351、#352、#354、#355、#356 已通過新 CI、canonical gate 並合入 master；#353 的兩檔內容已由 #352 完整交付。原 42 個歷史 head 已有 15 個完成交付或替代核對，剩餘 27 個與原有未提交工作持續整合，整體 Goal 尚未全部完成**。
 
 ## 本輪已完成的段落
 
@@ -167,3 +167,10 @@ PR #355 的 head `24d9c7c76d6273329e2aff0b27ae9299da04d364` 已於 `2026-10-04T1
 必須先修正：舊版用單筆訂單的 buyer support grant 換發同 Email 的整個學員 session，缺少信箱所有權驗證；整合版本應由購買完成頁導向登入，透過寄至信箱的一次性安全連結取得帳戶權限。另移除非 production action 直接回傳有效 mockLink 的分支，測試改用隔離的合成郵件收件器；token/session 補齊未來簽發時間及正值期限驗證。這些是來源靜態審查結果，不冒稱主線已暴露此入口，亦未操作真實付款或測試他人資料。
 
 第一個完整交付段落包括信箱驗證登入、店家與學員範圍 dashboard、既有交付快照、諮詢／行事曆、優惠券及發票；新增 token model 必須以目前 migration tree 延伸，通過 disposable PostgreSQL 一次性 consume 併發測試、跨帳戶／跨店家測試及完整本機瀏覽器旅程，再經 Critical 獨立審查與新 head CI。原生課程單元／進度／證書、社群及多語／PWA 相依另外整合，不能先放入會導向不存在路由的連結。
+
+
+## #356 已合併與下一段實作
+
+#356 已於 `2026-10-04T15:41:06Z` 透過 protected squash merge 合入 `0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2`。PR CI `37212354565` 與 push CI `37212350358` 成功，canonical gate READY；master tree 與驗收 head 完全相同。來源 `860560079757` 的 parent 在 master，自身四檔 blob 全部相同，歷史待核對 28→27。未操作真實 R2。
+
+學員入口已在 `codex/recover-student-portal-20261004` 開始恢復信箱登入與 dashboard；隔離副本的 16 個 auth/action 測試通過，實際整合初跑 31/32，尚需調整原生課程路由的階段契約、補 CSRF voucher POST、DB／browser／獨立 review 與 CI。這些是進行中狀態，不代表 #210 完成交付。

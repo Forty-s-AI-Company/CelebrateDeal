@@ -9,6 +9,7 @@
 - #353：兩份產品檔案已透過 #352 完整交付，原 PR 關閉保留追溯。
 - #354：已於 `2026-10-04T14:26:55Z` 合入 master `42bce600e9c6b88003bd3b2a924d0ea96c70aee8`，交付 LINE 圖文選單草稿。PR CI `37207666809`、push CI `37207662788` 全數通過，canonical gate READY、0 blockers；master tree 與已驗收 head `23fcae98` 完全一致。
 - #355：已於 `2026-10-04T15:14:26Z` 合入 master `c071b2d6`，補回表單同步送出鎖、公開表單指定場次及一頁式網站側欄入口；PR CI `37210769933`、push CI `37210766776` 全數成功，canonical gate READY，master tree 與驗收 head `24d9c7c7` 相同。
+- #356：已於 `2026-10-04T15:41:06Z` 合入 master `0f6cdbfa`，交付受保護、手動執行的 R2 綁定 attestation 四檔；兩組 CI 成功，canonical gate READY，master tree 相同。來源 parent ancestry 與四個完整 blob 均核對通過；未呼叫真實 provider。
 - #210、#211：保留開啟，其餘產品功能與原有 dirty 工作尚未全部整合。
 
 ## #354 已驗證範圍
@@ -21,7 +22,7 @@ CI 原失敗為新增 migration 後歷史 runner/inventory 測試的固定清單
 
 ## 歷史分支處置與原檔保留
 
-初始待核對 42 個歷史 head，14 個已逐檔確認原意圖由 master 完整保留或替代，剩餘 28 個：Funnel 5、AI Team 2、Sandbox QA 19、staging 2。這些是來源 head 計數，不等於功能數；內容替代不冒稱原 SHA 已合入，也未刪除原分支。
+初始待核對 42 個歷史 head，15 個已逐檔確認原意圖由 master 完整保留或替代，剩餘 27 個：Funnel 5、AI Team 2、Sandbox QA 19、staging 1。這些是來源 head 計數，不等於功能數；內容替代不冒稱原 SHA 已合入，也未刪除原分支。
 
 原工作目錄 HEAD `60132971`、120 筆原 dirty 狀態及 118 個可核對檔案雜湊完整保留。與 master 比對後，44 檔內容已在主線、62 檔仍不同、12 檔主線不存在、2 筆為刪除／未雜湊。後續依三方差異逐段整合。
 
@@ -35,4 +36,4 @@ CI 原失敗為新增 migration 後歷史 runner/inventory 測試的固定清單
 
 完整來源、雜湊與逐 head 處置：`branch-integration-deferred-work-20261004.json`。未來工作與歷史操作紀錄：`branch-integration-future-work.md`。本輪未部署 Production、未操作正式 DB、未呼叫真實 LINE 或付款／退款服務。
 
-R2 綁定驗證來源 `860560079757` 的四個檔案已完整回收至 `codex/recover-staging-provider-binding-20261004`，4 個合成契約測試與 ESLint 通過，尚待下一個受保護 PR；不宣稱真實 Cloudflare 連線或權限已驗證。另 9 個 #211 library/UI 路徑完成保留新版的差異紀錄，50 個 targeted tests 通過；eac0a343 的 target_url leaf intent 已由現行主線保留，整支繼承差異仍待處理。
+R2 綁定驗證來源 `860560079757` 的四個檔案已完整回收至 `codex/recover-staging-provider-binding-20261004`，4 個合成契約測試與 ESLint 通過，已由 #356 合入 master；不宣稱真實 Cloudflare 連線或權限已驗證。另 9 個 #211 library/UI 路徑完成保留新版的差異紀錄，50 個 targeted tests 通過；eac0a343 的 target_url leaf intent 已由現行主線保留，整支繼承差異仍待處理。

@@ -4,14 +4,14 @@
 
 基準 revision：`4ed3b463`
 
-> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前 chain 已增至 82，該歷史收據不代表新 migration、Staging 或 Production 已套用。
+> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前 chain 已增至 83，該歷史收據不代表新 migration、Staging 或 Production 已套用。
 
 ## Inventory 基準
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 122 |
-| Migration directories | 82 |
+| Prisma models | 123 |
+| Migration directories | 83 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -210,3 +210,10 @@
 - `20260725230000_encrypt_payout_bank_accounts`：local envelope/backfill/tenant binding 測試通過，但沒有 key version、rotation 或 old-key recovery 契約；候選 verdict 為 `REWORK_REQUIRED`。
 - `20260725231500_harden_affiliate_commissions`：BPS CHECK、non-null source identity unique、dirty-data fail-closed、schema atomicity 與 forward recovery 在 disposable DB 通過；但 PostgreSQL 對 `sourceId IS NULL` 允許多筆，且 `status` 仍是未約束字串，候選 verdict 為 `REWORK_REQUIRED`。
 - 退款 adjustment 的負數金額是既有可追溯 accounting 行為，不能以一條「所有 commission amount 必須非負」constraint 破壞；後續 schema policy 必須區分原始佣金與 adjustment rows。
+
+
+## 學員登入 capability（2026-10-04 整合中）
+
+新增 `StudentPortalAccessToken` 及 additive migration `20261004154500_student_portal_access_tokens`。tokenHash 全域唯一、vendor FK、vendor/customer/expiry 與 vendor/purpose/expiry 索引；CHECK 限制 15 分鐘期限與 digest 格式。RLS 啟用且沒有 anon/authenticated policy，只有 server database role 讀寫。
+
+原始 checkout_redirect purpose 僅保留 enum 相容，公開 access route 只接受 magic_link，單筆訂單 grant 不可取得整個帳戶權限。Consume 必須符合 tenant、customer、purpose、issuedAt、有效期限及 consumedAt=null，透過單次 updateMany 競爭唯一成功者。此段的 DB 併發、完整 browser、獨立審查仍待驗證；不冒稱 Staging/Production 已套用。

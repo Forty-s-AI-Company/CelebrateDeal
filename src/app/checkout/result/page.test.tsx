@@ -14,6 +14,8 @@ vi.mock("@/lib/buyer-support-access", () => ({ resolveBuyerSupportGrants: mocks.
 
 import { paymentReturnOutcome } from "@/lib/payment-return-outcome";
 
+vi.mock("@/components/csrf-field", () => ({ CsrfField: () => <input type="hidden" name="_csrf" value="synthetic-csrf" /> }));
+vi.mock("@/app/actions/student-portal-actions", () => ({ enterStudentPortalFromCheckoutAction: vi.fn() }));
 import PaymentResultPage from "./page";
 
 function findElementByHref(node: ReactNode, href: string): ReactElement<{ children?: ReactNode; href?: string }> | null {
@@ -118,4 +120,9 @@ describe("payment result page", () => {
     expect(html).toContain('href="/support"');
     expect(html).not.toContain("private-marker");
   });
+});
+
+it("offers mailbox verification for paid orders without exposing a portal capability", async () => {
+  const html = renderToStaticMarkup(await PaymentResultPage({}));
+  expect(html).toContain("前往學員中心，驗證 Email"); expect(html).toContain('name="grantId"'); expect(html).not.toContain("purpose=checkout"); expect(html).not.toContain("/access?token=");
 });

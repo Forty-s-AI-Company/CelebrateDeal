@@ -7,6 +7,8 @@ import { Card } from "@/components/ui";
 import { resolveBuyerSupportGrants } from "@/lib/buyer-support-access";
 import { getDb } from "@/lib/db";
 import { paymentReturnOutcome, type PaymentReturnOutcome } from "@/lib/payment-return-outcome";
+import { CsrfField } from "@/components/csrf-field";
+import { enterStudentPortalFromCheckoutAction } from "@/app/actions/student-portal-actions";
 import { LineLoginButton } from "@/components/line-login-button";
 
 export const dynamic = "force-dynamic";
@@ -116,6 +118,12 @@ export default async function PaymentResultPage({ searchParams }: {
                   <div><dt className="text-slate-500">退款金額</dt><dd className="mt-1 font-semibold text-slate-950">{formatAmount(grant.order.refundedAmountCents, grant.order.currency)}</dd></div>
                 </dl>
                 <div className="mt-5 flex flex-wrap gap-4 border-t border-slate-200 pt-4 text-sm">
+                  {["paid", "partially_refunded", "refunded"].includes(grant.order.status) ? (
+                    <form action={enterStudentPortalFromCheckoutAction}>
+                      <CsrfField /><input type="hidden" name="grantId" value={grant.id} />
+                      <button type="submit" className="inline-flex min-h-11 items-center font-semibold text-blue-700 underline underline-offset-2">前往學員中心，驗證 Email →</button>
+                    </form>
+                  ) : null}
                   <LineLoginButton request={{ mode: "buyer", grantId: grant.id, redirectPath: "/checkout/result" }}>🟢 接收 LINE 開播提醒與電子票券</LineLoginButton>
                   <Link href={`/support/orders/${encodeURIComponent(grant.id)}`} className="inline-flex min-h-11 items-center font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-800">
                     查看商品與履約進度 →

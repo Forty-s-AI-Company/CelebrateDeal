@@ -19,7 +19,7 @@
     }
   ],
   "external_operations": false,
-  "status": "RECOVERED_PENDING_PROTECTED_PR",
+  "status": "CONTENT_IN_MASTER",
   "route": {
     "status": "planned",
     "execution": "recommendation_only",
@@ -161,5 +161,15 @@
     "No real Cloudflare credential, resource isolation or permissions verified; named bucket and HEAD success alone cannot prove credential scope.",
     "Source-only synthetic test pass is not deployed-runtime or provider attestation."
   ],
-  "next": "Merge PR355 after its final-head CI, update this branch with protected master, then publish these four recovered files and integration evidence through a new protected PR."
+  "next": "Real provider binding remains unverified; no external provider workflow executed.",
+  "pr": 356,
+  "accepted_head": "936e71248d550b31812eb4dc08d9b87d5c42ba64",
+  "merge_commit": "0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2",
+  "master_tree": "41c632cbd059558e7d29b9bd4bc774d56d1cac26",
+  "ci_run": 37212354565,
+  "push_ci_run": 37212350358,
+  "canonical_gate": "READY",
+  "source_parent": "472ad3ece2dcba39b8b066cd60d6571867cd346f",
+  "source_parent_in_master": true,
+  "source_own_delta_exactly_four_files": true
 }
