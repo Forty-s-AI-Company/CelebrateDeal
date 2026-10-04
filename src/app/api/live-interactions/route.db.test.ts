@@ -12,6 +12,8 @@ vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }))
 // 只驗證註冊身分與資料庫狀態，不排程或寄送郵件。
 vi.mock("@/lib/email-delivery", () => ({ ensureRegistrationConfirmationDelivery: vi.fn(), ensureLiveReminderDelivery: vi.fn() }));
 import { POST } from "./route";
+import { POST as checkout } from "../payments/checkout/route";
+import { issueCheckoutAdmission, CHECKOUT_ADMISSION_COOKIE } from "@/lib/checkout-admission";
 import { POST as verifyRegistration } from "../form-submissions/verify/route";
 
 const vendors: string[] = [];
@@ -38,6 +40,8 @@ async function fixture() {
 
 describe("advanced interactions isolated PostgreSQL", () => {
   it("uses the actual verification-issued signed cookie for paid draw identity", async () => {
+    vi.stubEnv("PAYMENT_PROVIDER", "demo");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://127.0.0.1:31027");
     const { db, run, tokens } = await fixture();
     const live = await db.live.findUniqueOrThrow({ where: { id: run.liveId } });
     const expiresAt = new Date(Date.now() + 600_000);
@@ -53,16 +57,26 @@ describe("advanced interactions isolated PostgreSQL", () => {
     const enter = (identityCookie: string) => POST(new Request("https://app.example.test/api/live-interactions", { method: "POST", headers: { origin: "https://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web", cookie: `${LIVE_VIEWER_SESSION_COOKIE}=${tokens[0]}; ${identityCookie}` }, body: JSON.stringify({ action: "respond", vendorId: run.vendorId, liveId: run.liveId, runId: run.id, value: "entry" }) }));
     const identity = `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${cookie!.value}`;
     expect((await enter(identity)).status).toBe(403);
-    const product = await db.product.create({ data: { vendorId: run.vendorId, name: "Purchased product", slug: randomUUID(), priceCents: 1000 } });
+    const product = await db.product.create({ data: { vendorId: run.vendorId, name: "Purchased product", slug: randomUUID(), priceCents: 1000, inventory: 5 } });
     await db.liveProduct.create({ data: { vendorId: run.vendorId, liveId: run.liveId, productId: product.id } });
-    // 此處種入合成已付款紀錄；不宣稱已覆蓋 checkout/provider/webhook 全鏈。
-    const payment = await db.paymentTransaction.create({ data: { vendorId: run.vendorId, providerName: "demo", status: "paid", grossAmountCents: 1000, netAmountCents: 1000, metadata: { formSubmissionId: submission.id } } });
-    await db.commerceOrder.create({ data: {
-      vendorId: run.vendorId, orderNumber: randomUUID(), checkoutIdempotencyKey: randomUUID(), checkoutIdentityHash: randomBytes(32).toString("base64url"),
-      primaryPaymentTransactionId: payment.id, status: "paid", paidAt: new Date(), paidAmountCents: 1000, subtotalAmountCents: 1000, totalAmountCents: 1000,
-      buyerEncryptedEnvelope: "synthetic", buyerMaskedName: "Fixture", buyerMaskedEmail: "fixture@example.test",
-      items: { create: { productId: product.id, lineIndex: 0, productName: product.name, productSlug: product.slug, commerceDomain: "merchant", fulfillmentType: "physical", unitPriceCents: 1000, quantity: 1, lineTotalCents: 1000, nonSensitiveSnapshot: {} } },
-    } });
+    const admission = issueCheckoutAdmission({ vendorId: run.vendorId, productId: product.id, productRevision: product.revision });
+    const checkoutResponse = await checkout(new Request("https://app.example.test/api/payments/checkout", {
+      method: "POST", headers: { origin: "https://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web", cookie: `${identity}; ${CHECKOUT_ADMISSION_COOKIE}=${admission.sessionToken}` },
+      body: JSON.stringify({ vendorId: run.vendorId, productId: product.id, idempotencyKey: admission.idempotencyKey, admissionToken: admission.admissionToken,
+        buyer: { name: "Synthetic buyer", email: "buyer@example.test", phone: "0912345678" },
+        shipping: { recipientName: "Synthetic buyer", phone: "0912345678", countryCode: "TW", postalCode: "100", administrativeArea: "台北市", locality: "中正區", addressLine1: "合成測試路 1 號" },
+      }),
+    }));
+    expect(checkoutResponse.status).toBe(200);
+    const checkoutBody = await checkoutResponse.json();
+    expect(checkoutBody.amountCents).toBe(1000);
+    const payment = await db.paymentTransaction.findUniqueOrThrow({ where: { id: checkoutBody.transactionId } });
+    expect(payment.metadata).toMatchObject({ formSubmissionId: submission.id, sourceLiveId: run.liveId });
+    expect(checkoutResponse.cookies.has(FORM_SUBMISSION_CHAT_SESSION_COOKIE)).toBe(false);
+    expect((await enter(identity)).status).toBe(403);
+    // 真實 checkout/reservation/order 已建立；paid transition 暫用合成狀態，後續補 webhook。
+    await db.paymentTransaction.update({ where: { id: payment.id }, data: { status: "paid" } });
+    await db.commerceOrder.updateMany({ where: { primaryPaymentTransactionId: payment.id }, data: { status: "paid", paidAt: new Date(), paidAmountCents: 1000 } });
     expect((await enter(`celebratedeal_form_submission=${submission.id}`)).status).toBe(403);
     expect((await enter(`${identity}tampered`)).status).toBe(403);
     expect((await enter(identity)).status).toBe(200);

@@ -190,18 +190,21 @@
       "Verified but unpaid rejected",
       "Raw registration id cookie rejected even after payment fixture exists",
       "Tampered signed cookie rejected",
-      "Valid issued cookie plus same-live bound product paid order fixture accepts and records verified submission id"
+      "Valid issued cookie plus same-live bound product paid order fixture accepts and records verified submission id",
+      "Actual checkout API with real signed admission, demo local provider, reservation/order persistence",
+      "Checkout stores verified registration/live metadata and preserves signed session",
+      "Pending checkout does not qualify for purchased draw"
     ],
-    "isolation": "Synthetic PostgreSQL only; email enqueue and rate limiter mocked; real verification domain, cryptography and draw API",
+    "isolation": "Synthetic PostgreSQL; real verification, cryptography, checkout, reservation and order services; local demo provider; email enqueue and rate limiter mocked",
     "limitations": [
-      "Paid order/transaction are seeded, not produced by real checkout/provider/webhook",
-      "Full checkout chain remains a merge blocker"
+      "Paid status still advanced directly in synthetic database; real payment webhook transition pending",
+      "Full browser workflow pending"
     ],
     "eslint": "PASS",
     "tsc": "PASS"
   },
   "checkout_registration_identity": {
-    "state": "IMPLEMENTED_PENDING_REVIEW",
+    "state": "INDEPENDENT_REVIEW_CLOSED_WITH_FULL_WEBHOOK_BROWSER_CHAIN_PENDING",
     "root_cause": "Checkout used short-lived consumed raw registration ID cookie while draw used persistent verified signed session; verified sessions could lose payment association on subsequent checkout.",
     "fix": "Checkout verifies signed chat session, then resolves same-vendor VERIFIED submission/live. No raw-ID fallback. Signed session survives checkout; old raw attribution cookie still cleared.",
     "route_tests": 59,
