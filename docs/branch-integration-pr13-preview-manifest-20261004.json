@@ -34,12 +34,22 @@
     "apply_check_method": "repo-root with explicit isolated directory; all expected patches checked; no skipped patches",
     "checked_files": 2,
     "apply_check_output": "Checking patch .ai-team/tmp/pr13-preview-patch-check-20261004/src/lib/live-preview.ts...\nChecking patch .ai-team/tmp/pr13-preview-patch-check-20261004/src/lib/live-preview.test.ts...\n",
-    "new_head_ci": "IN_PROGRESS",
-    "browser_e2e": "NOT_RUN"
+    "new_head_ci": "PASS",
+    "browser_e2e": "NOT_RUN",
+    "new_head_ci_run": 37202721735
   },
-  "publication": "PUSHED_PR_OPEN",
+  "publication": "DELIVERED_VIA_PR352",
   "production_operations": "NOT_PERFORMED",
   "published_pr": 353,
   "published_head": "49e884ff6870793412534e1cb22fb19cfea76a4e",
-  "published_url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/353"
+  "published_url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/353",
+  "delivery_merge": {
+    "headRefOid": "e4d726fd4fefdda6c6c142349d5dce261d8d753e",
+    "mergeCommit": {
+      "oid": "fc28e1b8dcdba9ca3926f11d27153de048f597da"
+    },
+    "mergedAt": "2026-10-04T13:03:37Z",
+    "state": "MERGED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/352"
+  }
 }

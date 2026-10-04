@@ -1,0 +1,48 @@
+{
+  "master": "fc28e1b8dcdba9ca3926f11d27153de048f597da",
+  "head": "d8c85fbbb39e1a72668fa49df171df49e5ef45d1",
+  "refs": [
+    "refs/heads/ai-team/isolated-write-smoke-20260712-0405",
+    "refs/remotes/origin/ai-team/isolated-write-smoke-20260712-0405"
+  ],
+  "disposition": "CONTENT_SUPERSEDED",
+  "remaining_paths": [
+    ".github/workflows/ci.yml",
+    "docs/ai-team-smoke/isolated-write-smoke.md",
+    "package-lock.json"
+  ],
+  "source_sha256": {
+    ".github/workflows/ci.yml": "c194a5af6b6544ce0462c0f57192e285d5c72dccaf14674e67d3c49dd3ee9fe2",
+    "docs/ai-team-smoke/isolated-write-smoke.md": "1e46e14e6f51d1158d93be626c7215c1d412f52caff0a66ed20f2f011e782cf8",
+    "package-lock.json": "3f8a36a4c3191b109aba737aff3cac003d2e8f3c50e66bd832398b21fc5c1575"
+  },
+  "historical_doc": "# AI Team Isolated Write Smoke\n\nThis file is generated only inside a disposable Git worktree.\n\n- Purpose: validate guarded add, commit, push, and pull request gates.\n- Scope: documentation-only smoke evidence.\n- Production deploy: prohibited.\n- Real payment: prohibited.\n- Destructive migration: prohibited.\n",
+  "dependency_differences": {
+    "dependencies": {
+      "next": {
+        "source": "16.2.10",
+        "master": "16.3.8"
+      }
+    },
+    "devDependencies": {
+      "eslint-config-next": {
+        "source": "16.2.10",
+        "master": "16.3.5"
+      },
+      "vitest": {
+        "source": "^4.1.10",
+        "master": "^4.1.11"
+      }
+    }
+  },
+  "behavior_review": [
+    "Documentation-only worktree smoke has no application feature. Its purpose is guarded add/commit/push/protected PR delivery. The source document remains recoverable at the original branch; copying it as new smoke evidence would be misleading.",
+    "Current CI preserves every original required behavior with coverage and broader browser gates. Original root dependencies are retained, with Next, eslint-config-next and Vitest version advances; old lockfile must not roll these back.",
+    "Protected expected-head squash deliveries #351 and #352 provide actual successful end-to-end publication evidence for this task. No force push, direct master push, Production deploy or destructive migration was performed."
+  ],
+  "delivery_evidence": [
+    "branch-integration-pr351-acceptance-20261004.json",
+    "branch-integration-pr352-acceptance-20261004.json",
+    "branch-integration-publication-20261004.json"
+  ]
+}

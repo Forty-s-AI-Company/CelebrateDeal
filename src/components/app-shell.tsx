@@ -14,6 +14,7 @@ const navGroups = [
       { href: "/projects", label: "銷售專案", icon: ClipboardList, managerOnly: true },
       { href: "/lives", label: "直播間", icon: Radio, managerOnly: true, feature: "live_webinar" },
       { href: "/videos", label: "影片", icon: PlaySquare, managerOnly: true, feature: "live_webinar" },
+      { href: "/landing-pages", label: "一頁式網站", icon: Palette, managerOnly: true, feature: "funnel_builder" },
       { href: "/products", label: "商品", icon: Boxes, managerOnly: true },
       { href: "/orders", label: "訂單與履約", icon: PackageCheck, managerOnly: true },
       { href: "/customers", label: "學員 CRM", icon: UsersRound, managerOnly: true },

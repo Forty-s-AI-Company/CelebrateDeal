@@ -1,0 +1,18 @@
+{
+  "source": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "master": "fc28e1b8dcdba9ca3926f11d27153de048f597da",
+  "migration": {
+    "old_path": "prisma/migrations/20260917093000_inventory_reservation_items_snapshot/migration.sql",
+    "master_path": "prisma/migrations/20260922120000_inventory_reservation_items_snapshot/migration.sql",
+    "exact_bytes_equal": true,
+    "sha256": "2959fa23a1d662ae04bab91d282aa303904529431357621d815dc5bbdfc4b703",
+    "decision": "CONTENT_IN_MASTER_DO_NOT_APPLY_DUPLICATE_MIGRATION"
+  },
+  "landing_page_layout": {
+    "source_path": "src/app/(app)/landing-pages/layout.tsx",
+    "source_intent": "Import @puckeditor/core/puck.css for editor routes",
+    "master_status": "CONTENT_SUPERSEDED_BY_PUCK_RUNTIME_STYLE_INJECTION",
+    "evidence": "Installed @puckeditor/core dist/index.js useInjectUiCss injects defaultUiStyles unless static Puck CSS detected; Puck calls useInjectUiCss. Runtime explicitly documents CSS imports optional since 0.22. No extra CSS import required. Prior missing-import assessment corrected."
+  },
+  "whole_pr_status": "IN_PROGRESS"
+}

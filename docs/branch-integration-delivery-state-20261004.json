@@ -1,47 +1,29 @@
 {
   "initial_inventory_base": "bdbae2f53491afd518b97ee597e117d6a585b55c",
-  "master": "40db1781aa9d2bf17013c328a390dfecef7eee11",
+  "master": "42bce600e9c6b88003bd3b2a924d0ea96c70aee8",
   "remote_head_count": 282,
   "open_prs": [
-    {
-      "baseRefName": "master",
-      "headRefName": "codex/recover-live-preview-20261004",
-      "headRefOid": "49e884ff6870793412534e1cb22fb19cfea76a4e",
-      "isDraft": false,
-      "mergeStateStatus": "UNKNOWN",
-      "number": 353,
-      "title": "fix(live-preview): deduplicate selected products and normalize labels"
-    },
-    {
-      "baseRefName": "master",
-      "headRefName": "codex/recover-funnel-tests-20261004",
-      "headRefOid": "6ddd9d60f6683f5923c03995876f0079ca8f8110",
-      "isDraft": false,
-      "mergeStateStatus": "UNKNOWN",
-      "number": 352,
-      "title": "test(funnel): recover commerce, webinar and countdown regressions"
-    },
     {
       "baseRefName": "codex/one-stop-webinar-flow",
       "headRefName": "codex/funnel-goal3-only",
       "headRefOid": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
       "isDraft": false,
-      "mergeStateStatus": "DIRTY",
       "number": 211,
-      "title": "feat(funnel): deliver full editor and trusted commerce checkout"
+      "title": "feat(funnel): deliver full editor and trusted commerce checkout",
+      "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/211"
     },
     {
       "baseRefName": "master",
       "headRefName": "codex/one-stop-webinar-flow",
       "headRefOid": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
       "isDraft": false,
-      "mergeStateStatus": "UNKNOWN",
       "number": 210,
-      "title": "feat(funnel): complete full-lifecycle webinar sales funnel with evergreen, crm, student portal, and line rich menu"
+      "title": "feat(funnel): complete full-lifecycle webinar sales funnel with evergreen, crm, student portal, and line rich menu",
+      "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/210"
     }
   ],
   "added_branches": {
-    "codex/recover-funnel-tests-20261004": "6ddd9d60f6683f5923c03995876f0079ca8f8110",
+    "codex/recover-funnel-tests-20261004": "e4d726fd4fefdda6c6c142349d5dce261d8d753e",
     "codex/recover-live-preview-20261004": "49e884ff6870793412534e1cb22fb19cfea76a4e"
   },
   "changed_branches": {
@@ -51,7 +33,7 @@
     },
     "master": {
       "before": "bdbae2f53491afd518b97ee597e117d6a585b55c",
-      "after": "40db1781aa9d2bf17013c328a390dfecef7eee11"
+      "after": "fc28e1b8dcdba9ca3926f11d27153de048f597da"
     }
   },
   "removed_branches": [],
@@ -229,7 +211,7 @@
     "codex/payuni-webhook-transaction-timeout": "259083f16449e379d24e9dae24533b25b02292a5",
     "codex/prelaunch-engineering-20260929": "ff9f446751d37be64bf2cf423e2e7c055135e0ce",
     "codex/provider-presence-20260925": "7026b476f01cb5306cd3efcc7a017447ab33f24e",
-    "codex/recover-funnel-tests-20261004": "6ddd9d60f6683f5923c03995876f0079ca8f8110",
+    "codex/recover-funnel-tests-20261004": "e4d726fd4fefdda6c6c142349d5dce261d8d753e",
     "codex/recover-live-preview-20261004": "49e884ff6870793412534e1cb22fb19cfea76a4e",
     "codex/sandbox-order-readonly-20260928": "ece125426372582080e9df3ef83da8c5f049da8c",
     "codex/sandbox-payment-only-20260928": "35a10e40e76dd6a590e8dc891dff647e74f778be",
@@ -337,7 +319,10 @@
     "codex/wp4-source-bound-checkout": "23fdee6d3027ffaa8fbb0bfb947517c8c4b6b980",
     "codex/wp4-subscription-runner": "93b4db2c49b63f78b907c3bc2547f1229440d3c3",
     "codex/wp4-whole-twd-refund": "0d58cefd68ec6f16a3b922e7bb5b337549345e18",
-    "master": "40db1781aa9d2bf17013c328a390dfecef7eee11"
+    "master": "fc28e1b8dcdba9ca3926f11d27153de048f597da"
   },
-  "scope_note": "Current metadata only; historical content dispositions remain in the initial audit and subsequent evidence."
+  "scope_note": "Current metadata only; historical content dispositions remain in the initial audit and subsequent evidence.",
+  "goal_status": "IN_PROGRESS",
+  "remaining_historical_heads": 28,
+  "latest_merged_pr": 354
 }

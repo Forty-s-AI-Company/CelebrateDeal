@@ -1,5 +1,5 @@
 {
-  "master": "40db1781aa9d2bf17013c328a390dfecef7eee11",
+  "master": "42bce600e9c6b88003bd3b2a924d0ea96c70aee8",
   "pr351": {
     "headRefOid": "ff9f446751d37be64bf2cf423e2e7c055135e0ce",
     "mergeCommit": {
@@ -11,7 +11,59 @@
   },
   "pr351_ci_run": 37200997791,
   "pr351_gate": "READY",
-  "remaining_delivery": "PR352 includes the original PR353 commits; five product files plus inventory/future-work documentation.",
-  "historical_deferred_heads": 42,
-  "production_operations": "NOT_PERFORMED"
+  "remaining_delivery": "PR210/211 remaining functionality, 28 historical heads, and original dirty work remain in progress; latest inventory and future-work report are local pending later protected documentation publication.",
+  "historical_deferred_heads": 28,
+  "production_operations": "NOT_PERFORMED",
+  "pr352": {
+    "headRefOid": "e4d726fd4fefdda6c6c142349d5dce261d8d753e",
+    "mergeCommit": {
+      "oid": "fc28e1b8dcdba9ca3926f11d27153de048f597da"
+    },
+    "mergedAt": "2026-10-04T13:03:37Z",
+    "state": "MERGED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/352"
+  },
+  "pr352_ci_run": 37202721735,
+  "pr352_gate": "READY",
+  "pr353_disposition": "CONTENTS_VERIFIED_IN_MASTER_VIA_PR352",
+  "pr353": {
+    "closedAt": "2026-10-04T13:04:17Z",
+    "state": "CLOSED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/353"
+  },
+  "preservation": {
+    "hashed_original_files": 118,
+    "original_entries_checked": 120,
+    "changed_hashes": [],
+    "changed_statuses": [],
+    "original_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+    "original_branch": "codex/one-stop-webinar-flow",
+    "open_prs": [
+      211,
+      210
+    ],
+    "master": "fc28e1b8dcdba9ca3926f11d27153de048f597da",
+    "pr353": {
+      "closedAt": "2026-10-04T13:04:17Z",
+      "state": "CLOSED",
+      "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/353"
+    },
+    "production_operations": "NOT_PERFORMED"
+  },
+  "latest_open_prs": [
+    211,
+    210
+  ],
+  "pr354": {
+    "headRefOid": "23fcae9871cec124cdb940a339be806081d5f849",
+    "mergeCommit": {
+      "oid": "42bce600e9c6b88003bd3b2a924d0ea96c70aee8"
+    },
+    "mergedAt": "2026-10-04T14:26:55Z",
+    "state": "MERGED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/354"
+  },
+  "pr354_ci_run": 37207666809,
+  "pr354_push_ci_run": 37207662788,
+  "pr354_gate": "READY"
 }

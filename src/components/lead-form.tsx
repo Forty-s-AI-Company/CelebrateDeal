@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { LineLoginButton } from "@/components/line-login-button";
 
 type FieldSpec = {
@@ -102,21 +102,25 @@ export function LeadForm({
 }) {
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
+  const submissionInFlight = useRef(false);
   const [shareCode] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("share") ?? "");
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // React 尚未更新 disabled 前，也要擋住同一輪事件的重複送出。
+    if (submissionInFlight.current) return;
+    submissionInFlight.current = true;
     setStatus("loading");
     setErrorMessage("");
     const form = event.currentTarget;
 
-    const formData = new FormData(form);
-    const selectedLiveId = getSubmittedLiveId(formData, liveId);
-    const payload = Object.fromEntries(
-      [...formData.entries()].filter(([key]) => !["formId", "liveId", "referralCode", "shareCode", "redirectTo"].includes(key)),
-    );
-    const referralCode = new URLSearchParams(window.location.search).get("ref");
     try {
+      const formData = new FormData(form);
+      const selectedLiveId = getSubmittedLiveId(formData, liveId);
+      const payload = Object.fromEntries(
+        [...formData.entries()].filter(([key]) => !["formId", "liveId", "referralCode", "shareCode", "redirectTo"].includes(key)),
+      );
+      const referralCode = new URLSearchParams(window.location.search).get("ref");
       const response = await fetch("/api/form-submissions", {
         method: "POST",
         headers: {
@@ -130,10 +134,12 @@ export function LeadForm({
         setStatus("success");
         form.reset();
       } else {
+        submissionInFlight.current = false;
         setStatus("error");
         setErrorMessage(formSubmissionErrorMessage(response.status));
       }
     } catch {
+      submissionInFlight.current = false;
       setStatus("error");
       setErrorMessage(formSubmissionErrorMessage());
     }

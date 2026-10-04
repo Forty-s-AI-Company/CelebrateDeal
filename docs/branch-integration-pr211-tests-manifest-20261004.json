@@ -34,10 +34,20 @@
     "apply_check_output": "Checking patch .ai-team/tmp/pr211-test-patch-check-20261004/src/components/landing-pages/funnel-commerce-element.test.tsx...\nChecking patch .ai-team/tmp/pr211-test-patch-check-20261004/src/components/landing-pages/funnel-webinar-experience.test.tsx...\nChecking patch .ai-team/tmp/pr211-test-patch-check-20261004/src/components/landing-pages/landing-page-interactive-blocks.test.tsx...\n",
     "tested_source_head": "863218bba4d64ee2f97e8db43c19583ea9fdccd8",
     "scope_note": "Relevant Funnel component and domain source blobs equal master; no live provider or browser journey executed.",
-    "new_head_ci": "IN_PROGRESS"
+    "new_head_ci": "PASS",
+    "new_head_ci_run": 37202721735
   },
-  "publication": "PUSHED_PR_OPEN",
+  "publication": "DELIVERED_VIA_PR352",
   "published_pr": 352,
   "published_head": "6ddd9d60f6683f5923c03995876f0079ca8f8110",
-  "published_url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/352"
+  "published_url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/352",
+  "delivery_merge": {
+    "headRefOid": "e4d726fd4fefdda6c6c142349d5dce261d8d753e",
+    "mergeCommit": {
+      "oid": "fc28e1b8dcdba9ca3926f11d27153de048f597da"
+    },
+    "mergedAt": "2026-10-04T13:03:37Z",
+    "state": "MERGED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/352"
+  }
 }

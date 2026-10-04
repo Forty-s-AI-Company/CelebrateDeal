@@ -1,0 +1,19 @@
+{
+  "hashed_original_files": 118,
+  "original_entries_checked": 120,
+  "changed_hashes": [],
+  "changed_statuses": [],
+  "original_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+  "original_branch": "codex/one-stop-webinar-flow",
+  "open_prs": [
+    211,
+    210
+  ],
+  "master": "fc28e1b8dcdba9ca3926f11d27153de048f597da",
+  "pr353": {
+    "closedAt": "2026-10-04T13:04:17Z",
+    "state": "CLOSED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/353"
+  },
+  "production_operations": "NOT_PERFORMED"
+}

@@ -1,0 +1,72 @@
+{
+  "master": "fc28e1b8dcdba9ca3926f11d27153de048f597da",
+  "disposition": "CONTENT_SUPERSEDED",
+  "heads": [
+    {
+      "head": "2c419848945be94d6afec4dd9a0073f6a3ab142f",
+      "refs": [
+        "refs/heads/codex/payuni-success-idempotency-20260925"
+      ],
+      "paths": [
+        {
+          "path": "docs/codex-goal/API_CONTRACT_REGISTRY.md",
+          "source_sha256": "00318ac8b74898cf04d006b5a5c42c4d996d06590d26890513442d2f3b9ce769",
+          "master_sha256": "6a99221654b8199c4f7b4eab83b316640778be929d9bc76b421be02782d1e685"
+        },
+        {
+          "path": "scripts/mvp-payuni-sandbox-e2e.mjs",
+          "source_sha256": "c6d83f1816193e6261db1029be96e30be76797c45950834b006979fc7ddf48a8",
+          "master_sha256": "8de73c4a00912f2eeeb2a4a3ff4938626cd6fe86e7c4ecab417badb0c4396470"
+        },
+        {
+          "path": "scripts/mvp-payuni-sandbox-e2e.test.mjs",
+          "source_sha256": "23aaa0cdb63013af338254df6748ddb60d57536516a359629a77965ed6511f4a",
+          "master_sha256": "bfde9475abb8687e6eba20cf4bfc6468488325b568e3ae3e0cc53f4c64d42678"
+        }
+      ]
+    },
+    {
+      "head": "6d63dd9793091309208f55b5ec132699ec839d0e",
+      "refs": [
+        "refs/remotes/origin/codex/payuni-success-idempotency-20260925"
+      ],
+      "paths": [
+        {
+          "path": "docs/codex-goal/API_CONTRACT_REGISTRY.md",
+          "source_sha256": "00318ac8b74898cf04d006b5a5c42c4d996d06590d26890513442d2f3b9ce769",
+          "master_sha256": "6a99221654b8199c4f7b4eab83b316640778be929d9bc76b421be02782d1e685"
+        },
+        {
+          "path": "scripts/mvp-payuni-sandbox-e2e.mjs",
+          "source_sha256": "c6d83f1816193e6261db1029be96e30be76797c45950834b006979fc7ddf48a8",
+          "master_sha256": "8de73c4a00912f2eeeb2a4a3ff4938626cd6fe86e7c4ecab417badb0c4396470"
+        },
+        {
+          "path": "scripts/mvp-payuni-sandbox-e2e.test.mjs",
+          "source_sha256": "23aaa0cdb63013af338254df6748ddb60d57536516a359629a77965ed6511f4a",
+          "master_sha256": "bfde9475abb8687e6eba20cf4bfc6468488325b568e3ae3e0cc53f4c64d42678"
+        }
+      ]
+    }
+  ],
+  "decisions": [
+    "兩個 head 的三個剩餘檔案 blobs 相同；API registry 原98個表格列均逐字保留。",
+    "原 buyer order 成功與 duplicate callback idempotency checks 均保留；現行 runner 抽出共同 runBuyerPayment，legacy flow 仍要求 refund/reconcile。",
+    "新 payment-only 使用獨立schema、validator及receipt檔名，不可通過legacy付款加退款validator，退款與reconcile副作用必須為零。",
+    "fixture精確數量5改為6對應server的Vendor、User、VendorMember、Product、BillingPlan、Invoice，舊五筆及錯誤數量明確拒絕。",
+    "payment check v2新增referenceState與固定新source SHA；callback retry保留原source SHA並拆成獨立constant，unreferenced觀察只能BLOCKED，不能冒充VERIFIED。",
+    "表單確認訊息只即時轉換固定failure枚舉；不重送、不點第二次確認、不持久化原始文字，模糊狀態依舊BLOCKED。fixture錯誤亦只接受固定HTTP或DBstage/category。",
+    "既有side effect budget、單次request、精確receipt keys、固定sandbox environment與original idempotency assertion保留；新增測試驗證不互換receipt及禁止退款。"
+  ],
+  "validation": {
+    "exit": 0,
+    "summary": [
+      "# tests 65",
+      "# pass 65",
+      "# fail 0",
+      "# skipped 0"
+    ]
+  },
+  "validation_scope": "65 mocked Node contract tests; no external payment, refund, browser submission or provider request executed",
+  "original_branches_deleted": false
+}

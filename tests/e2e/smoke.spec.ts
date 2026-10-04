@@ -1498,11 +1498,39 @@ test("merchant can create and schedule a prerecorded content webinar from the ei
 });
 
 test("public form can submit a lead", async ({ page }) => {
+  const email = `lead-${stamp}@example.com`;
   await page.goto(`/form/${seed.formSlug}`);
   await page.getByLabel("姓名").fill("王小明");
-  await page.getByLabel("Email").fill(`lead-${stamp}@example.com`);
+  await page.getByLabel("Email").fill(email);
+  await page.route("**/api/form-submissions", (route) => route.fulfill({
+    status: 503,
+    contentType: "application/json",
+    body: JSON.stringify({ error: "Synthetic temporary failure" }),
+  }), { times: 1 });
+
+  // 同一輪事件連送兩次，驗證 React 尚未更新 disabled 時也只會發出一次請求。
+  const requests = await page.locator('form[action="/api/form-submissions"]').evaluate((element) => {
+    const originalFetch = window.fetch;
+    let count = 0;
+    window.fetch = (...args) => {
+      if (args[0] === "/api/form-submissions") count += 1;
+      return originalFetch(...args);
+    };
+    try {
+      (element as HTMLFormElement).requestSubmit();
+      (element as HTMLFormElement).requestSubmit();
+      return count;
+    } finally {
+      window.fetch = originalFetch;
+    }
+  });
+  expect(requests).toBe(1);
+  await expect(page.locator('form[action="/api/form-submissions"]').getByRole("alert")).toHaveText("這張表單目前無法接收資料，請稍後再試。");
+  await expect(page.getByLabel("Email")).toHaveValue(email);
+  // 首次失敗後走真實 API 重試，並確認只建立一筆報名。
   await page.getByRole("button", { name: "送出報名" }).click();
   await expect(page.getByText("E2E 已收到資料")).toBeVisible();
+  expect(await db.formSubmission.count({ where: { formId: seed.formId, email } })).toBe(1);
 });
 
 test("checkout rejects a client amount and uses the server product price for an admitted request", async ({ request }) => {
