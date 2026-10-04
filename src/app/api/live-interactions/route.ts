@@ -234,6 +234,20 @@ export async function GET(request: Request) {
   return NextResponse.json({ runs: projected.filter(Boolean), spotlight }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
+/** 商品限定優惠必須由本場直播販售；通用券仍允許 productId=null。 */
+async function hasInteractionProductBinding(db: Pick<Prisma.TransactionClient, "product">, metadata: AdvancedInteractionMetadata, vendorId: string, liveId: string) {
+  if (metadata.kind !== "flash_voucher" && metadata.kind !== "flash_sale") return true;
+  if (!metadata.productId) return metadata.kind === "flash_voucher";
+  return Boolean(await db.product.findFirst({
+    where: {
+      id: metadata.productId, vendorId, isActive: true, fulfillmentTypeConfirmed: true,
+      checkoutUrl: null,
+      liveProducts: { some: { vendorId, liveId } },
+    },
+    select: { id: true },
+  }));
+}
+
 /** 呼叫端完成觀眾准入後，才可依已發布腳本建立排定的互動。 */
 async function openScheduledInteraction(data: z.infer<typeof OpenRequest>, participantHash: string) {
   const event = await getDb().interactionEvent.findFirst({
@@ -269,6 +283,9 @@ async function openScheduledInteraction(data: z.infer<typeof OpenRequest>, parti
   });
   if (!normalized.success || !normalized.data.metadata) {
     return NextResponse.json({ error: "Interaction unavailable" }, { status: 404 });
+  }
+  if (!await hasInteractionProductBinding(getDb(), normalized.data.metadata, data.vendorId, data.liveId)) {
+    return NextResponse.json({ error: "Interaction product unavailable" }, { status: 409 });
   }
   const now = new Date();
   const window = scheduledInteractionWindow(
@@ -390,6 +407,7 @@ export async function POST(request: Request) {
         select: { id: true },
       });
       if (!currentRun) throw new Error("INTERACTION_CHANGED");
+      if (!await hasInteractionProductBinding(tx, metadata, run.vendorId, run.liveId)) throw new Error("INTERACTION_CHANGED");
       const purchasedRegistrationId = metadata.kind === "lucky_draw" && metadata.eligibility === "purchased"
         ? await verifiedPurchasedDrawRegistration(tx, request, { vendorId: run.vendorId, liveId: run.liveId })
         : null;

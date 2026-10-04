@@ -35,8 +35,10 @@
     "run_close_race": "Source independently reviewed; real DB interleaving PASS",
     "purchased_identity": "Use verified signed chat session claim, no raw-cookie fallback; reviewer confirmed signature/cookie lifecycle. True verify-route then checkout then draw integration still pending. Single-browser registration replacement/expiry remains a capability limitation; evaluate buyer support grant fallback if needed.",
     "stale_submission": "Fixed with run/event-scoped AbortController; browser regression PASS desktop/mobile; independent recheck pending",
-    "unbound_product_voucher": "OPEN MAJOR: server open/respond must verify current live product binding; public metadata omission is not authorization",
-    "flash_sale_checkout": "OPEN: inspect and connect actual checkout navigation and truthful offer price/stock semantics"
+    "unbound_product_voucher": "Fixed server open and serializable respond product-binding checks; same-tenant live-bound active native checkout product with fulfillment confirmed. Merchant/course retained, productId null general vouchers retained. Independent recheck pending.",
+    "flash_sale_checkout": "OPEN: inspect and connect actual checkout navigation and truthful offer price/stock semantics",
+    "open_failure_polling": "OPEN MINOR: script open failure must not suppress manual run/spotlight GET",
+    "api_401_ui": "OPEN MINOR: API 401 must immediately hide private result and disable interaction"
   },
   "database_verified": [
     "Concurrent last-voucher requests produce one200 and one409, exactly one response and one cookie",
@@ -88,5 +90,19 @@
       "tsc": "PASS",
       "eslint": "PASS"
     }
+  },
+  "product_binding_validation": {
+    "unit_tests": 18,
+    "real_postgresql_tests": 11,
+    "status": "PASS",
+    "checks": [
+      "unbound open leaves zero runs",
+      "bound course product open succeeds",
+      "unbound respond leaves zero claims/cookies",
+      "binding allows claim then removal rejects next viewer",
+      "inactive/unconfirmed/external-checkout products rejected"
+    ],
+    "eslint": "PASS",
+    "tsc": "PASS"
   }
 }

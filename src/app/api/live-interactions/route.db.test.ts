@@ -30,6 +30,52 @@ async function fixture() {
 }
 
 describe("advanced interactions isolated PostgreSQL", () => {
+  it.each([
+    { isActive: false },
+    { fulfillmentTypeConfirmed: false },
+    { checkoutUrl: "https://external.example.test/checkout" },
+  ])("rejects bound products that are unavailable for native checkout: %j", async (overrides) => {
+    const { db, run, tokens, respond } = await fixture();
+    const product = await db.product.create({ data: { vendorId: run.vendorId, name: "Unavailable product", slug: randomUUID(), priceCents: 1000, ...overrides } });
+    await db.liveProduct.create({ data: { vendorId: run.vendorId, liveId: run.liveId, productId: product.id } });
+    await db.liveInteractionRun.update({ where: { id: run.id }, data: { configuration: { kind: "flash_voucher", durationSec: 60, maxClaims: 5, discountType: "fixed", discountValue: 100, productId: product.id } } });
+    const response = await respond(tokens[0]!);
+    expect(response.status).toBe(409);
+    expect(response.cookies.has("celebratedeal_flash_voucher")).toBe(false);
+    expect(await db.liveInteractionResponse.count({ where: { runId: run.id } })).toBe(0);
+  });
+
+  it("rejects an unbound voucher before creating a scheduled run, then permits binding", async () => {
+    const { db, run, tokens } = await fixture();
+    const product = await db.product.create({ data: { vendorId: run.vendorId, name: "Scoped product", slug: randomUUID(), priceCents: 1000, commerceDomain: "course" } });
+    const script = await db.interactionScript.create({ data: { vendorId: run.vendorId, name: "Scoped script", status: "published" } });
+    const event = await db.interactionEvent.create({ data: { scriptId: script.id, eventType: "flash_voucher", title: "Scoped voucher", productId: product.id, metadata: { kind: "flash_voucher", durationSec: 120, maxClaims: 2, discountType: "fixed", discountValue: 100, productId: product.id } } });
+    await db.live.update({ where: { id: run.liveId }, data: { interactionScriptId: script.id, streamMode: "live", startedAt: new Date(Date.now() - 1000) } });
+    const open = () => POST(new Request("https://app.example.test/api/live-interactions", { method: "POST", headers: { origin: "https://app.example.test", "content-type": "application/json", "x-celebratedeal-client": "web", cookie: `${LIVE_VIEWER_SESSION_COOKIE}=${tokens[0]}` }, body: JSON.stringify({ action: "open", vendorId: run.vendorId, liveId: run.liveId, eventId: event.id }) }));
+    expect((await open()).status).toBe(409);
+    expect(await db.liveInteractionRun.count({ where: { sourceEventId: event.id } })).toBe(0);
+    await db.liveProduct.create({ data: { vendorId: run.vendorId, liveId: run.liveId, productId: product.id } });
+    expect((await open()).status).toBe(200);
+    expect(await db.liveInteractionRun.count({ where: { sourceEventId: event.id } })).toBe(1);
+  });
+
+  it("rechecks voucher product binding when claiming, including removed bindings", async () => {
+    const { db, run, tokens, respond } = await fixture();
+    const product = await db.product.create({ data: { vendorId: run.vendorId, name: "Scoped product", slug: randomUUID(), priceCents: 1000 } });
+    await db.liveInteractionRun.update({ where: { id: run.id }, data: { configuration: { kind: "flash_voucher", durationSec: 60, maxClaims: 5, discountType: "fixed", discountValue: 100, productId: product.id } } });
+    const rejected = await respond(tokens[0]!);
+    expect(rejected.status).toBe(409);
+    expect(rejected.cookies.has("celebratedeal_flash_voucher")).toBe(false);
+    expect(await db.liveInteractionResponse.count({ where: { runId: run.id } })).toBe(0);
+    const binding = await db.liveProduct.create({ data: { vendorId: run.vendorId, liveId: run.liveId, productId: product.id } });
+    expect((await respond(tokens[0]!)).status).toBe(200);
+    await db.liveProduct.delete({ where: { id: binding.id } });
+    const removed = await respond(tokens[1]!);
+    expect(removed.status).toBe(409);
+    expect(removed.cookies.has("celebratedeal_flash_voucher")).toBe(false);
+    expect(await db.liveInteractionResponse.count({ where: { runId: run.id } })).toBe(1);
+  });
+
   it("rejects a viewer session from another tenant before accepting a claim", async () => {
     const first = await fixture();
     const second = await fixture();
