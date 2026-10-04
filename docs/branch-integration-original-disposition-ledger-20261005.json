@@ -3,10 +3,10 @@
   "scope": "All 120 original changes; only explicit content or behavioral proof marks delivery. Partial file ports remain unresolved. Historical 27 branch groups are separate scope.",
   "counts": {
     "EXACT_CONTENT_IN_MASTER": 57,
-    "REQUIRES_SEMANTIC_RECONCILIATION": 51,
+    "SEMANTICALLY_DELIVERED": 7,
+    "REQUIRES_SEMANTIC_RECONCILIATION": 49,
     "LOCAL_VALIDATED_CHECKPOINT_NOT_MERGED": 3,
     "DELETION_ALREADY_DELIVERED": 2,
-    "SEMANTICALLY_DELIVERED": 5,
     "PR359_PENDING_CI": 2
   },
   "files": [
@@ -88,7 +88,7 @@
     },
     {
       "path": ".codex/config.toml",
-      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+      "state": "SEMANTICALLY_DELIVERED"
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -456,7 +456,7 @@
     },
     {
       "path": "docs/ai-team/vnext-validation.md",
-      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+      "state": "SEMANTICALLY_DELIVERED"
     },
     {
       "path": "docs/launch/goal-plan-20260924.md",
