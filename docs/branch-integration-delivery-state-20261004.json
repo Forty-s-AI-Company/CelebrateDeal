@@ -1,8 +1,17 @@
 {
   "initial_inventory_base": "bdbae2f53491afd518b97ee597e117d6a585b55c",
-  "master": "361a37da2b487bbfa17f419d7b72b9306da07c99",
-  "remote_head_count": 282,
+  "master": "9c45f10314faff768a33fac3f3770517b859ddce",
+  "remote_head_count": 288,
   "open_prs": [
+    {
+      "baseRefName": "master",
+      "headRefName": "codex/integrate-original-auth-smoke-20261005",
+      "headRefOid": "1184c1226771bf41af45ec1c8601f6b4b7103543",
+      "isDraft": false,
+      "number": 359,
+      "title": "fix(auth): restrict password reset smoke tools to development",
+      "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/359"
+    },
     {
       "baseRefName": "codex/one-stop-webinar-flow",
       "headRefName": "codex/funnel-goal3-only",
@@ -184,6 +193,10 @@
     "codex/funnel-operations-single-scope-20260927": "5a65ff915ad86c4de434767409fcc2fb3d970c43",
     "codex/funnel-public-render-diagnostic-20260928": "1731795f267070ad5057995fc97f41d8ef1dc3a2",
     "codex/funnel-renderer-runtime-20260920": "c96788bb4f0f5d5d64e409d22316c90e76a874a4",
+    "codex/integrate-funnel-recovery-20261004": "24d9c7c76d6273329e2aff0b27ae9299da04d364",
+    "codex/integrate-line-menu-drafts-20261004": "23fcae9871cec124cdb940a339be806081d5f849",
+    "codex/integrate-original-auth-smoke-20261005": "1184c1226771bf41af45ec1c8601f6b4b7103543",
+    "codex/integrate-original-routing-20261005": "a139b9d96227563fd28926c803c6c92efa44fde9",
     "codex/isolate-mfa-test-env": "e3d276de2dc27b979f737aaa0ece66ad1aa2439b",
     "codex/launch-final-handoff-20260924": "1b2053ea5cd6b4764f3d424e4661ffe2273529e0",
     "codex/launch-handoff-20260924": "05c45e5713a680e1d0c68bc72a7186eb5169d6a0",
@@ -213,6 +226,8 @@
     "codex/provider-presence-20260925": "7026b476f01cb5306cd3efcc7a017447ab33f24e",
     "codex/recover-funnel-tests-20261004": "e4d726fd4fefdda6c6c142349d5dce261d8d753e",
     "codex/recover-live-preview-20261004": "49e884ff6870793412534e1cb22fb19cfea76a4e",
+    "codex/recover-staging-provider-binding-20261004": "936e71248d550b31812eb4dc08d9b87d5c42ba64",
+    "codex/recover-student-portal-20261004": "a214d277811809d581660e2b1b3c5856fb62a7d2",
     "codex/sandbox-order-readonly-20260928": "ece125426372582080e9df3ef83da8c5f049da8c",
     "codex/sandbox-payment-only-20260928": "35a10e40e76dd6a590e8dc891dff647e74f778be",
     "codex/staging-additive-migration-20260925": "66ac53056c198f1e9c312679d826b250888ceeeb",
@@ -319,7 +334,7 @@
     "codex/wp4-source-bound-checkout": "23fdee6d3027ffaa8fbb0bfb947517c8c4b6b980",
     "codex/wp4-subscription-runner": "93b4db2c49b63f78b907c3bc2547f1229440d3c3",
     "codex/wp4-whole-twd-refund": "0d58cefd68ec6f16a3b922e7bb5b337549345e18",
-    "master": "fc28e1b8dcdba9ca3926f11d27153de048f597da"
+    "master": "9c45f10314faff768a33fac3f3770517b859ddce"
   },
   "scope_note": "Current metadata only; historical content dispositions remain in the initial audit and subsequent evidence.",
   "goal_status": "IN_PROGRESS",
@@ -340,5 +355,20 @@
     "merge_commit": "361a37da2b487bbfa17f419d7b72b9306da07c99",
     "partial_source_pr": 210,
     "goal_complete": false
+  },
+  "latest_verified_merge": {
+    "pr": 358,
+    "head": "a139b9d96227563fd28926c803c6c92efa44fde9",
+    "merge": "9c45f10314faff768a33fac3f3770517b859ddce",
+    "tree_equal": true
+  },
+  "pending_integration": {
+    "pr359_head": "1184c1226771bf41af45ec1c8601f6b4b7103543",
+    "pr359_ci": [
+      37219499023,
+      37219495810
+    ],
+    "dev_hygiene_branch": "codex/integrate-original-dev-hygiene-20261005",
+    "remaining_historical_groups": 27
   }
 }

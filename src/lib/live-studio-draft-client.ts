@@ -39,6 +39,7 @@ export function liveStudioDraftFromFormData(data: FormData, activeStep: number):
     description: stringValue(data, "description"),
     productIds: data.getAll("productIds").filter((value): value is string => typeof value === "string"),
     accentCopy: stringValue(data, "accentCopy"),
+    ...(stringValue(data, "projectId") ? { projectId: stringValue(data, "projectId") } : {}),
     formId: stringValue(data, "formId"),
     messageTemplateId: stringValue(data, "messageTemplateId"),
     liveReminderTemplateId: stringValue(data, "liveReminderTemplateId"),

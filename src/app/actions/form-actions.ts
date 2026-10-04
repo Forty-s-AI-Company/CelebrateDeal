@@ -2,8 +2,10 @@
 
 import { type Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { requireVendorManager } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
+import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { getDb } from "@/lib/db";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 import { ImageAssetReferenceError, resolveReadyImageAsset } from "@/lib/image-assets";
@@ -118,6 +120,7 @@ export async function upsertFormBuilderAction(
   const db = getDb();
 
   try {
+    if (id && formData.get("projectId")) throw new SalesProjectBindingError();
     const media = await resolveFormMedia(db, vendor.id, parsed.data);
     if (!media.success) {
       return {
@@ -147,9 +150,21 @@ export async function upsertFormBuilderAction(
         };
       }
     } else {
-      await db.registrationForm.create({ data: { ...data, vendorId: vendor.id } });
+      const projectValue = formData.get("projectId");
+      if (projectValue !== null && projectValue !== "") {
+        // Resolve tenant ownership and persist the relation atomically.
+        await db.$transaction(async (tx) => {
+          const projectId = await resolveSalesProjectBinding(tx, vendor.id, projectValue);
+          await tx.registrationForm.create({ data: { ...data, vendorId: vendor.id, projectId } });
+        });
+      } else {
+        await db.registrationForm.create({ data: { ...data, vendorId: vendor.id } });
+      }
     }
   } catch (error) {
+    if (error instanceof SalesProjectBindingError) {
+      return { status: "error", message: "找不到目前商家可用的專案，未儲存本次變更。", fieldErrors: { root: "請返回專案頁重新開啟新增流程。" } };
+    }
     const code = databaseErrorCode(error);
     if (code === "P2002") {
       return {
@@ -172,5 +187,7 @@ export async function upsertFormBuilderAction(
     };
   }
 
+  // Refresh project task counts only after a successful resource write.
+  revalidatePath("/(app)", "layout");
   redirect("/forms");
 }

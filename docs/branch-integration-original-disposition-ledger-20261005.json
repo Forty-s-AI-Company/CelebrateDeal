@@ -1,0 +1,494 @@
+{
+  "master": "9c45f10314faff768a33fac3f3770517b859ddce",
+  "scope": "All 120 original changes; only explicit content or behavioral proof marks delivery. Partial file ports remain unresolved. Historical 27 branch groups are separate scope.",
+  "counts": {
+    "EXACT_CONTENT_IN_MASTER": 57,
+    "SEMANTICALLY_DELIVERED": 7,
+    "REQUIRES_SEMANTIC_RECONCILIATION": 49,
+    "LOCAL_VALIDATED_CHECKPOINT_NOT_MERGED": 3,
+    "DELETION_ALREADY_DELIVERED": 2,
+    "PR359_PENDING_CI": 2
+  },
+  "files": [
+    {
+      "path": ".agents/skills/ai-team-lite/SKILL.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".agents/skills/ai-team-style/SKILL.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/config/router.astra-standard.json",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/config/router.high.json",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/config/router.json",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/config/router.low.json",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/config/router.pro.json",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/config/router.style.json",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/mcp_server/requirements.txt",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/mcp_server/server.py",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/mcp_server/test_server.py",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AgyDeep.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AgyFast.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AgyPlanReview.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AiTeamProcess.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AiTeamReadOnlyFailover.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Switch-AiTeamMode.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Test-AiTeamHandoff.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Test-AiTeamResilience.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".codex/config.toml",
+      "state": "SEMANTICALLY_DELIVERED"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": ".gitignore",
+      "state": "LOCAL_VALIDATED_CHECKPOINT_NOT_MERGED"
+    },
+    {
+      "path": "AGENTS.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "docs/ai-team-payuni-sandbox-qa.md",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/ai-team/ARCHITECTURE.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "docs/ai-team/GOAL-PROTOCOL.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "docs/ai-team/README.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "docs/ai-team/ROUTING.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "docs/ai-team/TROUBLESHOOTING.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt.json",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/ai-team/handoff-schema.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "docs/ai-team/prompts/executor-prompt.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "docs/ai-team/prompts/planner-prompt.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "docs/ai-team/workflow-policy.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "docs/external-service-validation-runbook.md",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/launch/current-release-completion-audit-20260821.md",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/launch/current-release-gate-handoff-20260821.md",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/launch/current-release-owner-action-packet-20260822.md",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/launch/manual-blockers.md",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/report-3-product-roadmap-and-priorities.md",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "eslint.config.mjs",
+      "state": "LOCAL_VALIDATED_CHECKPOINT_NOT_MERGED"
+    },
+    {
+      "path": "next.config.ts",
+      "state": "LOCAL_VALIDATED_CHECKPOINT_NOT_MERGED"
+    },
+    {
+      "path": "package.json",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "playwright.config.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "scripts/external-smoke-safety.test.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "scripts/external-smoke-safety.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "scripts/external-smoke.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "scripts/payuni-sandbox-external-qa.mjs",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "scripts/payuni-sandbox-external-qa.test.mjs",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "scripts/validate-non-production-owner-authorization.mjs",
+      "state": "DELETION_ALREADY_DELIVERED"
+    },
+    {
+      "path": "scripts/validate-non-production-owner-authorization.test.mjs",
+      "state": "DELETION_ALREADY_DELIVERED"
+    },
+    {
+      "path": "src/app/(app)/landing-pages/[id]/operations/page.test.tsx",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/app/(app)/landing-pages/[id]/operations/page.tsx",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/app/(app)/landing-pages/[id]/page.tsx",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/app/(app)/landing-pages/page.tsx",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/app/(app)/settings/security/page.tsx",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/app/actions.test.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/app/actions/auth-security-actions.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/app/mfa/setup/page.tsx",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/components/app-shell.tsx",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/components/landing-page-workspace.tsx",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/components/live-advanced-interactions.tsx",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/lib/auth-rate-limits.test.ts",
+      "state": "SEMANTICALLY_DELIVERED"
+    },
+    {
+      "path": "src/lib/auth-rate-limits.ts",
+      "state": "SEMANTICALLY_DELIVERED"
+    },
+    {
+      "path": "src/lib/funnel-goal-step-pages.test.ts",
+      "state": "SEMANTICALLY_DELIVERED"
+    },
+    {
+      "path": "src/lib/funnel-goal-step-pages.ts",
+      "state": "SEMANTICALLY_DELIVERED"
+    },
+    {
+      "path": "src/lib/funnel-step-pages.test.ts",
+      "state": "SEMANTICALLY_DELIVERED"
+    },
+    {
+      "path": "tests/e2e/accessibility.spec.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "tests/e2e/accountant-affiliate-detail-direct-url.spec.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "tests/e2e/admin-cross-tenant-affiliate-edit.spec.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "tests/e2e/admin-cross-tenant-video-edit.spec.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "tests/e2e/commerce-orders.spec.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "tests/e2e/funnel-commerce.spec.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "tests/e2e/funnel-operations-transport.spec.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "tests/e2e/helpers/direct-url-guard.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "tests/e2e/loading-route-segments.spec.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "tests/e2e/merchant-invitation.spec.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "tests/e2e/video-media-experience.spec.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "tests/e2e/webinar-funnel-flow.spec.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "tests/e2e/wp88-direct-url-guard-matrix.spec.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "tsconfig.json",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "vitest.synthetic-db-coverage.config.ts",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": ".agents/skills/ai-team-pro/SKILL.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".agents/skills/ai-team/SKILL.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/config/routing-policy.json",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/mcp_server/bootstrap_probe.py",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/mcp_server/route_cli.py",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/mcp_server/routing.py",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/mcp_server/schemas/review-result.schema.json",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/mcp_server/test_routing.py",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/mcp_server/validation_runner.py",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/prompts/reviewer-prompt.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AiTeamNodeValidation.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AiTeamTask.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Probe-AiTeamNative.py",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Probe-AiTeamShell.py",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Start-AiTeamMcp.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Test-AiTeamBootstrap.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Test-AiTeamNodeValidation.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".ai-team/scripts/Test-AiTeamRouting.ps1",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".codex/agents/analyst.toml",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".codex/agents/explorer.toml",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".codex/agents/planner.toml",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".codex/agents/reviewer.toml",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".codex/agents/worker-deep.toml",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": ".codex/agents/worker.toml",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "docs/ai-team-vnext-plan.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-c3a3d7fa283a.json",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/ai-team/evidence/release-baseline-sandbox-20260922.md",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/ai-team/prompts/reviewer-prompt.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "docs/ai-team/vnext-node-failure-manifest.json",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/ai-team/vnext-validation.md",
+      "state": "SEMANTICALLY_DELIVERED"
+    },
+    {
+      "path": "docs/launch/goal-plan-20260924.md",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/launch/goal-plan-opus-recovery-20260924.json",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/launch/goal-plan-opus-response-20260924.txt",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/launch/goal-plan-opus-review-20260924.json",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/launch/goal-plan-review-status-20260924.md",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "docs/launch/goal-preflight-20260924.md",
+      "state": "EXACT_CONTENT_IN_MASTER"
+    },
+    {
+      "path": "src/lib/password-reset-smoke-policy.test.ts",
+      "state": "PR359_PENDING_CI"
+    },
+    {
+      "path": "src/lib/password-reset-smoke-policy.ts",
+      "state": "PR359_PENDING_CI"
+    }
+  ]
+}

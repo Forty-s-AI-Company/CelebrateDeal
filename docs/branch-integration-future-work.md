@@ -125,7 +125,7 @@ AI Team 變更由主代理處理，不啟動正在修改的 AI Team 修改自己
 
 歷史 smoke head `d8c85fbbb39e` 已核對只有 CI、lockfile 與隔離 smoke 文件：所有原依賴仍在現行 lockfile，Next/eslint-config-next/Vitest 已向前更新，原 CI 的驗證行為皆由現行 CI 保留，#351/#352 的實際 protected PR 交付提供 guarded-write 流程證據。來源文件留在原分支，不冒充新執行收據。累計 **9 個 head 已證明替代，剩餘 33 個**；詳见 branch-integration-historical-smoke-supersession-20261004.json。
 
-#354 第三版 head `23fcae9871cec124cdb940a339be806081d5f849`：完整本機 4,210 Vitest tests PASS，Node TAP 找到 G7-55 清單尚未加入第 82 條 migration，精確補正後相關 11 tests PASS。Windows 本機三個 evidence hash failures 為 CRLF，已確認 Git blob 完全吻合既有 hash，無文件內容修改。獨立第四次增量 review 無 findings，新 CI run `37207666809` 執行中。
+#354 第三版 head `23fcae9871cec124cdb940a339be806081d5f849`：完整本機 4,210 Vitest tests PASS，Node TAP 找到 G7-55 清單尚未加入第 82 條 migration，精確補正後相關 11 tests PASS。Windows 本機三個 evidence hash failures 為 CRLF，已確認 Git blob 完全吻合既有 hash，無文件內容修改。独立第四次增量 review 無 findings，新 CI run `37207666809` 執行中。
 
 歷史 migration replay head `4c44431c9769` 五檔已完成內容替代核對；主線保留隔離、checksum、history 與 cleanup contract，改善精確 rollback 與跨 collation table counts 比對。6/6 contracts PASS，未执行外部 migration。證據見 `branch-integration-staging-replay-supersession-20261004.json`，剩餘32個歷史head。
 
@@ -176,11 +176,14 @@ PR #355 的 head `24d9c7c76d6273329e2aff0b27ae9299da04d364` 已於 `2026-10-04T1
 學員入口已在 `codex/recover-student-portal-20261004` 開始恢復信箱登入與 dashboard；隔離副本的 16 個 auth/action 測試通過，實際整合初跑 31/32，尚需調整原生課程路由的階段契約、補 CSRF voucher POST、DB／browser／獨立 review 與 CI。這些是進行中狀態，不代表 #210 完成交付。
 
 
-## 2026-10-05 學員入口整合驗證中
-
-已完成信箱登入及現有交付／訂單學員中心候選。修正單筆 checkout grant 升權、開發 mockLink、行銷退訂封鎖登入信、過期信重送與 internal-origin redirect；優惠券須符合原生結帳、交付、庫存及幣別。DB 13 項、登入邊界 browser 2 項及郵件 32 項 targeted tests 通過，獨立 Critical review findings 已關閉。最終 coverage、完整新增 browser 與 protected PR gate 仍執行中，不標為已合併。原生課程播放器／進度／證書、社群、多語言與 PWA 保留原來源，未計入此里程碑完成範圍；PR210、PR211 及其餘 27 historical heads 繼續逐項整合。
-
-
 ## 2026-10-05 學員入口里程碑已合併
 
 PR #357 已於 2026-10-04T16:40:44Z 受保護 squash merge 到 `361a37da2b487bbfa17f419d7b72b9306da07c99`；accepted tree 等於 merge tree。4,270 項測試、3 項 Chromium、83 migration、完整 coverage、獨立 Critical review 及精確 head CI 皆通過，canonical gate READY。原生播放器／學習進度／證書、社群、多語言與 PWA 尚未交付，保留來源並列後續；本節更新先前「驗證中」紀錄。整體仍有 27 組歷史分支內容及原始未提交工作需要核對，不宣稱全部整合完成。
+
+
+## 2026-10-05 PR358 整合完成
+
+- PR358 已合入 master `9c45f10314faff768a33fac3f3770517b859ddce`，accepted head tree 完全一致。兩個 quality CI 與 canonical READY 通過。
+- 原始 routing、portable disabled MCP 設定與分離 CI native steps 已交付。
+- PR359 密碼重設測試工具 gate 繼續 CI；開發產物忽略與 Next 開發設定已建立本機 checkpoint，尚待 PR。
+- 27 組歷史分支與其餘 original dirty 的語意核對仍未全部完成，不能標為整體結案。

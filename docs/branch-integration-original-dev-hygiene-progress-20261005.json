@@ -1,0 +1,48 @@
+{
+  "branch": "codex/integrate-original-dev-hygiene-20261005",
+  "base": "8f52b9e903355b7167a636b81875acad412817ec",
+  "state": "LOCAL_VALIDATION_PASS",
+  "scope": "Recover original generated-artifact Git ignores, precise ESLint exclusions and isolated Next development configuration",
+  "files": [
+    {
+      "path": ".gitignore",
+      "sha256": "29c5d5cd3584e917611ce525310a39ac72b0e35b11750f867d4d1d2cfb958632",
+      "matches_original_normalized": true
+    },
+    {
+      "path": "eslint.config.mjs",
+      "sha256": "3c4f5d213c42b79b03e2f24b85096a0d737d0296c9d884af766f9b30708b2e6b",
+      "matches_original_normalized": true
+    },
+    {
+      "path": "next.config.ts",
+      "sha256": "15ce1082b5567d1dbdc76bfc1f5e5d6f14d8efa4f6e6aaf8352f19f31fd8619c",
+      "matches_original_normalized": true
+    }
+  ],
+  "validation": {
+    "full_eslint": {
+      "errors": 0,
+      "existing_warnings": 3,
+      "exit_code": 0
+    },
+    "targeted_worker_and_config_lint": "PASS",
+    "diff_check": "PASS",
+    "eslint_ignored": {
+      "auth_action": false,
+      "custom_worker": false,
+      "third_party_bundle": true,
+      "generated_next_directory": true,
+      "generated_ai_team_directory": true
+    },
+    "next_configuration_tests": {
+      "tests": 3,
+      "status": "PASS",
+      "scope": "default production directory/tunnel, explicit in-project QA directory, development tunnel disable and local upload opt-out"
+    },
+    "next_targeted_eslint": "PASS"
+  },
+  "review": "Primary diff review; generated-only exclusions; app code and custom worker remain linted. Git ignores do not delete existing tracked evidence.",
+  "production_operations": false,
+  "next": "Parent PR358 and PR359 pending; publish this independent checkpoint after parent reconciliation."
+}

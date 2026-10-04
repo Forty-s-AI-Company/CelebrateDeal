@@ -63,11 +63,13 @@ function formBuilderInitialValues(form?: RegistrationForm): FormBuilderValues {
 
 export function FormBuilder({
   form,
+  projectId,
   error,
   draftScope,
   promoVideos = [],
 }: {
   form?: RegistrationForm;
+  projectId?: string | null;
   error?: string;
   draftScope: string;
   promoVideos?: FormPromoVideoOption[];
@@ -82,7 +84,8 @@ export function FormBuilder({
         initialFields={parsedFields.success ? parsedFields.data : defaultFields}
         legacyFieldsInvalid={Boolean(form && !parsedFields.success)}
         legacyRouteError={error}
-        draftScope={draftScope}
+        projectId={projectId}
+        draftScope={projectId ? `${draftScope}:project:${projectId}` : draftScope}
         promoVideos={promoVideos}
         initialUpdatedAt={form?.updatedAt.toISOString() ?? null}
         csrfField={<CsrfField />}

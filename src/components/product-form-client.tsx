@@ -211,12 +211,14 @@ function CustomCheckoutFieldEditor({
 
 export function ProductFormClient({
   csrfToken,
+  projectId,
   product,
   memberships = [],
   initialError,
   nativeAction = "/api/products/upsert",
 }: {
   csrfToken: string;
+  projectId?: string | null;
   product?: ProductFormProduct;
   memberships?: CourseMembershipOption[];
   initialError?: ProductActionError;
@@ -278,6 +280,7 @@ export function ProductFormClient({
 
   return (
     <form key={state.version} action={formAction} onSubmit={submitNatively} className="grid gap-4" aria-busy={pending || nativePending}>
+      {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
       <input type="hidden" name="_csrf" value={csrfToken} />
       {product ? <><input type="hidden" name="id" value={product.id} /><input type="hidden" name="revision" value={product.revision} /></> : null}
       {error ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800">{error}</p> : null}

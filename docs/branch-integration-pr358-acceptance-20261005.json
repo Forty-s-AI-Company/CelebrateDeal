@@ -1,0 +1,172 @@
+{
+  "decision": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "original-routing-integration",
+    "signals": {
+      "task_type": "implement",
+      "complexity": "low",
+      "risk": "medium",
+      "risk_score": 0,
+      "engineering_profile": "routine",
+      "large_workload": false,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "low",
+      "risk_requirement": "medium",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "implement",
+    "difficulty": "low",
+    "requested_team": "ai-team",
+    "team": "ai-team",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:a0c7a5d28eefd6c37114bd712fdad6e4f47c1c2dce54871013bc37363c28fa21",
+    "snapshot_root": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal",
+    "snapshot_files": [
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/.agents/skills/ai-team/SKILL.md",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/.ai-team/config/routing-policy.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/.ai-team/mcp_server/routing.py",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/.ai-team/mcp_server/test_routing.py",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/.ai-team/mcp_server/test_server.py",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/.ai-team/scripts/Test-AiTeamRouting.ps1",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/.codex/agents/planner.toml",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/.codex/agents/reviewer.toml",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/.codex/agents/worker-deep.toml",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/.codex/agents/worker.toml",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/.codex/config.toml",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/.github/workflows/ci.yml",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/AGENTS.md",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/ai-team/ROUTING.md",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/ai-team/vnext-validation.md",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/ai-team/workflow-policy.md",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-delivery-state-20261004.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-future-work.md",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-original-routing-candidate-20261005.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-original-routing-progress-20261005.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-pr357-acceptance-20261004.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-pr357-browser-20261005.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-pr357-database-20261005.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-pr357-local-validation-20261005.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-pr357-manifest-20261004.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-pr357-progress-20261005.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-pr357-remote-ci-20261004.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-preservation-20261004.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-remaining-refresh-20261005.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-sandbox-member-confirmation-20261005.json",
+      ".ai-team/tmp/pr358-evidence-20261005/snapshot/docs/branch-integration-student-portal-progress-20261004.json"
+    ],
+    "required_checks": [
+      "new-head-ci-quality"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "low",
+    "effort_floor": "low",
+    "effort_reason": null,
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "low",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "low",
+      "effort_floor": "low",
+      "effort_reason": null,
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": "senior_review"
+  },
+  "evidence": {
+    "execution": {
+      "kind": "execution",
+      "source": "desktop_native",
+      "revision": "sha256:a0c7a5d28eefd6c37114bd712fdad6e4f47c1c2dce54871013bc37363c28fa21",
+      "status": "COMPLETED",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "head": "a139b9d96227563fd28926c803c6c92efa44fde9",
+      "scope": "Implemented and pushed PR358; immutable manifest binds published candidate to primary-reviewed code",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr358-evidence-20261005\\execution.json"
+    },
+    "checks": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "new-head-ci-quality",
+        "revision": "sha256:a0c7a5d28eefd6c37114bd712fdad6e4f47c1c2dce54871013bc37363c28fa21",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 3.281,
+        "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr358-evidence-20261005\\new-head-ci-quality.json"
+      }
+    ],
+    "findings": []
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:a0c7a5d28eefd6c37114bd712fdad6e4f47c1c2dce54871013bc37363c28fa21"
+  },
+  "publication": "PUSHED_PR_OPEN"
+}

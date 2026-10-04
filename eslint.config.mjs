@@ -89,18 +89,24 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Funnel/browser QA uses isolated Next build directories. They are
+    // generated bundles, not authored source, and must not enter ESLint.
+    ".next-*/**",
     "out/**",
     "build/**",
     // Test coverage is generated output, not source code to lint.
     "coverage/**",
     // Local staging deployment snapshots are generated copies, not source.
     "tmp/**",
+    // AI Team validation workspaces are generated copies, not authored source.
+    ".ai-team/tmp/**",
+    // Pinned third-party MediaPipe distributions; our worker remains linted.
+    "public/presenter-segmentation/vision_bundle.js",
+    "public/presenter-segmentation/vision_wasm_internal.js",
+    "public/presenter-segmentation/vision_wasm_nosimd_internal.js",
     // Playwright recreates this directory at run start; ignoring it also avoids
     // an ESLint filesystem race when browser tests and lint overlap in CI.
     "test-results/**",
-    // Third-party MediaPipe/wasm presenter assets are browser payloads, not
-    // application source; linting the generated bundle produces false errors.
-    "public/presenter-segmentation/**",
     "next-env.d.ts",
   ]),
 ]);

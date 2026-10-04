@@ -1,6 +1,8 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
+import { requestedLiveStatus } from "@/lib/live-status-transition";
+import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { isIP } from "node:net";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -717,33 +719,6 @@ function parseLiveDraftClaim(formData: FormData, liveId: string | null) {
   return { draftId, revision, conflictPath };
 }
 
-const liveStatusTransitions: Readonly<Record<string, ReadonlySet<string>>> = {
-  draft: new Set(["draft", "scheduled"]),
-  scheduled: new Set(["draft", "scheduled", "live"]),
-  live: new Set(["live", "ended"]),
-  ended: new Set(["draft", "ended", "scheduled"]),
-};
-
-function requestedLiveStatus(
-  formData: FormData,
-  liveId: string | null,
-  draftId: string,
-  currentStatus: string | null,
-) {
-  const status = text(formData, "status", "draft");
-  const transitionAllowed = liveId
-    ? Boolean(currentStatus && liveStatusTransitions[currentStatus]?.has(status))
-    : status === "draft" || status === "scheduled";
-  if (!transitionAllowed) {
-    redirect(
-      liveId
-        ? `/lives/${encodeURIComponent(liveId)}/edit?error=invalid_status`
-        : `/lives/new?error=invalid_status&draft=${encodeURIComponent(draftId)}`,
-    );
-  }
-  return status;
-}
-
 async function commitLiveDraft(input: {
   db: PrismaClient;
   vendorId: string;
@@ -853,6 +828,8 @@ async function commitLiveDraft(input: {
   }
 
   return input.db.$transaction(async (tx) => {
+    // Validate the tenant-scoped project before consuming the draft or creating resources.
+    const projectId = await resolveSalesProjectBinding(tx, input.vendorId, input.expectedDraftPayload.projectId ?? null);
     const claimedDraft = await tx.liveStudioDraft.updateMany({
       where: {
         id: input.draftId,
@@ -869,6 +846,7 @@ async function commitLiveDraft(input: {
     const live = await tx.live.create({
       data: {
         ...input.data,
+        ...(projectId ? { projectId } : {}),
         vendorId: input.vendorId,
         products: {
           create: input.productIds.map((productId, index) => ({
@@ -889,6 +867,15 @@ async function commitLiveDraft(input: {
   });
 }
 
+async function commitLiveDraftOrRedirect(input: Parameters<typeof commitLiveDraft>[0], invalidReferencePath: string) {
+  try {
+    return await commitLiveDraft(input);
+  } catch (error) {
+    if (error instanceof SalesProjectBindingError) redirect(invalidReferencePath);
+    throw error;
+  }
+}
+
 function parseSubmittedLiveDraft(
   formData: FormData,
   liveId: string | null,
@@ -905,6 +892,8 @@ function parseSubmittedLiveDraft(
   } catch {
     redirect(invalidDraftPath);
   }
+  // Project context is create-only; edits cannot move an existing live.
+  if (liveId && payload.projectId) redirect(invalidDraftPath);
   const slug = toSlug(payload.slug);
   if (!payload.title || !slug || !payload.scheduledAt) {
     redirect(invalidDraftPath);
@@ -1404,7 +1393,7 @@ export async function upsertLiveAction(formData: FormData) {
     template: liveReminderTemplate,
   });
 
-  const committed = await commitLiveDraft({
+  const committed = await commitLiveDraftOrRedirect({
     db,
     vendorId: vendor.id,
     liveId: id,
@@ -1419,7 +1408,7 @@ export async function upsertLiveAction(formData: FormData) {
       templateId: existingLive.liveReminderTemplateId,
       offsetMinutes: existingLive.liveReminderOffsetMinutes,
     } : null,
-  });
+  }, invalidReferencePath);
   if (!committed) redirect(draftClaim.conflictPath);
   await dispatchLiveStartedLineNotificationsSafely(db, vendor.id, committed);
   try {
@@ -1435,6 +1424,7 @@ export async function upsertLiveAction(formData: FormData) {
       // Durable cron repair remains available if optional eager materialization fails.
     }
   }
+  revalidatePath("/(app)", "layout");
   if (committed.created) redirect(`/lives/${committed.id}/preview`);
   const reconciliationNotice = liveReminderReconciliationNotice(committed.reminderReconciliationStatus);
   redirect(`/lives/${committed.id}/edit${reconciliationNotice ? `?notice=${reconciliationNotice}` : ""}`);

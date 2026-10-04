@@ -317,6 +317,7 @@ function FormBuilderPublicSettings({
 
 export function FormBuilderClient({
   values: initialValues,
+  projectId,
   initialFields,
   legacyFieldsInvalid,
   legacyRouteError,
@@ -326,6 +327,7 @@ export function FormBuilderClient({
   promoVideos,
 }: {
   values: FormBuilderValues;
+  projectId?: string | null;
   initialFields: RegistrationFormBuilderField[];
   legacyFieldsInvalid: boolean;
   legacyRouteError?: string;
@@ -428,6 +430,7 @@ export function FormBuilderClient({
   return (
     <form action={formAction} onSubmit={handleSubmit} aria-busy={pending} className="grid gap-6">
       {csrfField}
+      {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
       {values.id ? <input type="hidden" name="id" value={values.id} /> : null}
       {values.id && initialUpdatedAt ? <input type="hidden" name="expectedUpdatedAt" value={initialUpdatedAt} /> : null}
       <input type="hidden" name="fields" value={JSON.stringify(fields)} />

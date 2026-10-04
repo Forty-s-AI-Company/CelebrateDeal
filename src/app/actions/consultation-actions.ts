@@ -209,6 +209,7 @@ export async function createConsultationEventAction(formData: FormData) {
     },
   });
   revalidatePath(MANAGEMENT_PATH);
+  revalidatePath("/(app)", "layout");
   redirect(`${MANAGEMENT_PATH}?updated=created`);
 }
 
@@ -230,6 +231,7 @@ export async function updateConsultationEventAction(formData: FormData) {
   });
   if (result.count !== 1) redirectWithError("not_found");
   revalidatePath(MANAGEMENT_PATH);
+  revalidatePath("/(app)", "layout");
   redirect(`${MANAGEMENT_PATH}?updated=saved`);
 }
 
@@ -247,6 +249,7 @@ export async function toggleConsultationEventAction(formData: FormData) {
   });
   if (result.count !== 1) redirectWithError("not_found");
   revalidatePath(MANAGEMENT_PATH);
+  revalidatePath("/(app)", "layout");
   redirect(`${MANAGEMENT_PATH}?updated=event_status`);
 }
 

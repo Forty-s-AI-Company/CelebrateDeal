@@ -1,0 +1,36 @@
+"use client";
+
+import { ChevronDown } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
+
+export function AppShellNavGroup({
+  label,
+  hrefs,
+  children,
+}: {
+  label: string;
+  hrefs: readonly string[];
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
+  const containsActivePage = hrefs.some((href) => pathname === href || (href !== "/dashboard" && Boolean(pathname?.startsWith(`${href}/`))));
+  const [isOpen, setIsOpen] = useState(true);
+
+  return (
+    <section>
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((open) => !open)}
+        className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${containsActivePage ? "bg-blue-50 text-blue-700" : "text-slate-700 hover:bg-slate-100 hover:text-slate-950"}`}
+      >
+        {label}
+        <ChevronDown className={`size-3.5 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+      </button>
+      <div hidden={!isOpen} className="mt-0.5 grid gap-0.5">
+        {children}
+      </div>
+    </section>
+  );
+}

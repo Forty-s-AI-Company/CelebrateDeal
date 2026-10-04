@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { mutateProduct } from "@/app/actions/product-actions";
 import { requireVendorManager } from "@/lib/auth";
 import { assertServerActionSecurity } from "@/lib/csrf";
@@ -15,5 +16,7 @@ export async function upsertProductAction(
   const vendor = await requireVendorManager();
   const result = await mutateProduct(vendor.id, previousState, formData);
   if (!result.ok) return result.state;
+  // Refresh project task counts only after a successful resource write.
+  revalidatePath("/(app)", "layout");
   redirect(result.destination);
 }

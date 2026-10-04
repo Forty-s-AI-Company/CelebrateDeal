@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   assertServerActionSecurity: vi.fn(),
   requireVendorManager: vi.fn(),
+  revalidatePath: vi.fn(),
   redirect: vi.fn((path: string) => { throw new Error(`redirect:${path}`); }),
+  projectFindFirst: vi.fn(),
+  projectProductCreate: vi.fn(),
   productFindFirst: vi.fn(),
   productCreate: vi.fn(),
   productUpdateMany: vi.fn(),
@@ -18,10 +21,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/csrf", () => ({ assertServerActionSecurity: mocks.assertServerActionSecurity }));
 vi.mock("@/lib/auth", () => ({ requireVendorManager: mocks.requireVendorManager }));
+vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/db", () => ({
   getDb: () => {
     const delegates = {
+      salesProject: { findFirst: mocks.projectFindFirst },
+      salesProjectProduct: { create: mocks.projectProductCreate },
     product: { findFirst: mocks.productFindFirst, create: mocks.productCreate, updateMany: mocks.productUpdateMany },
     imageAsset: { findFirst: mocks.imageAssetFindFirst },
     teamMembership: { findFirst: mocks.teamMembershipFindFirst },
@@ -48,6 +54,8 @@ function validProduct(fields: Record<string, string> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.projectFindFirst.mockResolvedValue(null);
+  mocks.projectProductCreate.mockResolvedValue({ id: "link-1" });
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
   mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
   mocks.productFindFirst.mockResolvedValue(null);
@@ -62,6 +70,24 @@ beforeEach(() => {
 });
 
 describe("upsertProductAction", () => {
+  it("creates the tenant-validated project link in the product transaction", async () => {
+    mocks.projectFindFirst.mockResolvedValue({ id: "project-1" });
+    await expect(upsertProductAction(initialProductActionState, validProduct({ projectId: "project-1" }))).rejects.toThrow("redirect:/products?updated=created");
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.projectFindFirst).toHaveBeenCalledWith({ where: { id: "project-1", vendorId: "vendor-1", status: { not: "archived" } }, select: { id: true } });
+    const created = mocks.productCreate.mock.calls[0]![0].data;
+    expect(mocks.projectProductCreate).toHaveBeenCalledWith({ data: { vendorId: "vendor-1", projectId: "project-1", productId: created.id } });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/(app)", "layout");
+  });
+
+  it("rejects foreign or archived project binding before any product write", async () => {
+    const result = await upsertProductAction(initialProductActionState, validProduct({ projectId: "foreign-project" }));
+    expect(result.error).toBe("not_found");
+    expect(mocks.productCreate).not.toHaveBeenCalled();
+    expect(mocks.projectProductCreate).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
   it("creates a draft merchant product using merchant-facing major currency units", async () => {
     const data = validProduct({ description: "  商品說明  ", compareAt: "15.50", imageUrl: "https://example.com/image.png", checkoutUrl: "https://example.com/checkout" });
 

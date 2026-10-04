@@ -1,0 +1,16 @@
+{
+  "master": "9c45f10314faff768a33fac3f3770517b859ddce",
+  "files": [
+    {
+      "path": ".codex/config.toml",
+      "decision": "SEMANTICALLY_DELIVERED",
+      "proof": "Python TOML parsed structures identical; only obsolete startup-blocked comment revised."
+    },
+    {
+      "path": "docs/ai-team/vnext-validation.md",
+      "decision": "SEMANTICALLY_DELIVERED",
+      "proof": "Every original line retained in order; only current integration validation section added."
+    }
+  ],
+  "config_values_printed": false
+}

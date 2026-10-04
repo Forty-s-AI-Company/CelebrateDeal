@@ -1,0 +1,31 @@
+{
+  "master": "9c45f10314faff768a33fac3f3770517b859ddce",
+  "validation": {
+    "files": 2,
+    "tests": 13,
+    "status": "PASS"
+  },
+  "files": [
+    {
+      "path": "src/lib/funnel-goal-step-pages.ts",
+      "original_sha256": "89428fc181fd081b9b024d0100f08ca1e3d6a5884eb4d37789ebbffb23fd5949",
+      "master_blob": "44bd5294ae6aad6bce7928a683145324e0b0f35f",
+      "decision": "SEMANTICALLY_DELIVERED",
+      "reason": "Identical thank-you predicate and copy; current master extracts repeated condition into isThankYouPage and fixes indentation."
+    },
+    {
+      "path": "src/lib/funnel-goal-step-pages.test.ts",
+      "original_sha256": "0ddf3f2059eedd9598c5f9ec2f7cd0e77b582618cf11110e4a1acce4cd5d667a",
+      "master_blob": "c5e0089202f8671da2783616e069c4730cb7415b",
+      "decision": "SEMANTICALLY_DELIVERED",
+      "reason": "Same success confirmation assertions; title and intermediate text filtering differ without changing required outcomes."
+    },
+    {
+      "path": "src/lib/funnel-step-pages.test.ts",
+      "original_sha256": "59a032e4105ddcb2480a51e9d198de4ee669e8322db98428ed7fa655edd15610",
+      "master_blob": "63eb067e79a412407f1cf56d1fdb3cccd4ea468c",
+      "decision": "SEMANTICALLY_DELIVERED",
+      "reason": "Same changed-binding assertion for ordinary edit and retained-binding assertion for template application; only local variable names and formatting differ."
+    }
+  ]
+}

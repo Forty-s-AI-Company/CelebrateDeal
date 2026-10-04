@@ -1,0 +1,19 @@
+{
+  "pr": 359,
+  "state": "MERGED",
+  "head": "1184c1226771bf41af45ec1c8601f6b4b7103543",
+  "merge_commit": "e2014b5d3eecf71e2bb9b66861d6c50fafc1f449",
+  "merged_at": "2026-10-04T17:36:33Z",
+  "accepted_and_merged_tree": "b18fd9a08a513ac32ca1d6e3e134cc95cd4358db",
+  "ci": {
+    "37219499023": "success",
+    "37219495810": "success"
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:9726a5cdbed398c1d24b2f39354c5c8f0641b9c5230e03d4171950fd6f590412"
+  },
+  "method": "protected squash with exact head match; no admin bypass",
+  "remaining": "Shell and live project binding pending validation; historical reconciliation remains active."
+}

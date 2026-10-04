@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { LiveStepperForm } from "@/components/live-stepper-form";
 import { PageHeader } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
@@ -54,9 +56,9 @@ function LiveDraftResumeNotice({ drafts, timeZone }: { drafts: ResumableLiveDraf
   );
 }
 
-export default async function NewLivePage({ searchParams }: { searchParams: Promise<{ error?: string; draft?: string }> }) {
+export default async function NewLivePage({ searchParams }: { searchParams: Promise<{ error?: string; draft?: string; projectId?: string }> }) {
   const vendor = await requireVendorManager();
-  const { error, draft } = await searchParams;
+  const { error, draft, projectId: requestedProjectId } = await searchParams;
   const requestedDraftId = typeof draft === "string" && /^[a-z0-9_-]{1,128}$/iu.test(draft) ? draft : "";
   const db = getDb();
   const draftLookupAt = new Date();
@@ -146,6 +148,16 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
   const initialDraft = savedDraft && parsedDraft?.success
     ? { id: savedDraft.id, revision: savedDraft.revision, payload: parsedDraft.data, updatedAt: savedDraft.updatedAt.toISOString() }
     : undefined;
+  // A resumed draft keeps its original scope; a conflicting URL must not move it.
+  const draftProjectId = initialDraft?.payload.projectId;
+  if (draftProjectId && requestedProjectId && draftProjectId !== requestedProjectId) notFound();
+  let projectId: string | null;
+  try {
+    projectId = await resolveSalesProjectBinding(db, vendor.id, draftProjectId ?? requestedProjectId ?? null);
+  } catch (bindingError) {
+    if (bindingError instanceof SalesProjectBindingError) notFound();
+    throw bindingError;
+  }
   const resumableDrafts = resumableDraftRecords.flatMap((record): ResumableLiveDraft[] => {
     const parsed = LiveStudioDraftPayloadSchema.safeParse(record.payload);
     return parsed.success
@@ -175,6 +187,7 @@ export default async function NewLivePage({ searchParams }: { searchParams: Prom
           label: `${membership.team.name} · ${membership.vendorMember.user.name || "未命名成員"}`,
         }))}
         streamPages={streamQuotaPages.map((page) => ({ id: page.id, label: `${page.headline || "未命名推廣頁"} · /${page.slug}` }))}
+        projectId={projectId}
         csrfToken={csrfToken}
         error={error}
         initialDraft={initialDraft}

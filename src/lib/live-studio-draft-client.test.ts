@@ -8,6 +8,13 @@ afterEach(() => {
 });
 
 describe("serializeLiveStudioDraft", () => {
+  it("preserves project context without changing legacy draft payloads", () => {
+    const base: Array<[string, string]> = [["streamMode", "vod"], ["affiliateMode", "enabled"], ["usageAttributionMode", "PROMOTER"], ["quotaPayerScope", "VENDOR"]];
+    expect(liveStudioDraftFromFormData(formData([...base, ["projectId", "project-1"]]), 0).projectId).toBe("project-1");
+    expect(liveStudioDraftFromFormData(formData(base), 0)).not.toHaveProperty("projectId");
+    expect(() => liveStudioDraftFromFormData(formData([...base, ["projectId", "../foreign"]]), 0)).toThrow();
+  });
+
   it("serializes only the bounded product-facing fields", () => {
     const form = formData([
       ["studioPreset", "COMMERCE"],

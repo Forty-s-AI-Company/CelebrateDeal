@@ -21,6 +21,9 @@ const cspReportOnly = [
 const disableSentryAutoUpload = process.env.SENTRY_DISABLE_AUTO_UPLOAD === "true";
 
 const nextConfig: NextConfig = {
+  // Browser-only component QA can run beside a developer's active Next server
+  // without sharing its build lock or cache.
+  ...(process.env.FUNNEL_ELEMENTS_E2E === "true" ? { distDir: ".next-funnel-elements" } : {}),
   allowedDevOrigins: ["127.0.0.1"],
   images: {
     // 商家圖片直接由瀏覽器向來源站載入；專案所有 Image 目前也都明確
@@ -61,7 +64,9 @@ export default withSentryConfig(nextConfig, {
   sourcemaps: {
     disable: disableSentryAutoUpload,
   },
-  tunnelRoute: "/monitoring",
+  // 開發模式的 Next HTTP 代理會在 Sentry 上報時累加 response listeners。
+  // 本機直接使用 SDK 的原始端點；部署環境仍保留既有 tunnel。
+  tunnelRoute: process.env.NODE_ENV === "development" ? undefined : "/monitoring",
   webpack: {
     automaticVercelMonitors: true,
     treeshake: {

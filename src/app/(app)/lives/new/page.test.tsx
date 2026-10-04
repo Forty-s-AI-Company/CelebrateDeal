@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  projectFindFirst: vi.fn(),
   requireVendorManager: vi.fn(),
   getCsrfToken: vi.fn(),
   videoFindMany: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock("@/lib/csrf", () => ({
 }));
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
+    salesProject: { findFirst: mocks.projectFindFirst },
     video: { findMany: mocks.videoFindMany },
     product: { findMany: mocks.productFindMany },
     registrationForm: { findMany: mocks.registrationFormFindMany },
@@ -64,6 +66,7 @@ function trackQuery<T>(tracker: { active: number; max: number }, result: T) {
 describe("NewLivePage data minimization", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.projectFindFirst.mockResolvedValue(null);
     mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", timezone: "Asia/Taipei" });
     mocks.getCsrfToken.mockResolvedValue("csrf-token");
     mocks.liveStudioDraftFindFirst.mockResolvedValue(null);
@@ -80,6 +83,31 @@ describe("NewLivePage data minimization", () => {
     ]) {
       mock.mockResolvedValue([]);
     }
+  });
+
+  it("passes a validated tenant project from the query into the create form", async () => {
+    mocks.projectFindFirst.mockResolvedValue({ id: "project-1" });
+    renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({ projectId: "project-1" }) }));
+    expect(mocks.projectFindFirst).toHaveBeenCalledWith({ where: { id: "project-1", vendorId: "vendor-1", status: { not: "archived" } }, select: { id: true } });
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1" }), undefined);
+  });
+
+  it("does not render a form for an unavailable project", async () => {
+    await expect(NewLivePage({ searchParams: Promise.resolve({ projectId: "foreign-project" }) })).rejects.toThrow("404");
+    expect(mocks.liveStepperForm).not.toHaveBeenCalled();
+  });
+
+  it("recovers project context from the saved draft without a project query", async () => {
+    mocks.projectFindFirst.mockResolvedValue({ id: "project-1" });
+    mocks.liveStudioDraftFindFirst.mockResolvedValue({ id: "draft-1", revision: 2, payload: { ...emptyLiveStudioDraft(), projectId: "project-1" }, updatedAt: new Date("2026-10-04T00:00:00Z") });
+    renderToStaticMarkup(await NewLivePage({ searchParams: Promise.resolve({ draft: "draft-1" }) }));
+    expect(mocks.liveStepperForm).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-1" }), undefined);
+  });
+
+  it("rejects a project query that conflicts with the saved draft scope", async () => {
+    mocks.liveStudioDraftFindFirst.mockResolvedValue({ id: "draft-1", revision: 2, payload: { ...emptyLiveStudioDraft(), projectId: "project-1" }, updatedAt: new Date("2026-10-04T00:00:00Z") });
+    await expect(NewLivePage({ searchParams: Promise.resolve({ draft: "draft-1", projectId: "project-2" }) })).rejects.toThrow("404");
+    expect(mocks.projectFindFirst).not.toHaveBeenCalled();
   });
 
   it("only serializes the video identifier and title into the client form", async () => {
