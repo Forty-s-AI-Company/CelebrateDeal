@@ -1,3 +1,4 @@
+import { isPasswordResetSmokeEnabled } from "@/lib/password-reset-smoke-policy";
 import { cookies } from "next/headers";
 import {
   createVendorMemberAction,
@@ -317,7 +318,7 @@ export default async function SecuritySettingsPage({
               </tbody>
             </table>
           </div>
-          <div className="mt-5 rounded-lg border border-blue-100 bg-blue-50 p-4">
+          {isPasswordResetSmokeEnabled() ? <div className="mt-5 rounded-lg border border-blue-100 bg-blue-50 p-4">
             <h3 className="text-sm font-semibold text-blue-900">密碼重設 smoke test</h3>
             <p className="mt-1 text-sm text-blue-800">
               忘記密碼時可從登入頁進入 `/password-reset/request`；此 smoke test 僅允許寄到環境設定的測試收件人。
@@ -332,7 +333,7 @@ export default async function SecuritySettingsPage({
                 寄送目前帳號的 reset 測試信
               </FormSubmitButton>
             </form>
-          </div>
+          </div> : null}
         </Card> : null}
       </div>
     </>

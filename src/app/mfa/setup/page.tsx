@@ -1,3 +1,4 @@
+import { isPasswordResetSmokeEnabled } from "@/lib/password-reset-smoke-policy";
 import { cookies } from "next/headers";
 import Image from "next/image";
 import Link from "next/link";
@@ -173,7 +174,7 @@ export default async function MfaSetupPage({
           </Card>
         </div>
 
-        <Card className="mt-5">
+        {isPasswordResetSmokeEnabled() ? <Card className="mt-5">
           <h2 className="text-lg font-semibold text-slate-950">Password reset email smoke</h2>
           <p className="mt-1 text-sm text-slate-600">
             僅寄送到環境設定的測試收件人，驗證 Resend、reset link、token TTL 與 session revoke 流程。
@@ -188,7 +189,7 @@ export default async function MfaSetupPage({
               寄送 password reset 測試信
             </FormSubmitButton>
           </form>
-        </Card>
+        </Card> : null}
       </section>
     </main>
   );

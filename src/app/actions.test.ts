@@ -2962,6 +2962,28 @@ describe("requestPasswordResetAction", () => {
 });
 
 describe("sendPasswordResetSmokeAction", () => {
+  it.each([false, true])("rejects deployed production before mail work (admin: %s)", async (isPlatformAdmin) => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+    vi.stubEnv("E2E_TEST_MODE", "true");
+    vi.stubEnv("E2E_BASE_URL", "https://app.example.test");
+    mocks.requireAuth.mockResolvedValue({
+      user: { id: "user-1", email: "smoke@example.test", platformRole: isPlatformAdmin ? "admin" : "user" },
+      vendor: { id: "vendor-1" },
+      member: { role: "owner" },
+      isPlatformAdmin,
+    });
+    const destination = isPlatformAdmin ? "/mfa/setup" : "/settings/security";
+    await expect(sendPasswordResetSmokeAction(new FormData())).rejects.toThrow(
+      `redirect:${destination}?error=password_reset_smoke_unavailable`,
+    );
+    expect(mocks.assertServerActionSecurity).toHaveBeenCalledOnce();
+    expect(mocks.requireAuth).toHaveBeenCalledOnce();
+    expect(mocks.isAllowedSmokeTestRecipient).not.toHaveBeenCalled();
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
+    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+  });
+
   function authenticatedSmokeRecipient() {
     mocks.requireAuth.mockResolvedValue({
       user: { id: "user-1", email: "smoke@example.test", platformRole: "user" },

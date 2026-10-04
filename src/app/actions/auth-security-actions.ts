@@ -19,6 +19,7 @@ import { getLoginSourceLimit } from "@/lib/auth-rate-limits";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { isAllowedSmokeTestRecipient } from "@/lib/email";
+import { isPasswordResetSmokeEnabled } from "@/lib/password-reset-smoke-policy";
 import {
   decryptMfaSecret,
   verifyRecoveryCodeAsync,
@@ -277,9 +278,11 @@ export async function regenerateRecoveryCodesAction(formData: FormData) {
 export async function sendPasswordResetSmokeAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireAuth();
+  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
+  // Gate the action itself before token creation or any mail-provider work.
+  if (!isPasswordResetSmokeEnabled()) redirect(`${destination}?error=password_reset_smoke_unavailable`);
   const headerStore = await headers();
   const appUrl = getCanonicalAppUrl();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
   if (!isAllowedSmokeTestRecipient(auth.user.email)) redirect(`${destination}?error=password_reset_smoke_recipient`);
   const rateLimited = await checkRateLimit(
     new Request(appUrl, { headers: forwardedRequestHeaders(headerStore) }),
