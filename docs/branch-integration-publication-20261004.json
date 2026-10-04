@@ -1,0 +1,17 @@
+{
+  "master": "40db1781aa9d2bf17013c328a390dfecef7eee11",
+  "pr351": {
+    "headRefOid": "ff9f446751d37be64bf2cf423e2e7c055135e0ce",
+    "mergeCommit": {
+      "oid": "40db1781aa9d2bf17013c328a390dfecef7eee11"
+    },
+    "mergedAt": "2026-10-04T12:33:14Z",
+    "state": "MERGED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/351"
+  },
+  "pr351_ci_run": 37200997791,
+  "pr351_gate": "READY",
+  "remaining_delivery": "PR352 includes the original PR353 commits; five product files plus inventory/future-work documentation.",
+  "historical_deferred_heads": 42,
+  "production_operations": "NOT_PERFORMED"
+}

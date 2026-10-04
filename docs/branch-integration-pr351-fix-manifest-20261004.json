@@ -1,0 +1,51 @@
+{
+  "base_head": "863218bba4d64ee2f97e8db43c19583ea9fdccd8",
+  "base_master": "bdbae2f53491afd518b97ee597e117d6a585b55c",
+  "patch": "branch-integration-pr351-fix-20261004.patch",
+  "patch_sha256": "29a467085dac4a2273fe85f1814d5e99f436039b770b4d859bfaa4afcab25342",
+  "files": [
+    {
+      "path": "src/lib/payment-providers/payuni.ts",
+      "base_sha256": "0471a95f626009be84be08d76e49d39c3dabeb731aa462f0f9133d9a557e89a0",
+      "candidate_sha256": "c648324837e868673737d5ed302e457d0e3fe517715f6c7537475541d23d604d"
+    },
+    {
+      "path": "src/lib/payment-providers/payuni.test.ts",
+      "base_sha256": "5e6d81ab1c92b758ded45db129eafadb0ad6804e867a0e93f75f7bdaae9c557a",
+      "candidate_sha256": "50ee4b87e6b81e47e5934fd3f9c040facf5f65e43ad3086cce817914b00e65cc"
+    },
+    {
+      "path": "src/lib/payment-providers/payuni-setup.test.ts",
+      "base_sha256": "39b2c514640fa9ae2e2af1cee0e81508022d29e44358a540bf73a9718e6ce78d",
+      "candidate_sha256": "2eea6aa98fd9fea951c5d3de7edf9aea58057a9c6d037c12b33bacad8d8b58b1"
+    },
+    {
+      "path": ".github/workflows/payuni-live-probe.yml",
+      "base_sha256": "1ab451cf3d5872ffd15ebf613f66b8471b19969c8c84660998f402589b5fc27a",
+      "candidate_sha256": "491baf1b798e7e863d68aa694a1986a7c02572b922b1605b2ce83595a88fae2c"
+    }
+  ],
+  "apply_check": {
+    "status": "PASS",
+    "exit_code": 0,
+    "method": "repo-root with explicit isolated directory; all expected patches checked; no skipped patches",
+    "checked_files": 4,
+    "output": "Checking patch .ai-team/tmp/pr351-original-four-files-20261004/src/lib/payment-providers/payuni.ts...\nChecking patch .ai-team/tmp/pr351-original-four-files-20261004/src/lib/payment-providers/payuni.test.ts...\nChecking patch .ai-team/tmp/pr351-original-four-files-20261004/src/lib/payment-providers/payuni-setup.test.ts...\nChecking patch .ai-team/tmp/pr351-original-four-files-20261004/.github/workflows/payuni-live-probe.yml...\n"
+  },
+  "publication": "MERGED",
+  "production_operations": "NOT_PERFORMED",
+  "published_pr": 351,
+  "published_head": "b3ddc37b370b51ca30f87c80217f75b24d924686",
+  "published_url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/351",
+  "merge": {
+    "headRefOid": "ff9f446751d37be64bf2cf423e2e7c055135e0ce",
+    "mergeCommit": {
+      "oid": "40db1781aa9d2bf17013c328a390dfecef7eee11"
+    },
+    "mergedAt": "2026-10-04T12:33:14Z",
+    "state": "MERGED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/351"
+  },
+  "merge_method": "squash_required_by_linear_history",
+  "merged_tree_equals_accepted_head": true
+}

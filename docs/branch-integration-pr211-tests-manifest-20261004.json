@@ -1,0 +1,43 @@
+{
+  "master_base": "bdbae2f53491afd518b97ee597e117d6a585b55c",
+  "source_pr": 211,
+  "source_head": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "patch": "branch-integration-pr211-tests-20261004.patch",
+  "patch_sha256": "27ce1ac85dad96d042ccace4b464d03de78efda29ae51742a393b8c56ad21bb4",
+  "files": [
+    {
+      "path": "src/components/landing-pages/funnel-commerce-element.test.tsx",
+      "source_sha256": "d25d2cf1b3f7bd4c69ba86d1cf745f7d3af5ef152ec38fcb1b5b3f3f197ef10c",
+      "candidate_sha256": "d25d2cf1b3f7bd4c69ba86d1cf745f7d3af5ef152ec38fcb1b5b3f3f197ef10c",
+      "adaptation": "unchanged original test"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-webinar-experience.test.tsx",
+      "source_sha256": "37bce358bf892c0dde5b8cbf64f5c5ae81fe52cc8528f8b1ea3b1b75c4a70799",
+      "candidate_sha256": "37bce358bf892c0dde5b8cbf64f5c5ae81fe52cc8528f8b1ea3b1b75c4a70799",
+      "adaptation": "unchanged original test"
+    },
+    {
+      "path": "src/components/landing-pages/landing-page-interactive-blocks.test.tsx",
+      "source_sha256": "29edcbefa21f0b1882e39ad740f750a317dad09c1d64cc839d156ec864ef31d7",
+      "candidate_sha256": "552b64c8ab92d95159830ad6349f20b9580af3bc01c681c260ef7515124bdafe",
+      "adaptation": "fixed wall clock with fake timers"
+    }
+  ],
+  "validation": {
+    "targeted_tests": "PASS",
+    "test_count": 20,
+    "scoped_eslint": "PASS",
+    "patch_apply_check": "PASS",
+    "apply_check_method": "repo-root with explicit isolated directory; all expected patches checked; no skipped patches",
+    "checked_files": 3,
+    "apply_check_output": "Checking patch .ai-team/tmp/pr211-test-patch-check-20261004/src/components/landing-pages/funnel-commerce-element.test.tsx...\nChecking patch .ai-team/tmp/pr211-test-patch-check-20261004/src/components/landing-pages/funnel-webinar-experience.test.tsx...\nChecking patch .ai-team/tmp/pr211-test-patch-check-20261004/src/components/landing-pages/landing-page-interactive-blocks.test.tsx...\n",
+    "tested_source_head": "863218bba4d64ee2f97e8db43c19583ea9fdccd8",
+    "scope_note": "Relevant Funnel component and domain source blobs equal master; no live provider or browser journey executed.",
+    "new_head_ci": "IN_PROGRESS"
+  },
+  "publication": "PUSHED_PR_OPEN",
+  "published_pr": 352,
+  "published_head": "6ddd9d60f6683f5923c03995876f0079ca8f8110",
+  "published_url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/352"
+}

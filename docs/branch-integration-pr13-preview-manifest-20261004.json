@@ -1,0 +1,45 @@
+{
+  "master_base": "bdbae2f53491afd518b97ee597e117d6a585b55c",
+  "source_pr": 13,
+  "source_head": "f5512bf0f0a256bcaf732307cdd330a91dad90e0",
+  "patch": "branch-integration-pr13-preview-20261004.patch",
+  "patch_sha256": "487d9eb5d7d45e9af5e8560f271986fa8cb6cfe0face10aac9850d7d7f5be236",
+  "files": [
+    {
+      "path": "src/lib/live-preview.ts",
+      "base_sha256": "672fccb48d7a5e6ed1f92cc30d7c01cc5edf3771f9b11ee579149b5aeea48f36",
+      "candidate_sha256": "586005d1cd663a0d5dea5d1c2898c1f62be2ea3223b5076297f28da18a0111b3"
+    },
+    {
+      "path": "src/lib/live-preview.test.ts",
+      "base_sha256": "19bdf6aebfd2ce594942659ad3a0e1c18529a4a13a9e4ff1a42f6ea8d830b70e",
+      "candidate_sha256": "da6b680c1520ab6f79beba4c84d4e8ec05d71e40b7c126d394e924d55aca13bf"
+    }
+  ],
+  "decision": "Recover deduplication and label normalization in current API. Preserve max-two summary, first-selection order, unknown-ID filtering and non-submitting preview UI.",
+  "adaptation": "Blank selected product uses 未命名商品 rather than misleading no-selection fallback.",
+  "review": {
+    "security": "Only display projection; no new writes, network calls, authorization or trusted pricing changes. Existing React text rendering retained.",
+    "performance": "Map and Set preserve linear traversal; only two displayed names normalized.",
+    "readability": "Existing helper reused; Chinese comment explains deduplication before counting.",
+    "maintainability": "Current exported API and return shape retained; regression tests assert ordering, count, blank label and input immutability.",
+    "independent": false
+  },
+  "validation": {
+    "targeted_tests": "PASS",
+    "test_files": 2,
+    "tests": 39,
+    "scoped_eslint": "PASS",
+    "patch_apply_check": "PASS",
+    "apply_check_method": "repo-root with explicit isolated directory; all expected patches checked; no skipped patches",
+    "checked_files": 2,
+    "apply_check_output": "Checking patch .ai-team/tmp/pr13-preview-patch-check-20261004/src/lib/live-preview.ts...\nChecking patch .ai-team/tmp/pr13-preview-patch-check-20261004/src/lib/live-preview.test.ts...\n",
+    "new_head_ci": "IN_PROGRESS",
+    "browser_e2e": "NOT_RUN"
+  },
+  "publication": "PUSHED_PR_OPEN",
+  "production_operations": "NOT_PERFORMED",
+  "published_pr": 353,
+  "published_head": "49e884ff6870793412534e1cb22fb19cfea76a4e",
+  "published_url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/353"
+}

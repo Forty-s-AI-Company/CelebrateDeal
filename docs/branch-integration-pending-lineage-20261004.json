@@ -1,0 +1,513 @@
+{
+  "master_base": "bdbae2f53491afd518b97ee597e117d6a585b55c",
+  "pending_unique_heads": 49,
+  "maximal_pending_heads": [
+    "0b10ff680117320544ade07a6deda358fb88e20a",
+    "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+    "177554e10d2bfa4e500173b5b0557904d3d5b749",
+    "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+    "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+    "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+    "22f06a69bf79149f673d7800225045990e68cb07",
+    "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+    "2cceebba802dec508faaad166e37fa1e51b09ed5",
+    "30230f4ab63c65481324a128ff1369deee073c83",
+    "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
+    "39b8dedf2ea140bc264088c9d1843d99196586ff",
+    "3ace54c10b581285a297c5e95e677178314e1c52",
+    "3e6bf78b2850373e1989b51666cd129798a93b70",
+    "45612059ab90eb89eae83d418c4af115427370eb",
+    "4c44431c9769bef50704bb6183707655eb34883c",
+    "4fac54930808b3184331aad342dd40cb232d228e",
+    "62fb1655dc47c7156a68a09ee18b42d4120d9b61",
+    "638707f9f043498136107b38968e49a0c38e9133",
+    "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
+    "6c25a938041304a86617648e299815526131f0fd",
+    "6d63dd9793091309208f55b5ec132699ec839d0e",
+    "7f07a5f615ee6011c5eb559a60687f966653d1d9",
+    "7f1b3fd26e48a41e9e003c848594fa102000f220",
+    "8605600797576dd2db003948f30358d1f2a7af78",
+    "863218bba4d64ee2f97e8db43c19583ea9fdccd8",
+    "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+    "b447582b0ef45bf920ddc5196801048ce787489e",
+    "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+    "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+    "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+    "bf45235f8b10fa1fded2da0a4c079e5b883cfef0",
+    "cd3571dd818444e51e9c8fec9b3992126ffafd6b",
+    "d8c85fbbb39e1a72668fa49df171df49e5ef45d1",
+    "de515182fc5fbcccbefa348f33ee7fad1d6ca715",
+    "ded82898a687220496add74827691676e84c8b31",
+    "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3",
+    "f5512bf0f0a256bcaf732307cdd330a91dad90e0",
+    "f669d5b502cebcabbc4d25db50dbdd980d283c71"
+  ],
+  "rows": [
+    {
+      "head": "0b10ff680117320544ade07a6deda358fb88e20a",
+      "refs": [
+        "refs/heads/codex/staging-browser-diagnostic-20260925",
+        "refs/remotes/origin/codex/staging-browser-diagnostic-20260925"
+      ],
+      "maximal_pending_heads": [
+        "0b10ff680117320544ade07a6deda358fb88e20a"
+      ]
+    },
+    {
+      "head": "0f44aea78434a3850ecb8c38ba6fb25586cbd0d4",
+      "refs": [
+        "refs/heads/codex/staging-browser-flow-20260925"
+      ],
+      "maximal_pending_heads": [
+        "3e6bf78b2850373e1989b51666cd129798a93b70"
+      ]
+    },
+    {
+      "head": "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+      "refs": [
+        "refs/remotes/origin/codex/auto-auto-affiliate-click-paid-order-attribution-f7538669"
+      ],
+      "maximal_pending_heads": [
+        "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e"
+      ]
+    },
+    {
+      "head": "177554e10d2bfa4e500173b5b0557904d3d5b749",
+      "refs": [
+        "refs/remotes/origin/codex/payuni-production-query-hard-blocker"
+      ],
+      "maximal_pending_heads": [
+        "177554e10d2bfa4e500173b5b0557904d3d5b749"
+      ]
+    },
+    {
+      "head": "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+      "refs": [
+        "refs/remotes/origin/codex/auto-auto-checkout-response-no-store-b059af2b"
+      ],
+      "maximal_pending_heads": [
+        "1a918f9e2e1974abc229c4bd76d97d17b398bf63"
+      ]
+    },
+    {
+      "head": "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+      "refs": [
+        "refs/remotes/origin/codex/auto-auto-live-checkout-failure-feedback-7a44bfcb"
+      ],
+      "maximal_pending_heads": [
+        "1ff1b5135f723c2da1e4509625284c376d8cf83e"
+      ]
+    },
+    {
+      "head": "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+      "refs": [
+        "refs/remotes/origin/codex/auto-auto-checkout-metadata-failure-compensation-5088a79f"
+      ],
+      "maximal_pending_heads": [
+        "227c102b7f49221a9d0fea17536ce2ed9e82312c"
+      ]
+    },
+    {
+      "head": "22f06a69bf79149f673d7800225045990e68cb07",
+      "refs": [
+        "refs/heads/codex/recovery-live-stepper-qa-20260719"
+      ],
+      "maximal_pending_heads": [
+        "22f06a69bf79149f673d7800225045990e68cb07"
+      ]
+    },
+    {
+      "head": "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+      "refs": [
+        "refs/remotes/origin/codex/auto-auto-checkout-transaction-create-failure-eff9bf94"
+      ],
+      "maximal_pending_heads": [
+        "2401481ce4ea07b1bb7448c62be0db589b73c85e"
+      ]
+    },
+    {
+      "head": "2c419848945be94d6afec4dd9a0073f6a3ab142f",
+      "refs": [
+        "refs/heads/codex/payuni-success-idempotency-20260925"
+      ],
+      "maximal_pending_heads": [
+        "6d63dd9793091309208f55b5ec132699ec839d0e"
+      ]
+    },
+    {
+      "head": "2cceebba802dec508faaad166e37fa1e51b09ed5",
+      "refs": [
+        "refs/heads/codex/auto-auto-test-vendor-member-deactivation-399b7b28",
+        "refs/remotes/origin/codex/auto-auto-test-vendor-member-deactivation-399b7b28"
+      ],
+      "maximal_pending_heads": [
+        "2cceebba802dec508faaad166e37fa1e51b09ed5"
+      ]
+    },
+    {
+      "head": "30230f4ab63c65481324a128ff1369deee073c83",
+      "refs": [
+        "refs/heads/codex/auto-auto-live-analytics-empty-states-cd25b32d",
+        "refs/remotes/origin/codex/auto-auto-live-analytics-empty-states-cd25b32d"
+      ],
+      "maximal_pending_heads": [
+        "30230f4ab63c65481324a128ff1369deee073c83"
+      ]
+    },
+    {
+      "head": "35d8f59341bcb776e548c69fe874a3f4d1fe2528",
+      "refs": [
+        "refs/heads/codex/payuni-sandbox-external-qa",
+        "refs/remotes/origin/codex/payuni-sandbox-external-qa"
+      ],
+      "maximal_pending_heads": [
+        "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+        "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e"
+      ]
+    },
+    {
+      "head": "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
+      "refs": [
+        "refs/heads/codex/auto-auto-fix-live-analytics-kpi-window-ef3a2883",
+        "refs/remotes/origin/codex/auto-auto-fix-live-analytics-kpi-window-ef3a2883"
+      ],
+      "maximal_pending_heads": [
+        "36b38ad22f3369e4e5265983e36a7a19ab8eb369"
+      ]
+    },
+    {
+      "head": "39b8dedf2ea140bc264088c9d1843d99196586ff",
+      "refs": [
+        "refs/remotes/origin/codex/auto-auto-checkout-failure-update-fallback-fc6dd84f"
+      ],
+      "maximal_pending_heads": [
+        "39b8dedf2ea140bc264088c9d1843d99196586ff"
+      ]
+    },
+    {
+      "head": "3ace54c10b581285a297c5e95e677178314e1c52",
+      "refs": [
+        "refs/heads/codex/auto-auto-confirm-vendor-member-deactivation-3f8fb123",
+        "refs/remotes/origin/codex/auto-auto-confirm-vendor-member-deactivation-3f8fb123"
+      ],
+      "maximal_pending_heads": [
+        "3ace54c10b581285a297c5e95e677178314e1c52"
+      ]
+    },
+    {
+      "head": "3e6bf78b2850373e1989b51666cd129798a93b70",
+      "refs": [
+        "refs/remotes/origin/codex/staging-browser-flow-20260925"
+      ],
+      "maximal_pending_heads": [
+        "3e6bf78b2850373e1989b51666cd129798a93b70"
+      ]
+    },
+    {
+      "head": "45612059ab90eb89eae83d418c4af115427370eb",
+      "refs": [
+        "refs/heads/codex/payuni-query-hard-blocker-20260903"
+      ],
+      "maximal_pending_heads": [
+        "45612059ab90eb89eae83d418c4af115427370eb"
+      ]
+    },
+    {
+      "head": "4c44431c9769bef50704bb6183707655eb34883c",
+      "refs": [
+        "refs/heads/codex/staging-migration-compat-preflight-20260925"
+      ],
+      "maximal_pending_heads": [
+        "4c44431c9769bef50704bb6183707655eb34883c"
+      ]
+    },
+    {
+      "head": "4fac54930808b3184331aad342dd40cb232d228e",
+      "refs": [
+        "refs/heads/codex/staging-observability-20260926",
+        "refs/remotes/origin/codex/staging-observability-20260926"
+      ],
+      "maximal_pending_heads": [
+        "4fac54930808b3184331aad342dd40cb232d228e"
+      ]
+    },
+    {
+      "head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+      "refs": [
+        "refs/heads/codex/master-integration-sync-20260918",
+        "refs/heads/codex/one-stop-webinar-flow",
+        "refs/heads/codex/staging-migration-apply-gate"
+      ],
+      "maximal_pending_heads": [
+        "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e"
+      ]
+    },
+    {
+      "head": "62fb1655dc47c7156a68a09ee18b42d4120d9b61",
+      "refs": [
+        "refs/heads/codex/auto-auto-handle-password-reset-email-failure-f444b1d2",
+        "refs/remotes/origin/codex/auto-auto-handle-password-reset-email-failure-f444b1d2"
+      ],
+      "maximal_pending_heads": [
+        "62fb1655dc47c7156a68a09ee18b42d4120d9b61"
+      ]
+    },
+    {
+      "head": "638707f9f043498136107b38968e49a0c38e9133",
+      "refs": [
+        "refs/heads/codex/auto-auto-detach-live-from-interaction-script-e8ccc0ff",
+        "refs/remotes/origin/codex/auto-auto-detach-live-from-interaction-script-e8ccc0ff"
+      ],
+      "maximal_pending_heads": [
+        "638707f9f043498136107b38968e49a0c38e9133"
+      ]
+    },
+    {
+      "head": "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
+      "refs": [
+        "refs/remotes/origin/codex/auto-auto-mark-checkout-provider-failures-14cc4e06"
+      ],
+      "maximal_pending_heads": [
+        "67b3fffd94a107c55e6ec4a8a1441645283e6ad0"
+      ]
+    },
+    {
+      "head": "6c25a938041304a86617648e299815526131f0fd",
+      "refs": [
+        "refs/remotes/origin/codex/staging-runtime-provider-probe-20260925"
+      ],
+      "maximal_pending_heads": [
+        "6c25a938041304a86617648e299815526131f0fd"
+      ]
+    },
+    {
+      "head": "6d63dd9793091309208f55b5ec132699ec839d0e",
+      "refs": [
+        "refs/remotes/origin/codex/payuni-success-idempotency-20260925"
+      ],
+      "maximal_pending_heads": [
+        "6d63dd9793091309208f55b5ec132699ec839d0e"
+      ]
+    },
+    {
+      "head": "708a8d77072f6e7d7090c0cbb09721b78a247bd0",
+      "refs": [
+        "refs/heads/codex/staging-apply-gate-v2-20260925"
+      ],
+      "maximal_pending_heads": [
+        "b447582b0ef45bf920ddc5196801048ce787489e"
+      ]
+    },
+    {
+      "head": "7dba71b835ad1d40b8b7c149fe16e55477a084f6",
+      "refs": [
+        "refs/heads/codex/staging-runtime-provider-probe-20260925"
+      ],
+      "maximal_pending_heads": [
+        "6c25a938041304a86617648e299815526131f0fd"
+      ]
+    },
+    {
+      "head": "7f07a5f615ee6011c5eb559a60687f966653d1d9",
+      "refs": [
+        "refs/heads/codex/master-dependency-audit-20260918",
+        "refs/remotes/origin/codex/master-dependency-audit-20260918"
+      ],
+      "maximal_pending_heads": [
+        "7f07a5f615ee6011c5eb559a60687f966653d1d9"
+      ]
+    },
+    {
+      "head": "7f1b3fd26e48a41e9e003c848594fa102000f220",
+      "refs": [
+        "refs/heads/codex/auto-auto-test-live-stepper-preview-8d4b75c7",
+        "refs/remotes/origin/codex/auto-auto-test-live-stepper-preview-8d4b75c7"
+      ],
+      "maximal_pending_heads": [
+        "7f1b3fd26e48a41e9e003c848594fa102000f220"
+      ]
+    },
+    {
+      "head": "8605600797576dd2db003948f30358d1f2a7af78",
+      "refs": [
+        "refs/heads/codex/staging-provider-binding-attestation-20260925"
+      ],
+      "maximal_pending_heads": [
+        "8605600797576dd2db003948f30358d1f2a7af78"
+      ]
+    },
+    {
+      "head": "863218bba4d64ee2f97e8db43c19583ea9fdccd8",
+      "refs": [
+        "refs/heads/codex/prelaunch-engineering-20260929",
+        "refs/remotes/origin/codex/prelaunch-engineering-20260929"
+      ],
+      "maximal_pending_heads": [
+        "863218bba4d64ee2f97e8db43c19583ea9fdccd8"
+      ]
+    },
+    {
+      "head": "937f796d25d0e27db753b7786ea77ea3e773a686",
+      "refs": [
+        "refs/heads/chore/ai-team-v5.1-migration",
+        "refs/remotes/origin/chore/ai-team-v5.1-migration"
+      ],
+      "maximal_pending_heads": [
+        "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+        "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e"
+      ]
+    },
+    {
+      "head": "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+      "refs": [
+        "refs/remotes/origin/codex/auto-auto-prevent-duplicate-live-checkout-313cb628"
+      ],
+      "maximal_pending_heads": [
+        "94e66bdf36b446b12a05dc3312f0d12eeb86421f"
+      ]
+    },
+    {
+      "head": "abc55736ff4e5ff0c8e39399f4d1571cd0c4e08d",
+      "refs": [
+        "refs/heads/codex/payuni-production-query-hard-blocker"
+      ],
+      "maximal_pending_heads": [
+        "177554e10d2bfa4e500173b5b0557904d3d5b749"
+      ]
+    },
+    {
+      "head": "b447582b0ef45bf920ddc5196801048ce787489e",
+      "refs": [
+        "refs/remotes/origin/codex/staging-apply-gate-v2-20260925"
+      ],
+      "maximal_pending_heads": [
+        "b447582b0ef45bf920ddc5196801048ce787489e"
+      ]
+    },
+    {
+      "head": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+      "refs": [
+        "refs/heads/codex/funnel-goal3-only",
+        "refs/remotes/origin/codex/funnel-goal3-only"
+      ],
+      "maximal_pending_heads": [
+        "b5397dbb45ddc4dc15a3059b7dec90b5a7771487"
+      ]
+    },
+    {
+      "head": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+      "refs": [
+        "refs/remotes/origin/codex/one-stop-webinar-flow"
+      ],
+      "maximal_pending_heads": [
+        "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e"
+      ]
+    },
+    {
+      "head": "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+      "refs": [
+        "refs/remotes/origin/codex/auto-auto-checkout-metadata-write-failure-7ce63750"
+      ],
+      "maximal_pending_heads": [
+        "b92d3e91a28f41e3f0fb219db5ad5b80746c387b"
+      ]
+    },
+    {
+      "head": "bf45235f8b10fa1fded2da0a4c079e5b883cfef0",
+      "refs": [
+        "refs/heads/codex/ai-team-skills-automation-foundation",
+        "refs/remotes/origin/codex/ai-team-skills-automation-foundation"
+      ],
+      "maximal_pending_heads": [
+        "bf45235f8b10fa1fded2da0a4c079e5b883cfef0"
+      ]
+    },
+    {
+      "head": "cd3571dd818444e51e9c8fec9b3992126ffafd6b",
+      "refs": [
+        "refs/heads/codex/wp4-lineage-candidate-fix-20260903"
+      ],
+      "maximal_pending_heads": [
+        "cd3571dd818444e51e9c8fec9b3992126ffafd6b"
+      ]
+    },
+    {
+      "head": "d8c85fbbb39e1a72668fa49df171df49e5ef45d1",
+      "refs": [
+        "refs/heads/ai-team/isolated-write-smoke-20260712-0405",
+        "refs/remotes/origin/ai-team/isolated-write-smoke-20260712-0405"
+      ],
+      "maximal_pending_heads": [
+        "d8c85fbbb39e1a72668fa49df171df49e5ef45d1"
+      ]
+    },
+    {
+      "head": "de515182fc5fbcccbefa348f33ee7fad1d6ca715",
+      "refs": [
+        "refs/heads/codex/funnel-goal3"
+      ],
+      "maximal_pending_heads": [
+        "de515182fc5fbcccbefa348f33ee7fad1d6ca715"
+      ]
+    },
+    {
+      "head": "ded82898a687220496add74827691676e84c8b31",
+      "refs": [
+        "refs/remotes/origin/codex/auto-auto-verify-checkout-referral-attribution-6b406470"
+      ],
+      "maximal_pending_heads": [
+        "ded82898a687220496add74827691676e84c8b31"
+      ]
+    },
+    {
+      "head": "e1f38be324e349969a657be376aa1602e804c2dd",
+      "refs": [
+        "refs/heads/codex/pr210-secret-scan-fix"
+      ],
+      "maximal_pending_heads": [
+        "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+        "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e"
+      ]
+    },
+    {
+      "head": "eac0a3430df3ca0beed06a9c63cbd2cb13414fa7",
+      "refs": [
+        "refs/heads/codex/wp4-receipt-fix-20260903"
+      ],
+      "maximal_pending_heads": [
+        "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+        "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e"
+      ]
+    },
+    {
+      "head": "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3",
+      "refs": [
+        "refs/remotes/origin/codex/auto-auto-block-untracked-checkout-fallback-17dd29e7"
+      ],
+      "maximal_pending_heads": [
+        "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3"
+      ]
+    },
+    {
+      "head": "f5512bf0f0a256bcaf732307cdd330a91dad90e0",
+      "refs": [
+        "refs/heads/codex/auto-live-stepper-grounded-preview-63bea109",
+        "refs/remotes/origin/codex/auto-live-stepper-grounded-preview-63bea109"
+      ],
+      "maximal_pending_heads": [
+        "f5512bf0f0a256bcaf732307cdd330a91dad90e0"
+      ]
+    },
+    {
+      "head": "f669d5b502cebcabbc4d25db50dbdd980d283c71",
+      "refs": [
+        "refs/heads/codex/staging-backup-gate-20260925",
+        "refs/remotes/origin/codex/staging-backup-gate-20260925"
+      ],
+      "maximal_pending_heads": [
+        "f669d5b502cebcabbc4d25db50dbdd980d283c71"
+      ]
+    }
+  ],
+  "meaning": "Ancestry only: coverage by a pending head does not prove merge into master or acceptance. Preserve branch-specific delta review."
+}
