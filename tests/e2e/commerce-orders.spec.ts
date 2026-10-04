@@ -1277,6 +1277,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
     expect(listHtml).not.toContain(fixture.foreignOrderNumber);
 
     await page.getByRole("link", { name: "查看商品與履約進度" }).click();
+    await expect(page).toHaveTitle("訂單進度 | CelebrateDeal");
     await expect(page.getByRole("heading", { name: `訂單 ${fixture.orderNumber}` })).toBeVisible();
     const fulfillmentRegion = page.getByRole("region", { name: "商品與履約進度" });
     await expect(fulfillmentRegion).toBeVisible();
@@ -1296,6 +1297,7 @@ test("desktop merchant can recover upload and validation errors, then publish an
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`/support/orders/${fixture.buyerGrantId}`);
+    await expect(page).toHaveTitle("訂單進度 | CelebrateDeal");
     await expect(page.getByRole("heading", { name: `訂單 ${fixture.orderNumber}` })).toBeVisible();
     await captureIfRequested(page, "buyer-orders-mobile.png");
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -1642,7 +1644,10 @@ test("desktop merchant can recover upload and validation errors, then publish an
     expect(checkoutAttempts).toBe(2);
     expect(checkoutIdentities).toHaveLength(2);
     expect(checkoutIdentities[1]).toBe(checkoutIdentities[0]);
-    expect(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith("celebratedeal:checkout:")))).toEqual([]);
+    // 已建立的待付款訂單仍需保留原識別，重新整理才不會再次預留庫存。
+    expect(await page.evaluate(() => Object.keys(sessionStorage)
+      .filter((key) => key.startsWith("celebratedeal:checkout:"))
+      .map((key) => sessionStorage.getItem(key)))).toEqual([checkoutIdentities[0]]);
 
     const afterRecovery = await Promise.all([
       db.product.findUniqueOrThrow({ where: { id: fixture.productId }, select: { inventory: true } }),

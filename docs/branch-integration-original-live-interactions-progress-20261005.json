@@ -507,5 +507,36 @@
       "started_at": "2026-10-04T22:25:46.187Z",
       "scope": "Desktop/mobile real sale order and reload recovery, then synthetic failed state projection and actual cookie-authorized support page. Provider failure itself is covered separately by DB tests, not browser transport."
     }
+  },
+  "ci_browser_followup": {
+    "published_head": "e8bc70af331ad6e7b41e25e5521ede5bbc3ec0b7",
+    "failed_runs": [
+      37240123161,
+      37240125630
+    ],
+    "fixes": [
+      "Update 503 expectation to honest unknown-payment message",
+      "Require retained exact original checkout identity after pending recovery, preserve inventory/order assertions",
+      "Add exact title assertions before order-detail accessibility analysis"
+    ],
+    "targeted_browser": {
+      "receipt": ".ai-team/tmp/checkout-ci-regression-results.json",
+      "stats": {
+        "startTime": "2026-10-04T23:33:43.542Z",
+        "duration": 130354.742,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    "review": "Independent reviewer confirmed both behavior assertions and exact title synchronization: zero findings; axe/cache-control/canary assertions unchanged.",
+    "title_validation": {
+      "development_attempt": "Stopped at strict no-store/private cache-header expectation because Next dev returns no-cache,must-revalidate; not a title pass",
+      "production_mirror_session": 59093,
+      "status": "RUNNING",
+      "configuration": ".ai-team/tmp/buyer-order-title-production-playwright.config.ts"
+    },
+    "not_ready": true
   }
 }
