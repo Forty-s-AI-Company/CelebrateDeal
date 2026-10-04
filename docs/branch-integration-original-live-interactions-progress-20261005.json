@@ -233,5 +233,47 @@
       "receipt": ".ai-team/tmp/advanced-interaction-db-results.json"
     },
     "full_ci": "Requires new published head run; previous failure is not passing evidence."
+  },
+  "flash_sale_core_checkpoint": {
+    "status": "IN_PROGRESS_NOT_WIRED_NOT_READY",
+    "files": [
+      "src/lib/live-flash-sale.ts",
+      "src/lib/live-flash-sale.db.test.ts"
+    ],
+    "implemented": [
+      "Server-owned price/currency/product-binding validation",
+      "Reject malformed, zero, above-base and fractional TWD sale prices and inconsistent original prices",
+      "Quote/run/product revision comparison inside Serializable transaction",
+      "One-time claim consumption and conservative stockLimit reservation; rollback restores claim; unresolved payments retain slot"
+    ],
+    "validation": {
+      "db_passed": 10,
+      "db_failed": 0,
+      "receipt": ".ai-team/tmp/live-flash-sale-db-results.json",
+      "typescript": "PASS",
+      "eslint": "PASS"
+    },
+    "independent_review": {
+      "agent": "/root/portal_review_fallback",
+      "observed_model": "unknown",
+      "observed_effort": "unknown",
+      "status": "MAJOR_FOUND",
+      "finding": "Actual createReservedPaymentTransaction increments product.revision before createCommerceOrder callback; direct quote revision equality would reject valid checkout. Current direct domain tests do not cover this callback integration."
+    },
+    "next_required": [
+      "Integrate validation/claim consumption with actual reservation revision evidence without dropping revision guard; test real reservation path",
+      "Bind displayed offer quote digest to signed checkout admission so offer changes or missing cookie cannot silently change price",
+      "Issue scoped flash-sale bearer from actual viewer response, display authoritative currency/price, reserve inside actual checkout and retain idempotent recovery",
+      "Browser verification of discount/limit/expiry/retry paths; independent review and exact-head CI acceptance before merge"
+    ]
+  },
+  "latest_remote_ci_observation": {
+    "head": "8adbc8dc68645b3eca55333718bb197d8de13336",
+    "run_ids": [
+      37235580212,
+      37235576999
+    ],
+    "status": "in_progress",
+    "note": "Does not cover unpushed flash sale core checkpoint."
   }
 }
