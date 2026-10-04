@@ -1,5 +1,5 @@
 {
-  "master": "c071b2d655b0d875fa9d616920c5a554d462dbe6",
+  "master": "0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2",
   "pr351": {
     "headRefOid": "ff9f446751d37be64bf2cf423e2e7c055135e0ce",
     "mergeCommit": {
@@ -11,8 +11,8 @@
   },
   "pr351_ci_run": 37200997791,
   "pr351_gate": "READY",
-  "remaining_delivery": "PR210/211,28 historical heads and original dirty work remain in progress. R2 attestation four-file recovery is ready locally for the next protected PR.",
-  "historical_deferred_heads": 28,
+  "remaining_delivery": "PR210/211,27 historical heads and original dirty work remain. Student portal recovery is in progress with reproduced auth boundary fixes; not yet accepted.",
+  "historical_deferred_heads": 27,
   "production_operations": "NOT_PERFORMED",
   "pr352": {
     "headRefOid": "e4d726fd4fefdda6c6c142349d5dce261d8d753e",
@@ -78,5 +78,17 @@
   "pr355_ci_run": 37210769933,
   "pr355_push_ci_run": 37210766776,
   "pr355_gate": "READY",
-  "pr355_tree": "d68ee61105387d56172e66b7425e58c31a96697d"
+  "pr355_tree": "d68ee61105387d56172e66b7425e58c31a96697d",
+  "pr356": {
+    "headRefOid": "936e71248d550b31812eb4dc08d9b87d5c42ba64",
+    "mergeCommit": {
+      "oid": "0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2"
+    },
+    "mergedAt": "2026-10-04T15:41:06Z",
+    "state": "MERGED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/356"
+  },
+  "pr356_ci_run": 37212354565,
+  "pr356_push_ci_run": 37212350358,
+  "pr356_gate": "READY"
 }

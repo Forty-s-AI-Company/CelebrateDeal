@@ -1,9 +1,9 @@
 {
   "original_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
-  "current_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
-  "hashed_original_files": 118,
+  "head_equal": true,
   "original_entries_checked": 120,
-  "excluded_task_owned_audit_entries": 4,
+  "hashed_original_files": 118,
   "changed_hashes": [],
-  "changed_statuses": []
+  "changed_statuses": [],
+  "after_pr356_merge": "0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2"
 }

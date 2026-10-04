@@ -797,7 +797,8 @@ type ClaimedDelivery = {
   maxAttempts: number;
 };
 
-type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist">;
+type DeliverySnapshotDatabase = Pick<Prisma.TransactionClient, "live" | "liveNotificationRule" | "formSubmission" | "blacklist">
+  & Partial<Pick<Prisma.TransactionClient, "studentPortalAccessToken">>;
 
 export type EmailDeliverySnapshotIdentity = Pick<
   ClaimedDelivery,
@@ -993,6 +994,29 @@ async function isCurrentFormVerificationDelivery(
  * It prevents a stale reminder or expired verification token from reaching
  * the provider after the source record changes.
  */
+async function isCurrentStudentPortalDelivery(
+  delivery: EmailDeliverySnapshotIdentity,
+  now: Date,
+  database: DeliverySnapshotDatabase,
+) {
+  if (delivery.trigger !== "student_portal_magic_link") return true;
+  const digest = /^student-portal:([a-f0-9]{64})$/u.exec(delivery.idempotencyKey ?? "")?.[1];
+  if (!digest || !database.studentPortalAccessToken) return false;
+  // Queue identity and capability digest encode the same SHA-256 bytes.
+  // Recheck the tenant, purpose and live one-time state immediately before send.
+  return Boolean(await database.studentPortalAccessToken.findFirst({
+    where: {
+      vendorId: delivery.vendorId,
+      tokenHash: Buffer.from(digest, "hex").toString("base64url"),
+      purpose: "magic_link",
+      consumedAt: null,
+      issuedAt: { lte: now },
+      expiresAt: { gt: now },
+    },
+    select: { id: true },
+  }));
+}
+
 export async function isCurrentEmailDeliverySnapshot(
   delivery: EmailDeliverySnapshotIdentity,
   now = new Date(),
@@ -1001,7 +1025,8 @@ export async function isCurrentEmailDeliverySnapshot(
   return await isCurrentLiveReminderDelivery(delivery, now, database)
     && await isCurrentLiveNotificationDeliverySnapshot(delivery, now, database)
     && await isCurrentPostLiveFollowupDelivery(delivery, now, database)
-    && await isCurrentFormVerificationDelivery(delivery, now, database);
+    && await isCurrentFormVerificationDelivery(delivery, now, database)
+    && await isCurrentStudentPortalDelivery(delivery, now, database);
 }
 
 function reportDeliveryFailure(error: unknown, operation: string, status: string) {
@@ -1081,11 +1106,13 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
     },
     select: { resubscribedAt: true },
   });
-  if (suppression && !suppression.resubscribedAt) return finalizeSuppressed(delivery);
+  // Requested authentication mail is not a marketing subscription. Its capability
+  // still has to pass the send-time validity guard below.
+  if (suppression && !suppression.resubscribedAt && delivery.trigger !== "student_portal_magic_link") return finalizeSuppressed(delivery);
   if (!(await isCurrentEmailDeliverySnapshot(delivery, new Date()))) {
     return finalizeSuperseded(
       delivery,
-      delivery.trigger === "form_submission_verification" ? "verification_superseded" : "config_superseded",
+      ["form_submission_verification", "student_portal_magic_link"].includes(delivery.trigger) ? "verification_superseded" : "config_superseded",
     );
   }
 

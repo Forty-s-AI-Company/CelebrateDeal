@@ -1,0 +1,68 @@
+{
+  "pr": 356,
+  "head": "936e71248d550b31812eb4dc08d9b87d5c42ba64",
+  "integration_base": "c071b2d655b0d875fa9d616920c5a554d462dbe6",
+  "source_head": "8605600797576dd2db003948f30358d1f2a7af78",
+  "files": [
+    {
+      "path": ".github/workflows/staging-provider-binding-attestation.yml",
+      "candidate_sha256": "1920d73cf9e7d860fca81bbe221e456ad073660502a45fee1c7038ad586606c5"
+    },
+    {
+      "path": "docs/branch-integration-delivery-state-20261004.json",
+      "candidate_sha256": "b252bc824647b8667b099b7dfbed6a0b283ba3434eea087fd69ab28bc45671c7"
+    },
+    {
+      "path": "docs/branch-integration-future-work.md",
+      "candidate_sha256": "d45d875758d9760b3e858788650e5056b9959c90bb638c219252bf9911364fcc"
+    },
+    {
+      "path": "docs/branch-integration-pr211-library-decisions-20261004.json",
+      "candidate_sha256": "783a74ddf64f0b66012e5405033e366bcb9214c8d1e74b9d6a3d95f90ea8680a"
+    },
+    {
+      "path": "docs/branch-integration-pr355-acceptance-20261004.json",
+      "candidate_sha256": "935367ffd0f611ea26791529a59d6add007cd8b594815d68f175516697c2a48b"
+    },
+    {
+      "path": "docs/branch-integration-pr355-manifest-20261004.json",
+      "candidate_sha256": "3e5743f679a7d4a3346eac01f0d658beb6b236ee2489933b4ba5e14ac41e92da"
+    },
+    {
+      "path": "docs/branch-integration-pr355-remote-ci-20261004.json",
+      "candidate_sha256": "9f1b603860a01a1a60f3f64d2e268dcf2a712f4be872ecbff1aa0f3edc959776"
+    },
+    {
+      "path": "docs/branch-integration-progress-20261004.md",
+      "candidate_sha256": "5cefcf2aeddf81af6c0da34c92962e769639925d15c3d255fa19b85cdab6f368"
+    },
+    {
+      "path": "docs/branch-integration-provider-binding-recovery-20261004.json",
+      "candidate_sha256": "9922414a85c4aed64d0db8fdbd86348be372b49a5b454b3839a2711096fa36b3"
+    },
+    {
+      "path": "docs/branch-integration-publication-20261004.json",
+      "candidate_sha256": "11cd77fdec4b00ca41316f57760f697abd412e4587e3743979ab750940ff9d88"
+    },
+    {
+      "path": "docs/branch-integration-remaining-refresh-20261004.json",
+      "candidate_sha256": "94226a65196007bd171eda91aeaa7ac217bde3fc392ac78333dee2401007bd97"
+    },
+    {
+      "path": "docs/branch-integration-staging-target-url-leaf-20261004.json",
+      "candidate_sha256": "fded9e562978dc6978825c9092939577f79badd2b44424bd3d3abba16d82aa1e"
+    },
+    {
+      "path": "docs/launch/staging-provider-binding-attestation.md",
+      "candidate_sha256": "686fe2d6a19bd6ada964d75137bd260c1766ef5635e17b6ccd8f1f3ff030c397"
+    },
+    {
+      "path": "scripts/staging-provider-binding-attestation.mjs",
+      "candidate_sha256": "605caf525e03f20f20ec636d3e2b751d3a5f590a4bb5db8ea7d6ff6e29213e3b"
+    },
+    {
+      "path": "scripts/staging-provider-binding-attestation.test.mjs",
+      "candidate_sha256": "fe45a6ee8a0d401be9019f119928d00106646943b49be84af3fa84c6d6eb49ba"
+    }
+  ]
+}

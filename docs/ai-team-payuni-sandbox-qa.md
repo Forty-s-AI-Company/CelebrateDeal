@@ -8,6 +8,10 @@ Runner 的應用 host 固定為 `celebrate-deal-staging.carry-digital-nomad.in.n
 2. PayUni 查詢結果與 CelebrateDeal 訂單對帳
 3. 由 CelebrateDeal 財務後台發起 Sandbox 退款、退款狀態回查，以及 `PaymentTransaction=refunded`、單筆 `RefundRecord=processed` 的冪等性驗收
 
+以上是完整驗收範圍，並非單次 runner 成功就全部完成。`npm run qa:payuni:sandbox` 的正常路徑目前只自動完成付款、回呼比對與 provider 查詢，接著輸出 `celebratedeal-payuni-payment-handoff/v1` 的 `PENDING_REFUND` 收據，保存在 `.ai-team/reports/payuni-payment-handoff/`。退款、重複退款與資料庫狀態檢查會保留為 `pending-chrome`，交由固定 staging 的財務後台瀏覽器驗收接續處理；`PENDING_REFUND` 不能當成完整 QA PASS。
+
+回呼逾時時的直接 Sandbox 退款僅是清理分支，不等於 CelebrateDeal 後台退款與冪等性已通過。舊分支內嵌的財務登入、退款按鈕操作及資料庫輪詢尚未回收到目前 runner；若要恢復全自動流程，必須沿用既有非 Production 綁定、角色／CSRF 限制與遮罩化收據，逐項驗證上述第 3 段。
+
 ## Staging 版號與證據歸屬
 
 要把結果列為目前版本的 release evidence，開始付款、callback、provider query、退款或對帳前應確認：
@@ -22,7 +26,7 @@ Deployment、workspace 或 alias 改變後，必須更新 evidence 的版本歸�
 
 AI Team 的安全規則與測試入口已整理到 `docs/ai-team/testing-playbook.md` 與 `docs/ai-team/security-checklist.md`。實際命令為 `npm run qa:payuni:sandbox`；它只會使用呼叫端已安全注入的 **process environment**，絕不讀取 `.env*`、不接受 dotenv、也不輸出變數值。
 
-啟動前，受控的 secret provider 或工作階段 process environment 必須提供 Sandbox 專用的付款、callback、synthetic card 與 QA 登入設定。Runner 只記錄各必要設定是否存在（`true`／`false`）；缺少任何必要值會在任何網路請求前以 `LOGIN_REQUIRED` 結束。不得用 `.env.local`、shell sourcing、複製 secret 到命令列、或手動貼入卡號作為替代。
+啟動前，受控的 secret provider 或工作階段 process environment 必須提供 Sandbox 專用的付款、callback 與 synthetic card 設定。付款 runner 不要求另外注入財務登入帳密；接續後台退款驗收時，才使用固定 staging 的財務 QA 登入。Runner 只記錄各必要設定是否存在（`true`／`false`）；缺少任何必要值會在任何網路請求前以 `LOGIN_REQUIRED` 結束。不得用 `.env.local`、shell sourcing、複製 secret 到命令列、或手動貼入卡號作為替代。
 
 Runner 固定只允許 `https://sandbox-api.payuni.com.tw`，拒絕 Production、相似網域、userinfo、非 HTTPS 與任何顯式連接埠；HTTP redirect 會 fail closed。已知正式網域 `celebratedeal.carry-digital-nomad.in.net` 亦會被 Staging callback 驗證拒絕。
 

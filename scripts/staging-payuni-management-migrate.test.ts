@@ -42,7 +42,8 @@ describe("exact staging migration adapter", () => {
 
   it("rejects the expanded candidate instead of silently applying the unrelated LINE migration", () => {
     const current = inventory();
-    expect(current).toHaveLength(82);
+    expect(current).toHaveLength(83);
+    expect(current.some((item) => item.name === "20261004154500_student_portal_access_tokens")).toBe(true);
     expect(current.some((item) => item.name === "20261004140000_line_rich_menu_drafts")).toBe(true);
     expect(historicalInventory()).toHaveLength(81);
     expect(() => buildMigrationSql(current)).toThrow("MIGRATION_INVENTORY_INVALID");

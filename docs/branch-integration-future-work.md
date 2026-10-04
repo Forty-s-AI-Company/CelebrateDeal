@@ -1,6 +1,6 @@
 # 分支整合：未來處理與接手報告
 
-日期：2026-10-04（Asia/Taipei）。狀態：**四個交付段落完成 / #351、#352、#354、#355 已通過新 CI、canonical gate 並合入 master；#353 的兩檔內容已由 #352 完整交付。原 42 個歷史 head 已有 14 個完成替代核對，剩餘 28 個與原有未提交工作持續整合，整體 Goal 尚未全部完成**。
+日期：2026-10-04（Asia/Taipei）。狀態：**五個交付段落完成 / #351、#352、#354、#355、#356 已通過新 CI、canonical gate 並合入 master；#353 的兩檔內容已由 #352 完整交付。原 42 個歷史 head 已有 15 個完成交付或替代核對，剩餘 27 個與原有未提交工作持續整合，整體 Goal 尚未全部完成**。
 
 ## 本輪已完成的段落
 
@@ -125,7 +125,7 @@ AI Team 變更由主代理處理，不啟動正在修改的 AI Team 修改自己
 
 歷史 smoke head `d8c85fbbb39e` 已核對只有 CI、lockfile 與隔離 smoke 文件：所有原依賴仍在現行 lockfile，Next/eslint-config-next/Vitest 已向前更新，原 CI 的驗證行為皆由現行 CI 保留，#351/#352 的實際 protected PR 交付提供 guarded-write 流程證據。來源文件留在原分支，不冒充新執行收據。累計 **9 個 head 已證明替代，剩餘 33 個**；詳见 branch-integration-historical-smoke-supersession-20261004.json。
 
-#354 第三版 head `23fcae9871cec124cdb940a339be806081d5f849`：完整本機 4,210 Vitest tests PASS，Node TAP 找到 G7-55 清單尚未加入第 82 條 migration，精確補正後相關 11 tests PASS。Windows 本機三個 evidence hash failures 為 CRLF，已確認 Git blob 完全吻合既有 hash，無文件內容修改。独立第四次增量 review 無 findings，新 CI run `37207666809` 執行中。
+#354 第三版 head `23fcae9871cec124cdb940a339be806081d5f849`：完整本機 4,210 Vitest tests PASS，Node TAP 找到 G7-55 清單尚未加入第 82 條 migration，精確補正後相關 11 tests PASS。Windows 本機三個 evidence hash failures 為 CRLF，已確認 Git blob 完全吻合既有 hash，無文件內容修改。獨立第四次增量 review 無 findings，新 CI run `37207666809` 執行中。
 
 歷史 migration replay head `4c44431c9769` 五檔已完成內容替代核對；主線保留隔離、checksum、history 與 cleanup contract，改善精確 rollback 與跨 collation table counts 比對。6/6 contracts PASS，未执行外部 migration。證據見 `branch-integration-staging-replay-supersession-20261004.json`，剩餘32個歷史head。
 
@@ -152,3 +152,30 @@ Puck 0.22 起由 useInjectUiCss 自動注入編輯器樣式；已查核安裝套
 PR #355 的 head `24d9c7c76d6273329e2aff0b27ae9299da04d364` 已於 `2026-10-04T15:14:26Z` 經 protected squash merge，master 為 `c071b2d655b0d875fa9d616920c5a554d462dbe6`。PR CI `37210769933` 與 push CI `37210766776` 成功，canonical gate READY、0 blockers；master tree `d68ee61105387d56172e66b7425e58c31a96697d` 與驗收版本相同。交付表單防重送與重試、指定公開場次的 404 保護、管理者一頁式網站導覽，及上一批整合報告。
 
 下一批已完整回收歷史 staging R2 binding attestation 的 4 檔，原 bytes 不變；合成契約 4/4 與 ESLint PASS，尚未呼叫外部 provider。#211 的 library/UI 九檔取捨與 50/50 targeted tests 見 branch-integration-pr211-library-decisions-20261004.json；staging target_url 原 leaf 意圖已有證據，但 eac0a343 全部分支仍未結案。原 120 筆 dirty 與 118 檔 hash 再次核對未變。
+
+## Sandbox QA 共用層核對
+
+19 個歷史 head 的六個共用路徑收斂為五個 runner 版本。已核對原付款／callback／query／timeout-cleanup 意圖、宣告結構、package scripts/dependencies 與 vNext policy 取代關係；付款及交接收據 33 個 Vitest tests PASS，沒有外部付款／退款。`.env.example` 只記錄 blob metadata，未讀內容。
+
+現行正常 runner 成功時輸出 `PENDING_REFUND`，退款、資料庫狀態及冪等仍為 `pending-chrome`。已修正 QA 文件，不能以付款成功或逾時清理退款冒充完整 QA PASS。來源 `35d8f59341bc` 的 `refundThroughCelebrateDeal`、`waitForRefundPersistence`、`refundPersistencePassed`、`latestRefundableCheckout` 尚未遷移為新的固定 staging 交接消費流程；後續需驗證角色／CSRF、非 Production 綁定、單筆 processed RefundRecord 與重複退款拒絕。保留原分支，未將這 19 個 head 標成完整替代。詳見 branch-integration-sandbox-common-layer-20261004.json。
+
+
+## #210 學員入口：整合前權限核對
+
+來源 `b7956d80` 的登入、token、access route 與 dashboard 四檔已完成首輪資料邊界核對，完整來源雜湊與三項 findings 見 `branch-integration-pr210-student-portal-review-20261004.json`。尚未搬入產品程式，亦未完成整個學員入口的審查。
+
+必須先修正：舊版用單筆訂單的 buyer support grant 換發同 Email 的整個學員 session，缺少信箱所有權驗證；整合版本應由購買完成頁導向登入，透過寄至信箱的一次性安全連結取得帳戶權限。另移除非 production action 直接回傳有效 mockLink 的分支，測試改用隔離的合成郵件收件器；token/session 補齊未來簽發時間及正值期限驗證。這些是來源靜態審查結果，不冒稱主線已暴露此入口，亦未操作真實付款或測試他人資料。
+
+第一個完整交付段落包括信箱驗證登入、店家與學員範圍 dashboard、既有交付快照、諮詢／行事曆、優惠券及發票；新增 token model 必須以目前 migration tree 延伸，通過 disposable PostgreSQL 一次性 consume 併發測試、跨帳戶／跨店家測試及完整本機瀏覽器旅程，再經 Critical 獨立審查與新 head CI。原生課程單元／進度／證書、社群及多語／PWA 相依另外整合，不能先放入會導向不存在路由的連結。
+
+
+## #356 已合併與下一段實作
+
+#356 已於 `2026-10-04T15:41:06Z` 透過 protected squash merge 合入 `0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2`。PR CI `37212354565` 與 push CI `37212350358` 成功，canonical gate READY；master tree 與驗收 head 完全相同。來源 `860560079757` 的 parent 在 master，自身四檔 blob 全部相同，歷史待核對 28→27。未操作真實 R2。
+
+學員入口已在 `codex/recover-student-portal-20261004` 開始恢復信箱登入與 dashboard；隔離副本的 16 個 auth/action 測試通過，實際整合初跑 31/32，尚需調整原生課程路由的階段契約、補 CSRF voucher POST、DB／browser／獨立 review 與 CI。這些是進行中狀態，不代表 #210 完成交付。
+
+
+## 2026-10-05 學員入口整合驗證中
+
+已完成信箱登入及現有交付／訂單學員中心候選。修正單筆 checkout grant 升權、開發 mockLink、行銷退訂封鎖登入信、過期信重送與 internal-origin redirect；優惠券須符合原生結帳、交付、庫存及幣別。DB 13 項、登入邊界 browser 2 項及郵件 32 項 targeted tests 通過，獨立 Critical review findings 已關閉。最終 coverage、完整新增 browser 與 protected PR gate 仍執行中，不標為已合併。原生課程播放器／進度／證書、社群、多語言與 PWA 保留原來源，未計入此里程碑完成範圍；PR210、PR211 及其餘 27 historical heads 繼續逐項整合。
