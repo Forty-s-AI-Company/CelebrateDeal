@@ -230,7 +230,7 @@ function cleanup(container, tempRoot, marker, environment, receipt) {
   }
 }
 
-export async function main() {
+export async function main({ afterMigrate } = {}) {
   if (process.argv[2] === "--verify-receipt") {
     const candidate = process.argv[3];
     const valid = candidate && fs.existsSync(candidate) && verifyReceipt(fs.readFileSync(candidate, "utf8"));
@@ -290,6 +290,9 @@ export async function main() {
     }
     const actualMigrations = migrationRows(containerId, environment, migrations);
     if (!actualMigrations) throw new Error("migration-state-mismatch");
+    // Optional gates share the verified disposable binding and its exact-owner
+    // cleanup. Never expose the synthetic connection string in a receipt.
+    if (afterMigrate) await afterMigrate({ databaseUrl, environment, tempRoot });
     receipt.status = "PASS";
   } catch (error) {
     if (receipt.failure.category === "none") {

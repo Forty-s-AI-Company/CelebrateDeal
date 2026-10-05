@@ -1,0 +1,25 @@
+{
+  "schema_version": "remaining-capabilities-delivery/v1",
+  "batch": "F3.1",
+  "status": "DELIVERED",
+  "pr": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/369",
+  "head_sha": "00d43f4875489a1fa6f0b30a5cb2397f35fa3743",
+  "merge_sha": "2319c742f1455681ff08b720c193a2faf1545e27",
+  "merged_at": "2026-10-05T18:36:59Z",
+  "ci": [
+    {
+      "run": 37354840583,
+      "event": "push",
+      "quality": "PASS"
+    },
+    {
+      "run": 37354873011,
+      "event": "pull_request",
+      "quality": "PASS"
+    }
+  ],
+  "expected_head_checked": true,
+  "accepted_tree_matches_merge": true,
+  "local_acceptance_receipt": "remaining-capabilities-f3.1-local-receipt-20261006.json",
+  "overall_goal": "IN_PROGRESS"
+}
