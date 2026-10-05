@@ -1,0 +1,202 @@
+{
+  "schemaVersion": "celebratedeal-f1-ci-correction/v1",
+  "status": "LOCAL_ACCEPTED_REMOTE_CI_PENDING",
+  "prior_head": "f758a8b692f41ba2a7dc3c4105b4b1110d1a10cc",
+  "prior_ci_runs": [
+    37360947289,
+    37360997304
+  ],
+  "prior_ci_result": "FAIL: missing three API registry methods; exact inventory assertion still 83 instead of current 84",
+  "production_source_revision_unchanged": "sha256:af23858c6b7e1f20843b0a639a7ac92b20fc6b44bf5f25bc5f5485c0a9492989",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "f1-ci-inventory-correction",
+    "signals": {
+      "task_type": "test_fix",
+      "complexity": "low",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "low",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 2,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "test_fix",
+    "difficulty": "low",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "required": true,
+        "fallback_events": [
+          {
+            "model": "opus",
+            "reason": "cli_failure"
+          }
+        ],
+        "status": "planned",
+        "model_key": "astra",
+        "model": "gpt-6-astra",
+        "provider": "native_agent",
+        "reasoning_effort": "high",
+        "effort_floor": null,
+        "effort_reason": null,
+        "sandbox_mode": "read-only",
+        "execution": "native_agent_handoff_only",
+        "candidate_findings_only": false,
+        "may_spawn": false,
+        "astra_reason": "critical_review_no_equivalent"
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:c7133d7b693629a6327f286158c2de30af78376a54a9f53b02dfe27364107e8c",
+    "snapshot_root": "repository-root",
+    "snapshot_files": [
+      "docs/codex-goal/API_CONTRACT_REGISTRY.md",
+      "scripts/staging-payuni-management-migrate.test.ts"
+    ],
+    "required_checks": [
+      "unit",
+      "lint"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:c7133d7b693629a6327f286158c2de30af78376a54a9f53b02dfe27364107e8c"
+  },
+  "review": {
+    "kind": "review",
+    "revision": "sha256:c7133d7b693629a6327f286158c2de30af78376a54a9f53b02dfe27364107e8c",
+    "status": "PASS",
+    "independent": true,
+    "source": "desktop_native",
+    "role": "critical_review",
+    "model": "gpt-6-astra",
+    "requested_effort": "high",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "source_snapshot_unchanged": true,
+    "findings": [],
+    "summary": "Independent f1_ci_correction reviewer found no findings; exact 84 inventory, historical 81 boundary and all three API route contracts verified; before/after snapshot unchanged.",
+    "dispatches": 2
+  },
+  "provider_failure": {
+    "status": "AGY_RUNTIME_ERROR",
+    "exit_code": 0,
+    "requested_model": "claude-opus-5-5-high",
+    "requested_effort": "model-default",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "result": null,
+    "failure_reason": "invalid_review_json_or_schema"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:c7133d7b693629a6327f286158c2de30af78376a54a9f53b02dfe27364107e8c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 1.453
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:c7133d7b693629a6327f286158c2de30af78376a54a9f53b02dfe27364107e8c",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.406
+    }
+  ],
+  "assertions": "Current inventory exactly84 including native-course migration; historical81 adapter still rejects expanded inventory",
+  "remote_ci": "PENDING",
+  "merge": "PENDING"
+}
