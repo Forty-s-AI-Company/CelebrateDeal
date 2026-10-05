@@ -76,3 +76,53 @@ test.describe("Funnel editor history lifecycle", () => {
     await expect.poll(async () => (await parentDocument(page)).popups.length).toBe(1);
   });
 });
+
+async function openFlow(page: Page) {
+  await page.goto("/browser-qa/funnel-editor");
+  await page.getByRole("button", { name: "測試多步驟流程", exact: true }).click();
+  await expect(page.getByLabel("Funnel steps", { exact: true })).toBeVisible();
+}
+async function flowDocument(page: Page) {
+  return JSON.parse(await page.getByTestId("flow-document").innerText());
+}
+test.describe("Delivered workspace multi-step flow", () => {
+  test("add, echo, undo, redo and external replacement have one controlled update", async ({ page }) => {
+    await openFlow(page);
+    const initial = (await flowDocument(page)).flow.steps.length;
+    await page.getByRole("button", { name: "＋ 新增步驟", exact: true }).click();
+    await expect.poll(async () => (await flowDocument(page)).flow.steps.length).toBe(initial + 1);
+    await expect(page.getByTestId("change-count")).toHaveText("1");
+    await page.getByRole("button", { name: "回傳相同流程" }).click();
+    await page.getByRole("button", { name: "流程 Undo", exact: true }).click();
+    await expect.poll(async () => (await flowDocument(page)).flow.steps.length).toBe(initial);
+    await page.getByRole("button", { name: "流程 Redo", exact: true }).click();
+    await expect.poll(async () => (await flowDocument(page)).flow.steps.length).toBe(initial + 1);
+    await page.getByRole("button", { name: "載入外部流程" }).click();
+    await expect(page.getByRole("button", { name: "流程 Undo", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "流程 Redo", exact: true })).toBeDisabled();
+    await expect.poll(async () => (await flowDocument(page)).flow.steps.length).toBe(initial);
+  });
+  test("canvas edit invalidates flow redo without losing its new content", async ({ page }) => {
+    await openFlow(page);
+    await page.getByRole("button", { name: "＋ 新增步驟", exact: true }).click();
+    await page.getByRole("button", { name: "流程 Undo", exact: true }).click();
+    await expect(page.getByRole("button", { name: "流程 Redo", exact: true })).toBeEnabled();
+    const before = await flowDocument(page);
+    const initial = before.pages[before.activeStepId].root.length;
+    await page.getByRole("button", { name: "Section", exact: true }).click();
+    await expect(page.getByRole("button", { name: "流程 Redo", exact: true })).toBeDisabled();
+    await expect.poll(async () => {
+      const doc = await flowDocument(page); return doc.pages[doc.activeStepId].root.length;
+    }).toBe(initial + 1);
+  });
+  test("read-only mode blocks both step mutations and flow history", async ({ page }) => {
+    await openFlow(page);
+    await page.getByRole("button", { name: "＋ 新增步驟", exact: true }).click();
+    const before = await page.getByTestId("flow-document").innerText();
+    await page.getByRole("button", { name: "切換唯讀" }).click();
+    await expect(page.getByRole("button", { name: "＋ 新增步驟", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "流程 Undo", exact: true })).toBeDisabled();
+    await expect(page.getByLabel("步驟 URL Path", { exact: true })).toBeDisabled();
+    await expect(page.getByTestId("flow-document")).toHaveText(before);
+  });
+});

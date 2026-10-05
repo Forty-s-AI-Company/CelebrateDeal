@@ -19,7 +19,7 @@ import { createFunnelPopup, deleteFunnelPopup, updateFunnelPopup, validatePopupT
 import { FUNNEL_TEMPLATE_TRANSACTION_TEMPLATES, changeFunnelTemplate } from "@/lib/funnel-template-transaction";
 import { addFunnelStep, moveFunnelStep, removeFunnelStep, renameFunnelStep, setFunnelStepPath, type FunnelFlowMutationResult } from "@/lib/funnel-flow";
 
-type Props = { document: PageDocument; disabled?: boolean; onChange: (document: PageDocument) => void; commerceProducts?: FunnelCommerceProduct[]; commerceEnabled?: boolean };
+type Props = { document: PageDocument; disabled?: boolean; onChange: (document: PageDocument) => void | boolean; stepIds?: readonly string[]; commerceProducts?: FunnelCommerceProduct[]; commerceEnabled?: boolean };
 
 const palette: Array<{ type: FunnelNodeType; label: string }> = [
   { type: "section", label: "Section" }, { type: "row", label: "Row" },
@@ -103,14 +103,16 @@ export function FunnelPageEditor(props: Props) {
     setSession({ input: props.document, present: props.document, version: session.version + (echoed ? 0 : 1) });
   }
   return <FunnelPageEditorSession {...props} key={session.version} onChange={(document) => {
+    const accepted = props.onChange(document);
+    if (accepted === false) return false;
     setSession((current) => ({ ...current, present: document }));
-    props.onChange(document);
+    return accepted;
   }} />;
 }
 
 // The editor coordinates the palette, history, inspector, templates, Popups and canvas in one persisted session.
 // eslint-disable-next-line complexity -- one session boundary owns the mutually exclusive editor panels.
-function FunnelPageEditorSession({ document, disabled = false, onChange, commerceProducts = [], commerceEnabled = false }: Props) {
+function FunnelPageEditorSession({ document, disabled = false, onChange, commerceProducts = [], commerceEnabled = false, stepIds }: Props) {
   const [history, setHistory] = useState(() => createFunnelPageHistory(document));
   const historyRef = useRef(history);
   const [selectedId, setSelectedId] = useState<string>();
@@ -162,9 +164,11 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
   function publishHistory(next: ReturnType<typeof createFunnelPageHistory>) {
     if (next === historyRef.current) return;
     // Keep callbacks outside React state updaters: Strict Mode may replay them.
+    // The outer multi-page store may reject broken cross-page references.
+    // Publish history only after acceptance, so rejected content never ghosts.
+    if (onChange(next.present) === false) return;
     historyRef.current = next;
     setHistory(next);
-    onChange(next.present);
   }
 
   function add(type: FunnelNodeType) {
@@ -247,7 +251,7 @@ function FunnelPageEditorSession({ document, disabled = false, onChange, commerc
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">Tracking：{history.present.settings.tracking.reason}<br />Affiliate：{history.present.settings.affiliate.reason}</div>
         </div> : selected ? <div className="grid gap-4">
           <div><p className="text-xs font-bold text-slate-500">Breadcrumb</p><p className="mt-1 text-sm text-slate-700">{path?.map((item) => getFunnelNodeDefinition(item.type).label).join(" › ")}</p></div>
-          <FunnelElementInspector node={selected} disabled={disabled} popupIds={history.present.popups.map((popup) => popup.id)} onCommand={commit} />
+          <FunnelElementInspector node={selected} disabled={disabled} popupIds={history.present.popups.map((popup) => popup.id)} stepIds={stepIds} onCommand={commit} />
           <div className="grid grid-cols-2 gap-2"><button className={control} onClick={() => commit({ type: "move_up", nodeId: selected.id })}>上移</button><button className={control} onClick={() => commit({ type: "move_down", nodeId: selected.id })}>下移</button><button className={control} onClick={() => commit({ type: "duplicate", nodeId: selected.id })}>複製</button><button className={`${control} text-red-700`} onClick={() => { commit({ type: "delete", nodeId: selected.id }); setSelectedId(undefined); }}>刪除</button></div>
         </div> : <p className="text-sm text-slate-500">請先在畫布選取節點。</p>}
       </div>

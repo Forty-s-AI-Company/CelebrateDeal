@@ -1,3 +1,11 @@
+# 2026-10-06 新 session 接續 checkpoint（優先於下方歷史）
+
+- 主線核對 `2319c742`，F3.1 #369 已交付。
+- F1.1 #370 head `1d5bff45`：課程完整流程本機驗收通過；1067 Node TAP 全部通過、無skip；遠端CI執行中，尚未合併。
+- Q1 #371 Draft head `561ffdfe`：本機契約與DB通過；遠端CI未通過，固定sandbox指定交易驗收仍缺核准注入；不能發布。
+- F3.2 多步驟workspace已實作，先前disposable PG實際登入/save/reload/跨租戶browser通過，但最新review修正尚需重跑browser與複審；沒有canonical READY或PR。
+- 詳見 `docs/remaining-capabilities-session-handoff-20261006.md` 與 `docs/remaining-capabilities-f3.2-checkpoint-20261006.json`。整體Goal仍未完成；F2/Q2/A1及F1/F3其餘功能繼續承接。
+
 # 分支整合：未來處理與接手報告
 
 ## 2026-10-06 剩餘功能 Goal：編輯器生命週期交付候選
