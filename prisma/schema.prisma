@@ -3446,7 +3446,7 @@ model LandingPage {
   vendorId           String
   projectId          String
   name               String
-  slug               String
+  slug               String   @unique
   draftContent       Json
   draftFormId        String?
   draftLiveId        String?
