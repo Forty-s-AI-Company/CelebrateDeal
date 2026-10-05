@@ -74,13 +74,13 @@
     "sonnet": {
       "provider": "claude",
       "minimum_team": "ai-team",
-      "discovery_pattern": "(?<![\\w.-])(claude-sonnet-4-6)(?![\\w.-])",
+      "discovery_pattern": "(?<![\\w.-])(claude-sonnet-5-5-high)(?![\\w.-])",
       "effort": "model-default"
     },
     "opus": {
       "provider": "claude",
       "minimum_team": "ai-team-pro",
-      "discovery_pattern": "(?<![\\w.-])(claude-opus-4[.-]6-thinking)(?![\\w.-])",
+      "discovery_pattern": "(?<![\\w.-])(claude-opus-5-5-high)(?![\\w.-])",
       "effort": "model-default"
     }
   },

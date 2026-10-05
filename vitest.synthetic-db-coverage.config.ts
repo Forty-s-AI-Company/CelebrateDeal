@@ -32,6 +32,8 @@ const wp18 = readCoverageOwner("wp18");
 // The payout concurrency case reaches the same fail-closed encryption
 // boundary as the normal Vitest suite. Keep this deterministic key scoped to
 // the runner process; it never reads developer or deployment configuration.
+// 隔離資料庫測試僅使用固定的合成 CSRF 值，不讀取開發環境設定。
+process.env.CSRF_SECRET = "celebratedeal-local-synthetic-csrf-secret-v1";
 process.env.BANK_ACCOUNT_KEYRING_JSON = JSON.stringify({
   activeKeyId: "synthetic",
   keys: {

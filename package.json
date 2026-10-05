@@ -17,6 +17,7 @@
     "security:bank-accounts:backfill": "tsx scripts/backfill-bank-account-encryption.ts",
     "test:coverage": "node --import tsx scripts/run-combined-coverage.mjs",
     "e2e": "playwright test",
+    "e2e:funnel-elements": "node scripts/funnel-elements-browser-qa.mjs",
     "e2e:smoke": "prisma generate && playwright test tests/e2e/smoke.spec.ts",
     "e2e:a11y": "prisma generate && playwright test tests/e2e/accessibility.spec.ts",
     "e2e:performance": "prisma generate && playwright test tests/e2e/performance.spec.ts",

@@ -96,6 +96,18 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
   await expect(page.getByRole("status").filter({ hasText: "草稿已儲存。" })).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/landing-pages/${funnelId}\\?step=`, "u"));
   await expect(page.getByRole("button", { name: "發布已儲存草稿", exact: true })).toBeEnabled();
+  // 驗證實際持久化的綁定，避免僅靠編輯器畫面判定儲存成功。
+  const savedDraft = await db.landingPage.findUniqueOrThrow({ where: { id: funnelId }, select: { draftContent: true } });
+  const savedStepId = new URL(page.url()).searchParams.get("step");
+  expect(savedStepId).not.toBeNull();
+  const savedPages = (savedDraft.draftContent as { pages?: Record<string, { commerce?: unknown }> }).pages;
+  expect(savedPages?.[savedStepId!]?.commerce).toMatchObject({
+    schemaVersion: 1,
+    productId: fixture.product.id,
+    orderBumpProductId: fixture.bump.id,
+    formMode: "two_step",
+    agreement: { label: agreement },
+  });
   await page.reload();
   await page.getByRole("button", { name: "頁面", exact: true }).click();
   await expect(productSelect).toHaveValue(fixture.product.id);

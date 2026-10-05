@@ -230,13 +230,17 @@ def select_route(signals: dict[str, Any], policy: dict[str, Any]) -> tuple[str, 
 def unavailable(model: str, runtime: dict[str, Any], policy: dict[str, Any]) -> str | None:
     entry = policy["models"][model]
     provider = entry["provider"]
-    status = runtime.get("models", {}).get(model, runtime.get("models", {}).get(entry.get("slug"), {}))
-    if status.get("available") is False:
+    # 相同 CLI slug 共用失敗狀態，不能透過舊角色名稱再次呼叫。
+    aliases = [key for key, value in policy["models"].items()
+               if key == model or (entry.get("slug") and value.get("slug") == entry["slug"])]
+    statuses = [runtime.get("models", {}).get(key, {}) for key in [*aliases, entry.get("slug")]]
+    if any(status.get("available") is False for status in statuses):
         return "unavailable"
-    if status.get("quota_remaining") == 0 or runtime.get("quota", {}).get(provider) == 0:
+    if any(status.get("quota_remaining") == 0 for status in statuses) or runtime.get("quota", {}).get(provider) == 0:
         return "quota_exhausted"
-    if status.get("failure"):
-        return choice(status["failure"], set(policy["fallback_reasons"]), "failure")
+    for status in statuses:
+        if status.get("failure"):
+            return choice(status["failure"], set(policy["fallback_reasons"]), "failure")
     if provider != "codex":
         if runtime.get("agy_available") is not True:
             return "unavailable"
@@ -259,8 +263,10 @@ def resolve_model(role: str, selected: str, runtime: dict[str, Any], policy: dic
     if not isinstance(attempted, list) or any(m not in policy["models"] for m in attempted):
         raise ValueError("Invalid attempted_models")
     events = []
+    attempted_slugs = {policy["models"][key].get("slug") for key in attempted} - {None}
     for model in [selected, *fallback_candidates(role, selected, policy)]:
-        reason = "repeated_failure" if model in attempted else unavailable(model, runtime, policy)
+        repeated = model in attempted or policy["models"][model].get("slug") in attempted_slugs
+        reason = "repeated_failure" if repeated else unavailable(model, runtime, policy)
         if reason:
             events.append({"model": model, "reason": reason})
         else:
@@ -333,6 +339,11 @@ def route(task: dict[str, Any], runtime: dict[str, Any] | None = None, team: str
         return {"status": "ASTRA_REASON_REQUIRED", "execution": "none"}
     if astra_reason is not None and role in {"developer", "planner", "arbiter"}:
         selected = "astra"
+        # 相容角色不是能力升級；已證明 Sol 不足時，不把同一模型當作替代。
+        if (astra_reason == "sol_insufficient"
+                and policy["models"]["astra"].get("slug") == policy["models"]["sol"].get("slug")):
+            return {"status": "NO_CAPABLE_MODEL", "execution": "none",
+                    "reason": "astra_alias_cannot_upgrade_sol", "astra_reason": astra_reason}
     resolved, events = resolve_model(role, selected, runtime, policy)
     needed = "ai-team" if selected == "sol" else "ai-team-lite"
     models = [selected] + ([resolved] if resolved else [])

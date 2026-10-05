@@ -4,6 +4,12 @@
 [`.ai-team/config/routing-policy.json`](../../.ai-team/config/routing-policy.json)。
 本文件不再維護另一套模型順序或固定角色流程。
 
+## CLI 模型對應（2026-10-05，更新 CLI 後更正）
+
+Codex CLI 已由 0.145.0 更新為 0.160.0；以更新後 `app-server model/list` 為準，Luna 使用 `gpt-6-luna`、Sol 使用 `gpt-6.1-sol`、Astra 使用獨立的 `gpt-6-astra`。舊 CLI 僅列 GPT-5.6 不能代表目前帳號的最新模型能力；以後判定模型不可用前，先確認 CLI 版本與當次清單。
+
+Claude 維持 `agy models` 已驗證的 `claude-sonnet-5-5-high`／`claude-opus-5-5-high`；High 編入 slug，effort 保留 `model-default`。先前將 Astra 對應 Sol 的臨時設定已撤除。相同 slug 的重試防護保留，但目前 Sol/Astra 為不同模型，失敗狀態不互相污染。Router effort 上限維持 max，不啟用 ultra 的自動委派。
+
 ## 決策流程
 
 `route_task` 先驗證結構化 signals，再依序執行：
@@ -44,8 +50,8 @@ Task type floor、caller complexity 與 size requirement 決定實作 complexity
 | Low scope | Luna self-review；有價值時 Gemini Medium |
 | 普通廣域 diff／QA | Gemini Medium/High，輸出 candidate findings |
 | Medium risk 或重要 candidate finding | 視需要選一次合格的獨立審查 |
-| 複雜 plan／business logic | Claude Sonnet Thinking |
-| Critical security、payment、auth、billing、production data | Claude Opus Thinking，可直接跳過普通掃描 |
+| 複雜 plan／business logic | Claude Sonnet 5.5 High |
+| Critical security、payment、auth、billing、production data | Claude Opus 5.5 High，可直接跳過普通掃描 |
 | Technical Arbiter | 有具體 `astra_reason` 時 Astra low 起；只有重大未解問題才啟動 |
 
 Reviewer 統一輸出 `BLOCKER`、`MAJOR`、`MINOR`、`NIT`，每個 finding 必須包含 severity、file、line/area、issue、evidence、impact、recommended_fix、required_test、confidence。Reviewer 預設只回報，不直接改 code。
