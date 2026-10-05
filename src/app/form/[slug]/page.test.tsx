@@ -3,8 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getPublicRegistrationForm: vi.fn(),
+  findForm: vi.fn(),
+  findSessions: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
 }));
+
+vi.mock("@/lib/db", () => ({ getDb: () => ({ registrationForm: { findFirst: mocks.findForm }, live: { findMany: mocks.findSessions } }) }));
 
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("@/lib/public-registration-form", () => ({ getPublicRegistrationForm: mocks.getPublicRegistrationForm }));
@@ -134,4 +138,23 @@ describe("public registration form", () => {
     });
     await expect(generateViewport({ params: Promise.resolve({ slug: "summer" }) })).resolves.toEqual({ themeColor: "#123456" });
   });
+});
+
+// Exercise the real loader together with every public projection, not only a null stub.
+it.each([
+  { vendorId: "vendor-1", status: "draft", publishedAt: null },
+  { vendorId: "vendor-1", status: "archived", publishedAt: new Date() },
+  { vendorId: "vendor-other", status: "published", publishedAt: new Date() },
+])("hides unpublished or foreign project data from page, SEO and viewport: %j", async (salesProject) => {
+  const { loadPublicRegistrationForm } = await vi.importActual<typeof import("@/lib/public-registration-form")>("@/lib/public-registration-form");
+  mocks.findForm.mockResolvedValue({ ...publicForm, vendorId: "vendor-1", projectId: "project-1", salesProject });
+  mocks.getPublicRegistrationForm.mockImplementation(loadPublicRegistrationForm);
+  const params = Promise.resolve({ slug: "summer" });
+  await expect(PublicFormPage({ params, searchParams: Promise.resolve({}) })).rejects.toThrow("NOT_FOUND");
+  const metadata = await generateMetadata({ params });
+  expect(metadata).toMatchObject({ robots: { index: false, follow: false } });
+  expect(JSON.stringify(metadata)).not.toContain(publicForm.seoTitle);
+  expect(JSON.stringify(metadata)).not.toContain(publicForm.heroImageUrl);
+  expect(await generateViewport({ params })).toEqual({});
+  expect(mocks.findSessions).not.toHaveBeenCalled();
 });
