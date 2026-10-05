@@ -587,11 +587,12 @@ export async function rollbackLandingPage(pageId: string, version: number, expec
   return { id, revision: revision + 1 };
 }
 
-async function availableCopySlug(database: LandingPageDb, scope: { vendorId: string; projectId: string }, slug: string) {
+async function availableCopySlug(database: LandingPageDb, slug: string) {
   const base = slug.slice(0, MAX_SLUG_LENGTH - 5) || "page";
   for (let suffix = 1; suffix <= 100; suffix += 1) {
     const candidate = `${base}-copy${suffix === 1 ? "" : `-${suffix}`}`;
-    const existing = await database.landingPage.findFirst({ where: { vendorId: scope.vendorId, projectId: scope.projectId, slug: candidate }, select: { id: true } });
+    // Public slugs are globally unique; inspect existence only, never expose another tenant's page.
+    const existing = await database.landingPage.findFirst({ where: { slug: candidate }, select: { id: true } });
     if (!existing) return candidate;
   }
   throw new LandingPageConflictError();
@@ -602,7 +603,7 @@ export async function duplicateLandingPage(pageId: string) {
   const page = await requireScopedPage(db(), scope, pageId);
   const content = inputContent(page.draftContent);
   await validateBindings(db(), { ...scope, content, formId: page.draftFormId, liveId: page.draftLiveId });
-  const slug = await availableCopySlug(db(), scope, page.slug);
+  const slug = await availableCopySlug(db(), page.slug);
   const name = `${page.name} 副本`.slice(0, MAX_NAME_LENGTH);
   return db().landingPage.create({
     data: { vendorId: scope.vendorId, projectId: scope.projectId, name, slug, draftContent: content as Prisma.InputJsonValue, draftFormId: page.draftFormId, draftLiveId: page.draftLiveId },
@@ -611,9 +612,8 @@ export async function duplicateLandingPage(pageId: string) {
 }
 
 /**
- * Resolves a published page for the public Funnel surface. Slugs are scoped
- * to vendor/project, so an ambiguous cross-tenant slug fails closed instead
- * of choosing an arbitrary page.
+ * Resolves a globally unique public slug. The ambiguity check additionally
+ * fails closed for legacy databases that have not enforced the unique index.
  */
 // eslint-disable-next-line complexity
 export async function loadPublicLandingPage(slug: string): Promise<PublicLandingPage | null> {
