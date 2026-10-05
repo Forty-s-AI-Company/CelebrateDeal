@@ -310,15 +310,18 @@ async function resolveCheckoutOrderBump(
 
 function funnelProductSnapshotResponse(
   funnel: ResolvedFunnelCheckout | undefined,
-  product: { id: string; revision: number },
-  orderBumpProduct: { id: string; revision: number } | null,
+  product: { id: string; revision: number; priceCents: number; currency: string },
+  orderBumpProduct: { id: string; revision: number; priceCents: number; currency: string } | null,
 ) {
-  if (funnel && (funnel.product.id !== product.id || funnel.product.revision !== product.revision)) {
+  if (funnel && (funnel.product.id !== product.id || funnel.product.revision !== product.revision
+    || funnel.product.priceCents !== product.priceCents || funnel.product.currency !== product.currency)) {
     return NextResponse.json({ error: "Funnel checkout details changed; reload checkout" }, { status: 409 });
   }
   if (funnel && orderBumpProduct && (!funnel.orderBump
     || funnel.orderBump.id !== orderBumpProduct.id
-    || funnel.orderBump.revision !== orderBumpProduct.revision)) {
+    || funnel.orderBump.revision !== orderBumpProduct.revision
+    || funnel.orderBump.priceCents !== orderBumpProduct.priceCents
+    || funnel.orderBump.currency !== orderBumpProduct.currency)) {
     return NextResponse.json({ error: "Funnel checkout details changed; reload checkout" }, { status: 409 });
   }
   return null;

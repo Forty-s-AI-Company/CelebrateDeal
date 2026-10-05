@@ -304,6 +304,17 @@ describe("successful checkout response", () => {
     expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ projectId: "project-1" }));
   });
 
+  it.each([{ priceCents: 1100 }, { currency: "USD" }])("rejects changed Funnel price terms even at the same revision: %j", async (terms) => {
+    const resolved = funnelResolution();
+    funnelMocks.resolvePublishedFunnelCheckout.mockResolvedValueOnce({ ...resolved, product: { ...resolved.product, ...terms } });
+    const response = await POST(checkoutRequest(undefined, {
+      funnel: { slug: "offer", stepId: "order_form", expectedVersion: 2, expectedProductRevision: 4 }, agreementAccepted: true,
+    }));
+    expect(response.status).toBe(409);
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it("rejects a stale published Funnel snapshot before reserving stock", async () => {
     funnelMocks.resolvePublishedFunnelCheckout.mockResolvedValueOnce(funnelResolution({ version: 3 }));
     const response = await POST(checkoutRequest(undefined, {
