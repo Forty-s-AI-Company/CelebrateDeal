@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FunnelPageDocumentRenderer, type FunnelViewport } from "./funnel-page-document-renderer";
 import { FunnelPopupPreview } from "./funnel-popup-preview";
 import { FunnelElementInspector } from "./funnel-element-inspector";
@@ -94,10 +94,25 @@ function PaletteButton({ item, disabled, onAdd }: { item: (typeof palette)[numbe
   return <button draggable={!disabled && !unavailable} onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-celebratedeal-funnel-element", item.type); }} disabled={disabled || unavailable} title={unavailable ? capability.reason : undefined} className="min-h-16 rounded-xl border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-700 shadow-sm hover:border-blue-400 hover:text-blue-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400" onClick={() => onAdd(item.type)}>{item.label}{unavailable ? <span className="mt-1 block text-[10px] font-medium text-amber-700">{capabilityBadge(capability.status)}</span> : null}</button>;
 }
 function BlockCapability({ limited }: { limited: boolean }) { return limited ? <span className="mt-1 block text-[10px] font-semibold text-amber-700">付款需綁定商品；部分功能有限制</span> : null; }
+/** Parent echoes acknowledge local edits; a different document starts a fresh
+ * editing session so old undo commands cannot overwrite a restored document. */
+export function FunnelPageEditor(props: Props) {
+  const [session, setSession] = useState(() => ({ input: props.document, present: props.document, version: 0 }));
+  if (session.input !== props.document) {
+    const echoed = JSON.stringify(session.present) === JSON.stringify(props.document);
+    setSession({ input: props.document, present: props.document, version: session.version + (echoed ? 0 : 1) });
+  }
+  return <FunnelPageEditorSession {...props} key={session.version} onChange={(document) => {
+    setSession((current) => ({ ...current, present: document }));
+    props.onChange(document);
+  }} />;
+}
+
 // The editor coordinates the palette, history, inspector, templates, Popups and canvas in one persisted session.
 // eslint-disable-next-line complexity -- one session boundary owns the mutually exclusive editor panels.
-export function FunnelPageEditor({ document, disabled = false, onChange, commerceProducts = [], commerceEnabled = false }: Props) {
+function FunnelPageEditorSession({ document, disabled = false, onChange, commerceProducts = [], commerceEnabled = false }: Props) {
   const [history, setHistory] = useState(() => createFunnelPageHistory(document));
+  const historyRef = useRef(history);
   const [selectedId, setSelectedId] = useState<string>();
   const [viewport, setViewport] = useState<FunnelViewport>("desktop");
   const [panel, setPanel] = useState<"elements" | "blocks" | "settings" | "page" | "popups" | "templates" | "flow">("elements");
@@ -141,11 +156,15 @@ export function FunnelPageEditor({ document, disabled = false, onChange, commerc
 
   function commit(command: FunnelPageCommand) {
     if (disabled) return;
-    setHistory((current) => {
-      const next = dispatchFunnelPageCommand(current, command);
-      if (next !== current) onChange(next.present);
-      return next;
-    });
+    publishHistory(dispatchFunnelPageCommand(historyRef.current, command));
+  }
+
+  function publishHistory(next: ReturnType<typeof createFunnelPageHistory>) {
+    if (next === historyRef.current) return;
+    // Keep callbacks outside React state updaters: Strict Mode may replay them.
+    historyRef.current = next;
+    setHistory(next);
+    onChange(next.present);
   }
 
   function add(type: FunnelNodeType) {
@@ -172,11 +191,8 @@ export function FunnelPageEditor({ document, disabled = false, onChange, commerc
   }
 
   function stepHistory(direction: "undo" | "redo") {
-    setHistory((current) => {
-      const next = applyHistoryDirection(current, direction);
-      if (next !== current) onChange(next.present);
-      return next;
-    });
+    if (disabled) return;
+    publishHistory(applyHistoryDirection(historyRef.current, direction));
   }
 
   function replaceDocument(next: PageDocument | null) {
@@ -212,8 +228,8 @@ export function FunnelPageEditor({ document, disabled = false, onChange, commerc
         <button className={`${control} ${panel === "flow" ? "border-blue-600 text-blue-700" : ""}`} disabled={!history.present.flow} onClick={() => setPanel("flow")}>流程</button>
       </div>
       <div className="flex items-center gap-2 border-b border-slate-200 p-2">
-        <button className={control} disabled={!history.past.length} onClick={() => stepHistory("undo")}>Undo</button>
-        <button className={control} disabled={!history.future.length} onClick={() => stepHistory("redo")}>Redo</button>
+        <button className={control} disabled={disabled || !history.past.length} onClick={() => stepHistory("undo")}>Undo</button>
+        <button className={control} disabled={disabled || !history.future.length} onClick={() => stepHistory("redo")}>Redo</button>
         <button className={control} onClick={() => setViewport(viewport === "desktop" ? "mobile" : "desktop")}>{viewport === "desktop" ? "桌機" : "手機"}</button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3">

@@ -26,7 +26,7 @@ export default defineConfig({
   // runs this directory through the dedicated gate below, so every assertion
   // remains required without exposing the harness in a production build.
   testDir: "./tests/browser-dev",
-  testMatch: "funnel-advanced-elements.spec.ts",
+  testMatch: ["funnel-advanced-elements.spec.ts", "funnel-editor-history.spec.ts"],
   timeout: 60_000,
   workers: 1,
   reporter: [["list"]],

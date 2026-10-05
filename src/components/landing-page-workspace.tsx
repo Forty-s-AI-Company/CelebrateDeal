@@ -2,24 +2,22 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
+import { WorkspaceEditor } from "@/components/landing-pages/workspace-editor";
 import { LandingPageRenderer } from "@/components/landing-pages/landing-page-renderer";
 import { FunnelPageDocumentRenderer } from "@/components/landing-pages/funnel-page-document-renderer";
 import { FunnelPopupPreview } from "@/components/landing-pages/funnel-popup-preview";
 import { landingPageAction } from "@/app/actions/landing-page-actions";
-import type { LandingPageContent, LandingPageRenderContext } from "@/lib/landing-page-content";
+import type { LandingPageRenderContext } from "@/lib/landing-page-content";
 import { createEmptyPageDocument, type FunnelNode, type PageDocument } from "@/lib/funnel-page-document";
 import type { FunnelWebinarResources, LandingPageEditorPage, LandingPageStoredContent } from "@/lib/landing-page-service";
 import type { FunnelGoal } from "@/components/landing-pages/funnel-goal-picker";
-import { getActiveFunnelStepPage, replaceFunnelStepPage, type FunnelStepPages } from "@/lib/funnel-step-pages";
+import { getActiveFunnelStepPage, type FunnelStepPages } from "@/lib/funnel-step-pages";
 import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
 import { commerceViewForBinding, type FunnelCommerceProduct } from "@/lib/funnel-commerce";
 
 import { FunnelWebinarSettings } from "@/components/landing-pages/funnel-webinar-settings";
 import { FunnelWebinarExperience } from "@/components/landing-pages/funnel-webinar-experience";
 
-const Editor = dynamic(() => import("@/components/landing-pages/landing-page-editor").then((module) => module.LandingPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入編輯器…</p> });
-const FunnelEditor = dynamic(() => import("@/components/landing-pages/funnel-page-editor").then((module) => module.FunnelPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入 Funnel 編輯器…</p> });
 type PageInput = Omit<LandingPageEditorPage, "publishedAt" | "updatedAt" | "versions"> & { versions: Array<{ version: number }> };
 function currentPublishedVersion(version: string, page?: PageInput): string {
   return version || String(page?.versions[0]?.version ?? "");
@@ -49,29 +47,6 @@ function WorkspacePreview({ content, forms, live, commerceProducts, viewport }: 
   }
   if (isPageDocument(content)) return <><FunnelPageDocumentRenderer document={content} viewport="desktop" mode="preview" />{content.popups.filter((popup) => !popup.pageId || popup.pageId === content.id).map((popup) => <FunnelPopupPreview key={popup.id} document={content} popupId={popup.id} viewport="desktop" />)}</>;
   return <LandingPageRenderer content={content} context={{ forms, live }} />;
-}
-function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChange, onDocumentChange, onValidityChange, commerceProducts }: {
-  content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"];
-  commerceProducts: FunnelCommerceProduct[];
-  pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument | FunnelStepPages) => void; onValidityChange: (valid: boolean) => void;
-}) {
-  if (isFunnelStepPages(content)) {
-    const active = getActiveFunnelStepPage(content);
-    if (!active) return <p role="alert" className="p-8">找不到目前要編輯的 Funnel step。</p>;
-    return <FunnelEditor
-      key={`${active.page.id}-${revision}`}
-      document={active.page}
-      commerceProducts={commerceProducts}
-      commerceEnabled={active.step.type === "order_form"}
-      disabled={pending || !active.editable}
-      onChange={(document) => {
-        const result = replaceFunnelStepPage(content, active.step.id, document);
-        if (result.ok) onDocumentChange(result.state);
-      }}
-    />;
-  }
-  if (isPageDocument(content)) return <FunnelEditor key={`${content.id}-${revision}`} document={content} disabled={pending} onChange={onDocumentChange} />;
-  return <Editor content={content} forms={forms} live={live} disabled={pending} onValidityChange={onValidityChange} onChange={onLegacyChange} />;
 }
 function CurrentWorkspacePreview({ show, content, slug, resource, viewport, commerceProducts, forms, live }: {
   show: boolean; content: LandingPageStoredContent; slug: string; resource: ReturnType<typeof resolveWebinarResource>;
