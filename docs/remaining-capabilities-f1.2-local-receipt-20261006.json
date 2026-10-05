@@ -1,0 +1,168 @@
+{
+  "schemaVersion": "celebratedeal-course-community/v1",
+  "status": "LOCAL_ACCEPTED_REMOTE_CI_PENDING",
+  "source_revision": "sha256:d94c65288b16c1918ac7ed3add45715ef322ef59c90350ad40e7e468dffa94a3",
+  "snapshot_files": [
+    ".github/workflows/ci.yml",
+    "prisma/schema.prisma",
+    "scripts/g7-email-operations-browser-qa.test.mjs",
+    "scripts/prisma-invariant-inventory.test.ts",
+    "scripts/prisma-loopback-disposable-migration-runner.mjs",
+    "scripts/staging-migration-compat-preflight.test.mjs",
+    "scripts/staging-migration-isolated-replay.test.mjs",
+    "scripts/staging-payuni-management-migrate.test.ts",
+    "src/app/(app)/products/[id]/lessons/page.tsx",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/page.tsx",
+    "src/lib/student-course-learning.ts",
+    "tests/e2e/wp88-direct-url-guard-matrix.spec.ts",
+    "playwright.course-community.config.ts",
+    "prisma/migrations/20261006070000_course_community/migration.sql",
+    "scripts/course-community-browser-qa.mjs",
+    "scripts/course-community-disposable-qa.mjs",
+    "src/app/(app)/products/[id]/community/page.tsx",
+    "src/app/actions/course-community-actions.ts",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/community/data/route.ts",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/community/page.tsx",
+    "src/components/course-community.tsx",
+    "src/lib/course-community.db.test.ts",
+    "src/lib/course-community.test.ts",
+    "src/lib/course-community.ts",
+    "tests/e2e/course-community.spec.ts",
+    "vitest.course-community-db.config.ts"
+  ],
+  "base": "728f0e591c0a5d4a83fe98d6a98146f9d7d0d842",
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:d94c65288b16c1918ac7ed3add45715ef322ef59c90350ad40e7e468dffa94a3",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 2.734,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\unit-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:d94c65288b16c1918ac7ed3add45715ef322ef59c90350ad40e7e468dffa94a3",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 13.203,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\typecheck-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:d94c65288b16c1918ac7ed3add45715ef322ef59c90350ad40e7e468dffa94a3",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 9.515,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\lint-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "db",
+      "revision": "sha256:d94c65288b16c1918ac7ed3add45715ef322ef59c90350ad40e7e468dffa94a3",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 15.672,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\db-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser",
+      "revision": "sha256:d94c65288b16c1918ac7ed3add45715ef322ef59c90350ad40e7e468dffa94a3",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 185.891,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\browser-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "contracts",
+      "revision": "sha256:d94c65288b16c1918ac7ed3add45715ef322ef59c90350ad40e7e468dffa94a3",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 67.719,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\contracts-final.json"
+    }
+  ],
+  "db": {
+    "schemaVersion": "course-community-disposable/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-05T22:41:17.504Z",
+    "finishedAt": "2026-10-05T22:41:33.100Z",
+    "failedTitles": []
+  },
+  "browser": {
+    "schemaVersion": "course-community-browser/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-05T22:37:43.350Z",
+    "finishedAt": "2026-10-05T22:40:48.663Z",
+    "failedTitles": [],
+    "browser": {
+      "expected": 1,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "review": {
+    "kind": "review",
+    "revision": "sha256:d94c65288b16c1918ac7ed3add45715ef322ef59c90350ad40e7e468dffa94a3",
+    "status": "PASS",
+    "independent": true,
+    "source": "desktop_native",
+    "role": "critical_review",
+    "model": "gpt-6-astra",
+    "requested_effort": "high",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "findings": [],
+    "dispatches": 3,
+    "summary": "Independent review found migration count/moderation/pagination/CAS issues; root fixed; third review returned no findings.",
+    "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\review-final.json"
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:d94c65288b16c1918ac7ed3add45715ef322ef59c90350ad40e7e468dffa94a3"
+  },
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "writer": "root",
+  "dispatches": 3,
+  "dispatch_limit": 4,
+  "depth_limit": 1,
+  "readonly_helpers_max": 1,
+  "production": "NOT_PERFORMED",
+  "delivery": "PENDING_EXACT_HEAD_CI_AND_PROTECTED_MERGE"
+}
