@@ -15,6 +15,12 @@
 
 ## Route handlers
 
+### 精確 Sandbox 退款交接證據
+
+| Route／method | Caller 與安全邊界 | Input／resource boundary | Side effect 與 response | 目前證據 |
+|---|---|---|---|---|
+| `GET /api/admin/ops/payuni/pending-refund-proof` | timing-safe JOB_SECRET；固定 staging origin、Preview、sandbox、executor flag、部署 SHA 與 staging DB 身分 | 唯一 bounded transactionId；固定 synthetic vendor、buyer purpose 與目前 source metadata | 唯讀 Serializable snapshot；只回 hash references、封閉狀態與計數；private no-store；不存在同 404、錯誤同 503 | route unit、disposable PostgreSQL；真實 sandbox browser 尚待執行 |
+
 | # | Route／method | Caller 與安全邊界 | Input contract | Tenant／resource boundary | Side effect 與 replay contract | Response／error contract | 目前證據 |
 |---:|---|---|---|---|---|---|---|
 | 1 | `GET /(app)/billing/invoices/export` | `requireVendorContext` | 無 body | query 固定目前 `vendorId` | 只讀 CSV export；公式字元 neutralization | CSV attachment；不回傳其他 vendor | 同路徑 unit |

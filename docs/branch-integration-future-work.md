@@ -1,5 +1,17 @@
 # 分支整合：未來處理與接手報告
 
+## 2026-10-06 Q1 精確退款交接實作 checkpoint（尚未交付）
+
+目前主線為 `2319c742f1455681ff08b720c193a2faf1545e27`；F3.1 已由 PR #369 受保護合併，精確 head 的 push／PR CI 通過，合併 tree 與驗收候選一致。下方 F3.1「仍待合併」文字為歷史狀態。F1.1 原生課程候選在 PR #370，正修正完整 CI 揭露的 API／migration 清冊缺漏，不宣稱已交付。
+
+Q1 已實作精確 PENDING_REFUND CLI consumer 與唯讀 proof endpoint，沿用平台退款 UI、session、MFA、CSRF、reservation／accounting。固定 staging origin、Preview／sandbox、部署 SHA、固定 staging project／DB、synthetic tenant 與目前 source buyer transaction；付款 callback 必須同 tenant／order／trade／amount。保留同筆表單驗重複拒絕，全額退款只接受 provider 狀態 1，不接受部分／模糊狀態。原始交接不覆寫，不選最新或替代交易。
+
+本輪 76 項 targeted unit／route、TypeScript、ESLint、權限／CSRF／退款 action 既有回歸 PASS；本分支 83 migration 與 8 項真實 disposable PostgreSQL 回歸 PASS，清理 PASS，獨立 Critical review 無 findings。Canonical acceptance 明確 **BLOCKED：required_check_unverified:browser**。資料庫測試使用 provider transport 替身，不能當作外部成功。
+
+最小外部條件：核准注入本次 JOB_SECRET、PayUni sandbox merchant／簽章金鑰；精確且能證明屬於部署候選的目前付款 handoff；可用的平台管理員登入，若實際要求 MFA 則需當次有效 OTP。金融登入注入僅觀測「存在」，未讀取或輸出內容。未執行外部退款、付款或正式操作。Q1 為 **IMPLEMENTED_PENDING_EXTERNAL**，其餘尚未完成項目與整體 Goal 均不標 COMPLETE。
+
+使用與停止條件見 [payuni-pending-refund-consumer.md](payuni-pending-refund-consumer.md)，本輪證據見 [remaining-capabilities-q1-checkpoint-20261006.json](remaining-capabilities-q1-checkpoint-20261006.json)。
+
 ## 2026-10-06 剩餘功能 Goal：編輯器生命週期交付候選
 
 接手基準為 master `1cb2a32ea08e429de4e148ce24abc3d157b34f0c`，#368 已合併，接手時 open PR 為空。本節更新當前功能進度，保留下方來源與歷史收據。

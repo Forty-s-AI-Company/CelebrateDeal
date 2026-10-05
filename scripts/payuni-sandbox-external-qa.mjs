@@ -1393,4 +1393,5 @@ export {
   writeQaArtifact,
   truncate,
   queryDisposition,
+  queryTransaction,
 };
