@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = {
   registrationForm: { findUnique: vi.fn() },
+  landingPage: { findFirst: vi.fn() },
   live: { findFirst: vi.fn(), findMany: vi.fn() },
   blacklist: { findFirst: vi.fn() },
   formSubmission: { create: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), updateMany: vi.fn() },
@@ -56,6 +57,7 @@ function nativeFormRequest(redirectTo: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  db.landingPage.findFirst.mockResolvedValue(null);
   vi.stubEnv("CSRF_SECRET", "form-submission-email-test-secret-longer-than-32-bytes");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
   db.registrationForm.findUnique.mockResolvedValue({
@@ -122,6 +124,20 @@ describe("team lead attribution", () => {
       body: JSON.stringify(payload),
     });
   }
+
+  it.each([true, false])("stores only a same-vendor published marketing page hint: %s", async (available) => {
+    db.landingPage.findFirst.mockResolvedValueOnce(available ? { id: "page-1" } : null);
+    const response = await POST(jsonRequest({ formId: "form-1", liveId: "live-a", landingPageId: "page-1", payload: { name: "Lead", email: "lead@example.test" } }));
+    expect(response.status).toBe(200);
+    expect(db.landingPage.findFirst).toHaveBeenCalledWith({
+      where: { id: "page-1", vendorId: "vendor-1", status: "published", publishedAt: { not: null }, publishedVersionId: { not: null } },
+      select: { id: true },
+    });
+    const data = db.formSubmission.create.mock.calls[0]?.[0]?.data;
+    if (available) expect(data.attribution).toEqual({ landingPageId: "page-1", evidence: "client_reported" });
+    else expect(data).not.toHaveProperty("attribution");
+    expect(db.teamLeadAttribution.upsert).not.toHaveBeenCalled();
+  });
 
   it("keeps A's webinar/form but assigns B-promoted lead using server-resolved lineage", async () => {
     db.partnerFunnelPage.findFirst.mockResolvedValue({

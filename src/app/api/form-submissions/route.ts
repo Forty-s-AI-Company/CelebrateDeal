@@ -252,6 +252,16 @@ async function resolveTrustedFunnelSource(input: {
     : { ok: false, response: NextResponse.json({ error: "Funnel submission unavailable" }, { status: 404 }) };
 }
 
+/** Marketing hints never authorize access, commissions or automation targeting. */
+async function resolveMarketingPageHint(pageId: string | undefined, vendorId: string, source: TrustedFunnelSource | null) {
+  if (source || !pageId) return {};
+  const page = await getDb().landingPage.findFirst({
+    where: { id: pageId, vendorId, status: "published", publishedAt: { not: null }, publishedVersionId: { not: null } },
+    select: { id: true },
+  });
+  return page ? { attribution: { landingPageId: page.id, evidence: "client_reported" } } : {};
+}
+
 const verifiableSubmissionSelect = {
   id: true,
   name: true,
@@ -512,6 +522,7 @@ export async function POST(request: Request) {
     email,
     ...(fieldSpecs.data.some((field) => field.key === "phone") ? { phone: phone ?? "" } : {}),
   };
+  const marketingAttribution = await resolveMarketingPageHint(parsed.data.landingPageId, form.vendorId, funnelSource);
   const verificationExpiresAt = new Date(Date.now() + FORM_SUBMISSION_VERIFICATION_TTL_MS);
   let submission: VerifiableSubmission;
   try {
@@ -524,6 +535,7 @@ export async function POST(request: Request) {
         phone,
         source: submittedLiveId ? "live" : "form",
         answers: normalizedAnswers as Prisma.InputJsonValue,
+        ...marketingAttribution,
         verificationStatus: "UNVERIFIED",
         verificationVersion: 1,
         verificationExpiresAt,

@@ -64,9 +64,11 @@ export function buildFormSubmissionRequestBody(input: {
   payload: Record<string, FormDataEntryValue>;
   referralCode: string | null;
   shareCode: string;
+  landingPageId?: string | null;
 }) {
   return {
     formId: input.formId,
+    ...(input.landingPageId && /^[A-Za-z0-9_-]{1,128}$/.test(input.landingPageId) ? { landingPageId: input.landingPageId } : {}),
     liveId: input.liveId,
     payload: input.payload,
     referralCode: input.referralCode,
@@ -127,7 +129,7 @@ export function LeadForm({
           "Content-Type": "application/json",
           "X-CelebrateDeal-Client": "web",
         },
-        body: JSON.stringify(buildFormSubmissionRequestBody({ formId, liveId: selectedLiveId, payload, referralCode, shareCode })),
+        body: JSON.stringify(buildFormSubmissionRequestBody({ formId, liveId: selectedLiveId, payload, referralCode, shareCode, landingPageId: new URLSearchParams(window.location.search).get("lp") })),
       });
 
       if (response.ok) {

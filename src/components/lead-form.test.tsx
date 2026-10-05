@@ -85,3 +85,9 @@ describe("LeadForm", () => {
     expect(shared).toHaveProperty("shareCode", `tls1.${"a".repeat(43)}`);
   });
 });
+
+ it("carries a bounded standalone page hint outside the form answers", () => {
+   const input = { formId: "form-1", payload: {}, referralCode: null, shareCode: "" };
+   expect(buildFormSubmissionRequestBody({ ...input, landingPageId: "page-1" })).toMatchObject({ landingPageId: "page-1", payload: {} });
+   expect(buildFormSubmissionRequestBody({ ...input, landingPageId: "https://other.test" })).not.toHaveProperty("landingPageId");
+ });
