@@ -1,5 +1,13 @@
 # 分支整合：未來處理與接手報告
 
+## 2026-10-06 剩餘功能 Goal：編輯器生命週期交付候選
+
+接手基準為 master `1cb2a32ea08e429de4e148ce24abc3d157b34f0c`，#368 已合併，接手時 open PR 為空。本節更新當前功能進度，保留下方來源與歷史收據。
+
+F3.1 已實作：相同父層文件回傳保留 Undo/Redo，外部文件替換重建 session，唯讀期間阻擋 toolbar/keyboard/workspace 還原；實際 WorkspaceEditor 以穩定 page ID 保留儲存後歷史。Callback 移出 React state updater，避免 Strict Mode 重複副作用。14 項 targeted unit、9 項 Chromium、TypeScript 與 ESLint PASS；獨立 reviewer 的儲存版本 key MAJOR 已修正，增量複審無 findings，canonical acceptance READY。精確 head CI 與受保護 PR 合併仍待交付，不能當作已合併。
+
+工作矩陣見 [remaining-capabilities-work-matrix-20261005.md](remaining-capabilities-work-matrix-20261005.md)，本批新證據見 [remaining-capabilities-f3.1-local-receipt-20261006.json](remaining-capabilities-f3.1-local-receipt-20261006.json)。F1/F2/F3 其餘完整互動/Q1/Q2/A1/E1 仍未全部交付，Goal 保持 IN_PROGRESS。原始 dirty 目錄與來源分支未寫入，未操作正式環境或外部 provider。
+
 ## 2026-10-05 收尾處置（本節優先於下方歷史狀態）
 
 本輪以 `533cffd72fe266726a1c242e1bff9203e2b74f6b` 為 master 基準。#367 已合併；本收尾 PR 交付剩餘可獨立使用的路由、QA 指令、合成 fixture 與瀏覽器持久化／未啟用步驟斷言。其餘來源已依功能歸類保留，並非宣稱所有歷史功能都已完成。
