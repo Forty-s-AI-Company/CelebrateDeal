@@ -51,7 +51,7 @@ export async function getCourseCommunity(db: Database, scope: StudentPortalScope
         _count: { select: { reactions: true, replies: { where: { hiddenAt: null } } } },
       },
     });
-    return { course: { id: access.course.id, name: access.course.name }, posts: posts.slice(0, 20).map(({ reactions, _count, ...post }) => ({ ...post, liked: reactions.length > 0, likeCount: _count.reactions, replyCount: _count.replies })), nextCursor: posts.length > 20 ? posts[19].id : null };
+    return { course: { id: access.course.id, name: access.course.name }, posts: posts.slice(0, 20).map(({ reactions, _count, ...post }) => ({ ...post, liked: reactions.length > 0, likeCount: _count.reactions, replyCount: _count.replies })), nextCursor: posts.length > 20 ? posts[19]!.id : null };
   });
 }
 
@@ -66,7 +66,7 @@ export async function getCourseCommunityReplies(db: Database, scope: StudentPort
     const anchor = cursor ? await tx.courseCommunityReply.findFirst({ where: { ...where, id: cursor }, select: { id: true, createdAt: true } }) : null;
     if (cursor && !anchor) return null;
     const replies = await tx.courseCommunityReply.findMany({ where: { ...where, ...(anchor ? { OR: [{ createdAt: { gt: anchor.createdAt } }, { createdAt: anchor.createdAt, id: { gt: anchor.id } }] } : {}) }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: 21, select: publicReply });
-    return { post, replies: replies.slice(0, 20), nextCursor: replies.length > 20 ? replies[19].id : null };
+    return { post, replies: replies.slice(0, 20), nextCursor: replies.length > 20 ? replies[19]!.id : null };
   });
 }
 
