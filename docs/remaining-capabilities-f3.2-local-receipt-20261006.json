@@ -1,0 +1,126 @@
+{
+  "schemaVersion": "celebratedeal-f3-workspace-final/v1",
+  "status": "LOCAL_ACCEPTED_REMOTE_CI_PENDING",
+  "source_revision": "sha256:a5473b601b72c6cf3d9469efcff75702a0fe55a4409c50e8d171e9952c325832",
+  "snapshot_files": [
+    "playwright.funnel-workspace.config.ts",
+    "scripts/funnel-workspace-disposable-qa.mjs",
+    "tests/e2e/funnel-workspace-persistence.spec.ts",
+    "scripts/prisma-loopback-disposable-migration-runner.mjs",
+    "src/components/landing-pages/funnel-editor-browser-harness.tsx",
+    "src/components/landing-pages/funnel-element-inspector.tsx",
+    "src/components/landing-pages/funnel-page-editor.tsx",
+    "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "src/components/landing-pages/workspace-editor.tsx",
+    "src/lib/funnel-step-pages-history.test.ts",
+    "src/lib/funnel-step-pages-history.ts",
+    "tests/browser-dev/funnel-editor-history.spec.ts"
+  ],
+  "base": "2319c742f1455681ff08b720c193a2faf1545e27",
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:a5473b601b72c6cf3d9469efcff75702a0fe55a4409c50e8d171e9952c325832",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 3.109,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal\\.ai-team\\tmp\\editor-advanced\\unit-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:a5473b601b72c6cf3d9469efcff75702a0fe55a4409c50e8d171e9952c325832",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 11.266,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal\\.ai-team\\tmp\\editor-advanced\\typecheck-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:a5473b601b72c6cf3d9469efcff75702a0fe55a4409c50e8d171e9952c325832",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 8.109,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal\\.ai-team\\tmp\\editor-advanced\\lint-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "harness",
+      "revision": "sha256:a5473b601b72c6cf3d9469efcff75702a0fe55a4409c50e8d171e9952c325832",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 115.062,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal\\.ai-team\\tmp\\editor-advanced\\harness-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser",
+      "revision": "sha256:a5473b601b72c6cf3d9469efcff75702a0fe55a4409c50e8d171e9952c325832",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 210.063,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal\\.ai-team\\tmp\\editor-advanced\\browser-final.json"
+    }
+  ],
+  "unit_tests": 13,
+  "harness_tests": 16,
+  "workspace_browser": {
+    "schemaVersion": "funnel-workspace-disposable/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-05T21:51:22.757Z",
+    "finishedAt": "2026-10-05T21:54:52.156Z",
+    "browser": {
+      "expected": 1,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "review": {
+    "kind": "review",
+    "revision": "sha256:a5473b601b72c6cf3d9469efcff75702a0fe55a4409c50e8d171e9952c325832",
+    "status": "PASS",
+    "independent": true,
+    "source": "desktop_native",
+    "role": "senior_review",
+    "model": "gpt-6.1-sol",
+    "requested_effort": "high",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "findings": [],
+    "dispatches": 4,
+    "summary": "Independent final candidate review returned no BLOCKER/MAJOR/MINOR/NIT findings; observed model/effort unknown. Browser runtime was verified separately."
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:a5473b601b72c6cf3d9469efcff75702a0fe55a4409c50e8d171e9952c325832"
+  },
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "writer": "root",
+  "dispatch_limit": 4,
+  "readonly_helpers_max": 1,
+  "depth_limit": 1,
+  "production": "NOT_PERFORMED",
+  "delivery": "PENDING_EXACT_HEAD_CI_AND_PROTECTED_MERGE"
+}

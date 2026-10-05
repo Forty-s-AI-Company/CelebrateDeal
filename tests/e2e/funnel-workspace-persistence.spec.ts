@@ -7,6 +7,8 @@ import { createGoalFunnelStepPages } from "../../src/lib/funnel-goal-step-pages"
 import { parseFunnelStepPages } from "../../src/lib/funnel-step-pages";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
+// This journey includes two logins, two saves and reloads, plus inspector edits.
+test.setTimeout(120_000);
 test("owner saves template, flow and popup through actual workspace and reloads scoped database content", async ({ page, browser, baseURL }) => {
   assertLocalTestDatabase("DATABASE_URL", process.env.DATABASE_URL);
   const db = new PrismaClient();
@@ -35,12 +37,20 @@ test("owner saves template, flow and popup through actual workspace and reloads 
     await page.reload();
     await expect(page.getByLabel("Funnel steps", { exact: true })).toBeVisible();
     await page.getByLabel("Funnel steps", { exact: true }).getByRole("button", { name: "套用模板", exact: true }).first().click();
+    await page.getByRole("button", { name: "按鈕", exact: true }).click();
+    await page.getByRole("button", { name: "設定", exact: true }).click();
+    await page.getByRole("tab", { name: "動作", exact: true }).click();
+    await page.getByLabel("點擊後動作").selectOption("next_step");
+    const targetStepId = content.flow.steps[1].id;
+    await page.getByLabel("下一個步驟 ID").selectOption(targetStepId);
+    await page.getByRole("button", { name: "套用動作", exact: true }).click();
     await page.getByRole("button", { name: "Popups", exact: true }).last().click();
     await page.getByRole("button", { name: "＋ 新增", exact: true }).click();
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect.poll(async () => { const draft = await read(); return draft.pages[draft.activeStepId].popups.length; }).toBe(1);
     const saved = await read();
     expect(saved.pages[saved.activeStepId].root.length).toBeGreaterThan(0);
+    expect(JSON.stringify(saved.pages[saved.activeStepId].root)).toContain(`"stepId":"${targetStepId}"`);
     expect(saved.flow.steps.length).toBe(initial + 1);
     await page.reload();
     await expect(page.getByLabel("Funnel steps", { exact: true })).toBeVisible();

@@ -21,7 +21,7 @@ function isFunnelStepPages(content: LandingPageStoredContent): content is Funnel
 export function WorkspaceEditor({ content, forms, live, pending, onLegacyChange, onDocumentChange, onValidityChange, commerceProducts }: {
   content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"];
   commerceProducts: FunnelCommerceProduct[];
-  pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument | FunnelStepPages) => void; onValidityChange: (valid: boolean) => void;
+  pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument | FunnelStepPages) => void | boolean; onValidityChange: (valid: boolean) => void;
 }) {
   if (isFunnelStepPages(content)) {
     return <FunnelStepsEditor state={content} disabled={pending} commerceProducts={commerceProducts} onChange={onDocumentChange} />;

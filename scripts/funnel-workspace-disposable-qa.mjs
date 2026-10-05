@@ -29,6 +29,7 @@ const migration = await runMigration({ afterMigrate: async ({ databaseUrl, envir
     if (browser.status !== 0) receipt.browserFailure = `${browser.stdout ?? ""}\n${browser.stderr ?? ""}`.split(/\r?\n/u).filter((line) => /^::error(?: file=tests\/e2e\/[A-Za-z0-9_.\/-]+,line=\d+)?::playwright /u.test(line)).slice(0, 10);
     const browserResult = JSON.parse(fs.readFileSync(browserReport, "utf8"));
     receipt.browser = { expected: browserResult.stats.expected, unexpected: browserResult.stats.unexpected, skipped: browserResult.stats.skipped, flaky: browserResult.stats.flaky };
+    receipt.tests = { total: receipt.browser.expected + receipt.browser.unexpected + receipt.browser.skipped + receipt.browser.flaky, passed: receipt.browser.expected, failed: receipt.browser.unexpected + receipt.browser.flaky, skipped: receipt.browser.skipped };
     if (browser.status !== 0 || receipt.browser.expected !== 1 || receipt.browser.unexpected !== 0 || receipt.browser.skipped !== 0 || receipt.browser.flaky !== 0) throw new Error("funnel-workspace-browser-gate-failed");
   }
 } });

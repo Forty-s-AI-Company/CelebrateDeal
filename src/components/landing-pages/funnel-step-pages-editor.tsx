@@ -29,12 +29,13 @@ export function FunnelStepPagesEditor(props: Parameters<typeof FunnelStepPagesEd
     setSession({ input: props.state, present: props.state, version: session.version + (echoed ? 0 : 1) });
   }
   return <FunnelStepPagesEditorSession {...props} key={session.version} onChange={(next) => {
+    if (props.onChange(next) === false) return false;
     setSession((current) => ({ ...current, present: next }));
-    props.onChange(next);
+    return true;
   }} />;
 }
 
-function FunnelStepPagesEditorSession({ state, disabled = false, onChange, commerceProducts }: { state: FunnelStepPages; disabled?: boolean; onChange: (state: FunnelStepPages) => void; commerceProducts?: FunnelCommerceProduct[] }) {
+function FunnelStepPagesEditorSession({ state, disabled = false, onChange, commerceProducts }: { state: FunnelStepPages; disabled?: boolean; onChange: (state: FunnelStepPages) => void | boolean; commerceProducts?: FunnelCommerceProduct[] }) {
   const templateGoal: FunnelTemplateGoal = state.flow.goal;
   const templates = listFunnelTemplateGallery(templateGoal);
   const [templateId, setTemplateId] = useState(templates[0]?.id ?? "");
@@ -49,35 +50,37 @@ function FunnelStepPagesEditorSession({ state, disabled = false, onChange, comme
     setFlowHistory(next);
   };
   const publishState = (next: FunnelStepPages) => {
+    // A rejected controlled draft must not leak into refs or later mutations.
+    if (onChange(next) === false) { setError("父層未接受這次修改，請重新確認草稿。"); return false; }
     stateRef.current = next;
     published.current = JSON.stringify(next);
-    onChange(next);
+    return true;
   };
   const [error, setError] = useState<string>();
   const active = getActiveFunnelStepPage(state);
   const commit = (result: FunnelStepPageMutationResult, record = true) => {
-    if (disabled) return;
-    if (!result.ok) { setError(result.error); return; }
-    if (JSON.stringify(result.state) === published.current) return;
+    if (disabled) return false;
+    if (!result.ok) { setError(result.error); return false; }
+    if (JSON.stringify(result.state) === published.current) return true;
+    const previous = stateRef.current;
+    if (!publishState(result.state)) return false;
     setError(undefined);
     if (record) {
-      publishHistory(recordFunnelStepPages(historyRef.current, stateRef.current));
+      publishHistory(recordFunnelStepPages(historyRef.current, previous));
     }
-    publishState(result.state);
+    return true;
   };
   const undoFlow = () => {
     if (disabled) return;
     const result = undoFunnelStepPages(historyRef.current, stateRef.current);
     if (!result) return;
-    publishHistory(result.history);
-    publishState(result.state);
+    if (publishState(result.state)) { publishHistory(result.history); setError(undefined); }
   };
   const redoFlow = () => {
     if (disabled) return;
     const result = redoFunnelStepPages(historyRef.current, stateRef.current);
     if (!result) return;
-    publishHistory(result.history);
-    publishState(result.state);
+    if (publishState(result.state)) { publishHistory(result.history); setError(undefined); }
   };
   if (!active) return <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">Funnel steps 資料無法通過驗證。</p>;
   const editableSteps = state.flow.steps.filter((step) => !step.isSystem);
@@ -115,8 +118,8 @@ function FunnelStepPagesEditorSession({ state, disabled = false, onChange, comme
       if (!result.ok) { setError(result.error); return false; }
       // Page editing is a history barrier: flow snapshots must never restore
       // canvas content from before a later page edit or popup mutation.
+      if (!commit(result, false)) return false;
       publishHistory(createFunnelStepPagesHistory());
-      commit(result, false);
       return true;
     }} /></div>
   </div>;
