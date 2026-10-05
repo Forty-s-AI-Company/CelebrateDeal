@@ -80,6 +80,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Native course database boundaries
+        run: npx vitest run --config vitest.course-learning-db.config.ts
+        env:
+          COURSE_LEARNING_DISPOSABLE: verified-loopback
+
       - name: PayUni deployment environment binding contract
         run: npx vitest run src/lib/env.test.ts
 

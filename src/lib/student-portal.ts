@@ -75,7 +75,7 @@ export async function getStudentPortalDashboard(db: PrismaClient, scope: Student
       select: {
         id: true, orderNumber: true, status: true, currency: true, totalAmountCents: true,
         paidAmountCents: true, refundedAmountCents: true, buyerMaskedEmail: true, paidAt: true, createdAt: true,
-        items: { orderBy: { lineIndex: "asc" }, select: { id: true, productId: true, productName: true, productSlug: true, fulfillmentType: true, imageUrl: true, quantity: true, entitlement: { select: { status: true, revokedAt: true, expiresAt: true } } } },
+        items: { orderBy: { lineIndex: "asc" }, select: { id: true, productId: true, productName: true, productSlug: true, fulfillmentType: true, imageUrl: true, quantity: true, entitlement: { select: { status: true, revokedAt: true, expiresAt: true } }, product: { select: { courseLessons: { where: { publishedAt: { not: null } }, take: 1, select: { id: true } } } } } },
         deliverySnapshots: { where: { vendorId: scope.vendorId, revokedAt: null }, select: { id: true, vendorId: true, orderId: true, orderItemId: true, title: true, deliveryKind: true, destinationEncryptedEnvelope: true, instructionsEncryptedEnvelope: true, destinationMaskedSummary: true, instructionsMaskedSummary: true, allowlistSnapshot: true } },
         electronicInvoice: { select: { invoiceNumber: true, invoiceType: true, buyerDisplay: true, status: true, issuedAt: true } },
         primaryPaymentTransaction: { select: { providerName: true, paymentMode: true } },
@@ -102,13 +102,14 @@ export async function getStudentPortalDashboard(db: PrismaClient, scope: Student
       && item.entitlement?.status === "granted"
       && !item.entitlement.revokedAt
       && (!item.entitlement.expiresAt || item.entitlement.expiresAt > now);
+    const learningProductId = accessActive && item.fulfillmentType === "course" && item.product?.courseLessons.length ? item.productId : null;
     const delivery = snapshot && accessActive ? revealDelivery(snapshot) : { destinationUrl: null, instructions: null };
     return [{
       id: item.id, orderId: order.id, productId: item.productId, title: item.productName, productSlug: item.productSlug,
       imageUrl: safeHttpsUrl(item.imageUrl), fulfillmentType: item.fulfillmentType,
       deliveryTitle: snapshot?.title ?? null, deliveryKind: snapshot?.deliveryKind ?? null,
-      destinationUrl: delivery.destinationUrl, instructions: delivery.instructions,
-      accessStatus: snapshot && accessActive ? "active" as const : "unavailable" as const,
+      learningProductId, destinationUrl: delivery.destinationUrl, instructions: delivery.instructions,
+      accessStatus: (snapshot || learningProductId) && accessActive ? "active" as const : "unavailable" as const,
     }];
   }));
 

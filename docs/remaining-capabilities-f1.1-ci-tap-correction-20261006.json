@@ -1,0 +1,207 @@
+{
+  "schemaVersion": "celebratedeal-f1-ci-tap-correction/v1",
+  "status": "LOCAL_ACCEPTED_REMOTE_CI_PENDING",
+  "prior_head": "163b7d41c88f21b3507eaae874fe47941fc2846f",
+  "prior_ci_runs": [
+    37362860038,
+    37362867511
+  ],
+  "prior_ci_result": "Vitest passed; Node TAP failed three current inventory assertions after additive native-course migration",
+  "production_source_revision_unchanged": "sha256:af23858c6b7e1f20843b0a639a7ac92b20fc6b44bf5f25bc5f5485c0a9492989",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "f1-ci-inventory-correction",
+    "signals": {
+      "task_type": "test_fix",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "migration"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "low",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 5,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "test_fix",
+    "difficulty": "medium",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "required": true,
+        "fallback_events": [
+          {
+            "model": "opus",
+            "reason": "cli_failure"
+          }
+        ],
+        "status": "planned",
+        "model_key": "astra",
+        "model": "gpt-6-astra",
+        "provider": "native_agent",
+        "reasoning_effort": "high",
+        "effort_floor": null,
+        "effort_reason": null,
+        "sandbox_mode": "read-only",
+        "execution": "native_agent_handoff_only",
+        "candidate_findings_only": false,
+        "may_spawn": false,
+        "astra_reason": "critical_review_no_equivalent"
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:2fcff5de9d988339621301482b507dbda2eefaa03ecbd60757be28494f1da722",
+    "snapshot_root": "repository-root",
+    "snapshot_files": [
+      "docs/codex-goal/API_CONTRACT_REGISTRY.md",
+      "scripts/staging-payuni-management-migrate.test.ts",
+      "scripts/g7-email-operations-browser-qa.test.mjs",
+      "scripts/staging-migration-compat-preflight.test.mjs",
+      "scripts/staging-migration-isolated-replay.test.mjs"
+    ],
+    "required_checks": [
+      "unit",
+      "lint"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "review": {
+    "kind": "review",
+    "revision": "sha256:2fcff5de9d988339621301482b507dbda2eefaa03ecbd60757be28494f1da722",
+    "status": "PASS",
+    "independent": true,
+    "source": "desktop_native",
+    "role": "critical_review",
+    "model": "gpt-6-astra",
+    "requested_effort": "high",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "source_snapshot_unchanged": true,
+    "findings": [],
+    "summary": "Independent incremental Critical reviewer found no findings; exact 84 inventory and immutable historical migration boundaries remain enforced, product source unchanged.",
+    "dispatches": 3
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:2fcff5de9d988339621301482b507dbda2eefaa03ecbd60757be28494f1da722"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:2fcff5de9d988339621301482b507dbda2eefaa03ecbd60757be28494f1da722",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 68.781
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:2fcff5de9d988339621301482b507dbda2eefaa03ecbd60757be28494f1da722",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 3.469
+    }
+  ],
+  "full_node_tap": {
+    "gate": "full_node_tap_lf_mirror",
+    "exit_code": 0,
+    "counts": [
+      "# tests 1067",
+      "# pass 1067",
+      "# fail 0",
+      "# skipped 0"
+    ],
+    "failedTitles": [],
+    "sourceEnvFilesRead": false,
+    "skippedSensitive": 3
+  },
+  "validation_environment": "All tracked non-sensitive source copied to owned temporary LF mirror matching Git blobs; read-only Git object alternates and core.longpaths; full canonical TAP command unchanged; temporary mirror cleaned. Three .env templates excluded without reading content. Historical evidence and assertion scope unchanged.",
+  "assertions": "Current inventory exactly84 includes native course; pinned 79/81 history, pending21 isolation and checksums retained",
+  "remote_ci": "PENDING",
+  "merge": "PENDING"
+}

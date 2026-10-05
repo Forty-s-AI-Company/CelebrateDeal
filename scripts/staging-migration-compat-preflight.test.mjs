@@ -25,8 +25,8 @@ function changedSql(name, transform) {
 }
 
 test("all 21 exact pending SQL files have no data-dependent baseline constraint", () => {
-  assert.equal(allNames.length, 83);
-  assert.equal(allNames.at(-1), "20261004154500_student_portal_access_tokens");
+  assert.equal(allNames.length, 84);
+  assert.equal(allNames.at(-1), "20261006040000_native_course_learning");
   assert.equal(names.length, 79);
   assert.equal(pending.length, 21);
   assert.equal(auditPendingSql(inventory, sqlByName), true);

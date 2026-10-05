@@ -15,6 +15,16 @@
 
 ## Route handlers
 
+### 2026-10-06 原生課程學習新增契約
+
+| Route／method | Caller 與安全邊界 | Input／resource boundary | Side effect 與 response | 目前證據 |
+|---|---|---|---|---|
+| `GET /portal/[vendorSlug]/learn/[courseId]/progress` | 同源 client marker、學員 session | 租戶、課程、目前購買權益；已退款／撤銷拒絕 | 只讀進度與更新 CSRF；private no-store、Vary Cookie；拒絕同為 404 | 同路徑 unit、disposable DB、Chromium |
+| `POST /portal/[vendorSlug]/learn/[courseId]/progress` | 同源 client marker、CSRF、學員 session | 嚴格 4 KiB JSON；已發布單元與目前權益 | Serializable 重驗權益、單調進度與有限衝突重試；400／403／404 | 同路徑 unit、disposable DB、Chromium |
+| `GET /portal/[vendorSlug]/learn/[courseId]/certificate` | 學員 session | 租戶、課程、目前權益；全部已發布單元完成 | 只讀 escaped SVG attachment；CSP sandbox、private no-store；拒絕同為 404 | 同路徑 unit、disposable DB、Chromium 退款撤銷 |
+
+以上是本輪新增契約；下方日期與 revision 保留為歷史盤點基準。
+
 | # | Route／method | Caller 與安全邊界 | Input contract | Tenant／resource boundary | Side effect 與 replay contract | Response／error contract | 目前證據 |
 |---:|---|---|---|---|---|---|---|
 | 1 | `GET /(app)/billing/invoices/export` | `requireVendorContext` | 無 body | query 固定目前 `vendorId` | 只讀 CSV export；公式字元 neutralization | CSV attachment；不回傳其他 vendor | 同路徑 unit |
