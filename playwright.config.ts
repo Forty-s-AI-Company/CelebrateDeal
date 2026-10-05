@@ -4,6 +4,12 @@ import { assertLocalTestDatabase } from "./scripts/local-database-safety";
 
 const port = Number(process.env.E2E_PORT ?? 31023);
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${port}`;
+const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH;
+// 固定合成金鑰只供隔離的本機瀏覽器測試，兩個程序使用相同值。
+const localE2eBankKeyring = JSON.stringify({
+  activeKeyId: "playwright",
+  keys: { playwright: Buffer.alloc(32, 7).toString("base64url") },
+});
 const localE2eCsrfSecret = "celebratedeal-local-playwright-csrf-secret-v1";
 const localE2eCronSecret = "celebratedeal-local-playwright-cron-secret-v1";
 const localE2eLiveChatIngressSecret = "celebratedeal-local-playwright-live-chat-ingress-secret-v1";
@@ -55,6 +61,7 @@ process.env.E2E_SMOKE_TEST_EMAIL = e2eSmokeTestEmail;
 // Local browser QA verifies deterministic 429 behaviour without consuming the
 // shared Staging Upstash quota. Preview smoke validates Upstash separately.
 process.env.RATE_LIMIT_PROVIDER = e2eRateLimitProvider;
+process.env.BANK_ACCOUNT_KEYRING_JSON = localE2eBankKeyring;
 
 if (!process.env.DATABASE_URL || process.env.DATABASE_URL.startsWith("file:")) {
   process.env.DATABASE_URL = localPostgresUrl;
@@ -86,13 +93,16 @@ export default defineConfig({
     : [["list"]],
   use: {
     baseURL,
+    ...(executablePath ? { launchOptions: { executablePath } } : {}),
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `npx prisma generate && npx next build --webpack && npx next start --hostname 127.0.0.1 --port ${port}`,
+    // 專用 Prisma 設定再次驗證隔離資料庫，不讀取本機 dotenv。
+    command: `npx prisma migrate deploy --config prisma.playwright.config.ts && npx prisma generate --config prisma.playwright.config.ts && npx next build --webpack && npx next start --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
     reuseExistingServer: false,
-    timeout: 240_000,
+    // Windows 的正式模式建置可能超過四分鐘；個別測試與 assertion 時限不變。
+    timeout: 600_000,
     env: {
       ...process.env,
       // Playwright itself may run under NODE_ENV=test. The child process is a
@@ -112,6 +122,7 @@ export default defineConfig({
       // local or deployed runtime secrets.
       CRON_SECRET: localE2eCronSecret,
       LIVE_CHAT_INGRESS_SECRET: localE2eLiveChatIngressSecret,
+      BANK_ACCOUNT_KEYRING_JSON: localE2eBankKeyring,
       [commerceLoopbackTlsBridgeEnvironmentName]: "1",
       RATE_LIMIT_PROVIDER: e2eRateLimitProvider,
       SMOKE_TEST_EMAIL: e2eSmokeTestEmail,
@@ -122,6 +133,12 @@ export default defineConfig({
       // external ingest endpoint delay page loads or surface false 500s here.
       [sentryDsnEnvironmentName]: "",
       [publicSentryDsnEnvironmentName]: "",
+      // 測試伺服器不得繼承外部儲存目的地或憑證。
+      CLOUDFLARE_R2_ACCOUNT_ID: "",
+      CLOUDFLARE_R2_ACCESS_KEY_ID: "",
+      CLOUDFLARE_R2_SECRET_ACCESS_KEY: "",
+      CLOUDFLARE_R2_BUCKET: "",
+      CLOUDFLARE_R2_PUBLIC_BASE_URL: "",
       // Release-mode browser QA must never publish local source maps or create
       // an external Sentry release as a side effect of its child build.
       [sentryAuthTokenEnvironmentName]: "",

@@ -36,14 +36,14 @@ export type DirectUrlGuardOptions = {
   routeIdentityCanaries?: readonly string[];
   /** The semantic URL expected after the terminal outcome has completed. */
   finalUrl?: UrlMatcher;
-  /** Expected status of the initial page.goto(..., { waitUntil: "commit" }) response; legacy name retained. */
+  /** Expected status of the initial direct-navigation response. */
   finalStatus?: number;
   /** Additional marker strings forbidden in a non-3xx protected payload. */
   forbiddenPayload?: readonly string[];
 };
 
 export type DirectUrlGuardEvidence = {
-  /** Initial page.goto(..., { waitUntil: "commit" }) response; legacy name retained. */
+  /** Initial direct-navigation response; streamed not-found waits for document load. */
   finalResponse: Response | null;
   protectedRequest: Request;
   protectedResponse: Response;
@@ -244,8 +244,11 @@ export async function navigateAndAssertDirectUrlGuard({
       );
     }
 
-    // 保留既有命名：這是 initial page.goto(..., { waitUntil: "commit" }) response，不是後續 terminal document。
-    const finalResponse = await page.goto(path, { waitUntil: "commit" });
+    // A streamed not-found document may keep the previous route's React tree
+    // visible after headers commit. Wait for the terminal document load before
+    // asserting its 404 UI; redirects still need the early stream capture.
+    const waitUntil = transport.kind === "streaming-not-found" ? "load" : "commit";
+    const finalResponse = await page.goto(path, { waitUntil });
     expect(navigationRequests, `expected one same-frame document GET for ${path}`).toHaveLength(1);
     expect(matchingResponses, `expected one matching same-frame document response for ${path}`).toHaveLength(1);
 
