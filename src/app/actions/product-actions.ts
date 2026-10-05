@@ -1,3 +1,4 @@
+import { MAX_PRODUCT_NAME_LENGTH } from "@/lib/product-name-contract";
 import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
@@ -152,7 +153,7 @@ function parseProductInput(formData: FormData) {
   const checkoutUrl = checkoutUrlRaw ? parseSafeExternalHttpUrl(checkoutUrlRaw) : null;
 
   const description = optionalText(formData, "description");
-  if (!name || name.length > 200 || !slug || priceCents === null || inventory === null) return null;
+  if (!name || name.length > MAX_PRODUCT_NAME_LENGTH || !slug || priceCents === null || inventory === null) return null;
   if (description && description.length > 10_000) return null;
   if (isActive && priceCents === 0) return null;
   if (compareAtRaw !== null && (compareAtCents === null || compareAtCents === 0)) return null;

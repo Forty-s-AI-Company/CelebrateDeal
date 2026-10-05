@@ -40,11 +40,12 @@ describe("exact staging migration adapter", () => {
     await expect(runMigrations(["--apply"], { NODE_ENV: "test" })).rejects.toThrow("MIGRATION_APPROVAL_REQUIRED");
   });
 
-  it("rejects the expanded candidate instead of silently applying the unrelated LINE migration", () => {
+  it("rejects the expanded candidate instead of applying unrelated LINE or course migrations", () => {
     const current = inventory();
-    expect(current).toHaveLength(83);
+    expect(current).toHaveLength(84);
     expect(current.some((item) => item.name === "20261004154500_student_portal_access_tokens")).toBe(true);
     expect(current.some((item) => item.name === "20261004140000_line_rich_menu_drafts")).toBe(true);
+    expect(current.some((item) => item.name === "20261006040000_native_course_learning")).toBe(true);
     expect(historicalInventory()).toHaveLength(81);
     expect(() => buildMigrationSql(current)).toThrow("MIGRATION_INVENTORY_INVALID");
   });

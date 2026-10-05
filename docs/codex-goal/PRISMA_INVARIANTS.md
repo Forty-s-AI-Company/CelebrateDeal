@@ -1,17 +1,17 @@
 # CelebrateDeal Prisma Invariant Inventory
 
-最後更新：2026-10-04（Asia/Taipei）
+最後更新：2026-10-06（Asia/Taipei）
 
 基準 revision：`4ed3b463`
 
-> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前 chain 已增至 83，該歷史收據不代表新 migration、Staging 或 Production 已套用。
+> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 84，該歷史收據不代表新 migration、Staging 或 Production 已套用。
 
 ## Inventory 基準
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 123 |
-| Migration directories | 83 |
+| Prisma models | 125 |
+| Migration directories | 84 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -217,3 +217,7 @@
 新增 `StudentPortalAccessToken` 及 additive migration `20261004154500_student_portal_access_tokens`。tokenHash 全域唯一、vendor FK、vendor/customer/expiry 與 vendor/purpose/expiry 索引；CHECK 限制 15 分鐘期限與 digest 格式。RLS 啟用且沒有 anon/authenticated policy，只有 server database role 讀寫。
 
 原始 checkout_redirect purpose 僅保留 enum 相容，公開 access route 只接受 magic_link，單筆訂單 grant 不可取得整個帳戶權限。Consume 必須符合 tenant、customer、purpose、issuedAt、有效期限及 consumedAt=null，透過單次 updateMany 競爭唯一成功者。本機 disposable PostgreSQL 17 已 forward-apply 全部 83 條 migration；13 項 DB 測試驗證單次競爭、tenant/customer、expiry/purpose、FK/unique/TTL、RLS catalog 與優惠券商品狀態。2 項登入／登出及 checkout grant 邊界 browser 測試通過；獨立審查 findings 已修正。RLS 證據限 catalog，不宣稱 Data API role 實測；不冒稱 Staging/Production 已套用。
+
+## 2026-10-06 原生課程候選
+
+新增 `CourseLesson` 與 `CourseLessonProgress`；前向 migration `20261006040000_native_course_learning`。三欄位 lesson 外鍵同時約束 tenant、course、lesson，進度具非負上限約束。此候選的 disposable PostgreSQL 證據尚待執行，不沿用上方歷史收據。

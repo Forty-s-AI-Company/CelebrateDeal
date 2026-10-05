@@ -22,6 +22,7 @@ export default async function EditProductPage({ params, searchParams }: { params
   return (
     <>
       <PageHeader title="編輯商品" description="調整價格、庫存、圖片與交付方式。課程 policy 變更會產生新版本，歷史訂單不會被改寫。" action={<ButtonLink href={`/products/${encodeURIComponent(product.id)}/preview`} tone="secondary">預覽商品</ButtonLink>} />
+      {product.fulfillmentType === "course" ? <div className="mb-5"><ButtonLink href={`/products/${encodeURIComponent(product.id)}/lessons`} tone="secondary">管理課程單元</ButtonLink></div> : null}
       <ProductForm error={error} product={product} memberships={memberships.map((membership) => ({ id: membership.id, teamName: membership.team.name, memberName: membership.vendorMember.user.name }))} />
     </>
   );
