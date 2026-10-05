@@ -6,6 +6,7 @@ import { ArrowLeft, Maximize2, Megaphone, MessageCircle, Minimize2, Package, Pau
 import { usePathname, useRouter } from "next/navigation";
 import { LeadForm } from "@/components/lead-form";
 import { LiveMediaReceiver } from "@/components/live-media-receiver";
+import { canUseLiveAdvancedInteractions, LiveAdvancedInteractions } from "@/components/live-advanced-interactions";
 import { LiveChatPanel } from "@/components/live-chat-panel";
 import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
@@ -102,6 +103,7 @@ export type LivePageData = {
   };
   formConfigurationUnavailable?: boolean;
   interactionEvents: Array<{
+    metadata?: import("@/lib/interaction-event").AdvancedInteractionMetadata;
     id: string;
     eventType: string;
     triggerSec: number;
@@ -1426,7 +1428,7 @@ function useExternalNavigationIntent({
   const confirmLockRef = useRef(false);
   const triggerElementRef = useRef<HTMLElement | null>(null);
 
-  async function completeProductCheckout(product: LiveProduct, checkoutUrl?: string) {
+  async function completeProductCheckout(product: LiveProduct, checkoutUrl?: string, flashSaleRunId?: string) {
     if (!checkoutNavigation.begin()) return;
     setCheckoutError(null);
     void trackClientAnalytics({
@@ -1437,7 +1439,7 @@ function useExternalNavigationIntent({
     });
     let keepNavigationLocked = false;
     try {
-      const started = await requestCheckout({ vendorId: live.vendorId, productId: product.id, checkoutUrl, navigateInternal: (path) => router.push(path) });
+      const started = await requestCheckout({ vendorId: live.vendorId, productId: product.id, checkoutUrl, navigateInternal: (path) => router.push(flashSaleRunId ? `${path}?flashSale=${encodeURIComponent(flashSaleRunId)}` : path) });
       if (!started) setCheckoutError("目前無法完成結帳，請稍後再試。");
       else if (!checkoutUrl) {
         keepNavigationLocked = true;
@@ -1459,11 +1461,13 @@ function useExternalNavigationIntent({
     setIntent(nextIntent);
   }
 
-  async function trackProduct(productId: string) {
+  async function trackProduct(productId: string, flashSaleRunId?: string) {
     if (admissionStatus !== "admitted") return setCheckoutError("直播目前無法提供購買，請稍後再試。");
     const product = live.products.find((item) => item.id === productId);
     if (!product) return setCheckoutError("目前無法完成結帳，請稍後再試。");
-    if (!product.checkoutUrl) return completeProductCheckout(product);
+    // 快閃優惠只走原生結帳；不沿用舊播放器快照中的外部付款網址。
+    if (flashSaleRunId) return completeProductCheckout(product, undefined, flashSaleRunId);
+    if (!product.checkoutUrl) return completeProductCheckout(product, undefined, flashSaleRunId);
     const checkoutUrl = parseSafeExternalHttpUrl(product.checkoutUrl);
     if (!checkoutUrl) return setCheckoutError("目前無法完成結帳，請稍後再試。");
     openIntent({ kind: "product", productId: product.id, label: product.name, url: checkoutUrl });
@@ -1515,6 +1519,10 @@ function useExternalNavigationIntent({
       else trigger?.focus();
     },
   };
+}
+
+function interactionControlsObscured(panel: PlaybackPanel, isCheckoutOverlay: boolean, navigationPending: boolean) {
+  return panel !== "chat" || isCheckoutOverlay || navigationPending;
 }
 
 export function LivePlayback({ live }: { live: LivePageData }) {
@@ -1708,6 +1716,15 @@ export function LivePlayback({ live }: { live: LivePageData }) {
       className={playbackPageClass(isCheckoutOverlay)}
       data-checkout-overlay-active={isCheckoutOverlay ? "true" : "false"}
     >
+      <LiveAdvancedInteractions
+        vendorId={live.vendorId}
+        liveId={live.id}
+        currentSeconds={currentSeconds}
+        events={live.interactionEvents}
+        onCheckout={externalNavigation.trackProduct}
+        obscured={interactionControlsObscured(panel, isCheckoutOverlay, externalNavigation.isPending)}
+        enabled={canUseLiveAdvancedInteractions(isPlayableRuntime, admissionStatus, live.admissionRequired)}
+      />
       <DirectEntryAttributionReset enabled={isPlayableRuntime} />
       <LiveShareUrlCleanup liveShareCode={liveShareCode} />
       <section className={playbackSectionClass(isCheckoutOverlay)}>

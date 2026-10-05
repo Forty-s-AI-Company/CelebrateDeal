@@ -8,11 +8,12 @@ import {
 } from "@/lib/checkout-idempotency";
 
 vi.mock("@/components/commerce-checkout-form", () => ({
-  CommerceCheckoutForm: ({ productName, customCheckoutFields, recoveryOnly }: {
+  CommerceCheckoutForm: ({ productName, customCheckoutFields, recoveryOnly, flashSaleRunId }: {
+    flashSaleRunId?: string;
     productName: string;
     customCheckoutFields: Array<{ label: string }>;
     recoveryOnly?: boolean;
-  }) => <div data-recovery={String(Boolean(recoveryOnly))}>{productName}:{customCheckoutFields[0]?.label}</div>,
+  }) => <div data-recovery={String(Boolean(recoveryOnly))} data-sale={flashSaleRunId}>{productName}:{customCheckoutFields?.[0]?.label}</div>,
 }));
 
 import { CommerceCheckoutEntry } from "@/components/commerce-checkout-entry";
@@ -38,6 +39,21 @@ afterEach(async () => {
 });
 
 describe("CommerceCheckoutEntry", () => {
+  it("clears prior sale intent only after explicit confirmation to start a new purchase", async () => {
+    window.history.replaceState({}, "", "/checkout/vendor-1/product-1?resume=1&flashSale=old-sale");
+    window.sessionStorage.setItem(checkoutIdempotencyStorageKey("vendor-1", "product-1"), key);
+    saveCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname, { vendorId: "vendor-1", productId: "product-1", idempotencyKey: key });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 409 }));
+    await act(async () => { root.render(<CommerceCheckoutEntry current={{ vendorId: "vendor-1", productId: "product-1", productName: "商品", fulfillmentType: "digital", flashSaleRunId: "old-sale" }} />); });
+    expect(window.location.search).toContain("flashSale=old-sale");
+    expect(container.querySelector('a[href="/support/orders"]')?.textContent).toContain("原訂單");
+    const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent === "確認後開始新訂單")!;
+    expect(button).toBeTruthy();
+    await act(async () => { button.click(); });
+    expect(window.location.search).not.toContain("flashSale");
+    expect(container.querySelector("[data-recovery]")?.hasAttribute("data-sale")).toBe(false);
+  });
+
   it("loads the original fields for a pending recovery instead of the edited catalog fields", async () => {
     window.sessionStorage.setItem(checkoutIdempotencyStorageKey("vendor-1", "product-1"), key);
     saveCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname, {

@@ -3,8 +3,10 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommerceCheckoutForm } from "@/components/commerce-checkout-form";
+import { CommerceCheckoutEntry } from "@/components/commerce-checkout-entry";
 import {
   checkoutIdempotencyStorageKey,
+  clearCheckoutRecoveryRecord,
   readCheckoutIdempotencyKey,
   saveCheckoutRecoveryRecord,
 } from "@/lib/checkout-idempotency";
@@ -35,6 +37,71 @@ afterEach(async () => {
 });
 
 describe("pending checkout recovery", () => {
+  it.each(["link", "form"])("keeps order access when an unsafe %s destination is rejected", async (kind) => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ admissionToken, idempotencyKey: key, expiresAt: "2027-01-01T00:00:00.000Z" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        ok: true, provider: "demo", orderNumber: "CD-1", transactionId: "transaction-1", amountCents: 1200, currency: "TWD",
+        checkoutUrl: kind === "link" ? "https://untrusted.example.test/pay" : null,
+        ...(kind === "form" ? { formAction: "https://untrusted.example.test/pay", formMethod: "POST", formPayload: { synthetic: "test" } } : {}),
+        nextAction: "demo_checkout_transaction_created", externalRequired: false,
+      }) }));
+    await act(async () => { root.render(<CommerceCheckoutForm vendorId="vendor-1" productId="product-1" productName="商品" fulfillmentType="digital" />); });
+    const form = container.querySelector("form")!;
+    form.querySelector<HTMLInputElement>('[name="buyerName"]')!.value = "測試買家";
+    form.querySelector<HTMLInputElement>('[name="buyerEmail"]')!.value = "buyer@example.test";
+    await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+    expect(container.textContent).toContain("付款服務目的地不安全");
+    expect(container.textContent).not.toContain("尚未向你收款");
+    expect(container.querySelector('a[href="/support/orders"]')).not.toBeNull();
+    expect(readCheckoutIdempotencyKey(window.sessionStorage, "vendor-1", "product-1")).toBe(key);
+  });
+
+  it("displays the signed offer and waits for a second confirmation before checkout", async () => {
+    clearCheckoutRecoveryRecord(window.sessionStorage, window.location.pathname);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ admissionToken, idempotencyKey: key, expiresAt: "2027-01-01T00:00:00.000Z", offer: { priceCents: 1000, currency: "TWD", hash: "a".repeat(64) } }) })
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ code: "FLASH_SALE_UNAVAILABLE", error: "raw diagnostics" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => { root.render(<CommerceCheckoutEntry summary={{ vendorName: "測試商家" }} current={{ vendorId: "vendor-1", productId: "product-1", productName: "商品", fulfillmentType: "digital", priceCents: 2000, currency: "TWD", flashSaleRunId: "sale-run" }} />); });
+    const form = container.querySelector("form")!;
+    form.querySelector<HTMLInputElement>('[name="buyerName"]')!.value = "測試買家";
+    form.querySelector<HTMLInputElement>('[name="buyerEmail"]')!.value = "buyer@example.test";
+    await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toMatchObject({ flashSaleRunId: "sale-run" });
+    expect(container.textContent).toContain("確認優惠並前往付款");
+    expect(container.querySelector("strong.text-xl")?.textContent).toContain("10");
+    expect(container.querySelector("section")?.textContent).toContain("商品原價");
+    expect(container.querySelector("section")?.textContent).toContain("20");
+    expect(container.querySelector("section")?.textContent).not.toContain("訂單摘要");
+    await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/payments/checkout");
+    expect(container.textContent).toContain("快閃優惠已變更");
+    expect(container.textContent).not.toContain("raw diagnostics");
+    expect(container.querySelector("strong.text-xl")?.textContent).toContain("20");
+  });
+
+  it("shows the voucher-specific failure and retains checkout identity for a normal checkout", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ admissionToken, idempotencyKey: key, expiresAt: "2027-01-01T00:00:00.000Z" }) })
+      .mockResolvedValue({ ok: false, status: 409, json: async () => ({ code: "LIVE_VOUCHER_ALREADY_USED", error: "untrusted raw diagnostic" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => { root.render(<CommerceCheckoutForm vendorId="vendor-1" productId="product-1" productName="商品" fulfillmentType="digital" />); });
+    const form = container.querySelector("form")!;
+    form.querySelector<HTMLInputElement>('[name="buyerName"]')!.value = "測試買家";
+    form.querySelector<HTMLInputElement>('[name="buyerEmail"]')!.value = "buyer@example.test";
+    await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+    expect(container.textContent).toContain("優惠券已綁定先前訂單");
+    expect(container.textContent).not.toContain("商品可能已售完");
+    expect(container.textContent).not.toContain("untrusted raw diagnostic");
+    expect(container.querySelector('a[href="/support/orders"]')?.textContent).toContain("付款狀態");
+    expect(readCheckoutIdempotencyKey(window.sessionStorage, "vendor-1", "product-1")).toBe(key);
+    await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/payments/checkout/admission")).toHaveLength(1);
+  });
+
   it("keeps the original key after a mistyped identity and retries the same order", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ admissionToken, idempotencyKey: key, expiresAt: "2027-01-01T00:00:00.000Z" }) })
@@ -71,5 +138,8 @@ describe("pending checkout recovery", () => {
       .map(([, init]) => JSON.parse(init.body as string) as { idempotencyKey: string });
     expect(checkoutBodies).toHaveLength(2);
     expect(checkoutBodies.map((body) => body.idempotencyKey)).toEqual([key, key]);
+    expect(container.textContent).toContain("訂單 CD-1 已建立");
+    expect(readCheckoutIdempotencyKey(window.sessionStorage, "vendor-1", "product-1")).toBe(key);
+    expect(window.location.search).toContain("resume=1");
   });
 });

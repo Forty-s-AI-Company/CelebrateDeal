@@ -105,7 +105,10 @@ describe("commerce checkout contract", () => {
   it("keeps errors useful without exposing provider internals", () => {
     expect(checkoutErrorMessage(409)).toContain("重新整理");
     expect(checkoutErrorMessage(425)).toContain("沿用同一筆訂單");
-    expect(checkoutErrorMessage(502)).toContain("尚未向你收款");
+    for (const status of [502, 503]) {
+      expect(checkoutErrorMessage(status)).toContain("查看訂單狀態");
+      expect(checkoutErrorMessage(status)).not.toContain("尚未向你收款");
+    }
   });
 
   it("retains one checkout identity across ambiguous server failures", () => {

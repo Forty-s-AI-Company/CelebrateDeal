@@ -37,6 +37,11 @@ export const CommerceCheckoutAdmissionResponseSchema = z.object({
   admissionToken: z.string().regex(/^ca1\.[A-Za-z0-9_-]{1,768}\.[A-Za-z0-9_-]{43}$/u).max(900),
   idempotencyKey: z.string().uuid(),
   expiresAt: z.string().datetime({ offset: true }),
+  offer: z.object({
+    priceCents: z.number().int().safe().positive(),
+    currency: z.string().regex(/^[A-Z]{3}$/u),
+    hash: z.string().regex(/^[a-f0-9]{64}$/u),
+  }).strict().optional(),
 }).strict();
 
 export const CommerceCheckoutResponseSchema = z.object({
@@ -100,14 +105,25 @@ export function isAllowedCheckoutDestination(value: string, currentOrigin: strin
   }
 }
 
-export function checkoutErrorMessage(status: number) {
+/** 只識別白名單代碼，不把任意伺服器錯誤文字顯示給買家。 */
+export async function readCheckoutErrorCode(response: Pick<Response, "json">) {
+  try {
+    const body: unknown = await response.json();
+    return body && typeof body === "object" && "code" in body && (body.code === "LIVE_VOUCHER_ALREADY_USED" || body.code === "FLASH_SALE_UNAVAILABLE")
+      ? body.code : undefined;
+  } catch { return undefined; }
+}
+
+export function checkoutErrorMessage(status: number, code?: string) {
+  if (status === 409 && code === "FLASH_SALE_UNAVAILABLE") return "快閃優惠已變更、結束或綁定先前訂單。請先確認原訂單狀態；若尚未建立訂單，請返回直播重新確認優惠。";
+  if (status === 409 && code === "LIVE_VOUCHER_ALREADY_USED") return "優惠券已綁定先前訂單。請先確認原訂單付款狀態，或聯絡商家協助；重新整理不會解除綁定。";
   if (status === 400) return "請確認聯絡與收件資料是否完整。";
   if (status === 404) return "這個商品目前無法購買。";
   if (status === 409) return "商品可能已售完，或這次結帳資料已變更；請重新整理後再試一次。";
   if (status === 425) return "訂單正在建立中，請稍候後重試；系統會沿用同一筆訂單。";
   if (status === 429) return "操作太頻繁，請稍候再試。";
-  if (status === 503) return "付款服務目前尚未就緒；尚未向你收款，請稍後重試或聯絡商家確認付款設定。";
-  return "目前無法開始付款；尚未向你收款，請稍後重試。";
+  if (status === 503) return "付款服務暫時無法完成請求；請先查看訂單狀態，或聯絡商家確認。";
+  return "目前無法確認付款結果；請先查看訂單狀態，避免重複付款。";
 }
 
 /**
@@ -115,6 +131,6 @@ export function checkoutErrorMessage(status: number) {
  * before its response reached the browser. Keep the server-issued identity so
  * the next submit resolves that same checkout instead of reserving stock twice.
  */
-export function shouldDiscardCheckoutAdmission(status: number) {
-  return status === 409;
+export function shouldDiscardCheckoutAdmission(status: number, code?: string) {
+  return status === 409 && code !== "LIVE_VOUCHER_ALREADY_USED";
 }

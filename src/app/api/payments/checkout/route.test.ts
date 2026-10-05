@@ -1,3 +1,4 @@
+import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, createFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,7 +32,7 @@ const paymentProviderMocks = vi.hoisted(() => ({ getPaymentProvider: vi.fn() }))
 const commerceOrderMocks = vi.hoisted(() => ({ createCommerceOrderForCheckout: vi.fn() }));
 const buyerSupportMocks = vi.hoisted(() => ({ issueBuyerSupportGrant: vi.fn() }));
 const funnelMocks = vi.hoisted(() => ({ resolvePublishedFunnelCheckout: vi.fn() }));
-const liveInteractionMocks = vi.hoisted(() => ({ resolveEligibleAutomationVoucherClaim: vi.fn() }));
+const liveInteractionMocks = vi.hoisted(() => ({ resolveEligibleAutomationVoucherClaim: vi.fn(), resolveEligibleVoucherClaim: vi.fn(), consumeLive: vi.fn() }));
 const admissionMocks = vi.hoisted(() => ({
   checkoutSessionTokenFromRequest: vi.fn(),
   verifyCheckoutAdmission: vi.fn(),
@@ -53,6 +54,9 @@ vi.mock("@/lib/buyer-support-access", () => ({
 vi.mock("@/lib/checkout-admission", () => admissionMocks);
 vi.mock("@/lib/funnel-commerce-service", () => funnelMocks);
 vi.mock("@/lib/live-interaction", () => ({
+  LiveVoucherAlreadyUsedError: class LiveVoucherAlreadyUsedError extends Error {},
+  FLASH_VOUCHER_COOKIE: "celebratedeal_flash_voucher",
+  resolveEligibleVoucherClaim: liveInteractionMocks.resolveEligibleVoucherClaim,
   AUTOMATION_VOUCHER_COOKIE: "celebratedeal_automation_voucher",
   resolveEligibleAutomationVoucherClaim: liveInteractionMocks.resolveEligibleAutomationVoucherClaim,
 }));
@@ -165,6 +169,8 @@ beforeEach(() => {
   db.paymentTransaction.findUnique.mockResolvedValue(null);
   funnelMocks.resolvePublishedFunnelCheckout.mockReset();
   liveInteractionMocks.resolveEligibleAutomationVoucherClaim.mockResolvedValue(null);
+  liveInteractionMocks.resolveEligibleVoucherClaim.mockReset().mockResolvedValue(null);
+  liveInteractionMocks.consumeLive.mockResolvedValue({ count: 1 });
   db.paymentTransaction.create.mockImplementation(({ data }: { data: Record<string, unknown> }) => ({ id: "transaction-1", ...data }));
   db.paymentTransaction.update.mockResolvedValue({ id: "transaction-1" });
   checkoutReadiness.mockReturnValue("local_only");
@@ -192,6 +198,7 @@ beforeEach(() => {
     const transaction = await db.paymentTransaction.create({ data: transactionData });
     if (createCommerceOrder) {
       await createCommerceOrder({
+        liveInteractionResponse: { updateMany: liveInteractionMocks.consumeLive },
         automationVoucherGrant: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       }, transaction);
     }
@@ -229,6 +236,35 @@ function expectNoAffiliateAttribution() {
 }
 
 describe("successful checkout response", () => {
+  it("does not silently charge full price when a previous order consumed the live voucher", async () => {
+    const { LiveVoucherAlreadyUsedError } = await import("@/lib/live-interaction");
+    liveInteractionMocks.resolveEligibleVoucherClaim.mockRejectedValueOnce(new LiveVoucherAlreadyUsedError());
+    const response = await POST(checkoutRequest(`celebratedeal_flash_voucher=${"A".repeat(43)}`));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "LIVE_VOUCHER_ALREADY_USED" });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it("applies a live voucher and atomically binds its redemption to the order", async () => {
+    liveInteractionMocks.resolveEligibleVoucherClaim.mockResolvedValueOnce({ id: "live-claim", discountAmountCents: 200 });
+    const response = await POST(checkoutRequest(`celebratedeal_flash_voucher=${"A".repeat(43)}`));
+    expect(response.status).toBe(200);
+    expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ grossAmountCents: 1000 }) }));
+    expect(liveInteractionMocks.consumeLive).toHaveBeenCalledWith({
+      where: { id: "live-claim", vendorId: expect.any(String), eventType: "flash_voucher", usedOrderId: null, expiresAt: { gt: expect.any(Date) } },
+      data: { usedOrderId: expect.any(String), discountAmountCents: 200 },
+    });
+  });
+
+  it("rejects a concurrently consumed live voucher before starting provider checkout", async () => {
+    liveInteractionMocks.resolveEligibleVoucherClaim.mockResolvedValueOnce({ id: "live-claim", discountAmountCents: 200 });
+    liveInteractionMocks.consumeLive.mockResolvedValueOnce({ count: 0 });
+    const response = await POST(checkoutRequest(`celebratedeal_flash_voucher=${"A".repeat(43)}`));
+    expect(response.status).toBe(409);
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it("applies a server-resolved automation voucher and consumes it in the reservation transaction", async () => {
     liveInteractionMocks.resolveEligibleAutomationVoucherClaim.mockResolvedValueOnce({
       id: "grant-1",
@@ -390,6 +426,12 @@ describe("successful checkout response", () => {
       transactionId: "transaction-1",
       reason: "provider_checkout_failed",
     });
+    expect(buyerSupportMocks.issueBuyerSupportGrant).toHaveBeenCalledWith(db, expect.objectContaining({
+      vendorId: "vendor-1", orderId: "order-1",
+    }));
+    expect(response.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(response.headers.get("set-cookie")).toContain("Secure");
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(db.paymentTransaction.update).toHaveBeenCalledTimes(1);
   });
 
@@ -1107,8 +1149,16 @@ describe("checkout affiliate click attribution", () => {
 });
 
 describe("checkout form submission attribution", () => {
+  it.each(["raw", "tampered"])("does not assign a registration from a %s cookie", async (kind) => {
+    const cookie = kind === "raw" ? "celebratedeal_form_submission=submission-1"
+      : `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId: "submission-1" })}tampered`;
+    expect((await POST(checkoutRequest(cookie))).status).toBe(200);
+    expect(db.formSubmission.findFirst).not.toHaveBeenCalled();
+    expect(db.paymentTransaction.create.mock.calls[0]?.[0]?.data.metadata).not.toHaveProperty("formSubmissionId");
+  });
+
   it("carries a verified same-vendor live registration into transaction metadata", async () => {
-    const response = await POST(checkoutRequest("celebratedeal_form_submission=submission-1"));
+    const response = await POST(checkoutRequest(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId: "submission-1" })}`));
 
     expect(response.status).toBe(200);
     expect(db.formSubmission.findFirst).toHaveBeenCalledWith({
@@ -1127,12 +1177,13 @@ describe("checkout form submission attribution", () => {
       data: expect.objectContaining({ metadata: expect.objectContaining({ formSubmissionId: "submission-1", sourceLiveId: "live-1" }) }),
     }));
     expect(response.headers.getSetCookie().join("\n")).toContain("celebratedeal_form_submission=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=lax");
+    expect(response.headers.getSetCookie().join("\n")).not.toContain(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=`);
   });
 
   it("ignores a cross-vendor or invalid submission cookie without blocking checkout", async () => {
     db.formSubmission.findFirst.mockResolvedValue(null);
 
-    const response = await POST(checkoutRequest("celebratedeal_form_submission=foreign-submission"));
+    const response = await POST(checkoutRequest(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId: "foreign-submission" })}`));
 
     expect(response.status).toBe(200);
     expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -1168,6 +1219,29 @@ describe("checkout form submission attribution", () => {
 });
 
 describe("checkout provider failures", () => {
+  it("keeps the original discount binding and blocks a new-key retry after provider failure", async () => {
+    const { LiveVoucherAlreadyUsedError } = await import("@/lib/live-interaction");
+    liveInteractionMocks.resolveEligibleVoucherClaim
+      .mockResolvedValueOnce({ id: "live-claim", discountAmountCents: 200 })
+      .mockRejectedValueOnce(new LiveVoucherAlreadyUsedError());
+    createCheckoutSession.mockRejectedValueOnce(new Error("synthetic provider outage"));
+    const cookie = `celebratedeal_flash_voucher=${"A".repeat(43)}`;
+    const first = await POST(checkoutRequest(cookie));
+    expect(first.status).toBe(502);
+    expect(liveInteractionMocks.consumeLive).toHaveBeenCalledTimes(1);
+    expect(inventoryMocks.failPendingCheckoutAndReleaseInventory).toHaveBeenCalledTimes(1);
+    admissionMocks.verifyCheckoutAdmission.mockReturnValueOnce({
+      vendorId: "vendor-1", productId: "product-1", productRevision: 4,
+      idempotencyKey: "11111111-1111-4111-8111-111111111111", expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+    });
+    const retry = await POST(checkoutRequest(cookie, { idempotencyKey: "11111111-1111-4111-8111-111111111111" }));
+    expect(retry.status).toBe(409);
+    expect(await retry.json()).toMatchObject({ code: "LIVE_VOUCHER_ALREADY_USED" });
+    expect(createCheckoutSession).toHaveBeenCalledTimes(1);
+    expect(inventoryMocks.createReservedPaymentTransaction).toHaveBeenCalledTimes(1);
+    expect(db.paymentTransaction.create.mock.calls[0]?.[0]?.data.grossAmountCents).toBe(1000);
+  });
+
   it("returns sold out when inventory is consumed between product lookup and reservation", async () => {
     inventoryMocks.createReservedPaymentTransaction.mockRejectedValueOnce(
       new inventoryMocks.InventoryUnavailableError(),

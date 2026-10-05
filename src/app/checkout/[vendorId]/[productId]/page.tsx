@@ -10,10 +10,13 @@ export default async function CommerceCheckoutPage({
   searchParams,
 }: {
   params: Promise<{ vendorId: string; productId: string }>;
-  searchParams?: Promise<{ resume?: string }>;
+  searchParams?: Promise<{ resume?: string; flashSale?: string }>;
 }) {
   const { vendorId, productId } = await params;
-  const resume = (await searchParams)?.resume === "1";
+  const query = await searchParams;
+  const resume = query?.resume === "1";
+  const flashSaleRunId = query?.flashSale;
+  if (flashSaleRunId !== undefined && !/^[A-Za-z0-9_-]{1,128}$/u.test(flashSaleRunId)) notFound();
   const product = await getDb().product.findFirst({
     where: { id: productId, vendorId },
     select: {
@@ -35,6 +38,7 @@ export default async function CommerceCheckoutPage({
     },
   });
   if (!product) notFound();
+  if (flashSaleRunId && product.checkoutUrl) notFound();
   if (product.checkoutUrl && product.isActive && !resume) {
     const externalCheckoutUrl = parseSafeExternalHttpUrl(product.checkoutUrl);
     if (!externalCheckoutUrl) notFound();
@@ -52,6 +56,7 @@ export default async function CommerceCheckoutPage({
   const customCheckoutFields = safeParseCustomCheckoutFields(product.customCheckoutFields);
   const currentCheckout = canRenderNewCheckout && customCheckoutFields.success ? {
     vendorId: product.vendorId,
+    ...(flashSaleRunId ? { flashSaleRunId } : {}),
     productId: product.id,
     productName: product.name,
     priceCents: product.priceCents,

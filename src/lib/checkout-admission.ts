@@ -22,6 +22,7 @@ const AdmissionPayload = z.object({
   idempotencyKey: z.string().regex(UUID),
   expiresAt: z.number().int().safe(),
   sessionHash: z.string().regex(/^[a-f0-9]{64}$/u),
+  offerHash: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
 }).strict();
 
 export const CHECKOUT_ADMISSION_COOKIE = "celebratedeal_checkout_session";
@@ -29,6 +30,7 @@ export const CHECKOUT_ADMISSION_TTL_MS = 30 * 60 * 1_000;
 export const CHECKOUT_SESSION_TTL_SECONDS = 24 * 60 * 60;
 
 export type CheckoutAdmissionBinding = {
+  offerHash?: string;
   vendorId: string;
   productId: string;
   productRevision: number;
@@ -72,6 +74,7 @@ export function checkoutAdmissionCookieOptions(input: { secure: boolean }) {
 }
 
 export function issueCheckoutAdmission(input: {
+  offerHash?: string;
   vendorId: string;
   productId: string;
   productRevision: number;
@@ -85,6 +88,7 @@ export function issueCheckoutAdmission(input: {
     || !Number.isSafeInteger(input.productRevision)
     || input.productRevision < 0
     || (input.idempotencyKey != null && !UUID.test(input.idempotencyKey))
+    || (input.offerHash !== undefined && !/^[a-f0-9]{64}$/u.test(input.offerHash))
   ) throw new Error("Invalid checkout admission binding.");
 
   const now = input.now ?? new Date();
@@ -100,6 +104,7 @@ export function issueCheckoutAdmission(input: {
     idempotencyKey,
     expiresAt: expiresAtSeconds,
     sessionHash: sessionHash(sessionToken),
+    ...(input.offerHash !== undefined ? { offerHash: input.offerHash } : {}),
   }), "utf8").toString("base64url");
   if (!TOKEN_PART.test(payload)) throw new Error("Checkout admission payload is too large.");
 
@@ -145,6 +150,7 @@ export function verifyCheckoutAdmission(input: {
   if (expiresAt <= (input.now ?? new Date())) return null;
   return {
     vendorId: value.vendorId,
+    ...(value.offerHash !== undefined ? { offerHash: value.offerHash } : {}),
     productId: value.productId,
     productRevision: value.productRevision,
     idempotencyKey: value.idempotencyKey,

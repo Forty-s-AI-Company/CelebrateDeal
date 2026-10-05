@@ -17,9 +17,38 @@ import {
   pollPercentages,
   resolveEligibleAutomationVoucherClaim,
   resolveEligibleVoucherClaim,
+  LiveVoucherAlreadyUsedError,
 } from "./live-interaction";
 
 describe("advanced live interaction algorithms", () => {
+  it("rejects a consumed matching voucher even after expiry, without rejecting other tenant/product scope", async () => {
+    const findUnique = vi.fn().mockResolvedValue({
+      id: "used-claim", vendorId: "vendor-1", productId: "product-1", eventType: "flash_voucher",
+      usedOrderId: "earlier-order", expiresAt: new Date(0), run: { eventType: "flash_voucher" },
+    });
+    const db = { liveInteractionResponse: { findUnique }, commerceOrder: { findFirst: vi.fn().mockResolvedValue(null) } } as unknown as PrismaClient;
+    const input = { vendorId: "vendor-1", productId: "product-1", priceCents: 1200, currency: "TWD", rejectUsed: true };
+    await expect(resolveEligibleVoucherClaim(db, "A".repeat(43), input)).rejects.toBeInstanceOf(LiveVoucherAlreadyUsedError);
+    await expect(resolveEligibleVoucherClaim(db, "A".repeat(43), { ...input, vendorId: "other" })).resolves.toBeNull();
+    await expect(resolveEligibleVoucherClaim(db, "A".repeat(43), { ...input, productId: "other" })).resolves.toBeNull();
+  });
+
+  it.each(["product-1", null])("allows normal repurchase after confirmed payment without reactivating a %s voucher", async (productId) => {
+    const findUnique = vi.fn().mockResolvedValue({
+      id: "used-claim", vendorId: "vendor-1", productId, eventType: "flash_voucher",
+      usedOrderId: "paid-order", expiresAt: new Date(0), run: { eventType: "flash_voucher" },
+    });
+    const findFirst = vi.fn().mockResolvedValue({ id: "paid-order" });
+    const db = { liveInteractionResponse: { findUnique }, commerceOrder: { findFirst } } as unknown as PrismaClient;
+    await expect(resolveEligibleVoucherClaim(db, "A".repeat(43), {
+      vendorId: "vendor-1", productId: "product-1", priceCents: 1200, currency: "TWD", rejectUsed: true,
+    })).resolves.toBeNull();
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: "paid-order", vendorId: "vendor-1", paidAt: { not: null }, status: { in: ["paid", "partially_refunded", "refunded"] } },
+      select: { id: true },
+    });
+  });
+
   it("calculates bounded percentage and fixed discounts without producing a free order", () => {
     expect(calculateVoucherDiscount(10_000, {
       kind: "flash_voucher", durationSec: 60, maxClaims: 10,

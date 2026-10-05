@@ -123,10 +123,12 @@ export function pollPercentagesFromCounts(options: Array<{ id: string; label: st
   });
 }
 
+export class LiveVoucherAlreadyUsedError extends Error {}
+
 export async function resolveEligibleVoucherClaim(
   db: PrismaClient,
   bearer: string | null | undefined,
-  input: { vendorId: string; productId: string; priceCents: number; currency: string; now?: Date },
+  input: { vendorId: string; productId: string; priceCents: number; currency: string; now?: Date; rejectUsed?: boolean },
 ) {
   if (!bearer || !/^[A-Za-z0-9_-]{43}$/u.test(bearer)) return null;
   const now = input.now ?? new Date();
@@ -134,6 +136,21 @@ export async function resolveEligibleVoucherClaim(
     where: { claimTokenHash: hashInteractionBearer(bearer) },
     include: { run: true },
   });
+  // 已核銷的同商品券不得在新結帳請求中默默退回原價。
+  if (input.rejectUsed && claim?.usedOrderId && claim.vendorId === input.vendorId
+    && claim.eventType === "flash_voucher" && claim.run.eventType === "flash_voucher"
+    && (!claim.productId || claim.productId === input.productId)) {
+    // 已確認付款的訂單保留核銷紀錄；舊 Cookie 不應阻擋新的正常購買。
+    const settled = await db.commerceOrder.findFirst({
+      where: {
+        id: claim.usedOrderId, vendorId: input.vendorId, paidAt: { not: null },
+        status: { in: ["paid", "partially_refunded", "refunded"] },
+      },
+      select: { id: true },
+    });
+    if (settled) return null;
+    throw new LiveVoucherAlreadyUsedError();
+  }
   if (
     !claim
     || claim.vendorId !== input.vendorId

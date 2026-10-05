@@ -6,6 +6,7 @@ import { normalizeScheduledRuntimeMessage, type ScheduledRuntimeMessage } from "
 import { parseRegistrationFormFields } from "@/lib/registration-form-fields";
 import { publicLiveAvailabilityWhere } from "@/lib/sellable-live";
 import { resolveLiveRuntime } from "@/lib/live-runtime-state";
+import { publicInteractionMetadata } from "@/lib/public-interaction-metadata";
 
 export default async function PublicLivePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -108,6 +109,7 @@ export default async function PublicLivePage({ params }: { params: Promise<{ slu
         productId: event.productId,
         ctaLabel: event.ctaLabel,
         ctaUrl: event.ctaUrl,
+        ...publicInteractionMetadata(event, liveProductIds),
         role: event.role?.vendorId === live.vendorId
           ? {
               name: event.role.name,

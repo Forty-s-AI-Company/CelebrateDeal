@@ -1,3 +1,6 @@
+import { FORM_SUBMISSION_CHAT_SESSION_COOKIE, verifyFormSubmissionChatSessionToken } from "@/lib/form-submission-chat-session";
+import { assertFlashSaleAdmission, consumeFlashSaleQuote, flashSaleBearerFromRequest, FlashSaleUnavailableError, resolveFlashSaleQuote } from "@/lib/live-flash-sale";
+import { consumeCheckoutVoucherClaim, VoucherClaimConflictError, type EligibleCheckoutVoucherClaim } from "@/lib/checkout-voucher-claim";
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -57,6 +60,9 @@ import { wp4SourceBoundTransactionMetadata } from "@/lib/wp4-source-bound-transa
 import { resolvePublishedFunnelCheckout, type ResolvedFunnelCheckout } from "@/lib/funnel-commerce-service";
 import {
   AUTOMATION_VOUCHER_COOKIE,
+  FLASH_VOUCHER_COOKIE,
+  LiveVoucherAlreadyUsedError,
+  resolveEligibleVoucherClaim,
   resolveEligibleAutomationVoucherClaim,
 } from "@/lib/live-interaction";
 import {
@@ -73,14 +79,6 @@ const CheckoutRequest = CommerceCheckoutRequestSchema.extend({
 });
 
 const FORM_SUBMISSION_COOKIE = "celebratedeal_form_submission";
-
-class VoucherClaimConflictError extends Error {}
-
-type EligibleAutomationVoucherClaim = {
-  id: string;
-  source: "automation";
-  discountAmountCents: number;
-} | null;
 
 type CheckoutRequestData = z.infer<typeof CheckoutRequest>;
 type CheckoutAdmission = NonNullable<ReturnType<typeof verifyCheckoutAdmission>>;
@@ -164,34 +162,21 @@ function requestCookie(request: Request, name: string) {
   return null;
 }
 
-async function eligibleAutomationVoucherClaim(
+async function eligibleCheckoutVoucherClaim(
   request: Request,
   input: { vendorId: string; productId: string; priceCents: number; currency: string },
-): Promise<EligibleAutomationVoucherClaim> {
-  return resolveEligibleAutomationVoucherClaim(
+): Promise<EligibleCheckoutVoucherClaim> {
+  const automation = await resolveEligibleAutomationVoucherClaim(
     getDb(),
     requestCookie(request, AUTOMATION_VOUCHER_COOKIE),
     input,
   );
+  // 維持既有自動化券優先順序，不疊加兩張優惠券。
+  if (automation) return automation;
+  const live = await resolveEligibleVoucherClaim(getDb(), requestCookie(request, FLASH_VOUCHER_COOKIE), { ...input, rejectUsed: true });
+  return live ? { ...live, source: "live" } : null;
 }
 
-async function consumeAutomationVoucherClaim(
-  tx: Prisma.TransactionClient,
-  claim: EligibleAutomationVoucherClaim,
-  input: { vendorId: string; orderId: string; now: Date },
-) {
-  if (!claim) return;
-  const consumed = await tx.automationVoucherGrant.updateMany({
-    where: {
-      id: claim.id,
-      vendorId: input.vendorId,
-      usedOrderId: null,
-      expiresAt: { gt: input.now },
-    },
-    data: { usedOrderId: input.orderId, redeemedAt: input.now },
-  });
-  if (consumed.count !== 1) throw new VoucherClaimConflictError();
-}
 
 function hasReadyProductDelivery(product: {
   fulfillmentType: string;
@@ -508,6 +493,24 @@ function storedCheckoutSession(metadata: unknown): CheckoutSessionResult | null 
   };
 }
 
+async function failedCheckoutResponse(request: Request, vendorId: string, orderId: string | null) {
+  const response = NextResponse.json({ error: "Unable to start checkout" }, {
+    status: 502, headers: { "Cache-Control": "no-store" },
+  });
+  if (!orderId) return response;
+  try {
+    // 僅限本次已建立的訂單；失敗或延遲付款仍可從原瀏覽器查詢。
+    const cookie = await issueBuyerSupportGrant(getDb(), { request, vendorId, orderId });
+    response.cookies.set(cookie.name, cookie.value, buyerSupportCookieOptions({
+      expiresAt: cookie.expiresAt,
+      secure: process.env.NODE_ENV === "production" || new URL(request.url).protocol === "https:",
+    }));
+  } catch {
+    // 查詢憑證服務失敗時維持一般錯誤，不揭露內部細節或放寬存取權限。
+  }
+  return response;
+}
+
 function checkoutResponse({
   request,
   transaction,
@@ -791,19 +794,33 @@ export async function POST(request: Request) {
   const affiliateAttribution = await affiliateAttributionFromRequest(request, parsed.data.vendorId);
   const formSubmission = await verifiedLiveRegistrationFromRequest(request, parsed.data.vendorId);
   const formSubmissionId = formSubmission?.id;
-  const sourceLiveId = formSubmission?.liveId ?? undefined;
+  const saleBearer = flashSaleBearerFromRequest(request);
+  const saleQuote = await resolveFlashSaleQuote(db, saleBearer, parsed.data).then((quote) => {
+    assertFlashSaleAdmission(admission.offerHash, quote);
+    return quote;
+  }).catch((error: unknown) => {
+    if (error instanceof FlashSaleUnavailableError) return NextResponse.json({ error: "Flash sale changed or unavailable", code: "FLASH_SALE_UNAVAILABLE" }, { status: 409 });
+    throw error;
+  });
+  if (saleQuote instanceof Response) return saleQuote;
+  const sourceLiveId = saleQuote?.liveId ?? formSubmission?.liveId ?? undefined;
   // Checkout attribution must come from the server-validated click only. Request
   // data can contain a forged referralCode and must never affect the transaction
   // or payment-provider metadata.
   const referralCode = affiliateAttribution?.referralCode;
   const coursePolicySnapshot = coursePolicySnapshotFromProduct(product);
-  const voucherClaim = await eligibleAutomationVoucherClaim(request, {
+  const voucherClaim = saleQuote ? null : await eligibleCheckoutVoucherClaim(request, {
     vendorId: parsed.data.vendorId,
     productId: product.id,
     priceCents: product.priceCents,
     currency: product.currency,
+  }).catch((error: unknown) => {
+    if (error instanceof LiveVoucherAlreadyUsedError) return NextResponse.json({ error: "優惠券已綁定先前訂單，請確認原訂單付款狀態後再試。", code: "LIVE_VOUCHER_ALREADY_USED" }, { status: 409 });
+    throw error;
   });
-  const discountAmountCents = voucherClaim?.discountAmountCents ?? 0;
+  if (voucherClaim instanceof Response) return voucherClaim;
+  // 快閃價與優惠券不疊加；實際金額只使用已簽署且重新驗證的報價。
+  const discountAmountCents = saleQuote ? saleQuote.priceCents - saleQuote.salePriceCents : voucherClaim?.discountAmountCents ?? 0;
   const checkoutAmountCents = product.priceCents + (orderBumpProduct?.priceCents ?? 0) - discountAmountCents;
   const transactionMetadata = checkoutTransactionMetadata({
     productId: parsed.data.productId,
@@ -842,7 +859,7 @@ export async function POST(request: Request) {
         status: "pending",
         metadata: transactionMetadata,
       },
-      createCommerceOrder: async (tx, createdTransaction) => {
+      createCommerceOrder: async (tx, createdTransaction, reservedRevisions) => {
         const commerceOrder = await createCommerceOrderForCheckout(tx, {
           vendorId: parsed.data.vendorId,
           productId: product.id,
@@ -859,11 +876,12 @@ export async function POST(request: Request) {
           customCheckoutAnswers: customCheckout.answers,
           ...(hasExplicitInvoiceSelection ? { invoiceSelection } : {}),
         });
-        await consumeAutomationVoucherClaim(tx, voucherClaim, {
+        await consumeCheckoutVoucherClaim(tx, voucherClaim, {
           vendorId: parsed.data.vendorId,
           orderId: commerceOrder.id,
           now: new Date(),
         });
+        if (saleQuote && saleBearer) await consumeFlashSaleQuote(tx, saleBearer, saleQuote, commerceOrder.id, new Date(), reservedRevisions.find((item) => item.productId === product.id));
         commerceOrderId = commerceOrder.id;
       },
     });
@@ -883,6 +901,9 @@ export async function POST(request: Request) {
     }
     if (error instanceof VoucherClaimConflictError) {
       return NextResponse.json({ error: "Voucher already used or expired" }, { status: 409 });
+    }
+    if (error instanceof FlashSaleUnavailableError) {
+      return NextResponse.json({ error: "Flash sale changed or unavailable", code: "FLASH_SALE_UNAVAILABLE" }, { status: 409 });
     }
     return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
   }
@@ -907,7 +928,7 @@ export async function POST(request: Request) {
     } catch {
       // Keep the provider failure response generic when the recovery write also fails.
     }
-    return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
+    return failedCheckoutResponse(request, parsed.data.vendorId, commerceOrderId);
   }
 
   try {
@@ -930,7 +951,7 @@ export async function POST(request: Request) {
     } catch {
       // Keep the metadata persistence failure response generic when the recovery write also fails.
     }
-    return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
+    return failedCheckoutResponse(request, parsed.data.vendorId, commerceOrderId);
   }
 
   if (!commerceOrderId) {
@@ -1001,8 +1022,8 @@ function formSubmissionIdFromRequest(request: Request) {
   const cookie = request.headers.get("cookie");
   if (!cookie) return null;
 
-  const value = cookie.split(";").map((item) => item.trim()).find((item) => item.startsWith(`${FORM_SUBMISSION_COOKIE}=`))?.slice(FORM_SUBMISSION_COOKIE.length + 1);
-  return value && /^[a-zA-Z0-9_-]{1,128}$/.test(value) ? value : null;
+  const value = cookie.split(";").slice(0, 100).map((item) => item.trim()).find((item) => item.startsWith(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=`))?.slice(FORM_SUBMISSION_CHAT_SESSION_COOKIE.length + 1);
+  return value ? verifyFormSubmissionChatSessionToken(value)?.submissionId ?? null : null;
 }
 
 async function verifiedLiveRegistrationFromRequest(request: Request, vendorId: string) {
@@ -1010,7 +1031,7 @@ async function verifiedLiveRegistrationFromRequest(request: Request, vendorId: s
   if (!submissionId) return null;
 
   // The browser never sends a live ID. Attribution is attached only when its
-  // existing, httpOnly registration cookie resolves to this vendor's verified
+  // signed, verified registration session resolves to this vendor's verified
   // submission and an actual live relation.
   return getDb().formSubmission.findFirst({
     where: {

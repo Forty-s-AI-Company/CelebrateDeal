@@ -135,3 +135,10 @@
 | 91 | `GET /portal/[vendorSlug]/access` | 簽章 mailbox magic_link capability；不接受 checkout purpose | bounded token、15 分鐘固定 TTL；vendor slug 必須對應 claim | vendor、customer digest、purpose、issuedAt、expiry、unused 同時符合 | 原子單次消耗 token digest，建立 HttpOnly Secure session；重播拒絕 | canonical origin 303；失敗 generic login error；private no-store、no-referrer | route unit、PostgreSQL 12-way race 與 tenant/customer negative、合成 mailbox browser |
 | 92 | `GET /portal/[vendorSlug]/calendar/[bookingId]` | authenticated student session | booking ID route param；無 body | 查詢同時綁 booking、vendor 與 customer digest；其他租戶／學員不可讀 | 唯讀 ICS；escape 換行與分隔字元 | scoped calendar attachment、private no-store；無匹配 404 | 同路徑 route unit；完整行事曆 browser 尚待補驗 |
 | 93 | `POST /portal/[vendorSlug]/vouchers/[voucherId]/use` | same-origin、4 KiB form body、CSRF、student session | voucher ID 與 CSRF token | vendor/customer 未用未過期券；商品須可原生結帳且幣別匹配 | updateMany 再檢查商品條件及幣別後旋轉高熵 bearer，交給既有兌換流程 | canonical origin 303、不可用返回 dashboard；403 拒絕；private no-store、no-referrer | route unit、商品狀態 DB negative、渲染後幣別變更及有效兌換 Chromium browser |
+
+## 直播進階互動（2026-10-05）
+
+| Route／method | Caller 與安全邊界 | Input／資源契約 | Side effect／replay | Response／證據 |
+|---|---|---|---|---|
+| `GET /api/live-interactions` | 有效 viewer session，綁定 vendor／live | bounded vendorId／liveId query；僅回該場互動與 spotlight | 唯讀、private no-store；不回傳參與者名單 | 400／401 或互動快照；同路徑 unit |
+| `POST /api/live-interactions` | same-origin、client marker、rate limit、有效 viewer session | Zod action union：open／respond／ask_question；已發布且綁定該場的腳本與商品；購買抽獎另驗證簽署的已驗證報名身分及同場已付款訂單 | Serializable transaction 重新檢查互動版本與有效期間；重複回應及領券競爭回 409；成功領券設定 HttpOnly cookie；問題受頻率限制 | 400／401／403／404／409／429；同路徑 unit 與隔離 PostgreSQL 測試；完整瀏覽器付款流程待驗證 |

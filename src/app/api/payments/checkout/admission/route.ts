@@ -9,11 +9,13 @@ import {
 } from "@/lib/checkout-admission";
 import { getDb } from "@/lib/db";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { flashSaleBearerFromRequest, flashSaleQuoteHash, FlashSaleUnavailableError, resolveFlashSaleQuote } from "@/lib/live-flash-sale";
 
 const AdmissionRequest = z.object({
   vendorId: z.string().trim().min(1).max(128),
   productId: z.string().trim().min(1).max(128),
   idempotencyKey: z.string().uuid().optional(),
+  flashSaleRunId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u).optional(),
 }).strict();
 
 export async function POST(request: Request) {
@@ -63,12 +65,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Product not available" }, { status: 404 });
   }
 
+  // 重試既有訂單使用既有不可變快照；新訂單才簽署目前優惠條件。
+  const offer = existing ? null : await resolveFlashSaleQuote(db, flashSaleBearerFromRequest(request), parsed.data).catch((error: unknown) => {
+    if (error instanceof FlashSaleUnavailableError) return NextResponse.json({ error: "Flash sale changed or unavailable", code: "FLASH_SALE_UNAVAILABLE" }, { status: 409 });
+    throw error;
+  });
+  if (offer instanceof Response) return offer;
+  // URL 中的優惠 ID 只是購買意圖；實際授權仍須有同場的伺服器 claim。
+  if (!existing && parsed.data.flashSaleRunId && offer?.runId !== parsed.data.flashSaleRunId) {
+    return NextResponse.json({ error: "Flash sale changed or unavailable", code: "FLASH_SALE_UNAVAILABLE" }, { status: 409 });
+  }
   let issued;
   try {
     issued = issueCheckoutAdmission({
       vendorId: product.vendorId,
       productId: product.id,
       productRevision: product.revision,
+      ...(offer ? { offerHash: flashSaleQuoteHash(offer) } : {}),
       idempotencyKey: parsed.data.idempotencyKey,
       existingSessionToken: checkoutSessionTokenFromRequest(request),
     });
@@ -80,6 +93,7 @@ export async function POST(request: Request) {
     admissionToken: issued.admissionToken,
     idempotencyKey: issued.idempotencyKey,
     expiresAt: issued.expiresAt.toISOString(),
+    ...(offer ? { offer: { priceCents: offer.salePriceCents, currency: offer.currency, hash: flashSaleQuoteHash(offer) } } : {}),
   }, { headers: { "Cache-Control": "private, no-store" } });
   response.cookies.set(
     CHECKOUT_ADMISSION_COOKIE,

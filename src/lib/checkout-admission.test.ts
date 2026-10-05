@@ -14,6 +14,19 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("checkout admission", () => {
+  it("signs an optional offer hash and rejects replacement or removal from the token", () => {
+    const offerHash = "a".repeat(64);
+    const issued = issueCheckoutAdmission({ vendorId: "vendor-1", productId: "product-1", productRevision: 1, offerHash });
+    expect(verifyCheckoutAdmission({ admissionToken: issued.admissionToken, sessionToken: issued.sessionToken })?.offerHash).toBe(offerHash);
+    const [version, payload, signature] = issued.admissionToken.split(".");
+    const decoded = JSON.parse(Buffer.from(payload!, "base64url").toString("utf8"));
+    for (const replacement of ["b".repeat(64), undefined]) {
+      const tampered = Buffer.from(JSON.stringify({ ...decoded, offerHash: replacement })).toString("base64url");
+      expect(verifyCheckoutAdmission({ admissionToken: `${version}.${tampered}.${signature}`, sessionToken: issued.sessionToken })).toBeNull();
+    }
+    expect(() => issueCheckoutAdmission({ vendorId: "vendor-1", productId: "product-1", productRevision: 1, offerHash: "bad" })).toThrow();
+  });
+
   it("binds a server-issued idempotency key to product revision and an HttpOnly session", () => {
     const now = new Date("2026-08-09T00:00:00.000Z");
     const issued = issueCheckoutAdmission({

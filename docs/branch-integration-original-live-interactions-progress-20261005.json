@@ -1,0 +1,542 @@
+{
+  "state": "DRAFT_PR_PENDING_FULL_COMMERCE_VALIDATION",
+  "branch": "codex/integrate-original-live-interactions-20261005",
+  "parent": "164ad4a952628c06d6f88d1093334c1d6a352445",
+  "source": "Original preserved checkout; restored API and tests without changing content",
+  "files": [
+    {
+      "path": "src/app/api/live-interactions/route.ts",
+      "sha256_lf": "da1b8f1be6e7ad36aee16db7c6b95ca90387756718868684e11ad93341ed1483"
+    },
+    {
+      "path": "src/app/api/live-interactions/route.test.ts",
+      "sha256_lf": "36864d6075232e9103e1f22eb10392ff66fa656fc50f66c7857b39e88a5f1c37"
+    }
+  ],
+  "validation": {
+    "unit_passed": 18,
+    "unit_failed": 0,
+    "typecheck": "PASS",
+    "eslint": "PASS",
+    "database": "PARTIAL: six actual PostgreSQL cases PASS; complete purchased draw chain pending",
+    "browser": "PENDING",
+    "independent_review": "PENDING",
+    "identity_helper_tests_passed": 4
+  },
+  "remaining": [
+    "Review viewer/tenant boundaries, winner privacy and canonical runtime checks",
+    "Test concurrent responses and claim caps using isolated PostgreSQL",
+    "Recover advanced UI and wire current playback without regressing existing behavior",
+    "Independent review, protected PR CI and canonical acceptance",
+    "Real verification-route cookie issuance through checkout into paid draw eligibility still pending"
+  ],
+  "production": "Not operated",
+  "review_findings": {
+    "run_close_race": "Source independently reviewed; real DB interleaving PASS",
+    "purchased_identity": "Use verified signed chat session claim, no raw-cookie fallback; reviewer confirmed signature/cookie lifecycle. True verify-route then checkout then draw integration still pending. Single-browser registration replacement/expiry remains a capability limitation; evaluate buyer support grant fallback if needed.",
+    "stale_submission": "Fixed with run/event-scoped AbortController; browser regression PASS desktop/mobile; independent recheck pending",
+    "unbound_product_voucher": "Independent review closed implementation MAJOR; refreshed DB receipt confirms 11 PASS",
+    "flash_sale_checkout": "Checkout callback connected to existing admitted bound-product navigation; desktop/mobile controlled component callback PASS. MAJOR remains open for actual pricing, currency and stock guarantees plus end-to-end checkout validation.",
+    "open_failure_polling": "Independent review closed; 409 fallback browser regression PASS",
+    "api_401_ui": "Independent review closed; 401 revoke/display/poll regression PASS"
+  },
+  "database_verified": [
+    "Concurrent last-voucher requests produce one200 and one409, exactly one response and one cookie",
+    "Closed and future-start run requests leave zero responses",
+    "Committed close after initial read is rejected by transaction recheck; no response or voucher cookie",
+    "Foreign tenant viewer cannot claim",
+    "Expired viewer cannot claim",
+    "Replay cannot create a second claim or cookie"
+  ],
+  "ui_recovery": {
+    "component": "src/components/live-advanced-interactions.tsx",
+    "state": "WIRED_PENDING_BROWSER_AND_INDEPENDENT_REVIEW",
+    "eslint": "PASS",
+    "remaining": [
+      "Browser tests for poll ordering, stale responses, admission changes and interaction submissions",
+      "Resolve independent review findings",
+      "Verify full purchased-draw registration/payment identity chain"
+    ],
+    "public_metadata": {
+      "state": "IMPLEMENTED",
+      "validation": "29 targeted tests PASS; ESLint PASS; tsc --noEmit PASS",
+      "scope": "Canonical advanced settings only; unknown and nested private keys omitted; product references restricted to bound live products; public-page wiring test included"
+    },
+    "admission_and_polling": {
+      "validation": "71 targeted component/player tests PASS; ESLint PASS; tsc --noEmit PASS",
+      "behavior": [
+        "Mount only for admitted playable live with server admission required",
+        "Tenant/live key resets interaction state; admission loss unmounts",
+        "Sequential abortable polling; obsolete polling results ignored",
+        "Winner animation uses generic reveal messages without fictitious participant names"
+      ]
+    },
+    "browser_validation": {
+      "status": "PASS",
+      "viewports": [
+        1440,
+        390
+      ],
+      "runner": "scripts/live-advanced-interactions-browser-qa.mjs",
+      "scope": "Actual React component in Chromium with controlled synthetic fetch; no full-server/payment/CSS claim",
+      "checks": [
+        "admission disabled",
+        "sequential polling",
+        "cross-live abort and stale response rejection",
+        "stale submitted response cannot replace new run",
+        "poll submission",
+        "admission loss unmount",
+        "script open409 still loads manual run/spotlight",
+        "GET401 immediately hides content and stops polling"
+      ],
+      "tsc": "PASS",
+      "eslint": "PASS",
+      "scenarios": 6
+    }
+  },
+  "product_binding_validation": {
+    "unit_tests": 18,
+    "real_postgresql_tests": 11,
+    "status": "PASS",
+    "checks": [
+      "unbound open leaves zero runs",
+      "bound course product open succeeds",
+      "unbound respond leaves zero claims/cookies",
+      "binding allows claim then removal rejects next viewer",
+      "inactive/unconfirmed/external-checkout products rejected"
+    ],
+    "eslint": "PASS",
+    "tsc": "PASS"
+  },
+  "live_voucher_checkout": {
+    "state": "IMPLEMENTED_PENDING_DB_CHAIN_AND_REVIEW",
+    "behavior": "Existing automation voucher has priority; otherwise server-resolved live voucher adjusts checkout amount. Compare-and-set consumption in order reservation transaction prevents duplicate use.",
+    "unit_tests": 55,
+    "eslint": "PASS",
+    "tsc": "PASS",
+    "remaining": [
+      "Real PostgreSQL claim-to-checkout transaction and rollback tests",
+      "Independent security review",
+      "Flash sale pricing/stock implementation and full purchase identity chain",
+      "Resolve post-commit provider failure voucher recovery and prevent silent full-price retry"
+    ],
+    "database_validation": {
+      "tests": 13,
+      "status": "PASS",
+      "scope": "Actual issued live voucher concurrent CAS consumes once; order-transaction exception rolls back claim and allows retry. Excludes post-commit provider failure recovery."
+    },
+    "review_findings": [
+      "OPEN MAJOR: provider checkout or metadata failure after reservation leaves voucher consumed; new idempotency key can silently fall back to full price. Need safe recovery considering late paid callback, not blind usedOrderId reset.",
+      "OPEN: used HttpOnly live voucher cookie can block legitimate repurchase after paid order; distinguish proven-paid prior order from uncertain/failed payment. Automation priority is an explicit exception to used-live rejection."
+    ],
+    "retry_protection": {
+      "state": "IMPLEMENTED_PENDING_INDEPENDENT_REVIEW",
+      "behavior": "Matching already-used live voucher rejects new checkout before reserving stock or contacting provider, including expired used vouchers. Different tenant/product scope does not expose previous order state.",
+      "tests": 65,
+      "eslint": "PASS",
+      "tsc": "PASS",
+      "remaining": "Provider failure recovery remains open; no blind usedOrderId reset due to late-payment risk."
+    },
+    "provider_failure_regression": {
+      "route_tests": 57,
+      "status": "PASS",
+      "scope": "Synthetic provider failure after voucher consume, then fresh admitted idempotency key:409, no second reservation/provider call; original discounted amount retained. Mocked route evidence only."
+    },
+    "recovery_evidence": {
+      "source": "src/lib/inventory-reservations.ts:applyPaymentInventoryTransition",
+      "finding": "paid event can reacquire released inventory; provider failure is not proof that a late paid event cannot arrive",
+      "required_policy": "Keep claim bound until provider finality/reconciliation. Do not clear usedOrderId solely because local transaction failed. Prove normal paid repurchase and uncertain failure isolation."
+    },
+    "error_presentation": {
+      "status": "INDEPENDENT_REVIEW_CLOSED",
+      "behavior": "Client parses only allowlisted LIVE_VOUCHER_ALREADY_USED code, presents fixed voucher-specific guidance, preserves admission/idempotency identity; does not render arbitrary API error body.",
+      "tests": 9,
+      "eslint": "PASS",
+      "tsc": "PASS",
+      "remaining": "Paid-order repeat purchase and support/recovery navigation remain pending"
+    },
+    "paid_repurchase": {
+      "state": "INDEPENDENT_REVIEW_CLOSED",
+      "behavior": "Used voucher with same-tenant order paidAt present and paid/refund status does not block new purchase; claim stays consumed. Failed/pending/expired/cancelled or missing paid evidence still rejects retry.",
+      "unit_route_tests": 68,
+      "real_database_tests": 14,
+      "eslint": "PASS",
+      "typecheck": "PASS before final DB fixture addition",
+      "remaining": "Independent review, full checkout browser chain, safe uncertain-payment recovery"
+    }
+  },
+  "latest_validation": {
+    "targeted_tests": 195,
+    "real_postgresql_tests": 14,
+    "failed": 0,
+    "typecheck": "PASS",
+    "reports": [
+      ".ai-team/tmp/live-integration-targeted-results.json",
+      ".ai-team/tmp/advanced-interaction-db-results.json"
+    ],
+    "scope": "Nine actual targeted test files plus real isolated PostgreSQL route/CAS/state checks; no complete payment-browser-chain claim"
+  },
+  "merge_blockers": [
+    "Flash-sale displayed price/currency/stock must match actual server checkout guarantees",
+    "Real verification-issued cookie through checkout/paid transaction into purchased draw eligibility",
+    "Full isolated browser checkout flow and provider failure recovery policy",
+    "Exact-head protected CI and canonical acceptance; draft not ready"
+  ],
+  "verified_registration_draw_bridge": {
+    "status": "PARTIAL_CHAIN_VERIFIED",
+    "real_database_tests": 15,
+    "checks": [
+      "Actual verification API marks registration verified and issues signed chat cookie",
+      "Verified but unpaid rejected",
+      "Raw registration id cookie rejected even after payment fixture exists",
+      "Tampered signed cookie rejected",
+      "Valid issued cookie plus same-live bound product paid order fixture accepts and records verified submission id",
+      "Actual checkout API with real signed admission, demo local provider, reservation/order persistence",
+      "Checkout stores verified registration/live metadata and preserves signed session",
+      "Pending checkout does not qualify for purchased draw",
+      "Real processPaymentWebhook paid domain commits order and inventory before draw qualification"
+    ],
+    "isolation": "Synthetic PostgreSQL; real verification, signed admission, checkout/reservation/order and payment webhook domain; local demo provider; rate limiter, mail enqueue/paid delivery and invoice external side effects mocked",
+    "limitations": [
+      "External provider signature transport not covered",
+      "Full browser workflow pending"
+    ],
+    "eslint": "PASS",
+    "tsc": "PASS"
+  },
+  "checkout_registration_identity": {
+    "state": "INDEPENDENT_REVIEW_CLOSED_WITH_FULL_WEBHOOK_BROWSER_CHAIN_PENDING",
+    "root_cause": "Checkout used short-lived consumed raw registration ID cookie while draw used persistent verified signed session; verified sessions could lose payment association on subsequent checkout.",
+    "fix": "Checkout verifies signed chat session, then resolves same-vendor VERIFIED submission/live. No raw-ID fallback. Signed session survives checkout; old raw attribution cookie still cleared.",
+    "route_tests": 59,
+    "eslint": "PASS",
+    "tsc": "PASS",
+    "remaining": "Independent review and full verification->real checkout->payment->draw browser/database chain"
+  },
+  "draft_ci": {
+    "head": "345402de2d857f42d09bcd90775df3c9641b4c02",
+    "run": 37234634199,
+    "status": "FAILED",
+    "step": "Unit tests and coverage thresholds",
+    "diagnosis": "Pending; GitHub annotations only report exit1 without specific test failure"
+  },
+  "ci_registry_repair": {
+    "failed_run": 37234634199,
+    "failed_head": "345402de2d857f42d09bcd90775df3c9641b4c02",
+    "root_cause": "GET /api/live-interactions and POST /api/live-interactions missing from API_CONTRACT_REGISTRY.md",
+    "change": "Documented viewer admission, tenant/product binding, signed purchase identity, transaction/replay and response contracts.",
+    "validation": {
+      "api_registry_tests": 1,
+      "actual_verification_checkout_payment_draw_db_tests": 15,
+      "passed": 16,
+      "failed": 0,
+      "receipt": ".ai-team/tmp/advanced-interaction-db-results.json"
+    },
+    "full_ci": "Requires new published head run; previous failure is not passing evidence."
+  },
+  "flash_sale_core_checkpoint": {
+    "status": "IN_PROGRESS_NOT_WIRED_NOT_READY",
+    "files": [
+      "src/lib/live-flash-sale.ts",
+      "src/lib/live-flash-sale.db.test.ts"
+    ],
+    "implemented": [
+      "Server-owned price/currency/product-binding validation",
+      "Reject malformed, zero, above-base and fractional TWD sale prices and inconsistent original prices",
+      "Quote/run/product revision comparison inside Serializable transaction",
+      "One-time claim consumption and conservative stockLimit reservation; rollback restores claim; unresolved payments retain slot"
+    ],
+    "validation": {
+      "db_passed": 10,
+      "db_failed": 0,
+      "receipt": ".ai-team/tmp/live-flash-sale-db-results.json",
+      "typescript": "PASS",
+      "eslint": "PASS"
+    },
+    "independent_review": {
+      "agent": "/root/portal_review_fallback",
+      "observed_model": "unknown",
+      "observed_effort": "unknown",
+      "status": "MAJOR_CLOSED_BY_RESERVATION_REVISION_REPAIR",
+      "finding": "Actual createReservedPaymentTransaction increments product.revision before createCommerceOrder callback; direct quote revision equality would reject valid checkout. Current direct domain tests do not cover this callback integration."
+    },
+    "next_required": [
+      "Integrate validation/claim consumption with actual reservation revision evidence without dropping revision guard; test real reservation path",
+      "Bind displayed offer quote digest to signed checkout admission so offer changes or missing cookie cannot silently change price",
+      "Issue scoped flash-sale bearer from actual viewer response, display authoritative currency/price, reserve inside actual checkout and retain idempotent recovery",
+      "Browser verification of discount/limit/expiry/retry paths; independent review and exact-head CI acceptance before merge"
+    ]
+  },
+  "latest_remote_ci_observation": {
+    "head": "5af5773a9bbc09b8a6bf3c0b7e15f26c7b35b6f6",
+    "run_ids": [
+      37236350969,
+      37236347033
+    ],
+    "status": "failure",
+    "failed_step": "Release browser gates",
+    "note": "Earlier unit/coverage failures resolved on this head; detailed browser gate root cause pending. Does not cover newer local commits."
+  },
+  "flash_sale_reservation_revision_repair": {
+    "status": "CORE_VALIDATED_NOT_API_WIRED",
+    "change": "Inventory reservation passes exact successfully guarded before/after product revision evidence to its same-transaction order callback; flash-sale consumption validates scope and +1 while retaining all other quote checks.",
+    "validation": {
+      "receipt": ".ai-team/tmp/flash-sale-reservation-results.json",
+      "passed": 22,
+      "failed": 0,
+      "includes": "14 flash-sale DB tests (4 actual inventory/payment/order transaction cases) and 8 inventory tests",
+      "eslint": "PASS",
+      "typescript_before_fixture_update": "PASS",
+      "typescript": "PASS including commercial attribution fixture update"
+    },
+    "review": {
+      "agent": "/root/portal_review_fallback",
+      "original_major": "CLOSED",
+      "new_findings": 0,
+      "observed_model": "unknown",
+      "observed_effort": "unknown"
+    },
+    "remaining": "Signed offer quote binding, API/UI wiring, recovery and browser acceptance remain required."
+  },
+  "commercial_attribution_fixture_repair": {
+    "failed_run": 37235580212,
+    "head": "8adbc8dc68645b3eca55333718bb197d8de13336",
+    "root_cause": "Existing commercial flow test still supplied unsigned legacy form submission cookie after checkout adopted signed verified identity.",
+    "change": "Fixture explicitly transitions to VERIFIED and supplies a real signed session; attribution assertions retained. Actual verification issuance covered by separate DB chain.",
+    "receipt": ".ai-team/tmp/live-share-commercial-flow-results.json",
+    "passed": 1
+  },
+  "flash_sale_api_binding_checkpoint": {
+    "status": "API_VALIDATED_UI_NOT_WIRED_NOT_READY",
+    "implemented": [
+      "Canonical quote hash included in signed checkout admission",
+      "Admission resolves server offer and returns price/currency/hash",
+      "New checkout rejects missing or changed offers before reservation; no coupon stacking",
+      "Actual payment/order amount discounted, claim consumed in reservation transaction using verified revision evidence"
+    ],
+    "validation": {
+      "unit_regression": {
+        "passed": 83,
+        "failed": 0,
+        "receipt": ".ai-team/tmp/flash-sale-api-regression-results.json"
+      },
+      "db": {
+        "passed": 17,
+        "failed": 0,
+        "receipt": ".ai-team/tmp/flash-sale-api-db-results.json",
+        "scope": "Includes actual admission and checkout route success, missing-cookie rejection and changed-run rejection"
+      },
+      "eslint": "PASS",
+      "typescript": "PASS"
+    },
+    "review": "requested from existing independent reviewer; pending",
+    "next": [
+      "Extend strict CommerceCheckoutAdmissionResponseSchema to accept authoritative offer; explicitly present and confirm price before payment POST",
+      "Issue flash sale bearer from real viewer interaction and resolve display currency/price from server",
+      "Handle offer-unavailable error and existing-order recovery in UI; browser tests",
+      "Complete provider failure recovery policy and protected exact-head acceptance"
+    ]
+  },
+  "flash_sale_confirmation_checkpoint": {
+    "status": "VALIDATED_COMPONENT_AND_API_NOT_BROWSER",
+    "implemented": [
+      "Strict admission response accepts bounded server offer",
+      "UI displays server price/currency and requires a second submit before payment creation",
+      "Offer-unavailable response uses allowlisted message; prior offer cleared on rejected checkout",
+      "Used sale claim permits normal repurchase only with same-tenant confirmed paid order; pending/failed remains blocked and consumed claim preserved"
+    ],
+    "validation": {
+      "passed": 31,
+      "failed": 0,
+      "receipt": ".ai-team/tmp/flash-sale-confirmation-results.json",
+      "scope": "17 real DB tests plus checkout component/recovery/domain unit tests; real payment-event processing then new admission and full-price repurchase",
+      "eslint": "PASS",
+      "typescript": "PASS"
+    },
+    "review": "Original paid repurchase MAJOR closed; reviewer found MINOR original-price summary label, addressed in viewer issuance checkpoint and full Entry component test.",
+    "remaining": [
+      "Actual viewer flash-sale claim issuance",
+      "Authoritative live-card display of price/currency",
+      "Full browser flow and provider-failure recovery",
+      "Exact-head CI and canonical acceptance before protected merge"
+    ]
+  },
+  "flash_sale_viewer_issuance_checkpoint": {
+    "status": "SOURCE_AND_COMPONENT_VALIDATED_NOT_READY",
+    "implemented": [
+      "Actual admitted viewer response issues dedicated HttpOnly hashed-bearer sale claim expiring at run end",
+      "Invalid price/product rolls back claim and emits no cookie",
+      "Public run and checkout share authoritative product price/currency validation; live card uses server sale terms",
+      "Current catalog column explicitly marked original product price; recovered order summary unchanged"
+    ],
+    "validation": {
+      "passed": 43,
+      "failed": 0,
+      "receipt": ".ai-team/tmp/flash-sale-viewer-issuance-results.json",
+      "browser_component_scenarios": 6,
+      "browser_receipt": ".ai-team/tmp/live-advanced-interactions-browser-results.json",
+      "eslint": "PASS",
+      "typescript": "PASS",
+      "scope": "Actual viewer issue/admission/checkout/payment event/repurchase DB chain plus component browser; not full browser-to-backend chain"
+    },
+    "review": "Zero new findings; original-price display MINOR closed by independent reviewer.",
+    "remaining": [
+      "Preserve expected sale intent before admission, including missing cookie and previously responded navigation",
+      "Full browser-to-backend payment flow",
+      "Provider failure recovery policy",
+      "Final independent review, exact-head CI and canonical acceptance"
+    ]
+  },
+  "flash_sale_intent_checkpoint": {
+    "status": "LOCAL_VALIDATED_FULL_BROWSER_PENDING",
+    "implemented": [
+      "Native checkout URL and page/form carry bounded expected flashSale run; admission rejects absent/mismatched server claim",
+      "Same viewer can rotate unused claim bearer; old hash invalidated, one claim retained; consumed claim never reissued",
+      "Sale navigation ignores stale external checkout URL; server page also rejects external sale path",
+      "Explicit start-new-purchase action clears old sale query and form intent; ordinary recovery retains original order snapshot"
+    ],
+    "validation": {
+      "passed": 121,
+      "failed": 0,
+      "receipt": ".ai-team/tmp/flash-sale-intent-results.json",
+      "browser_component_scenarios": 6,
+      "eslint": "PASS",
+      "typescript": "PASS"
+    },
+    "review": {
+      "agent": "/root/portal_review_fallback",
+      "findings": "Two path findings fixed; reviewer confirmed zero remaining source findings. New regression tests cover both paths.",
+      "observed_model": "unknown",
+      "observed_effort": "unknown"
+    },
+    "remaining": [
+      "Full browser-to-backend checkout and recovery",
+      "Provider failure recovery policy",
+      "Diagnose previous CI Release browser gates failure, then new exact-head CI and canonical acceptance"
+    ]
+  },
+  "full_browser_checkpoint": {
+    "status": "LOCAL_BROWSER_PASS_REMOTE_ACCEPTANCE_PENDING",
+    "fixes": [
+      "Seed a complete publishable live fixture",
+      "Hide interaction controls while checkout/product panels obscure playback without unmounting participant state",
+      "Retain checkout recovery identity when provider returns no redirect; pending order is not payment completion"
+    ],
+    "validation": {
+      "eslint": "PASS",
+      "typescript": "PASS",
+      "targeted_tests": {
+        "passed": 6,
+        "failed": 0,
+        "receipt": ".ai-team/tmp/checkout-retain-pending-results.json"
+      },
+      "browser": {
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "receipt": ".ai-team/tmp/wp7-live-results.json",
+        "started_at": "2026-10-04T22:15:35.891Z"
+      }
+    },
+    "browser_scope": [
+      "Desktop and mobile actual admission, sale claim, discounted order creation and refreshed original-order recovery",
+      "One-stop registration verification and mobile purchase",
+      "Direct/refreshed checkout does not invent playback"
+    ],
+    "remaining": [
+      "Provider failure recovery policy",
+      "Independent review of pending-order retention",
+      "Exact-head CI and canonical acceptance"
+    ],
+    "production_operations": false
+  },
+  "provider_failure_support_checkpoint": {
+    "status": "LOCAL_VALIDATED_REVIEW_CLOSED_REMOTE_PENDING",
+    "implemented": [
+      "Provider/session persistence failures issue an HttpOnly support grant only for the order created by the current validated checkout",
+      "Keep consumed sale/voucher claims attached to original orders for late payment safety",
+      "Expose support/orders from checkout and finished recovery state",
+      "Do not claim no charge when payment outcome is unknown"
+    ],
+    "validation": {
+      "passed": 72,
+      "failed": 0,
+      "receipt": ".ai-team/tmp/checkout-failure-entry-results.json",
+      "eslint": "PASS",
+      "typescript": "PASS"
+    },
+    "review": {
+      "agent": "/root/portal_review_fallback",
+      "status": "Zero remaining findings; MINOR closed by independent recheck",
+      "observed_model": "unknown",
+      "observed_effort": "unknown"
+    },
+    "remote_ci": {
+      "head": "d9c007f51aaf8c8d07a5787426466220016a1624",
+      "runs": [
+        37239518253,
+        37239514792
+      ],
+      "last_observed_status": "in_progress",
+      "includes_this_uncommitted_patch": false
+    },
+    "remaining": [
+      "Final exact-head CI and canonical acceptance"
+    ],
+    "database_validation": {
+      "passed": 21,
+      "failed": 0,
+      "receipt": ".ai-team/tmp/flash-sale-failure-db-results.json",
+      "scope": "Actual checkout failure, inventory release, cookie-authorized order lookup, single consumed claim, blocked new discounted checkout, late paid webhook reconciles original order. Only provider transport/mail/invoice mocked."
+    },
+    "review_followup": {
+      "finding": "MINOR unsafe destination text claimed no charge",
+      "fix": "Both form/link rejection branches now direct to order status; preserve identity and support link",
+      "tests": {
+        "passed": 5,
+        "failed": 0,
+        "receipt": ".ai-team/tmp/checkout-destination-rejection-results.json"
+      },
+      "review_status": "closed"
+    },
+    "browser_validation": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "receipt": ".ai-team/tmp/wp7-live-results.json",
+      "started_at": "2026-10-04T22:25:46.187Z",
+      "scope": "Desktop/mobile real sale order and reload recovery, then synthetic failed state projection and actual cookie-authorized support page. Provider failure itself is covered separately by DB tests, not browser transport."
+    }
+  },
+  "ci_browser_followup": {
+    "published_head": "e8bc70af331ad6e7b41e25e5521ede5bbc3ec0b7",
+    "failed_runs": [
+      37240123161,
+      37240125630
+    ],
+    "fixes": [
+      "Update 503 expectation to honest unknown-payment message",
+      "Require retained exact original checkout identity after pending recovery, preserve inventory/order assertions",
+      "Add exact title assertions before order-detail accessibility analysis"
+    ],
+    "targeted_browser": {
+      "receipt": ".ai-team/tmp/checkout-ci-regression-results.json",
+      "stats": {
+        "startTime": "2026-10-04T23:33:43.542Z",
+        "duration": 130354.742,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    "review": "Independent reviewer confirmed both behavior assertions and exact title synchronization: zero findings; axe/cache-control/canary assertions unchanged.",
+    "title_validation": {
+      "development_attempt": "Stopped at strict no-store/private cache-header expectation because Next dev returns no-cache,must-revalidate; not a title pass",
+      "production_mirror_session": 59093,
+      "status": "RUNNING",
+      "configuration": ".ai-team/tmp/buyer-order-title-production-playwright.config.ts"
+    },
+    "not_ready": true
+  }
+}

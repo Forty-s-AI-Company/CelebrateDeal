@@ -1056,6 +1056,17 @@ describe("LivePlayback checkout", () => {
     expect(trackClientAnalytics).not.toHaveBeenCalled();
   });
 
+  it("keeps sale intent on native checkout even when the player has a stale external URL", async () => {
+    vi.stubGlobal("window", { location: { href: "https://app.example.test/live/demo", search: "" }, localStorage: {} });
+    const products = live.products.map((product) => ({ ...product, checkoutUrl: "https://merchant.example.test/old" }));
+    const tree = renderLive({ videoUrl: "https://video.example.test/recording.mp4", products });
+    const advanced = findElements(tree, (element) => typeof element.type === "function" && element.type.name === "LiveAdvancedInteractions")[0];
+    expect(advanced).toBeTruthy();
+    await (advanced!.props.onCheckout as (productId: string, runId: string) => Promise<void>)("test-fixture-product-1", "sale-run");
+    expect(navigation.push).toHaveBeenCalledWith(`/checkout/${live.vendorId}/test-fixture-product-1?flashSale=sale-run`);
+    expect(window.location.href).toBe("https://app.example.test/live/demo");
+  });
+
   it("pauses for external product intent, keeps cancel side-effect free, and confirms only once", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

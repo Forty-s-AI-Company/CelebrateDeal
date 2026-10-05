@@ -175,6 +175,14 @@ async function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => P
   throw new Error("Serializable inventory transaction attempts exhausted.");
 }
 
+/** 成功以 expected revision 保留庫存後，供同交易訂單 callback 驗證的版本證據。 */
+export type ReservedInventoryRevision = {
+  vendorId: string;
+  productId: string;
+  beforeRevision: number;
+  afterRevision: number;
+};
+
 export async function createReservedPaymentTransaction({
   vendorId,
   productId,
@@ -200,6 +208,7 @@ export async function createReservedPaymentTransaction({
   createCommerceOrder?: (
     tx: Prisma.TransactionClient,
     transaction: PaymentTransaction,
+    reservedRevisions: readonly ReservedInventoryRevision[],
   ) => Promise<void>;
   now?: Date;
 }) {
@@ -242,7 +251,12 @@ export async function createReservedPaymentTransaction({
       }
 
       const transaction = await tx.paymentTransaction.create({ data: transactionData });
-      if (createCommerceOrder) await createCommerceOrder(tx, transaction);
+      if (createCommerceOrder) await createCommerceOrder(tx, transaction, reservationItems.flatMap((item) =>
+        item.expectedProductRevision === undefined ? [] : [{
+          vendorId, productId: item.productId,
+          beforeRevision: item.expectedProductRevision,
+          afterRevision: item.expectedProductRevision + 1,
+        }]));
       await tx.inventoryReservation.create({
         data: {
           vendorId,

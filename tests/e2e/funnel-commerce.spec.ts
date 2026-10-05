@@ -170,7 +170,8 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
   await page.locator('[name="policyAcknowledgement"]:visible').check();
   await page.getByRole("checkbox", { name: agreement, exact: true }).check();
   await page.getByRole("button", { name: `購買「${fixture.product.name}」`, exact: true }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "付款服務目前尚未就緒；尚未向你收款，請稍後重試或聯絡商家確認付款設定。" })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "付款服務暫時無法完成請求；請先查看訂單狀態，或聯絡商家確認。" })).toBeVisible();
+  await expect(page.locator("#checkout-live-status:visible")).not.toContainText("尚未向你收款");
   expect(admissions).toBe(1);
   expect(checkouts).toBe(1);
   expect(validCheckoutShape).toBe(true);
