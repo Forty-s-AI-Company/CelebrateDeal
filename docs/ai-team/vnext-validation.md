@@ -1,5 +1,12 @@
 # AI Team vNext Validation
 
+## 2026-10-05 原始模型更新整合
+
+原始工作目錄新增的 Claude 5.5 High 精確 discovery 與同 slug 防重試邏輯已回收。當次 `agy models` 可辨識 `claude-sonnet-5-5-high`、`claude-opus-5-5-high`；`codex --version` 為 0.160.0。保留獨立 Luna、Sol、Astra 設定，不啟用自動委派或降低驗收門檻。
+
+原始 `model-refresh-20261005` 與 `model-refresh-cli160-20261005` 證據保留在來源目錄，描述當時 snapshot；不把其中模型執行結果冒充本次新驗證。此次實際驗證與 protected PR 結果集中記於 `docs/branch-integration-future-work.md`。
+
+
 ## 2026-10-05 未提交路由更新整合候選
 
 這次在 managed checkout 重新驗證原始工作目錄的 GPT-6.1 Sol 更新；下方 2026-10-03 的 PowerShell BLOCKED 僅是歷史紀錄。

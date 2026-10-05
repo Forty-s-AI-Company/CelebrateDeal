@@ -43,7 +43,7 @@ function Invoke-AiTeamProcess {
         if ($scenario -eq 'host-permission') { return [pscustomobject]@{status='HOST_PERMISSION_BLOCKED';stdout='';stdoutTruncated=$false} }
         if ($scenario -eq 'discovery-first-output-timeout') { return [pscustomobject]@{status='FIRST_OUTPUT_TIMEOUT';stdout='';stdoutTruncated=$false} }
         if ($scenario -eq 'discovery-idle-timeout') { return [pscustomobject]@{status='IDLE_TIMEOUT';stdout='';stdoutTruncated=$false} }
-        return [pscustomobject]@{status='SUCCESS';stdout='gemini-3.8-flash-medium gemini-3.8-flash-high claude-sonnet-4-6 claude-opus-4-6-thinking';stdoutTruncated=$false}
+        return [pscustomobject]@{status='SUCCESS';stdout='gemini-3.8-flash-medium gemini-3.8-flash-high claude-sonnet-5-5-high claude-opus-5-5-high';stdoutTruncated=$false}
     }
     if (-not $MarkAsChild -or '--sandbox' -notin $ArgumentList -or '--mode' -notin $ArgumentList -or 'plan' -notin $ArgumentList) { throw 'missing safety arguments' }
     if ('--dangerously-skip-permissions' -in $ArgumentList) { throw 'permission bypass' }
@@ -68,9 +68,9 @@ function Invoke-AiTeamProcess {
     Assert-Route (-not $normal.accepted -and $normal.route.candidate_findings_only) 'Gemini incorrectly became final arbiter'
     Assert-Route ('MaxAttempts' -in $normal.deprecated_parameters -and 'AutoApprovePermissions' -in $normal.ignored_parameters -and $normal.ignore_reason) 'legacy ignored parameter metadata missing'
     $deep = Run-Wrapper 'normal' 'Invoke-AgyDeep.ps1' 'complex business logic review'
-    Assert-Route ($deep.finalModel -eq 'claude-sonnet-4-6') 'actual discovered Sonnet slug was not used'
+    Assert-Route ($deep.finalModel -eq 'claude-sonnet-5-5-high') 'actual discovered Sonnet slug was not used'
     $critical = Run-Wrapper 'normal' 'Invoke-AgyPlanReview.ps1' 'one line payment webhook review'
-    Assert-Route ($critical.finalModel -eq 'claude-opus-4-6-thinking') 'critical review did not jump directly to Opus'
+    Assert-Route ($critical.finalModel -eq 'claude-opus-5-5-high') 'critical review did not jump directly to Opus'
     $major = Run-Wrapper 'major-finding' 'Invoke-AgyFast.ps1' 'ordinary large diff review'
     Assert-Route (-not $major.accepted -and $major.review.findings[0].severity -eq 'MAJOR') 'finding was incorrectly accepted as PASS'
     foreach ($scenario in @('cli-failure','invalid-output','no-agy','host-permission','no-installed','discovery-first-output-timeout','discovery-idle-timeout')) {

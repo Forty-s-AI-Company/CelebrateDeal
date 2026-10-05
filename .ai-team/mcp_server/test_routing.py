@@ -16,7 +16,7 @@ from validation_runner import run_check
 def available():
     mapping = {
         "gemini_medium": "gemini-3.8-flash-medium", "gemini_high": "gemini-3.8-flash-high",
-        "sonnet": "claude-sonnet-4-6", "opus": "claude-opus-4-6-thinking",
+        "sonnet": "claude-sonnet-5-5-high", "opus": "claude-opus-5-5-high",
     }
     return {"agy_available": True, "agy_models": mapping, "discovered_slugs": list(mapping.values())}
 
@@ -43,7 +43,13 @@ class AcceptanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "failure_evidence"):
             route(task)
         task["failure_evidence"] = "Sol failed to preserve the invariant in a bounded attempt"
-        self.assertEqual(route(task)["model_key"], "astra")
+        self.assertEqual(route(task)["model"], "gpt-6-astra")
+        alias_policy = load_policy()
+        alias_policy["models"]["astra"]["slug"] = alias_policy["models"]["sol"]["slug"]
+        self.assertEqual(route(task, policy=alias_policy)["status"], "NO_CAPABLE_MODEL")
+        self.assertEqual(route(task, policy=alias_policy)["reason"], "astra_alias_cannot_upgrade_sol")
+        task["astra_reason"] = "unresolved_architecture"
+        self.assertEqual(route(task)["model"], "gpt-6-astra")
         with self.assertRaises(ValueError):
             route({"task_summary": "simple copy", "astra_reason": "invented_reason"})
 
@@ -532,11 +538,34 @@ class AcceptanceTests(unittest.TestCase):
         runtime=available()
         runtime["discovered_slugs"]=[]
         self.assertEqual(route({"task_summary":"large diff review"},runtime)["model_key"],"sol")
-        models=discover_slugs("gemini-3.8-flash-medium\ngemini-3.8-flash-high\nclaude-sonnet-4-6\nclaude-opus-4-6-thinking")
-        self.assertEqual(models["sonnet"],"claude-sonnet-4-6")
+        models=discover_slugs("gemini-3.8-flash-medium\ngemini-3.8-flash-high\nclaude-sonnet-5-5-high\nclaude-opus-5-5-high")
+        self.assertEqual(models["sonnet"],"claude-sonnet-5-5-high")
         self.assertEqual(len(models),4)
         self.assertEqual(discover_slugs("Please sign in"),{})
         self.assertNotIn("sonnet",discover_slugs("claude-sonnet-4.6-thinking"))
+
+    def test_cli_aliases_share_attempts_and_failure_state(self):
+        # 僅相同 slug 共用狀態；新版 CLI 的獨立 Astra 不受 Sol 失敗影響。
+        alias_policy = load_policy()
+        alias_policy["models"]["astra"]["slug"] = alias_policy["models"]["sol"]["slug"]
+        for runtime in ({"attempted_models": ["sol"]},
+                        {"models": {"sol": {"failure": "cli_failure"}}},
+                        {"models": {"gpt-6.1-sol": {"available": False}}}):
+            result = route({"task_summary": "reviewer dispute", "task_type": "arbiter",
+                            "astra_reason": "major_reviewer_conflict"}, runtime, policy=alias_policy)
+            self.assertEqual(result["status"], "NO_CAPABLE_MODEL")
+            independent = route({"task_summary": "reviewer dispute", "task_type": "arbiter",
+                                 "astra_reason": "major_reviewer_conflict"}, runtime)
+            self.assertEqual(independent["model"], "gpt-6-astra")
+        reverse = route({"task_summary": "ordinary implementation"}, {"attempted_models": ["astra"]}, policy=alias_policy)
+        self.assertEqual(reverse["status"], "NO_CAPABLE_MODEL")
+
+    def test_claude_catalog_selects_only_exact_high_variants(self):
+        catalog = "\n".join(f"claude-{family}-5-5-{effort}"
+                            for family in ("sonnet", "opus") for effort in ("low", "medium", "high"))
+        self.assertEqual(discover_slugs(catalog), {"sonnet": "claude-sonnet-5-5-high",
+                                                  "opus": "claude-opus-5-5-high"})
+        self.assertEqual(discover_slugs("claude-sonnet-4-6\nclaude-opus-4-6-thinking"), {})
 
     def test_validation_does_not_accept_bad_inputs(self):
         for signals in ({"risk":"typo"},{"complexity":"invalid"},{"difficulty":"nonsense"},{"context_size":-1},{"risk_categories":["unknown"]},{"dispatch_count":-1}):

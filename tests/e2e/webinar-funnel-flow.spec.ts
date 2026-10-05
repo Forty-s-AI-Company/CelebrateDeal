@@ -164,5 +164,9 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
     await page.screenshot({ path: shot(`webinar-${step}-mobile.png`), fullPage: true });
     await page.setViewportSize({ width: 1280, height: 900 });
   }
+  // 未啟用／不存在的步驟不可回退為其他公開 Funnel 內容。
+  await page.goto(`/lp/${slug}/inactive`);
+  await expect(page.getByRole("heading", { name: "404", exact: true })).toBeVisible();
+  await expect(page.locator("[data-funnel-renderer]")).toHaveCount(0);
   expect(errors).toEqual([]);
 });

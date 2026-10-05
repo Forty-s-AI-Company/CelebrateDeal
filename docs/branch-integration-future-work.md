@@ -1,5 +1,237 @@
 # 分支整合：未來處理與接手報告
 
+## 2026-10-05 收尾處置（本節優先於下方歷史狀態）
+
+本輪以 `533cffd72fe266726a1c242e1bff9203e2b74f6b` 為 master 基準。#367 已合併；本收尾 PR 交付剩餘可獨立使用的路由、QA 指令、合成 fixture 與瀏覽器持久化／未啟用步驟斷言。其餘來源已依功能歸類保留，並非宣稱所有歷史功能都已完成。
+
+### 已合併成果與 PR 去向
+
+| PR | 去向／master commit |
+| --- | --- |
+| [#351](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/351) | master `40db1781aa9d2bf17013c328a390dfecef7eee11` |
+| [#352](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/352) | master `fc28e1b8dcdba9ca3926f11d27153de048f597da` |
+| [#353](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/353) | 由 #352 承接並關閉，來源保留 |
+| [#354](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/354) | master `42bce600e9c6b88003bd3b2a924d0ea96c70aee8` |
+| [#355](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/355) | master `c071b2d655b0d875fa9d616920c5a554d462dbe6` |
+| [#356](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/356) | master `0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2` |
+| [#357](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/357) | master `361a37da2b487bbfa17f419d7b72b9306da07c99` |
+| [#358](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/358) | master `9c45f10314faff768a33fac3f3770517b859ddce` |
+| [#359](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/359) | master `e2014b5d3eecf71e2bb9b66861d6c50fafc1f449` |
+| [#360](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/360) | master `11541b6ac097ea957f2152710e7d9f405b4bfccb` |
+| [#361](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/361) | master `de0addfd895723db797b85aab7a0abb466bc624e` |
+| [#362](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/362) | master `fadfe59d044290c69c8bfd9919dcbf571a5f7f41` |
+| [#363](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/363) | master `52b81e3a624960ce9479be3c1bd682d2e7cb308d` |
+| [#364](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/364) | master `9a76580124edf373f9ad4d8d18aaa45a8150d1d1` |
+| [#365](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/365) | 已合入 #364 來源分支，內容隨 #364 進 master |
+| [#366](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/366) | 已由 #364 承接並關閉，來源保留 |
+| [#367](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/367) | master `533cffd72fe266726a1c242e1bff9203e2b74f6b` |
+
+#367 head `648783089441725043624e1861b63400e652322a` 的兩個 quality CI（37317493704、37317489167）成功；canonical `assess_acceptance` READY，0 blockers。合併後 master tree 與已驗收 head 完全一致。新增公開表單及驗證信檢查：六檔 92 cases、ESLint、TypeScript PASS；唯讀 Critical 增量審查無 findings。驗收收據最初遇 Windows CP950 解析 GitHub UTF-8 回應失敗，明確修正解碼後通過，沒有重啟 CI。
+
+#210（`b7956d803f8d`）與 #211（`b5397dbb45dd`）採「可用段落已由後續 PR 承接、未完成需求轉本報告」處置；本收尾 PR 合併後關閉舊 PR，不刪來源分支。#210 的 LINE 草稿／學員登入入口與原始 onboarding/MFA/直播互動已分批交付；#211 的 editor/可信結帳、表單／發布／歸因與庫存回歸已由 #355、#364、#367 等承接。不同實作不當作缺失，舊 migration 不重複套用。
+
+### 尚未完成而保留的功能
+
+| 編號 | 來源與範圍 | 下一步／未驗證界線 |
+| --- | --- | --- |
+| F1 | #210／#211、`60132971`、`de515182`、`e1f38be3`：原生課程播放器、progress／certificate、community、i18n／PWA／push、SMS／WhatsApp | 依目前 portal session、租戶鍵與權益模型重接完整垂直流程；現有 #357 登入與 dashboard 不代表上述功能驗收。保留對應 `src/app/portal/**`、`src/lib/course-*`、`community`、`i18n` 等來源。 |
+| F2 | 同組來源：affiliate portal、階梯／多層佣金、稅扣繳／payout export、referral cards、post-purchase upsell、server tracking／webhooks、private instructor chat／purchase broadcast | 需與目前收入快照、角色權限、資料模型與 provider 契約整合；先建立跨店家／併發／退款回歸，再接 UI。不得直接恢復舊 migration tree、舊金融設定或未驗證 provider。 |
+| F3 | #211 active editor 的 undo/redo／完整進階互動；來源 disposable QA 與新的 team/video UI／guard inventory | 現行 editor 核心已存在；仍需驗證 parent document echo、history lifecycle、popup／template／flow 的完整瀏覽器互動。舊 UI selector 只於對應 UI 交付後適配。保留 `scripts/*-disposable-qa.mjs` 等來源，不把舊收據當本次 PASS。 |
+| Q1 | `35d8f59341bc` 的 sandbox refundThroughCelebrateDeal／waitForRefundPersistence／refundPersistencePassed／latestRefundableCheckout | 固定 staging PENDING_REFUND consumer 尚未完成；先替換 broad latest-order 選擇與 bypass，再驗證單筆 processed RefundRecord、冪等及重複退款拒絕。未執行真實付款、退款或寄信。 |
+| Q2 | `eac0a3430df3` 的 owner-session／buyer continuation、wp4 buyer/subscription recovery；原分支 `.env.example` metadata | 現行 staging browser/apply/replay/backup/provider 守門已承接；剩餘 ops endpoints 需固定非 Production 綁定及隔離回歸才能發布。環境範本內容未讀取或驗收，保留原 Git blob。 |
+| A1 | `937f796d25d0`、`bf45235f8b10` 的舊 AI Team／automation 與歷史應用 snapshot | canonical vNext 取代重複 router、prompt、model ladder；來源未對齊的舊應用／workflow 需按 F1/F2/Q1/Q2 相依遷移，不併存第二套啟動器。沒有執行舊自動排程。 |
+| E1 | 原始歷史 release、Funnel、Opus/model-refresh 收據與 synthetic config 舊 tmp/support 排除差異 | 原檔保留；後續驗收按候選重建 sanitized evidence。tmp/support 排除尚未遷移，避免未對齊目錄就降低實際測試範圍。 |
+
+### 所有剩餘分支的處置
+
+一次取得的最新未合併 Git refs 共 535 筆、356 個 head（squash 後仍不具 ancestor 關係不代表工作未交付）。沿用 [既有逐 ref 證據](branch-integration-audit-20261004.json)：450 筆有 merged PR 去向，其餘既有相同內容／patch 等價／替代記錄保持有效；64 筆舊待查 refs 由下表與既有 15 組 supersession 收據收斂，不重做整段歷史盤點。
+
+新出現的 7 筆 refs（5 個 head）全部有去向：`b3ddc37b` 是 #351 accepted head 的 ancestor；`49e884ff` 是 #352 accepted head 的 ancestor；`cc55ea81` 是 #357 accepted head 的 ancestor，學生審查文件與 master 相同；`5e6c962a` 的 shell dependency 文件已在 master，dev-hygiene 產品差異由 #360 承接；`9af80668` 的 browser isolation／direct-url 檔案與 master 相同，隨 #364 交付。既有五筆 excluded refs 的 `f5512bf0` preview 已隨 #352 交付，`abc55736`、`45612059`、`177554e1` query 意圖由 #351 及既有 query supersession 證據承接。
+
+下表保留原 27 個仍有共享或未完成範圍的 head。每個 head 的精確來源 refs／原始路徑清單沿用 [deferred-work manifest](branch-integration-deferred-work-20261004.json)，本表取代其籠統 IN_PROGRESS 狀態；不刪分支，也不聲稱整棵舊 tree 逐字一致。
+
+| 來源 head | 最終處置／保留範圍 |
+| --- | --- |
+| `114689ccd3c4746d5bb8981ddc5c5b88bad7b29e` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `1a918f9e2e1974abc229c4bd76d97d17b398bf63` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `1ff1b5135f723c2da1e4509625284c376d8cf83e` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `227c102b7f49221a9d0fea17536ce2ed9e82312c` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `2401481ce4ea07b1bb7448c62be0db589b73c85e` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `2cceebba802dec508faaad166e37fa1e51b09ed5` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `30230f4ab63c65481324a128ff1369deee073c83` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `35d8f59341bcb776e548c69fe874a3f4d1fe2528` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `36b38ad22f3369e4e5265983e36a7a19ab8eb369` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `39b8dedf2ea140bc264088c9d1843d99196586ff` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `3ace54c10b581285a297c5e95e677178314e1c52` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `60132971f60dbad83aae48ffa6f15d3f57682c6e` | 部分成果已整合；剩餘跨功能與 UI／browser 相依保留 F1–F3。 |
+| `62fb1655dc47c7156a68a09ee18b42d4120d9b61` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `638707f9f043498136107b38968e49a0c38e9133` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `67b3fffd94a107c55e6ec4a8a1441645283e6ad0` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `7f1b3fd26e48a41e9e003c848594fa102000f220` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `937f796d25d0e27db753b7786ea77ea3e773a686` | 已由 canonical vNext 取代；未對齊的歷史應用／workflow 保留 A1。 |
+| `94e66bdf36b446b12a05dc3312f0d12eeb86421f` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `b5397dbb45ddc4dc15a3059b7dec90b5a7771487` | 部分成果已整合；剩餘跨功能與 UI／browser 相依保留 F1–F3。 |
+| `b7956d803f8dfebbbfdb3a4faeff497ab4bc140e` | 部分成果已整合；剩餘跨功能與 UI／browser 相依保留 F1–F3。 |
+| `b92d3e91a28f41e3f0fb219db5ad5b80746c387b` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `bf45235f8b10fa1fded2da0a4c079e5b883cfef0` | 已由 canonical vNext 取代；未對齊的歷史應用／workflow 保留 A1。 |
+| `de515182fc5fbcccbefa348f33ee7fad1d6ca715` | 部分成果已整合；剩餘跨功能與 UI／browser 相依保留 F1–F3。 |
+| `ded82898a687220496add74827691676e84c8b31` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+| `e1f38be324e349969a657be376aa1602e804c2dd` | 部分成果已整合；剩餘跨功能與 UI／browser 相依保留 F1–F3。 |
+| `eac0a3430df3ca0beed06a9c63cbd2cb13414fa7` | 現行 runner 已承接已核對段落；剩餘 recovery／ops 相依保留 Q2。 |
+| `ebdbf2e0676e1de46dbef09256c0cb4edb3401c3` | 產品修正已被現行 checkout、analytics、互動、成員確認及 preview 取代；共用 runner 經既有語義核對，未完成金融 QA／環境範本保留 Q1/Q2。 |
+
+### 原始未提交工作逐項去向
+
+原始 120 項：已整合 72、已被取代 36、保留待做 12。來源是 `C:\Users\eden\Downloads\AI\CelebrateDeal`，原 HEAD `60132971f60dbad83aae48ffa6f15d3f57682c6e`。本輪未寫入來源。舊盤點後已有模型更新，因此不聲稱所有檔案仍等於 10/04 雜湊；以本次讀取時的完整 285 筆 status／檔案 hash 建立保留基準，完成後再次核對。
+
+| 原始路徑 | 處置 | 成果或下一步 |
+| --- | --- | --- |
+| `.agents/skills/ai-team-lite/SKILL.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.agents/skills/ai-team-style/SKILL.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/config/router.astra-standard.json` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/config/router.high.json` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/config/router.json` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/config/router.low.json` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/config/router.pro.json` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/config/router.style.json` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/mcp_server/requirements.txt` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/mcp_server/server.py` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/mcp_server/test_server.py` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Invoke-AgyDeep.ps1` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Invoke-AgyFast.ps1` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Invoke-AgyPlanReview.ps1` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Invoke-AiTeamProcess.ps1` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Invoke-AiTeamReadOnlyFailover.ps1` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Switch-AiTeamMode.ps1` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Test-AiTeamHandoff.ps1` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Test-AiTeamResilience.ps1` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.codex/config.toml` | 已被取代 | 沿用既有 TOML 語義核對：相對 launcher 與 disabled MCP 相同；不以註解差異覆寫。 |
+| `.github/workflows/ci.yml` | 已被取代 | 現行 push/PR CI 已拆分 native checks 並獨立執行 Funnel harness；保留較新的品質與隔離 gate。 |
+| `.gitignore` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `AGENTS.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `docs/ai-team-payuni-sandbox-qa.md` | 已被取代 | 目前 AGENTS、現行非 Production runner 與本報告承接政策；舊 roadmap／release snapshot 留在來源。 |
+| `docs/ai-team/ARCHITECTURE.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `docs/ai-team/GOAL-PROTOCOL.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `docs/ai-team/README.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `docs/ai-team/ROUTING.md` | 已整合 | 本輪收尾 PR；只回收仍適用的差異，保留現行保護與 assertions。 |
+| `docs/ai-team/TROUBLESHOOTING.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `docs/ai-team/evidence/funnel-commerce-20260917/receipt.json` | 保留待做 | 歷史診斷／收據保留原路徑；下一次對應功能驗收重建新 snapshot 證據，不冒充本次 PASS。 |
+| `docs/ai-team/handoff-schema.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `docs/ai-team/prompts/executor-prompt.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `docs/ai-team/prompts/planner-prompt.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `docs/ai-team/workflow-policy.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `docs/external-service-validation-runbook.md` | 已被取代 | 目前 AGENTS、現行非 Production runner 與本報告承接政策；舊 roadmap／release snapshot 留在來源。 |
+| `docs/launch/current-release-completion-audit-20260821.md` | 已被取代 | 目前 AGENTS、現行非 Production runner 與本報告承接政策；舊 roadmap／release snapshot 留在來源。 |
+| `docs/launch/current-release-gate-handoff-20260821.md` | 已被取代 | 目前 AGENTS、現行非 Production runner 與本報告承接政策；舊 roadmap／release snapshot 留在來源。 |
+| `docs/launch/current-release-owner-action-packet-20260822.md` | 已被取代 | 目前 AGENTS、現行非 Production runner 與本報告承接政策；舊 roadmap／release snapshot 留在來源。 |
+| `docs/launch/manual-blockers.md` | 已被取代 | 目前 AGENTS、現行非 Production runner 與本報告承接政策；舊 roadmap／release snapshot 留在來源。 |
+| `docs/report-3-product-roadmap-and-priorities.md` | 已被取代 | 目前 AGENTS、現行非 Production runner 與本報告承接政策；舊 roadmap／release snapshot 留在來源。 |
+| `eslint.config.mjs` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `next.config.ts` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `package.json` | 已整合 | 本輪收尾 PR；只回收仍適用的差異，保留現行保護與 assertions。 |
+| `playwright.config.ts` | 已被取代 | 現行 release suite 與 tests/browser-dev 分離，CI 單獨執行 Funnel harness；R2 清空與隔離資料庫保護已由 #364 承接。 |
+| `scripts/external-smoke-safety.test.ts` | 已被取代 | 原始新增行已在現行 runner；保留非 Production host allowlist、禁止跨 origin redirect 與 sandbox credentials 選擇。 |
+| `scripts/external-smoke-safety.ts` | 已被取代 | 原始新增行已在現行 runner；保留非 Production host allowlist、禁止跨 origin redirect 與 sandbox credentials 選擇。 |
+| `scripts/external-smoke.ts` | 已被取代 | 原始新增行已在現行 runner；保留非 Production host allowlist、禁止跨 origin redirect 與 sandbox credentials 選擇。 |
+| `scripts/payuni-sandbox-external-qa.mjs` | 已被取代 | 原始新增行已在現行 runner；保留非 Production host allowlist、禁止跨 origin redirect 與 sandbox credentials 選擇。 |
+| `scripts/payuni-sandbox-external-qa.test.mjs` | 已被取代 | 原始新增行已在現行 runner；保留非 Production host allowlist、禁止跨 origin redirect 與 sandbox credentials 選擇。 |
+| `scripts/validate-non-production-owner-authorization.mjs` | 已整合 | 原刪除已在 master；本輪未刪除來源。 |
+| `scripts/validate-non-production-owner-authorization.test.mjs` | 已整合 | 原刪除已在 master；本輪未刪除來源。 |
+| `src/app/(app)/landing-pages/[id]/operations/page.test.tsx` | 已被取代 | 頁面入口 requireVendorManager 與服務層 project/tenant scope 已承接；保留 streaming unavailable 邊界。 |
+| `src/app/(app)/landing-pages/[id]/operations/page.tsx` | 已被取代 | 頁面入口 requireVendorManager 與服務層 project/tenant scope 已承接；保留 streaming unavailable 邊界。 |
+| `src/app/(app)/landing-pages/[id]/page.tsx` | 已被取代 | 頁面入口 requireVendorManager 與服務層 project/tenant scope 已承接；保留 streaming unavailable 邊界。 |
+| `src/app/(app)/landing-pages/page.tsx` | 已被取代 | 頁面入口 requireVendorManager 與服務層 project/tenant scope 已承接；保留 streaming unavailable 邊界。 |
+| `src/app/(app)/settings/security/page.tsx` | 已被取代 | Smoke 環境 gate、原限流與 UI 條件已由 #359/#362 承接；保留現行 MFA、return-path、成員管理及 recovery transaction。 |
+| `src/app/actions.test.ts` | 已被取代 | Smoke 環境 gate、原限流與 UI 條件已由 #359/#362 承接；保留現行 MFA、return-path、成員管理及 recovery transaction。 |
+| `src/app/actions/auth-security-actions.ts` | 已被取代 | Smoke 環境 gate、原限流與 UI 條件已由 #359/#362 承接；保留現行 MFA、return-path、成員管理及 recovery transaction。 |
+| `src/app/mfa/setup/page.tsx` | 已被取代 | Smoke 環境 gate、原限流與 UI 條件已由 #359/#362 承接；保留現行 MFA、return-path、成員管理及 recovery transaction。 |
+| `src/components/app-shell.tsx` | 已被取代 | 原新增樣式／位置已保留：AppShell text-slate-500、直播提問 bottom-24；現行版本另保留權限與競態修正。 |
+| `src/components/landing-page-workspace.tsx` | 已被取代 | 沿用既有 Funnel 語義核對：感謝頁、一般編輯保存 commerce、template swap 保留綁定與同步 content ref 均在主線。 |
+| `src/components/live-advanced-interactions.tsx` | 已被取代 | 原新增樣式／位置已保留：AppShell text-slate-500、直播提問 bottom-24；現行版本另保留權限與競態修正。 |
+| `src/lib/auth-rate-limits.test.ts` | 已被取代 | 實際登入 action 保留每 Email 5 次限制及其測試；不額外引入只回傳常數的 helper。 |
+| `src/lib/auth-rate-limits.ts` | 已被取代 | 實際登入 action 保留每 Email 5 次限制及其測試；不額外引入只回傳常數的 helper。 |
+| `src/lib/funnel-goal-step-pages.test.ts` | 已被取代 | 沿用既有 Funnel 語義核對：感謝頁、一般編輯保存 commerce、template swap 保留綁定與同步 content ref 均在主線。 |
+| `src/lib/funnel-goal-step-pages.ts` | 已被取代 | 沿用既有 Funnel 語義核對：感謝頁、一般編輯保存 commerce、template swap 保留綁定與同步 content ref 均在主線。 |
+| `src/lib/funnel-step-pages.test.ts` | 已被取代 | 沿用既有 Funnel 語義核對：感謝頁、一般編輯保存 commerce、template swap 保留綁定與同步 content ref 均在主線。 |
+| `tests/e2e/accessibility.spec.ts` | 已被取代 | 現行使用獨立合成 ownerEmails 避免帳戶限流互相干擾；保留固定 Email 安全門檻，不導入舊整份 MFA/UI 流程。 |
+| `tests/e2e/accountant-affiliate-detail-direct-url.spec.ts` | 已整合 | 現行已有相同帳號選單點擊，額外使用 exact:true。 |
+| `tests/e2e/admin-cross-tenant-affiliate-edit.spec.ts` | 已被取代 | 來源改動為欄位 label；現行測試對齊目前表單並保留 foreign canary／拒絕斷言。 |
+| `tests/e2e/admin-cross-tenant-video-edit.spec.ts` | 保留待做 | 依賴來源 settings/team、影片進階介面或尚未交付的 route inventory；功能交付後以現行 role/tenant 邊界適配並跑隔離 browser。 |
+| `tests/e2e/commerce-orders.spec.ts` | 已被取代 | 現行 formatSanitizedAxeBlockingError 承接診斷；不恢復可能包含 DOM 內容的 failureSummary。 |
+| `tests/e2e/funnel-commerce.spec.ts` | 已整合 | 本輪收尾 PR；只回收仍適用的差異，保留現行保護與 assertions。 |
+| `tests/e2e/funnel-operations-transport.spec.ts` | 已整合 | 三次持久化 revision 與 dialog 關閉斷言相同；現行另驗證 HTTP、URL 及 unavailable 狀態。 |
+| `tests/e2e/helpers/direct-url-guard.ts` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `tests/e2e/loading-route-segments.spec.ts` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `tests/e2e/merchant-invitation.spec.ts` | 保留待做 | 依賴來源 settings/team、影片進階介面或尚未交付的 route inventory；功能交付後以現行 role/tenant 邊界適配並跑隔離 browser。 |
+| `tests/e2e/video-media-experience.spec.ts` | 保留待做 | 依賴來源 settings/team、影片進階介面或尚未交付的 route inventory；功能交付後以現行 role/tenant 邊界適配並跑隔離 browser。 |
+| `tests/e2e/webinar-funnel-flow.spec.ts` | 已整合 | 本輪收尾 PR；只回收仍適用的差異，保留現行保護與 assertions。 |
+| `tests/e2e/wp88-direct-url-guard-matrix.spec.ts` | 保留待做 | 依賴來源 settings/team、影片進階介面或尚未交付的 route inventory；功能交付後以現行 role/tenant 邊界適配並跑隔離 browser。 |
+| `tsconfig.json` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `vitest.synthetic-db-coverage.config.ts` | 保留待做 | 合成 CSRF fixture 已回收；舊 tmp／support 排除規則須先對齊現行測試目錄，未直接新增 exclude。 |
+| `.agents/skills/ai-team-pro/SKILL.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.agents/skills/ai-team/SKILL.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/config/routing-policy.json` | 已整合 | 本輪收尾 PR；只回收仍適用的差異，保留現行保護與 assertions。 |
+| `.ai-team/mcp_server/bootstrap_probe.py` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/mcp_server/route_cli.py` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/mcp_server/routing.py` | 已整合 | 本輪收尾 PR；只回收仍適用的差異，保留現行保護與 assertions。 |
+| `.ai-team/mcp_server/schemas/review-result.schema.json` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/mcp_server/test_routing.py` | 已整合 | 本輪收尾 PR；只回收仍適用的差異，保留現行保護與 assertions。 |
+| `.ai-team/mcp_server/validation_runner.py` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/prompts/reviewer-prompt.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Invoke-AiTeamNodeValidation.ps1` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Invoke-AiTeamTask.ps1` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Probe-AiTeamNative.py` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Probe-AiTeamShell.py` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Start-AiTeamMcp.ps1` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Test-AiTeamBootstrap.ps1` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Test-AiTeamNodeValidation.ps1` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.ai-team/scripts/Test-AiTeamRouting.ps1` | 已整合 | 本輪收尾 PR；只回收仍適用的差異，保留現行保護與 assertions。 |
+| `.codex/agents/analyst.toml` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.codex/agents/explorer.toml` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.codex/agents/planner.toml` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.codex/agents/reviewer.toml` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.codex/agents/worker-deep.toml` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `.codex/agents/worker.toml` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `docs/ai-team-vnext-plan.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `docs/ai-team/evidence/funnel-commerce-20260917/receipt-c3a3d7fa283a.json` | 保留待做 | 歷史診斷／收據保留原路徑；下一次對應功能驗收重建新 snapshot 證據，不冒充本次 PASS。 |
+| `docs/ai-team/evidence/release-baseline-sandbox-20260922.md` | 保留待做 | 歷史診斷／收據保留原路徑；下一次對應功能驗收重建新 snapshot 證據，不冒充本次 PASS。 |
+| `docs/ai-team/prompts/reviewer-prompt.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `docs/ai-team/vnext-node-failure-manifest.json` | 保留待做 | 歷史診斷／收據保留原路徑；下一次對應功能驗收重建新 snapshot 證據，不冒充本次 PASS。 |
+| `docs/ai-team/vnext-validation.md` | 已整合 | 本輪收尾 PR；只回收仍適用的差異，保留現行保護與 assertions。 |
+| `docs/launch/goal-plan-20260924.md` | 已被取代 | 目前 AGENTS、現行非 Production runner 與本報告承接政策；舊 roadmap／release snapshot 留在來源。 |
+| `docs/launch/goal-plan-opus-recovery-20260924.json` | 保留待做 | 歷史診斷／收據保留原路徑；下一次對應功能驗收重建新 snapshot 證據，不冒充本次 PASS。 |
+| `docs/launch/goal-plan-opus-response-20260924.txt` | 保留待做 | 歷史診斷／收據保留原路徑；下一次對應功能驗收重建新 snapshot 證據，不冒充本次 PASS。 |
+| `docs/launch/goal-plan-opus-review-20260924.json` | 保留待做 | 歷史診斷／收據保留原路徑；下一次對應功能驗收重建新 snapshot 證據，不冒充本次 PASS。 |
+| `docs/launch/goal-plan-review-status-20260924.md` | 已被取代 | 目前 AGENTS、現行非 Production runner 與本報告承接政策；舊 roadmap／release snapshot 留在來源。 |
+| `docs/launch/goal-preflight-20260924.md` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `src/lib/password-reset-smoke-policy.test.ts` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+| `src/lib/password-reset-smoke-policy.ts` | 已整合 | 來源與目前候選內容相同（僅忽略行尾及檔案末尾空白）。 |
+
+另有 8 份新出現的模型更新證據，均保留原始內容、列入 E1：
+
+- `docs/ai-team/evidence/model-refresh-20261005/execution.json`：保留待做／歷史證據；不當作本輪執行收據。
+- `docs/ai-team/evidence/model-refresh-20261005/result.json`：保留待做／歷史證據；不當作本輪執行收據。
+- `docs/ai-team/evidence/model-refresh-20261005/router-tests.json`：保留待做／歷史證據；不當作本輪執行收據。
+- `docs/ai-team/evidence/model-refresh-cli160-20261005/bootstrap.json`：保留待做／歷史證據；不當作本輪執行收據。
+- `docs/ai-team/evidence/model-refresh-cli160-20261005/execution.json`：保留待做／歷史證據；不當作本輪執行收據。
+- `docs/ai-team/evidence/model-refresh-cli160-20261005/result.json`：保留待做／歷史證據；不當作本輪執行收據。
+- `docs/ai-team/evidence/model-refresh-cli160-20261005/router_regression.json`：保留待做／歷史證據；不當作本輪執行收據。
+- `docs/ai-team/evidence/model-refresh-cli160-20261005/routing_integration.json`：保留待做／歷史證據；不當作本輪執行收據。
+
+其餘 157 筆為既有整合報告等工作產物，保留原始目錄；本輪只更新這份集中報告，不新增散落的驗收文件。原始內容、未完成來源分支及未知修改都未 reset、clean、stash、restore、覆蓋或刪除。
+
+### 本輪驗證與團隊界線
+
+- #367 的實際 PASS 如上；本收尾增量已跑 Python router/MCP 45 tests、PowerShell routing integration、受影響 ESLint、TypeScript。完整 GitHub `quality` 仍是合併必要條件；本報告所屬 protected PR 的 checks 與 mergeCommit 是收尾發布的最終收據，不用舊 head 綠燈代替。
+- 本收尾沿用既有 push/PR ESLint、單元／coverage、PostgreSQL、Funnel harness、release browser、build gate；未新增重複 workflow、未刪除 assertions、未放寬閾值。本輪額外 browser 斷言由該 PR 的完整 browser gate 驗證。
+- requested team=ai-team；#367 tenant isolation 依 canonical router 升至必要 Critical review，主代理唯一 writer，唯讀 reviewer `/root/pr367_review` selected=`gpt-6-astra high`，原因為整合 checkout 舊 Opus discovery pattern 不匹配 catalog；observed model/effort=unknown。後續 AI Team 原始修正由主代理直接處理，未啟動正在修改的 AI Team 修改自己。helper 上限 1、depth 1、dispatch 1；無全面稽核。
+- 未操作 Production、真實付款／退款／寄信、破壞性 migration、secret 內容或 force push。F1–F3、Q1/Q2、A1/E1 未驗證部分明確保留，不標 PASS。
+
+---
+
+## 歷史紀錄（以下為各次執行當時狀態）
+
+
 日期：2026-10-04（Asia/Taipei）。狀態：**五個交付段落完成 / #351、#352、#354、#355、#356 已通過新 CI、canonical gate 並合入 master；#353 的兩檔內容已由 #352 完整交付。原 42 個歷史 head 已有 15 個完成交付或替代核對，剩餘 27 個與原有未提交工作持續整合，整體 Goal 尚未全部完成**。
 
 ## 本輪已完成的段落
