@@ -304,6 +304,17 @@ describe("successful checkout response", () => {
     expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ projectId: "project-1" }));
   });
 
+  it.each([{ priceCents: 1100 }, { currency: "USD" }])("rejects changed Funnel price terms even at the same revision: %j", async (terms) => {
+    const resolved = funnelResolution();
+    funnelMocks.resolvePublishedFunnelCheckout.mockResolvedValueOnce({ ...resolved, product: { ...resolved.product, ...terms } });
+    const response = await POST(checkoutRequest(undefined, {
+      funnel: { slug: "offer", stepId: "order_form", expectedVersion: 2, expectedProductRevision: 4 }, agreementAccepted: true,
+    }));
+    expect(response.status).toBe(409);
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
   it("rejects a stale published Funnel snapshot before reserving stock", async () => {
     funnelMocks.resolvePublishedFunnelCheckout.mockResolvedValueOnce(funnelResolution({ version: 3 }));
     const response = await POST(checkoutRequest(undefined, {
@@ -1149,6 +1160,31 @@ describe("checkout affiliate click attribution", () => {
 });
 
 describe("checkout form submission attribution", () => {
+  it.each(["project-1", "project-other", null])("bounds signed registration attribution to Funnel project: %s", async (projectId) => {
+    db.formSubmission.findFirst.mockResolvedValueOnce({ id: "submission-1", liveId: "live-1", live: { projectId } });
+    funnelMocks.resolvePublishedFunnelCheckout.mockResolvedValueOnce(funnelResolution());
+    const response = await POST(checkoutRequest(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId: "submission-1" })}`, {
+      funnel: { slug: "offer", stepId: "order_form", expectedVersion: 2, expectedProductRevision: 4 },
+      agreementAccepted: true,
+    }));
+    expect(response.status).toBe(200);
+    const metadata = db.paymentTransaction.create.mock.calls[0]?.[0]?.data.metadata;
+    if (projectId === "project-1") {
+      expect(metadata).toMatchObject({ formSubmissionId: "submission-1", sourceLiveId: "live-1" });
+    } else {
+      expect(metadata).not.toHaveProperty("formSubmissionId");
+      expect(metadata).not.toHaveProperty("sourceLiveId");
+    }
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ projectId: "project-1" }));
+  });
+
+  it("passes the verified live project to the domain product-scope guard for non-Funnel checkout", async () => {
+    db.formSubmission.findFirst.mockResolvedValueOnce({ id: "submission-1", liveId: "live-1", live: { projectId: "project-1" } });
+    const response = await POST(checkoutRequest(`${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId: "submission-1" })}`));
+    expect(response.status).toBe(200);
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ projectId: "project-1" }));
+  });
+
   it.each(["raw", "tampered"])("does not assign a registration from a %s cookie", async (kind) => {
     const cookie = kind === "raw" ? "celebratedeal_form_submission=submission-1"
       : `${FORM_SUBMISSION_CHAT_SESSION_COOKIE}=${createFormSubmissionChatSessionToken({ submissionId: "submission-1" })}tampered`;
@@ -1168,7 +1204,7 @@ describe("checkout form submission attribution", () => {
         form: { vendorId: "vendor-1" },
         live: { is: { vendorId: "vendor-1" } },
       },
-      select: { id: true, liveId: true },
+      select: { id: true, liveId: true, live: { select: { projectId: true } } },
     });
     expect(db.paymentTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ metadata: expect.objectContaining({ formSubmissionId: "submission-1", sourceLiveId: "live-1" }) }),

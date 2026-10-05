@@ -932,6 +932,27 @@ describe("email delivery outbox", () => {
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled();
   });
 
+  it.each(["valid", "expired", "new-version"])("keeps marketing opt-out separate from %s registration verification", async (state) => {
+    mocks.db.emailSuppression.findUnique.mockResolvedValue({ resubscribedAt: null });
+    mocks.db.emailDelivery.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => data);
+    const expiresAt = new Date(Date.now() + 60_000);
+    const queued = await ensureFormSubmissionVerificationDelivery({
+      ...input, verificationVersion: 1, verificationExpiresAt: expiresAt,
+    });
+    expect(queued.status).toBe("queued");
+    const delivery = mocks.db.emailDelivery.create.mock.calls[0][0].data;
+    expect(delivery).toMatchObject({ status: "queued", nextAttemptAt: expect.any(Date), lastErrorCode: null });
+    mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({ ...delivery }));
+    mocks.db.formSubmission.findFirst.mockResolvedValue({
+      id: input.formSubmissionId, verificationStatus: "UNVERIFIED",
+      verificationVersion: state === "new-version" ? 2 : 1,
+      verificationExpiresAt: state === "expired" ? new Date(Date.now() - 1_000) : expiresAt,
+    });
+    mocks.sendTransactionalEmail.mockResolvedValue({ id: "synthetic-verification-message" });
+    await expect(dispatchEmailDelivery(delivery.id)).resolves.toEqual({ status: state === "valid" ? "sent" : "superseded" });
+    expect(mocks.sendTransactionalEmail).toHaveBeenCalledTimes(state === "valid" ? 1 : 0);
+  });
+
   it("supersedes an expired verification delivery before decrypting or calling the provider", async () => {
     mocks.db.emailDelivery.findUnique.mockResolvedValue(candidate({
       trigger: "form_submission_verification",

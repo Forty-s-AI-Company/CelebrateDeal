@@ -89,10 +89,12 @@ describe("landing page scoped mutations", () => {
     await expect(saveLandingPageStepMetadata({ id: "page-1", revision: 2, mutation: { type: "replace_canvas", content: {} } as never })).rejects.toBeInstanceOf(LandingPageInputError);
   });
 
-  it("duplicate slug 只在同一 vendor/project 內尋找", async () => {
-    mocks.findFirst.mockResolvedValueOnce(page()).mockResolvedValueOnce(null);
+  it("duplicate avoids a globally occupied slug without reading another project's content", async () => {
+    mocks.findFirst.mockResolvedValueOnce(page()).mockResolvedValueOnce({ id: "other-project-page" }).mockResolvedValueOnce(null);
     await duplicateLandingPage("page-1");
-    expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { vendorId: "vendor-1", projectId: "project-1", slug: "fall-launch-copy" } }));
+    expect(mocks.findFirst).toHaveBeenCalledWith({ where: { slug: "fall-launch-copy" }, select: { id: true } });
+    expect(mocks.findFirst).toHaveBeenCalledWith({ where: { slug: "fall-launch-copy-2" }, select: { id: true } });
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ vendorId: "vendor-1", projectId: "project-1", slug: "fall-launch-copy-2" }) }));
   });
 
   it("editor loader 僅回傳目前 vendor/project 的頁面與資源", async () => {

@@ -23,6 +23,8 @@ function formRecord(overrides: Record<string, unknown> = {}) {
   return {
     id: "form-1",
     vendorId: "vendor-1",
+    projectId: null,
+    salesProject: null,
     slug: "summer",
     headline: "夏季活動",
     description: "說明",
@@ -69,7 +71,7 @@ describe("public registration form DAL", () => {
 
     const result = await loadPublicRegistrationForm("summer", new Date("2026-08-15T00:00:00Z"));
     expect(mocks.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: { slug: "summer", isActive: true },
+      where: { slug: "summer", isActive: true, OR: [{ projectId: null }, { salesProject: { is: { status: "published", publishedAt: { not: null } } } }] },
       select: expect.objectContaining({ vendor: { select: { name: true } } }),
     }));
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({
@@ -132,4 +134,21 @@ describe("public registration form DAL", () => {
     await expect(loadPublicRegistrationForm("missing")).resolves.toBeNull();
     expect(mocks.findMany).not.toHaveBeenCalled();
   });
+});
+
+it.each([
+  { vendorId: "vendor-1", status: "draft", publishedAt: null },
+  { vendorId: "vendor-1", status: "archived", publishedAt: new Date() },
+  { vendorId: "vendor-other", status: "published", publishedAt: new Date() },
+  { vendorId: "vendor-1", status: "published", publishedAt: null },
+  null,
+])("does not project private form data or sessions from an unavailable project: %j", async (salesProject) => {
+  mocks.findFirst.mockResolvedValueOnce(formRecord({ projectId: "project-1", salesProject }));
+  expect(await loadPublicRegistrationForm("summer")).toBeNull();
+  expect(mocks.findMany).not.toHaveBeenCalled();
+});
+
+it("projects a form in its own published project", async () => {
+  mocks.findFirst.mockResolvedValueOnce(formRecord({ projectId: "project-1", salesProject: { vendorId: "vendor-1", status: "published", publishedAt: new Date() } }));
+  expect(await loadPublicRegistrationForm("summer")).toMatchObject({ id: "form-1" });
 });

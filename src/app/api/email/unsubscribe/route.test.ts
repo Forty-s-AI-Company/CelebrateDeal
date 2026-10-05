@@ -65,7 +65,7 @@ describe("POST /api/email/unsubscribe", () => {
         vendorId: "vendor-1",
         recipientHash: "recipient-hash",
         status: { in: ["queued", "failed"] },
-        trigger: { not: "student_portal_magic_link" },
+        trigger: { notIn: ["student_portal_magic_link", "form_submission_verification"] },
       },
       data: {
         status: "suppressed",

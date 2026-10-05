@@ -9,6 +9,8 @@ import { parseRegistrationFormFields, type RegistrationFormFieldSpec } from "@/l
 const PUBLIC_REGISTRATION_FORM_SELECT = {
   id: true,
   vendorId: true,
+  projectId: true,
+  salesProject: { select: { vendorId: true, status: true, publishedAt: true } },
   slug: true,
   headline: true,
   description: true,
@@ -195,10 +197,16 @@ function publicFormFromRecord(
 export async function loadPublicRegistrationForm(slug: string, now = new Date()) {
   const db = getDb();
   const form = await db.registrationForm.findFirst({
-    where: { slug, isActive: true },
+    where: {
+      slug, isActive: true,
+      OR: [{ projectId: null }, { salesProject: { is: { status: "published", publishedAt: { not: null } } } }],
+    },
     select: PUBLIC_REGISTRATION_FORM_SELECT,
   });
   if (!form) return null;
+  // The same loader serves the public page and metadata: drafts must expose neither.
+  if (form.projectId && (!form.salesProject || form.salesProject.vendorId !== form.vendorId
+    || form.salesProject.status !== "published" || !form.salesProject.publishedAt)) return null;
 
   const sessions = await db.live.findMany({
     where: publicRegistrationSessionWhere(form.id, form.vendorId),

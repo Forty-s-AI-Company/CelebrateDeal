@@ -3,6 +3,40 @@ import { describe, expect, it } from "vitest";
 import { CommerceCheckoutForm } from "@/components/commerce-checkout-form";
 
 describe("CommerceCheckoutForm", () => {
+  it("renders two-step contact first with order fields disabled until confirmation", () => {
+    const html = renderToStaticMarkup(<CommerceCheckoutForm vendorId="v" productId="p" productName="商品" fulfillmentType="physical" formMode="two_step" funnel={{ slug: "shop", stepId: "order", expectedVersion: 1, expectedProductRevision: 1 }} agreementLabel="我同意本商品條款" />);
+    expect(html).toContain("下一步：確認訂單");
+    expect(html).toContain('aria-label="結帳進度"');
+    expect(html).toMatch(/<fieldset[^>]*disabled=""[^>]*hidden=""/u);
+    expect(html).toContain('name="funnelAgreement"');
+    expect(html).toContain("我同意本商品條款");
+    expect(html).not.toContain("admissionToken");
+    expect(html).not.toContain("idempotencyKey");
+  });
+
+  it("renders an optional server-described order bump and the unselected total", () => {
+    const html = renderToStaticMarkup(
+      <CommerceCheckoutForm
+        vendorId="vendor-1"
+        productId="product-1"
+        productName="主商品"
+        fulfillmentType="digital"
+        priceCents={12_000}
+        currency="TWD"
+        orderBump={{
+          title: "成交腳本包",
+          description: "結帳限定加購",
+          priceCents: 1_900,
+          productId: "bump-1",
+        }}
+      />,
+    );
+
+    expect(html).toContain("加購推薦：成交腳本包");
+    expect(html).toContain('name="orderBumpSelected"');
+    expect(html).toContain("本次結帳總額");
+    expect(html).toContain("$120.00");
+  });
   it("renders physical shipping fields, payment boundaries, and accessible pending hooks", () => {
     const html = renderToStaticMarkup(
       <CommerceCheckoutForm

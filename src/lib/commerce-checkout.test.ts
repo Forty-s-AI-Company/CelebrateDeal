@@ -11,6 +11,20 @@ import {
 } from "@/lib/commerce-checkout";
 
 describe("commerce checkout contract", () => {
+  it("keeps Funnel snapshot revisions as bounded untrusted values for server comparison", () => {
+    expect(CommerceCheckoutRequestSchema.safeParse({
+      vendorId: "vendor-1", productId: "product-1", idempotencyKey: "123e4567-e89b-12d3-a456-426614174000",
+      admissionToken: `ca1.${"a".repeat(64)}.${"b".repeat(43)}`,
+      buyer: { name: "Synthetic Buyer" },
+      funnel: { slug: "offer", stepId: "order_form", expectedVersion: 7, expectedProductRevision: 4, expectedOrderBumpRevision: 2 },
+    }).success).toBe(true);
+    expect(CommerceCheckoutRequestSchema.safeParse({
+      vendorId: "vendor-1", productId: "product-1", idempotencyKey: "123e4567-e89b-12d3-a456-426614174000",
+      admissionToken: `ca1.${"a".repeat(64)}.${"b".repeat(43)}`,
+      buyer: { name: "Synthetic Buyer" },
+      funnel: { slug: "offer", stepId: "order_form", expectedVersion: 0, expectedProductRevision: -1 },
+    }).success).toBe(false);
+  });
   it("accepts a bounded order bump selector and rejects an empty or forged selector", () => {
     expect(CommerceOrderBumpSelectionSchema.safeParse({ productId: "bump-1" }).success).toBe(true);
     expect(CommerceOrderBumpSelectionSchema.safeParse({ sku: "bump-sku" }).success).toBe(true);

@@ -722,16 +722,7 @@ export async function ensureFormSubmissionVerificationDelivery(
     vendorId: input.vendorId,
     deliveryId,
   });
-  const suppression = await db.emailSuppression.findUnique({
-    where: {
-      vendorId_recipientHash: {
-        vendorId: input.vendorId,
-        recipientHash: protectedPayload.recipientHash,
-      },
-    },
-    select: { id: true, resubscribedAt: true },
-  });
-  const isSuppressed = Boolean(suppression && !suppression.resubscribedAt);
+  // 使用者主動要求的驗證信不受行銷退訂影響；寄送時仍檢查期限與版本。
   const idempotencyKey = `form-submission-verification/${deliveryId}`;
 
   try {
@@ -745,10 +736,10 @@ export async function ensureFormSubmissionVerificationDelivery(
         trigger: "form_submission_verification",
         ...protectedPayload,
         idempotencyKey,
-        status: isSuppressed ? "suppressed" : "queued",
+        status: "queued",
         maxAttempts: MAX_ATTEMPTS,
-        nextAttemptAt: isSuppressed ? null : new Date(),
-        lastErrorCode: isSuppressed ? "recipient_suppressed" : null,
+        nextAttemptAt: new Date(),
+        lastErrorCode: null,
       },
       select: { id: true, status: true },
     });
@@ -1108,7 +1099,7 @@ export async function dispatchEmailDelivery(deliveryId: string, actorLabel = "jo
   });
   // Requested authentication mail is not a marketing subscription. Its capability
   // still has to pass the send-time validity guard below.
-  if (suppression && !suppression.resubscribedAt && delivery.trigger !== "student_portal_magic_link") return finalizeSuppressed(delivery);
+  if (suppression && !suppression.resubscribedAt && !["student_portal_magic_link", "form_submission_verification"].includes(delivery.trigger)) return finalizeSuppressed(delivery);
   if (!(await isCurrentEmailDeliverySnapshot(delivery, new Date()))) {
     return finalizeSuperseded(
       delivery,

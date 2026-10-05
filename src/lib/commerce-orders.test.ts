@@ -128,6 +128,21 @@ const checkoutInput = {
 } as const;
 
 describe("commerce orders database service", () => {
+  it("rejects a product outside the server-derived registration project before creating an order", async () => {
+    const tx = transaction();
+    tx.product.findFirst.mockResolvedValueOnce(null);
+    await expect(createCommerceOrderForCheckout(tx as never, {
+      ...checkoutInput, projectId: "registration-project",
+    })).rejects.toThrow();
+    expect(tx.product.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: "product-1", vendorId: "vendor-1",
+        salesProjectLinks: { some: { vendorId: "vendor-1", projectId: "registration-project" } },
+      }),
+    }));
+    expect(tx.commerceOrder.create).not.toHaveBeenCalled();
+  });
+
   it("creates a second immutable order item for a same-project order bump", async () => {
     const tx = transaction();
     tx.product.findFirst

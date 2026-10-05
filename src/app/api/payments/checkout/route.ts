@@ -310,15 +310,18 @@ async function resolveCheckoutOrderBump(
 
 function funnelProductSnapshotResponse(
   funnel: ResolvedFunnelCheckout | undefined,
-  product: { id: string; revision: number },
-  orderBumpProduct: { id: string; revision: number } | null,
+  product: { id: string; revision: number; priceCents: number; currency: string },
+  orderBumpProduct: { id: string; revision: number; priceCents: number; currency: string } | null,
 ) {
-  if (funnel && (funnel.product.id !== product.id || funnel.product.revision !== product.revision)) {
+  if (funnel && (funnel.product.id !== product.id || funnel.product.revision !== product.revision
+    || funnel.product.priceCents !== product.priceCents || funnel.product.currency !== product.currency)) {
     return NextResponse.json({ error: "Funnel checkout details changed; reload checkout" }, { status: 409 });
   }
   if (funnel && orderBumpProduct && (!funnel.orderBump
     || funnel.orderBump.id !== orderBumpProduct.id
-    || funnel.orderBump.revision !== orderBumpProduct.revision)) {
+    || funnel.orderBump.revision !== orderBumpProduct.revision
+    || funnel.orderBump.priceCents !== orderBumpProduct.priceCents
+    || funnel.orderBump.currency !== orderBumpProduct.currency)) {
     return NextResponse.json({ error: "Funnel checkout details changed; reload checkout" }, { status: 409 });
   }
   return null;
@@ -793,7 +796,12 @@ export async function POST(request: Request) {
 
   const affiliateAttribution = await affiliateAttributionFromRequest(request, parsed.data.vendorId);
   const formSubmission = await verifiedLiveRegistrationFromRequest(request, parsed.data.vendorId);
-  const formSubmissionId = formSubmission?.id;
+  // Signed registration is still scoped to its server-owned sales project.
+  // A same-vendor cookie must not attribute one project's Funnel to another.
+  const registrationMatchesProject = !funnel || formSubmission?.live?.projectId === funnel.projectId;
+  const attributedRegistration = registrationMatchesProject ? formSubmission : null;
+  const formSubmissionId = attributedRegistration?.id;
+  const projectId = funnel?.projectId ?? attributedRegistration?.live?.projectId ?? undefined;
   const saleBearer = flashSaleBearerFromRequest(request);
   const saleQuote = await resolveFlashSaleQuote(db, saleBearer, parsed.data).then((quote) => {
     assertFlashSaleAdmission(admission.offerHash, quote);
@@ -803,7 +811,7 @@ export async function POST(request: Request) {
     throw error;
   });
   if (saleQuote instanceof Response) return saleQuote;
-  const sourceLiveId = saleQuote?.liveId ?? formSubmission?.liveId ?? undefined;
+  const sourceLiveId = saleQuote?.liveId ?? attributedRegistration?.liveId ?? undefined;
   // Checkout attribution must come from the server-validated click only. Request
   // data can contain a forged referralCode and must never affect the transaction
   // or payment-provider metadata.
@@ -863,7 +871,7 @@ export async function POST(request: Request) {
         const commerceOrder = await createCommerceOrderForCheckout(tx, {
           vendorId: parsed.data.vendorId,
           productId: product.id,
-          projectId: funnel?.projectId,
+          projectId,
           orderNumber: createdTransaction.orderNumber ?? order,
           checkoutIdempotencyKey: parsed.data.idempotencyKey,
           paymentTransactionId: createdTransaction.id,
@@ -1040,6 +1048,6 @@ async function verifiedLiveRegistrationFromRequest(request: Request, vendorId: s
       form: { vendorId },
       live: { is: { vendorId } },
     },
-    select: { id: true, liveId: true },
+    select: { id: true, liveId: true, live: { select: { projectId: true } } },
   });
 }
