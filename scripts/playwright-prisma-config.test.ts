@@ -14,9 +14,9 @@ it("loads an explicit disposable target without reading dotenv", async () => {
 it.each([
   ["DATABASE_URL", ""],
   ["DIRECT_URL", ""],
-  ["DATABASE_URL", "postgresql://synthetic:synthetic@remote.example.test/celebratedeal_test"],
+  ["DATABASE_URL", "postgresql://synthetic:synthetic@remote.example.test/celebratedeal_test"], // secret-scan: allow-test-fixture — synthetic rejected destination
   ["DIRECT_URL", "postgresql://synthetic:synthetic@127.0.0.1/celebratedeal_dev"],
-  ["DIRECT_URL", "postgresql://synthetic:synthetic@127.0.0.1/production"],
+  ["DIRECT_URL", "postgresql://synthetic:synthetic@127.0.0.1/production"], // secret-scan: allow-test-fixture — synthetic rejected database
 ])("rejects unsafe %s before any migration can start", async (name, value) => {
   vi.stubEnv("DATABASE_URL", safe);
   vi.stubEnv("DIRECT_URL", safe);
