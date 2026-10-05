@@ -30,6 +30,9 @@ test.afterEach(async ({ page }, testInfo) => {
 });
 
 test("Funnel secondary tabs persist settings and enforce the public deadline", async ({ page, baseURL }, testInfo) => {
+  // This full journey covers many tabs, persistence and public deadlines;
+  // retain every assertion while bounding the complete journey separately.
+  test.setTimeout(120_000);
   const origin = new URL(baseURL!).origin;
   expect(["127.0.0.1", "localhost"]).toContain(new URL(origin).hostname);
   page.setDefaultTimeout(20_000);

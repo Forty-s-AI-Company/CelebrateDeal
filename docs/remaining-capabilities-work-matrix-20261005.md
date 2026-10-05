@@ -34,3 +34,5 @@ F1.1：native curriculum/player/progress/certificate 位於 `codex/remaining-cou
 F3.2 latest candidate: 13 unit, 16 harness Chromium, actual workspace persistence/cross-tenant browser, lint/typecheck PASS; independent final review no findings; canonical READY. Exact-head CI and protected merge pending. Evidence: `remaining-capabilities-f3.2-local-receipt-20261006.json`.
 
 F3.2 latest candidate: 13 unit, 16 harness Chromium, actual workspace persistence/cross-tenant browser, lint/typecheck PASS; independent final review no findings; canonical READY. Exact-head CI and protected merge pending. Evidence: `remaining-capabilities-f3.2-local-receipt-20261006.json`.
+
+F3.2 PR #372 CI補正最新source `sha256:f78ea317453e2479a29bd96add6ae20260599781edcb35ddabc95003201a0f10`：13unit、TS/strict-index/lint、16harness、84migrations實際workspace browser、2完整release browser皆PASS。獨立review4/4已用滿，額外1次同task複審await owner；canonical gate真實BLOCKED，不套用oldrevision審查PASS。新checkpoint見 `remaining-capabilities-f3.2-ci-correction-checkpoint-20261006.json`，尚未交付。
