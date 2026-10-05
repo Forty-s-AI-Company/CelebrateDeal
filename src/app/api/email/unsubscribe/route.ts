@@ -57,7 +57,7 @@ export async function POST(request: Request) {
         recipientHash: delivery.recipientHash,
         status: { in: ["queued", "failed"] },
         // A voluntary login request is independent of the marketing preference.
-        trigger: { not: "student_portal_magic_link" },
+        trigger: { notIn: ["student_portal_magic_link", "form_submission_verification"] },
       },
       data: {
         status: "suppressed",
