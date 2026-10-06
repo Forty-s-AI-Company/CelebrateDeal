@@ -153,7 +153,7 @@
 | `GET /api/live-interactions` | 有效 viewer session，綁定 vendor／live | bounded vendorId／liveId query；僅回該場互動與 spotlight | 唯讀、private no-store；不回傳參與者名單 | 400／401 或互動快照；同路徑 unit |
 | `POST /api/live-interactions` | same-origin、client marker、rate limit、有效 viewer session | Zod action union：open／respond／ask_question；已發布且綁定該場的腳本與商品；購買抽獎另驗證簽署的已驗證報名身分及同場已付款訂單 | Serializable transaction 重新檢查互動版本與有效期間；重複回應及領券競爭回 409；成功領券設定 HttpOnly cookie；問題受頻率限制 | 400／401／403／404／409／429；同路徑 unit 與隔離 PostgreSQL 測試；完整瀏覽器付款流程待驗證 |
 
-| `GET /portal/[vendorSlug]/learn/[courseId]/notifications` | 同源 client marker、學員 session | 目前購買權益與 server tenant/customer | 公開同意狀態、CSRF 與 public channel/VAPID capabilities，private no-store；無權益 404 | 同路徑 unit；browser 待驗證 |
+| `GET /portal/[vendorSlug]/learn/[courseId]/notifications` | 同源 client marker、學員 session | server tenant/customer；既有偏好可在退款後讀取，以便撤回；沒有既有偏好時須目前購買權益 | 只回自己的公開同意狀態、CSRF 與 public channel/VAPID capabilities，private no-store；無自己的偏好/權益 404 | 同路徑 unit；browser 待驗證 |
 | `POST /portal/[vendorSlug]/learn/[courseId]/notifications` | 同源 client marker、CSRF、學員 session | 嚴格 JSON，禁止 caller tenant/contact；同意版本 CAS | Serializable 重驗權益；未驗證不能 opt-in，退款後可 opt-out；409/404/503 | 同路徑 unit、disposable PostgreSQL；browser 待驗證 |
 
 2026-10-07 通知 worker 補記：既有 `GET /api/jobs/email-deliveries`／`POST /api/jobs/email-deliveries` 沿用 Cron／Job Bearer 驗證。新增通知 draining 只在明確 executor flag 與最多25個核准 tenant ID 的 process config 存在時啟用；每次最多5個due ID、有限時間預算。回應只新增有界status/count，不公開recipient、claim token、contact、payload或provider body。未新增第二個cron／workflow。此批全流程provider/browser/獨立review仍待驗收。

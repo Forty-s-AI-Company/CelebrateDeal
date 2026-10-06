@@ -37,3 +37,7 @@ describe("student portal page", () => {
     expect(html).not.toContain("/portal/teacher/community");
   });
 });
+
+it("keeps notification management navigation outside current course grants",async()=>{
+ mocks.dashboard.mockResolvedValue({maskedEmail:null,courses:[],consultations:[],vouchers:[],orders:[]});const html=renderToStaticMarkup(await StudentPortalPage({params:Promise.resolve({vendorSlug:"teacher"})}));expect(html).toContain('href="/portal/teacher/notifications"');expect(html).toContain("通知設定");
+});

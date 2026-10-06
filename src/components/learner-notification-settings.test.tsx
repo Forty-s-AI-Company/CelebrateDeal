@@ -4,6 +4,7 @@ const hooks=vi.hoisted(()=>({states:[] as unknown[],refs:[] as Array<{current:un
 // Drive the actual handlers with persistent hook slots, following this repo's
 // media-handler test pattern. Browser rendering is verified separately.
 vi.mock("react",async importOriginal=>({...await importOriginal<typeof import("react")>(),
+ useId:()=>"synthetic-notification-heading",
  useState:(initial:unknown)=>{const index=hooks.stateIndex++;if(!(index in hooks.states))hooks.states[index]=initial;return [hooks.states[index],(next:unknown)=>{hooks.states[index]=typeof next==="function"?next(hooks.states[index]):next;}];},
  useRef:(initial:unknown)=>{const index=hooks.refIndex++;if(!hooks.refs[index])hooks.refs[index]={current:initial};return hooks.refs[index];}
 }));

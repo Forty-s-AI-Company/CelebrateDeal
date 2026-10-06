@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef,useState } from "react";
+import { useId,useRef,useState } from "react";
 import { z } from "zod";
 
 const Channel=z.enum(["email","sms","whatsapp","push"]);
@@ -13,6 +13,7 @@ const button="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font
 /** Contacts/proofs live only in this transient form. No localStorage, telemetry
  * or URL parameters. Durable state and consent revisions always come from API. */
 export function LearnerNotificationSettings({vendorSlug,courseId}:{vendorSlug:string;courseId:string}) {
+ const headingId=useId();
  const endpoint=`/portal/${encodeURIComponent(vendorSlug)}/learn/${encodeURIComponent(courseId)}/notifications`;
  const [snapshot,setSnapshot]=useState<z.infer<typeof Snapshot>|null>(null);
  const [channel,setChannel]=useState<ChannelName>("email");
@@ -75,8 +76,8 @@ export function LearnerNotificationSettings({vendorSlug,courseId}:{vendorSlug:st
   if(!parsed.success || parsed.data.preference.channel!==channel || parsed.data.preference.enabled===preference.enabled)throw new Error("通知：收到的同意狀態不完整，請重新載入。");
   await refresh();setNotice(parsed.data.preference.enabled?"已開啟此課程通知。":"已取消此課程通知。");
  }
- return <section aria-labelledby="learner-notification-heading" className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-  <h2 id="learner-notification-heading" className="text-xl font-bold">課程通知</h2>
+ return <section aria-labelledby={headingId} className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+  <h2 id={headingId} className="text-xl font-bold">課程通知</h2>
   <p className="mt-2 text-sm text-slate-600">自行選擇收件方式，驗證後再開啟通知。可以隨時取消。</p>
   <button className={`${button} mt-4`} type="button" disabled={busy} onClick={()=>void action(async()=>{await refresh();setNotice("通知設定已載入。");})}>{snapshot?"重新載入設定":"載入通知設定"}</button>
   {snapshot?<div className="mt-4 space-y-4">

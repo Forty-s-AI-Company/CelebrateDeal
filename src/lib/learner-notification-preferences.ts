@@ -9,8 +9,11 @@ const publicFields = { channel: true, enabled: true, revision: true, destination
 /** Return consent state only; encrypted contacts and private indexes never reach the browser. */
 export async function listLearnerNotificationPreferences(db: NotificationPreferenceDatabase, session: StudentPortalScope, productId: string) {
   const scope = LearnerNotificationScope.parse({ vendorId: session.vendorId, customerKeyHash: session.customerKeyHash, productId });
-  if (!await getStudentCourse(db, session, productId)) return null;
-  return db.learnerNotificationPreference.findMany({ where: scope, select: publicFields, orderBy: { channel: "asc" } });
+  const preferences = await db.learnerNotificationPreference.findMany({ where: scope, select: publicFields, orderBy: { channel: "asc" }, take: 4 });
+  // Refunded/expired purchasers may read only their existing consent rows so
+  // withdrawal stays usable. This never grants course content or a new opt-in.
+  if (preferences.length === 0 && !await getStudentCourse(db, session, productId)) return null;
+  return preferences;
 }
 
 /** Serializable entitlement and consent CAS prevent stale opt-ins. Unsubscribe

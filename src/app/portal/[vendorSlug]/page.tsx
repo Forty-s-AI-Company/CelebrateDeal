@@ -50,6 +50,7 @@ export default async function StudentPortalPage({ params }: { params: Promise<{ 
         </div>
         <nav aria-label="學員中心分類" className="mt-7 flex gap-2 overflow-x-auto pb-2">
           {[['courses','我的課程'],['consultations','1 對 1 諮詢'],['vouchers','專屬優惠券'],['orders','訂單與發票']].map(([id,label]) => <a key={id} href={`#${id}`} className="min-h-11 shrink-0 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800 hover:border-[var(--portal-accent)] hover:text-[var(--portal-accent)]">{label}</a>)}
+          <a href={`/portal/${encodeURIComponent(vendorSlug)}/notifications`} className="min-h-11 shrink-0 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-800">通知設定</a>
         </nav>
 
         <section id="courses" className="scroll-mt-6 pt-10" aria-labelledby="courses-title">

@@ -3,8 +3,10 @@ import { expect,test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import { automationCustomerKeyHash } from "../../src/lib/automation-workflow";
 import { protectCommerceOrderPii } from "../../src/lib/commerce-order-pii";
+import { reconcileCommerceOrderRefund } from "../../src/lib/commerce-orders";
 import { grantCommerceEntitlement } from "../../src/lib/commerce-order-fulfillment";
 import { createStudentPortalAccessToken } from "../../src/lib/student-portal-auth";
+import { saveLearnerNotificationConsent } from "../../src/lib/learner-notification-preferences";
 import { protectLearnerNotificationDestination } from "../../src/lib/learner-notification-contract";
 
 test.use({trace:"off",screenshot:"off",video:"off"});
@@ -40,6 +42,14 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   await page.reload();await settings.getByRole("button",{name:"載入通知設定"}).click();await expect(settings.getByText("已驗證，通知尚未開啟",{exact:false})).toBeVisible();
   // No approved external provider exists in this isolated browser process.
   await expect(settings.getByRole("button",{name:"開啟通知"})).toBeDisabled();
+  expect((await saveLearnerNotificationConsent(db,{vendorId:vendor.id,customerKeyHash},product.id,{channel:"email",enabled:true,expectedRevision:2})).status).toBe("saved");
+  await db.$transaction(tx=>reconcileCommerceOrderRefund(tx,{vendorId:vendor.id,orderId,providerName:"synthetic",eventIdentity:randomUUID(),amountCents:1000,occurredAt:new Date()}));
+  await page.goto(`/portal/${vendor.slug}`);await page.getByRole("link",{name:"通知設定",exact:true}).click();
+  await expect(page.getByRole("heading",{name:product.name})).toBeVisible();await settings.getByRole("button",{name:"載入通知設定"}).click();
+  await expect(settings.getByRole("button",{name:"取消通知"})).toBeEnabled();await settings.getByRole("button",{name:"取消通知"}).click();await expect(settings.getByRole("status")).toHaveText("已取消此課程通知。");
+  expect((await db.learnerNotificationPreference.findUniqueOrThrow({where:{id:preference.id}})).revision).toBe(4);
+  await page.reload();await settings.getByRole("button",{name:"載入通知設定"}).click();await expect(settings.getByRole("button",{name:"開啟通知"})).toBeDisabled();
+  const reenable=await page.evaluate(async(path)=>{const response=await fetch(path,{headers:{"x-celebratedeal-client":"web"},cache:"no-store"});const state=await response.json();return (await fetch(path,{method:"POST",headers:{"content-type":"application/json","x-celebratedeal-client":"web","x-csrf-token":state.csrfToken},body:JSON.stringify({channel:"email",enabled:true,expectedRevision:4})})).status;},path);expect(reenable).toBe(404);
   const foreignStatus=await page.evaluate(async(path)=>(await fetch(path,{headers:{"x-celebratedeal-client":"web"},cache:"no-store"})).status,`/portal/${vendor.slug}/learn/${foreignProduct.id}/notifications`);
   expect(foreignStatus).toBe(404);expect(await db.learnerNotificationPreference.count({where:{vendorId:foreign.id}})).toBe(0);
  }finally{await db.vendor.deleteMany({where:{id:{in:[vendor.id,foreign.id]}}});await db.$disconnect();}
