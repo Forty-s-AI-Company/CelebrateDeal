@@ -11,7 +11,7 @@ import { retryWp4HistoricalBuyerCallback } from "./wp4-buyer-callback-retry";
 const db = getDb();
 afterEach(async () => {
  vi.unstubAllEnvs();
- await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: "synthetic-buyer-route-paid" }] } });
+ await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: { in: ["synthetic-buyer-route-paid", "synthetic-buyer-concurrent-paid"] } }] } });
  await db.vendor.deleteMany({ where: { id: fixed.vendorId } });
  await db.user.deleteMany({ where: { id: fixed.userId } });
  await db.billingPlan.deleteMany({ where: { id: fixed.planId } });
@@ -29,6 +29,23 @@ async function checkout() {
  return { payment, payload };
 }
 describe("fixed historical buyer PostgreSQL recovery", () => {
+ it("permits one recovery dispatch under concurrent requests and rejects replay", async () => {
+  const { payment, payload } = await checkout();
+  const normalized = { ...payload };
+  delete normalized.vendorId;
+  delete normalized.currency;
+  const event = await db.webhookEvent.create({ data: { provider: "payuni", eventId: "synthetic-buyer-concurrent-paid", eventType: "paid", status: "failed", retryCount: 1, maxRetries: 5,
+   payload: { normalized: JSON.parse(JSON.stringify({ ...normalized, eventId: "synthetic-buyer-concurrent-paid" })) } } });
+  const outcomes = await Promise.all([retryWp4HistoricalBuyerCallback(db), retryWp4HistoricalBuyerCallback(db)]);
+  expect(outcomes.filter(outcome => outcome.status === "PROCESSED")).toHaveLength(1);
+  expect(outcomes.reduce((total, outcome) => total + outcome.retryAttempts, 0)).toBe(1);
+  expect(outcomes.every(outcome => ["PROCESSED", "RETRY_REJECTED", "ALREADY_PROCESSED"].includes(outcome.status))).toBe(true);
+  expect(await db.webhookEvent.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({ status: "processed", retryCount: 2, vendorId: fixed.vendorId });
+  await expect(retryWp4HistoricalBuyerCallback(db)).resolves.toEqual({ status: "ALREADY_PROCESSED", retryAttempts: 0, failureCode: "NONE" });
+  const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
+  expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(1);
+  await expect(readWp4ExistingBuyerState(db)).resolves.toMatchObject({ status: "VERIFIED", paymentStatus: "PAID" });
+ });
  it("recovers a signature-verified real PayUni route first failure with missing tenant and currency", async () => {
   const { payment } = await checkout();
   vi.stubEnv("PAYMENT_PROVIDER", "payuni");

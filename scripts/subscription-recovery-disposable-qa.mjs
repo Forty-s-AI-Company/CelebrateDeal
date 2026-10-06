@@ -1,12 +1,29 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { main as migrate } from "./prisma-loopback-disposable-migration-runner.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let tests = null, browserProof = null, browserFailure = null;
 const sourceSha = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8", windowsHide: true }).stdout.trim();
+const declared = JSON.parse(fs.readFileSync(path.join(root, "docs/remaining-capabilities-q2-review-fixes-20261007.json"), "utf8"));
+// Match canonical snapshot_revision exactly, including bytes and 64-file scope cap.
+// Head alone cannot prove which dirty source/config/test bytes a local runner used.
+function snapshot(files) {
+ if (!Array.isArray(files) || files.length < 1 || files.length > 64) throw new Error("q2-invalid-snapshot-scope");
+ const digest = createHash("sha256");
+ for (const name of [...new Set(files)].sort()) {
+  if (typeof name !== "string" || path.isAbsolute(name) || name.split(/[\\/]/).some(part => part.startsWith(".env") || [".git", "node_modules"].includes(part))) throw new Error("q2-invalid-snapshot-path");
+  const target = fs.realpathSync(path.resolve(root, name)), relative = path.relative(root, target);
+  if (relative.startsWith("..") || path.isAbsolute(relative) || !fs.statSync(target).isFile() || fs.statSync(target).size > 4_000_000) throw new Error("q2-invalid-snapshot-file");
+  const data = fs.readFileSync(target), length = Buffer.alloc(8); length.writeBigUInt64BE(BigInt(data.length));
+  digest.update(name.replaceAll("\\", "/")); digest.update(length); digest.update(data);
+ }
+ return `sha256:${digest.digest("hex")}`;
+}
+const sourceRevision = snapshot(declared.source_files), testRevision = snapshot(declared.test_files);
 const migration = await migrate({ afterMigrate: async ({ databaseUrl, environment, tempRoot }) => {
  const output = path.join(tempRoot, "subscription-tests.json");
  const child = spawnSync(process.execPath, [path.join(root, "node_modules/vitest/vitest.mjs"), "run", "--config", "vitest.subscription-recovery-db.config.ts", "--reporter=json", "--outputFile", output], {
@@ -19,7 +36,7 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
   failedTitles: result.testResults.flatMap(s => s.assertionResults.filter(t => t.status === "failed").map(t => t.title)),
   failedLocations: result.testResults.flatMap(s => s.assertionResults.filter(t => t.status === "failed").flatMap(t =>
    (t.failureMessages ?? []).flatMap(message => [...message.matchAll(/(wp4-buyer-ops\.db\.test\.ts):(\d+):(\d+)/g)].map(match => ({ file: match[1], line: Number(match[2]) }))))) };
- if (child.status !== 0 || !result.success || tests.total !== 62 || tests.passed !== 62 || tests.skipped !== 0) throw new Error("subscription-db-regression-failed");
+ if (child.status !== 0 || !result.success || tests.total !== 63 || tests.passed !== 63 || tests.skipped !== 0) throw new Error("subscription-db-regression-failed");
  if (process.argv.includes("--browser")) {
     // Reuse only the installed executable. The browser profile stays isolated;
     // changing HOME must not hide the installation and fail before the UI runs.
@@ -52,9 +69,11 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
     visit(browserResult.suites); browserProof.diagnostics = diagnostics;
     if (browser.status !== 0 || browserProof.expected !== 1 || browserProof.unexpected !== 0 || browserProof.skipped !== 0 || browserProof.flaky !== 0) throw new Error("q2-browser-gate-failed");
  }
+ if (snapshot(declared.source_files) !== sourceRevision || snapshot(declared.test_files) !== testRevision) throw new Error("q2-source-changed-during-verification");
 } });
-const receipt = { status: migration.status, migration, tests, browser: browserProof, browserFailure, sourceSha, providerNetworkAttempted: false };
+const receipt = { status: migration.status, migration, tests, browser: browserProof, browserFailure, sourceSha, sourceRevision, testRevision, providerNetworkAttempted: false };
 fs.mkdirSync(path.join(root, ".ai-team/reports"), { recursive: true });
+fs.writeFileSync(path.join(root, ".ai-team/reports", `subscription-recovery-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.join(root, ".ai-team/reports/subscription-recovery-db-receipt.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
 if (receipt.status !== "PASS") process.exitCode = 1;

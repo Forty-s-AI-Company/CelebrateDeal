@@ -43,9 +43,11 @@
     "src/lib/wp4-runtime-boundary.ts",
     "src/lib/wp4-subscription-state.ts",
     "vitest.subscription-recovery-db.config.ts",
-    "prisma/migrations/20261007002000_reconcile_legacy_subscription_refund_state/migration.sql"
+    "prisma/migrations/20261007002000_reconcile_legacy_subscription_refund_state/migration.sql",
+    "package.json",
+    "package-lock.json"
   ],
-  "source_revision": "sha256:2ff85d2b67a9df99a086ada0104247356067addb65b888bb2508bb747229473c",
+  "source_revision": "sha256:8af06ade92f1b3483d90f6325929679d6e942ecd8523d5e6e2c3cfe5d1e6ff52",
   "test_files": [
     "scripts/g7-email-operations-browser-qa.test.mjs",
     "scripts/prisma-invariant-inventory.test.ts",
@@ -79,7 +81,7 @@
     "src/lib/wp4-subscription-state.test.ts",
     "tests/e2e/native-subscription-recovery.spec.ts"
   ],
-  "test_revision": "sha256:f274a218dee196702f846252ae1393297cbe39f53d7e33141ec151ebf54acfa2",
+  "test_revision": "sha256:6f0b6eb14bab64546200ad55620f0fb8375c863f9561b136626dacdff7e0d2c2",
   "status": "IMPLEMENTED_PENDING_FINAL_VERIFICATION",
   "dispatch_used": 3,
   "dispatch_limit": 4,
@@ -89,7 +91,7 @@
     {
       "id": "Q2-CR-1",
       "severity": "MAJOR",
-      "status": "FIX_IMPLEMENTED_PENDING_REAL_ROUTE_AND_CONCURRENCY_REGRESSION"
+      "status": "FIX_IMPLEMENTED_REAL_ROUTE_AND_CONCURRENCY_PASS_PENDING_FINAL_REVIEW"
     },
     {
       "id": "Q2-CR-2",
@@ -103,8 +105,9 @@
     "targeted_unit_latest": "36/36 PASS",
     "typescript": "PASS",
     "targeted_lint": "PASS",
-    "real_route_regression": "PENDING_CORRECTED_FIXED_PROVIDER_CONFIGURATION",
-    "real_browser": "PENDING session 10694; prior request-boundary rejection preserved"
+    "real_route_regression": "63/63 DB PASS including signed real route first failure and concurrent at-most-one retry; prior source before final runner binding",
+    "real_browser": "62/62 DB + 1 actual browser PASS before concurrent retry and sharp integration; final bound-source run pending",
+    "sharp_dependency": "Merged verified PR378 candidate; protected delivery pending CI"
   },
-  "next": "Complete new 62-case DB and browser, concurrent callback fencing regression, final independent review dispatch 4/4, canonical acceptance, exact-head CI and protected PR. Q1 external injection remains separate blocker."
+  "next": "Final exact source+test hash 63-case DB/browser, last independent Critical review dispatch4/4, canonical acceptance, exact-head CI, protected PR. Full F1/F2/F3/Q1/Q2/A1/E1 goal remains active."
 }
