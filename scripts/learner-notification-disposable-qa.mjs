@@ -9,8 +9,9 @@ import { saveLearnerNotificationConsent } from "../src/lib/learner-notification-
 import { enqueueLearnerNotification, claimLearnerNotification, finishLearnerNotification } from "../src/lib/learner-notification-outbox.ts";
 import { protectCommerceOrderPii } from "../src/lib/commerce-order-pii.ts";
 import { reconcileCommerceOrderRefund } from "../src/lib/commerce-orders.ts";
+import { dispatchClaimedLearnerNotification } from "../src/lib/learner-notification-dispatch.ts";
 const sourceFiles = ["package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
- "src/lib/learner-notification-contract.ts", "src/lib/learner-notification-preferences.ts", "src/lib/learner-notification-outbox.ts", "src/lib/learner-notification-verification.ts",
+ "src/lib/learner-notification-contract.ts", "src/lib/learner-notification-preferences.ts", "src/lib/learner-notification-outbox.ts", "src/lib/learner-notification-dispatch.ts", "src/lib/learner-notification-providers.ts", "src/lib/learner-notification-verification.ts",
  "src/lib/student-course-learning.ts", "src/lib/sensitive-data.ts", "src/lib/commerce-order-pii.ts", "src/lib/commerce-order-fulfillment.ts", "src/lib/commerce-orders.ts", "scripts/learner-notification-disposable-qa.mjs"];
 function sourceSnapshot() {
  const hashes = Object.fromEntries(sourceFiles.map(file => [file,createHash("sha256").update(fs.readFileSync(path.resolve(file))).digest("hex")]));
@@ -187,19 +188,81 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
       assert.equal(await claimLearnerNotification(db,vendor.id,queued.id), null);
       assert.equal((await db.learnerNotificationDelivery.findUniqueOrThrow({ where: { id: queued.id } })).status, "indeterminate");
     });
+    await check("exact claimed dispatch cannot run twice or accept a forged token", async () => {
+      const pending=await enqueueLearnerNotification(db,identity,{...event,eventIdentity:"synthetic_worker_single"});assert.ok(pending);
+      const worker=await claimLearnerNotification(db,vendor.id,pending.id);assert.ok(worker);let calls=0;
+      const options={appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent",providerReceipt:"synthetic-worker-receipt"};}};
+      assert.equal((await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:pending.id,claimToken:"x".repeat(43)},options)).status,"not_claimed");assert.equal(calls,0);
+      const outcomes=await Promise.all([dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:pending.id,claimToken:worker.claimToken},options),dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:pending.id,claimToken:worker.claimToken},options)]);
+      assert.equal(calls,1);assert.equal(outcomes.filter(result=>result.status==="sent").length,1);assert.equal(outcomes.filter(result=>result.status==="not_claimed").length,1);
+      const row=await db.learnerNotificationDelivery.findUniqueOrThrow({where:{id:pending.id}});assert.equal(row.status,"sent");assert.ok(row.dispatchedAt);assert.equal(row.providerReceiptEncryptedEnvelope.includes("synthetic-worker-receipt"),false);
+    });
+    await check("provider uncertainty is durable and never invokes a second attempt", async () => {
+      const pending=await enqueueLearnerNotification(db,identity,{...event,eventIdentity:"synthetic_worker_unknown"});const worker=await claimLearnerNotification(db,vendor.id,pending.id);assert.ok(worker);let calls=0;
+      const options={appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;throw new Error("synthetic private provider failure");}};
+      assert.equal((await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:pending.id,claimToken:worker.claimToken},options)).status,"indeterminate");
+      assert.equal((await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:pending.id,claimToken:worker.claimToken},options)).status,"not_claimed");assert.equal(calls,1);
+      assert.equal((await db.learnerNotificationDelivery.findUniqueOrThrow({where:{id:pending.id}})).lastErrorCode,"PROVIDER_OUTCOME_UNKNOWN");
+    });
+    await check("failed database commit after provider acceptance never repeats the external attempt", async () => {
+      const pending=await enqueueLearnerNotification(db,identity,{...event,eventIdentity:"synthetic_worker_commit_fail"});const worker=await claimLearnerNotification(db,vendor.id,pending.id);assert.ok(worker);
+      // Owned disposable fault injection only. The deferred constraint fails at
+      // COMMIT after the synthetic provider callback has returned acceptance.
+      await db.$executeRawUnsafe(`CREATE FUNCTION learner_notification_synthetic_commit_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW."eventIdentity"='synthetic_worker_commit_fail' AND NEW."status"='sent' THEN RAISE EXCEPTION 'synthetic commit fault' USING ERRCODE='40001'; END IF; RETURN NEW; END $$`);
+      await db.$executeRawUnsafe(`CREATE CONSTRAINT TRIGGER learner_notification_synthetic_commit_fault AFTER UPDATE ON "LearnerNotificationDelivery" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION learner_notification_synthetic_commit_fault()`);
+      let calls=0;
+      try{
+        const result=await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:pending.id,claimToken:worker.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent",providerReceipt:"synthetic-before-commit-fault"};}});
+        assert.equal(result.status,"indeterminate");assert.equal(calls,1);
+        const row=await db.learnerNotificationDelivery.findUniqueOrThrow({where:{id:pending.id}});assert.equal(row.status,"indeterminate");assert.equal(row.claimTokenHash,null);assert.ok(row.providerReceiptEncryptedEnvelope);
+        assert.equal(await claimLearnerNotification(db,vendor.id,pending.id),null);
+      }finally{
+        await db.$executeRawUnsafe(`DROP TRIGGER learner_notification_synthetic_commit_fault ON "LearnerNotificationDelivery"`);
+        await db.$executeRawUnsafe(`DROP FUNCTION learner_notification_synthetic_commit_fault()`);
+      }
+    });
+    await check("entitlement expiry after claim refuses provider dispatch", async () => {
+      const pending=await enqueueLearnerNotification(db,identity,{...event,eventIdentity:"synthetic_worker_expired"});const worker=await claimLearnerNotification(db,vendor.id,pending.id);assert.ok(worker);
+      await db.commerceEntitlement.update({where:{id:entitlement.id},data:{grantedAt:new Date(Date.now()-60000),expiresAt:new Date(Date.now()-1000)}});
+      let calls=0;
+      try{
+        const result=await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:pending.id,claimToken:worker.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent"};}});
+        assert.equal(result.status,"suppressed");assert.equal(calls,0);assert.equal((await db.learnerNotificationDelivery.findUniqueOrThrow({where:{id:pending.id}})).status,"suppressed");
+      }finally{await db.commerceEntitlement.update({where:{id:entitlement.id},data:{expiresAt:null}});}
+    });
+    await check("consent withdrawal waits for the bounded authorized provider attempt", async () => {
+      const pending=await enqueueLearnerNotification(db,identity,{...event,eventIdentity:"synthetic_worker_withdraw_race"});const worker=await claimLearnerNotification(db,vendor.id,pending.id);assert.ok(worker);
+      let release,entered;const gate=new Promise(resolve=>{release=resolve;});const started=new Promise(resolve=>{entered=resolve;});
+      const active=dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:pending.id,claimToken:worker.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{entered();await gate;return {outcome:"sent",providerReceipt:"synthetic-bounded-receipt"};}});
+      await started;
+      const withdrawal=saveLearnerNotificationConsent(db,identity,product.id,{channel:"sms",enabled:false,expectedRevision:3});
+      try {
+        let count=0;const deadline=Date.now()+5000;
+        while(Date.now()<deadline){const rows=await db.$queryRaw`SELECT count(*) AS count FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND wait_event_type='Lock' AND query LIKE '%LearnerNotificationPreference%'`;count=Number(rows[0].count);if(count>0)break;await new Promise(resolve=>setTimeout(resolve,20));}
+        assert.ok(count>0,"consent writer must wait on the exact preference lock");
+      }finally{release();}
+      assert.equal((await active).status,"sent");assert.equal((await withdrawal).status,"saved");
+      assert.equal((await db.learnerNotificationPreference.findUniqueOrThrow({where:{id:preference.id}})).enabled,false);
+      assert.equal(await enqueueLearnerNotification(db,identity,{...event,eventIdentity:"synthetic_after_worker_withdraw"}),null);
+    });
     await check("consent revision change suppresses a queued event", async () => {
+      assert.equal((await saveLearnerNotificationConsent(db,identity,product.id,{channel:"sms",enabled:true,expectedRevision:4})).status,"saved");
       const pending = await enqueueLearnerNotification(db,identity,{ ...event, eventIdentity: "synthetic_outbox_changed_consent" });
       assert.ok(pending);
-      assert.equal((await saveLearnerNotificationConsent(db,identity,product.id,{ channel: "sms", enabled: false, expectedRevision: 3 })).status,"saved");
+      assert.equal((await saveLearnerNotificationConsent(db,identity,product.id,{ channel: "sms", enabled: false, expectedRevision: 5 })).status,"saved");
       assert.equal(await claimLearnerNotification(db,vendor.id,pending.id),null);
       assert.equal((await db.learnerNotificationDelivery.findUniqueOrThrow({ where: { id: pending.id } })).status,"suppressed");
     });
-    await check("real full refund suppresses queued delivery and further producer events", async () => {
-      assert.equal((await saveLearnerNotificationConsent(db,identity,product.id,{ channel: "sms", enabled: true, expectedRevision: 4 })).status,"saved");
+    await check("real full refund after claim suppresses dispatch and further producer events", async () => {
+      assert.equal((await saveLearnerNotificationConsent(db,identity,product.id,{ channel: "sms", enabled: true, expectedRevision: 6 })).status,"saved");
       const pending = await enqueueLearnerNotification(db,identity,{ ...event, eventIdentity: "synthetic_outbox_before_refund" });
       assert.ok(pending);
+      const reserved=await claimLearnerNotification(db,vendor.id,pending.id);assert.ok(reserved);
       await db.$transaction(tx => reconcileCommerceOrderRefund(tx,{ vendorId: vendor.id, orderId, providerName: "synthetic", eventIdentity: randomUUID(), amountCents: 1000, occurredAt: new Date() }));
       assert.equal(await claimLearnerNotification(db,vendor.id,pending.id),null);
+      let providerCalls=0;
+      const result=await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:pending.id,claimToken:reserved.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{providerCalls++;return {outcome:"sent"};}});
+      assert.equal(result.status,"suppressed");assert.equal(providerCalls,0);
       assert.equal((await db.learnerNotificationDelivery.findUniqueOrThrow({ where: { id: pending.id } })).status,"suppressed");
       assert.equal(await enqueueLearnerNotification(db,identity,{ ...event, eventIdentity: "synthetic_outbox_after_refund" }),null);
     });
@@ -207,9 +270,9 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
   if (sourceSnapshot().revision !== sourceAtStart.revision) throw new Error("notification-source-changed-during-verification");
   } finally { await db.$disconnect(); }
 } });
-const receipt = { source: sourceAtStart, status: migration.status, migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, rawLogsSaved: false } };
+const receipt = { source: sourceAtStart, status: migration.status, migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
 fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 21 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 26 || results.some(test => test.status !== "PASS")) process.exitCode = 1;

@@ -47,3 +47,11 @@ F2.1 latest source `sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c2
 | F1其餘／F2其餘／F3其餘／Q1／A1／E1 | 原 work matrix 與 future-work 精確來源 | 保留完整功能及相依；Q1精確sandbox注入仍阻塞外部旅程 | 本次補記沒有縮減或轉移範圍；整體 Goal 未完成 | IN_PROGRESS |
 
 F1 通知補記：已接上 configured-only email／Web Push／Twilio SMS／WhatsApp template adapter，24 項 mocked unit 契約 PASS，連同既有 contract/API 共36項測試；最新21項實際PG回歸與86 migrations PASS，source fence一致。此批未執行外部送達，worker/event producer/UI/browser/approved provider驗證/獨立review/gate/CI仍未完成。精確證據 `remaining-capabilities-f1-notifications-providers-20261007.json`；不宣稱 F1 READY。
+
+### F1 通知 worker checkpoint 2026-10-07
+
+- ID：f1-learner-notifications；來源 e1f38be324e349969a657be376aa1602e804c2dd；owner root，dispatch 0/4。
+- 已實作：既有 authenticated email job 接入限定租戶與已設定渠道的通知 worker；精確 claim、最終購買權益與同意鎖定；不明 provider 結果不重送。
+- 驗證：86 migrations、26 PostgreSQL 回歸、19 job/route/registry unit、TypeScript、scoped lint PASS。Provider callback 僅合成測試，沒有實際外部寄送。
+- 證據：docs/remaining-capabilities-f1-notifications-worker-20261007.json，revision sha256:46c5f7fbc1fcf7fc391fd6df50dc58e0f77ac1a9bf246fdeb45b052c06d9d6f0。
+- 狀態：IMPLEMENTED_WORKER_PHASE_NOT_READY；仍缺 durable challenge delivery、全部六種 event producer、UI/browser、核准非 Production provider 驗證、Critical review、canonical acceptance、精確 head CI 與 PR 交付。整體 Goal 保持 IN_PROGRESS。

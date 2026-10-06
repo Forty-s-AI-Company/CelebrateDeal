@@ -1,0 +1,189 @@
+{
+  "task_id": "f1-learner-notifications",
+  "status": "IMPLEMENTED_WORKER_PHASE_NOT_READY",
+  "source_revision": "sha256:46c5f7fbc1fcf7fc391fd6df50dc58e0f77ac1a9bf246fdeb45b052c06d9d6f0",
+  "source_hashes": {
+    "package.json": "3348ccdf618d1785b687f24a45b10efaf61dc4cc130f46cd53d5df9d3ad75094",
+    "package-lock.json": "316fe741454b5747c1afc8c09a62ff80a4ed819899d7ea4a51a77eace5f523f0",
+    "prisma/schema.prisma": "abf1645262725ee127f43a8efad727db5725d85832fdc3157dea59e0129bb60f",
+    "prisma/migrations/20261007010000_learner_notifications/migration.sql": "9556eb9165d262a8c17b26a2ca87a06da024d8e95cf3a1167b4e3f1556071515",
+    "src/lib/learner-notification-contract.ts": "b09c722bbed2be39f174129bfebd04575a71e57cdc16c80a8686587f70364c02",
+    "src/lib/learner-notification-preferences.ts": "e498bc8c3864347acc380ed815d37a7f604c508e887a9c341d3f5ba615d2c7b3",
+    "src/lib/learner-notification-outbox.ts": "b97446a5182f75d14e64b18ee52f9535ce478ff06b6aaa48287c63e78a39d8b3",
+    "src/lib/learner-notification-dispatch.ts": "7d8aea99cb268fd0174b2a76f98205e4e70a77af34ca5f234e0a790c0825d9dc",
+    "src/lib/learner-notification-providers.ts": "a3a3eae976a8a35d6f36e2bc7a0d3f10d49fc9f79c7119a3f941a5824de47030",
+    "src/lib/learner-notification-verification.ts": "82219f81de620d4de1ec80920ebee3deb8a3265b16e0005ba61db7e14133f8d7",
+    "src/lib/student-course-learning.ts": "78716725dd49fdf08292c0e180875b1953448fa9fc72ee7f63a4a04fd3382d29",
+    "src/lib/sensitive-data.ts": "07c2eb967a8f03f661d98a8193f7153786598ddb6d94b831f51b72c08eac9822",
+    "src/lib/commerce-order-pii.ts": "6761a568619e2830ea51c150a064e3ee60b1e75572533734eb0fe6f7f9b04220",
+    "src/lib/commerce-order-fulfillment.ts": "b5a78f51f0455b96fd63939397677d71acc7869ed8ccdff8df0e73a69c3a8081",
+    "src/lib/commerce-orders.ts": "9765d7d57c7d91e0ffa2a81ef363abad0fb3b1c1addd4cff325f98e1e6a2240f",
+    "scripts/learner-notification-disposable-qa.mjs": "26d9a4821fc44becf9710b9fd2f3b77d339633cd17d90179a45a28bbb10b1607",
+    "src/lib/learner-notification-job.ts": "f4fc029de1f4ff8260fe5a20212b6e80d85464e284d6df6d281a37311bbd207a",
+    "src/lib/learner-notification-job.test.ts": "b7c47c2cd24659145f8b776fc4465a1ba318e65828015efd5c6ed58a3294271d",
+    "src/app/api/jobs/email-deliveries/route.ts": "8704556b37087c6b56dd7c5411c8236b1c1697105bade5b7567fb0cf90c7aef1",
+    "src/app/api/jobs/email-deliveries/route.test.ts": "033b6fb94c34d3e1726323bdf612d51d5591d1b81dfff8f91528c36324fbae9d"
+  },
+  "postgresql_receipt": {
+    "source": {
+      "files": {
+        "package.json": "3348ccdf618d1785b687f24a45b10efaf61dc4cc130f46cd53d5df9d3ad75094",
+        "package-lock.json": "316fe741454b5747c1afc8c09a62ff80a4ed819899d7ea4a51a77eace5f523f0",
+        "prisma/schema.prisma": "abf1645262725ee127f43a8efad727db5725d85832fdc3157dea59e0129bb60f",
+        "prisma/migrations/20261007010000_learner_notifications/migration.sql": "9556eb9165d262a8c17b26a2ca87a06da024d8e95cf3a1167b4e3f1556071515",
+        "src/lib/learner-notification-contract.ts": "b09c722bbed2be39f174129bfebd04575a71e57cdc16c80a8686587f70364c02",
+        "src/lib/learner-notification-preferences.ts": "e498bc8c3864347acc380ed815d37a7f604c508e887a9c341d3f5ba615d2c7b3",
+        "src/lib/learner-notification-outbox.ts": "b97446a5182f75d14e64b18ee52f9535ce478ff06b6aaa48287c63e78a39d8b3",
+        "src/lib/learner-notification-dispatch.ts": "7d8aea99cb268fd0174b2a76f98205e4e70a77af34ca5f234e0a790c0825d9dc",
+        "src/lib/learner-notification-providers.ts": "a3a3eae976a8a35d6f36e2bc7a0d3f10d49fc9f79c7119a3f941a5824de47030",
+        "src/lib/learner-notification-verification.ts": "82219f81de620d4de1ec80920ebee3deb8a3265b16e0005ba61db7e14133f8d7",
+        "src/lib/student-course-learning.ts": "78716725dd49fdf08292c0e180875b1953448fa9fc72ee7f63a4a04fd3382d29",
+        "src/lib/sensitive-data.ts": "07c2eb967a8f03f661d98a8193f7153786598ddb6d94b831f51b72c08eac9822",
+        "src/lib/commerce-order-pii.ts": "6761a568619e2830ea51c150a064e3ee60b1e75572533734eb0fe6f7f9b04220",
+        "src/lib/commerce-order-fulfillment.ts": "b5a78f51f0455b96fd63939397677d71acc7869ed8ccdff8df0e73a69c3a8081",
+        "src/lib/commerce-orders.ts": "9765d7d57c7d91e0ffa2a81ef363abad0fb3b1c1addd4cff325f98e1e6a2240f",
+        "scripts/learner-notification-disposable-qa.mjs": "26d9a4821fc44becf9710b9fd2f3b77d339633cd17d90179a45a28bbb10b1607"
+      },
+      "revision": "sha256:4b596d81c3e153e33b842e7e290e9efa6208b9a6687d34d708617eb7c75e3bca"
+    },
+    "status": "PASS",
+    "migrationCount": 86,
+    "tests": [
+      {
+        "name": "cross-tenant product FK refuses preference",
+        "status": "PASS"
+      },
+      {
+        "name": "cross-tenant delivery/preference FK refuses dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent consent CAS admits one writer",
+        "status": "PASS"
+      },
+      {
+        "name": "event uniqueness survives a consent revision change",
+        "status": "PASS"
+      },
+      {
+        "name": "default-deny RLS hides rows and rejects anonymous-role writes",
+        "status": "PASS"
+      },
+      {
+        "name": "refunded recipient can unsubscribe using authenticated scope",
+        "status": "PASS"
+      },
+      {
+        "name": "service rejects stale consent revision",
+        "status": "PASS"
+      },
+      {
+        "name": "foreign recipient cannot unsubscribe another tenant",
+        "status": "PASS"
+      },
+      {
+        "name": "recipient without current purchase cannot opt in",
+        "status": "PASS"
+      },
+      {
+        "name": "verification rejects exhausted attempts and expired enrollment",
+        "status": "PASS"
+      },
+      {
+        "name": "contact proof refuses foreign recipient and locks after five wrong attempts",
+        "status": "PASS"
+      },
+      {
+        "name": "expired contact proof cannot mark destination verified",
+        "status": "PASS"
+      },
+      {
+        "name": "rotated contact proof consumes once without granting notification consent",
+        "status": "PASS"
+      },
+      {
+        "name": "native push subscription proves device separately from channel consent",
+        "status": "PASS"
+      },
+      {
+        "name": "outbox deduplicates concurrent real database event producers",
+        "status": "PASS"
+      },
+      {
+        "name": "outbox foreign scope cannot queue or claim owning recipient",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent worker claim admits exactly one owner",
+        "status": "PASS"
+      },
+      {
+        "name": "forged or replayed worker completion cannot mark delivery",
+        "status": "PASS"
+      },
+      {
+        "name": "exact claimed dispatch cannot run twice or accept a forged token",
+        "status": "PASS"
+      },
+      {
+        "name": "provider uncertainty is durable and never invokes a second attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "failed database commit after provider acceptance never repeats the external attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "entitlement expiry after claim refuses provider dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "consent withdrawal waits for the bounded authorized provider attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "consent revision change suppresses a queued event",
+        "status": "PASS"
+      },
+      {
+        "name": "real full refund after claim suppresses dispatch and further producer events",
+        "status": "PASS"
+      },
+      {
+        "name": "owned synthetic purchase fixture is created",
+        "status": "PASS"
+      }
+    ],
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "safety": {
+      "loopbackOnly": true,
+      "syntheticOnly": true,
+      "externalOperations": false,
+      "providerCallbacks": "synthetic-only;not actual provider delivery",
+      "rawLogsSaved": false
+    }
+  },
+  "scope_note": "PostgreSQL covers its 16 declared files; job and route are separately covered by mocked unit contracts. No actual external provider delivery.",
+  "unit_tests": {
+    "job": 11,
+    "existing_authenticated_job_route": 7,
+    "API_registry": 1,
+    "failed": 0
+  },
+  "typescript": "PASS",
+  "lint": "PASS",
+  "review": "NOT_EXECUTED",
+  "canonical_acceptance": "NOT_READY",
+  "remaining": [
+    "durable challenge delivery integration",
+    "event producer integration for all six retained events",
+    "actual UI and browser journeys",
+    "approved nonproduction provider injection and contracts",
+    "independent Critical review",
+    "canonical acceptance",
+    "exact-head CI and protected PR delivery"
+  ]
+}

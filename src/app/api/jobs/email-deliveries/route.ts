@@ -1,3 +1,4 @@
+import { processDueLearnerNotifications } from "@/lib/learner-notification-job";
 import { NextResponse } from "next/server";
 import { requireCronSecret, requireJobSecret, unauthorizedJson } from "@/lib/api-security";
 import { processDueEmailDeliveries, processDuePostLiveFollowups } from "@/lib/email-delivery";
@@ -21,6 +22,8 @@ const SAFE_STATUSES = new Set([
   "not_due",
   "claimed_elsewhere",
 ]);
+
+const SAFE_LEARNER_NOTIFICATION_STATUSES = new Set(["sent","failed","suppressed","indeterminate","queued","not_claimed","persistence_failed","configuration_missing","not_delivered","claimed_elsewhere"]);
 
 const SAFE_RECONCILIATION_STATUSES = new Set([
   "pending",
@@ -54,6 +57,7 @@ async function processEmailDeliveries() {
     const results = await processDueEmailDeliveries();
     const lineMaterialized = await materializeLineNotifications();
     const lineResults = await processDueLineDeliveries();
+    const learnerNotifications = await processDueLearnerNotifications();
     let futureRepairs: Array<{ status: string }> = [];
     try {
       futureRepairs = await processDueLiveNotifications({ includeFuture: true, writeBudget: 100 });
@@ -91,6 +95,8 @@ async function processEmailDeliveries() {
       results: results.slice(0, 20).map((result) => ({
         status: SAFE_STATUSES.has(result.status) ? result.status : "unknown",
       })),
+      learnerNotificationsProcessed: learnerNotifications.length,
+      learnerNotificationResults: learnerNotifications.slice(0,20).map(result => ({ status: SAFE_LEARNER_NOTIFICATION_STATUSES.has(result.status) ? result.status : "unknown" })),
       lineMaterialized: lineMaterialized.length,
       lineProcessed: lineResults.length,
       lineResults: lineResults.slice(0, 20).map((result) => ({
