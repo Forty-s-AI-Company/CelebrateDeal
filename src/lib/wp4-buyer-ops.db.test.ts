@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { POST as paymentCallback } from "../app/api/webhooks/payments/route";
+import { buildPayUniSandboxWebhookFixture } from "./payment-providers/payuni-fixtures";
 import { getDb } from "./db";
 import { ensureWp4SandboxFixture, WP4_SANDBOX_FIXTURE as fixed } from "./wp4-sandbox-fixture";
 import { createReservedPaymentTransaction } from "./inventory-reservations";
@@ -8,7 +10,8 @@ import { readWp4ExistingBuyerState, wp4HistoricalBuyerWhere, WP4_BUYER_CONTINUAT
 import { retryWp4HistoricalBuyerCallback } from "./wp4-buyer-callback-retry";
 const db = getDb();
 afterEach(async () => {
- await db.webhookEvent.deleteMany({ where: { vendorId: fixed.vendorId } });
+ vi.unstubAllEnvs();
+ await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: "synthetic-buyer-route-paid" }] } });
  await db.vendor.deleteMany({ where: { id: fixed.vendorId } });
  await db.user.deleteMany({ where: { id: fixed.userId } });
  await db.billingPlan.deleteMany({ where: { id: fixed.planId } });
@@ -26,6 +29,28 @@ async function checkout() {
  return { payment, payload };
 }
 describe("fixed historical buyer PostgreSQL recovery", () => {
+ it("recovers a signature-verified real PayUni route first failure with missing tenant and currency", async () => {
+  const { payment } = await checkout();
+  vi.stubEnv("PAYMENT_PROVIDER", "payuni");
+  vi.stubEnv("PAYUNI_ENV", "sandbox");
+  vi.stubEnv("PAYUNI_SANDBOX_MERCHANT_ID", "SYNTHETIC");
+  vi.stubEnv("PAYUNI_SANDBOX_HASH_KEY", "0123456789abcdef0123456789abcdef");
+  vi.stubEnv("PAYUNI_SANDBOX_HASH_IV", "0123456789abcdef");
+  // A recoverable local payment mismatch must fail after signature verification.
+  await db.paymentTransaction.update({ where: { id: payment.id }, data: { grossAmountCents: 101 } });
+  const body = buildPayUniSandboxWebhookFixture({ fixture: "paid", merchantId: "SYNTHETIC", hashKey: "0123456789abcdef0123456789abcdef", hashIv: "0123456789abcdef",
+   overrides: { EventId: "synthetic-buyer-route-paid", MerTradeNo: payment.orderNumber!, TradeNo: payment.providerTradeNo!, TradeAmt: 1, NetAmount: 1, GatewayFee: 0, PlatformFee: 0, ReferralCode: "" } });
+  const response = await paymentCallback(new Request("http://127.0.0.1:31041/api/webhooks/payments?provider=payuni&source=notify", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body }));
+  expect(response.status).toBe(500);
+  const event = await db.webhookEvent.findUniqueOrThrow({ where: { provider_eventId: { provider: "payuni", eventId: "synthetic-buyer-route-paid" } } });
+  expect(event).toMatchObject({ status: "failed", retryCount: 1, vendorId: null });
+  expect(event.payload).toMatchObject({ normalized: { orderNumber: payment.orderNumber, grossAmountCents: 100 } });
+  expect((event.payload as { normalized: Record<string, unknown> }).normalized).not.toHaveProperty("currency");
+  await db.paymentTransaction.update({ where: { id: payment.id }, data: { grossAmountCents: 100 } });
+  await expect(retryWp4HistoricalBuyerCallback(db)).resolves.toEqual({ status: "PROCESSED", retryAttempts: 1, failureCode: "NONE" });
+  await expect(retryWp4HistoricalBuyerCallback(db)).resolves.toEqual({ status: "ALREADY_PROCESSED", retryAttempts: 0, failureCode: "NONE" });
+  await expect(readWp4ExistingBuyerState(db)).resolves.toMatchObject({ status: "VERIFIED", paymentStatus: "PAID" });
+ });
  it("proves paid inventory/email/order and one full refund under duplicate callbacks", async () => {
   const { payment, payload } = await checkout(); await processPaymentWebhook(payload); await processPaymentWebhook(payload);
   await expect(readWp4ExistingBuyerState(db)).resolves.toMatchObject({ status: "VERIFIED", paymentStatus: "PAID", refundReconciled: false });

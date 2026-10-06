@@ -59,10 +59,14 @@ export async function recoverStaleWebhookRetryClaim(event: RetryableWebhookEvent
   return retryWebhookEvent(event.id);
 }
 
-export async function retryWebhookEvent(eventId: string, actorLabel = "job:webhook-retry") {
+export async function retryWebhookEvent(eventId: string, actorLabel = "job:webhook-retry", expectedVersion?: { retryCount: number; updatedAt: Date }) {
   const db = getDb();
   const event = await db.webhookEvent.findUnique({ where: { id: eventId } });
   if (!event) return { status: "missing" as const };
+  // Fixed recovery validates a particular stored payload/version before dispatch.
+  // A scheduler or callback that changed it must win rather than being retried here.
+  if (expectedVersion && (event.retryCount !== expectedVersion.retryCount
+    || event.updatedAt.getTime() !== expectedVersion.updatedAt.getTime())) return { status: "claimed_elsewhere" as const, event };
   if (event.retryCount >= event.maxRetries) {
     const exhausted = await db.webhookEvent.updateMany({
       where: { id: event.id, status: "failed", retryCount: event.retryCount, updatedAt: event.updatedAt },

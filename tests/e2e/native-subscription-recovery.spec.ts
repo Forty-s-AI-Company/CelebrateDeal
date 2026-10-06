@@ -9,7 +9,7 @@ const source = process.env.Q2_BROWSER_SOURCE_SHA!, job = "synthetic-q2-browser-j
 async function ops(page: Page, route: string, method = "POST") {
  return page.evaluate(async ({ route, source, job, method }) => {
   const response = await fetch(`/api/admin/ops/payuni/${route}`, { method, headers: { authorization: `Bearer ${job}`, "x-celebratedeal-source-sha": source } });
-  return { status: response.status, body: response.status === 204 ? null : await response.json() };
+  return { status: response.status, outcome: response.headers.get("x-celebratedeal-wp4-fixture"), body: response.status === 204 ? null : await response.json() };
  }, { route, source, job, method });
 }
 test("fixed owner selects a private sandbox plan, reloads real entitlement/refund proof, and foreign owner cannot select it", async ({ page, browser, baseURL }) => {
@@ -30,7 +30,9 @@ test("fixed owner selects a private sandbox plan, reloads real entitlement/refun
   await page.goto("/login");
   const unauthorized = await page.evaluate(async () => (await fetch("/api/admin/ops/payuni/wp4-fixture", { method: "POST" })).status);
   expect(unauthorized).toBe(401);
-  expect((await ops(page, "wp4-fixture")).status).toBe(200);
+  const fixtureResponse = await ops(page, "wp4-fixture");
+  test.info().annotations.push({ type: "q2-fixture-result", description: JSON.stringify({ status: fixtureResponse.status, outcome: fixtureResponse.outcome }) });
+  expect(fixtureResponse.status).toBe(200);
   expect((await db.billingPlan.findUniqueOrThrow({ where: { id: fixed.planId } })).isActive).toBe(false);
   expect((await ops(page, "wp4-session")).status).toBe(204);
   await page.goto("/billing/plans");

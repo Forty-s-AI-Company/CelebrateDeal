@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { getDb } from "./db";
 import { applyPlatformSubscriptionRefundProjection } from "./platform-subscription-refund";
+import { reconcilePayUniRefund } from "./payuni-refund-reconciliation";
 const db = getDb(), vendors: string[] = [], plans: string[] = [];
 async function fixture() {
  const suffix = randomUUID();
@@ -19,6 +21,32 @@ afterEach(async () => {
  await db.billingPlan.deleteMany({ where: { id: { in: plans.splice(0) } } });
 });
 describe("subscription PostgreSQL refund permission boundaries", () => {
+ it.each([false, true])("forward migration repairs legacy full refund and preserves independent B=%s", async (hasB) => {
+  const f = await fixture();
+  let b: { id: string } | undefined;
+  if (hasB) b = await db.vendorSubscription.create({ data: { vendorId: f.vendor.id, planId: f.plan.id, status: "active" } });
+  const sql = readFileSync("prisma/migrations/20261007002000_reconcile_legacy_subscription_refund_state/migration.sql", "utf8");
+  // Execute the exact forward migration against rows representing pre-upgrade state.
+  for (let replay = 0; replay < 2; replay++) await db.$transaction(async tx => {
+   for (const statement of sql.split(";").filter(value => value.trim())) await tx.$executeRawUnsafe(statement);
+  });
+  expect(await db.vendorSubscription.findUniqueOrThrow({ where: { id: f.subscription.id } })).toMatchObject({ status: "payment_refunded", endedAt: expect.any(Date) });
+  expect(await db.vendorUsageLimit.findUniqueOrThrow({ where: { vendorId: f.vendor.id } })).toMatchObject({ entitlementStatus: hasB ? "active" : "revoked", streamMinutesUsed: 4, creditsUsed: 3, streamMinutesLimit: 10, creditsLimit: 50 });
+  if (b) expect((await db.vendorSubscription.findUniqueOrThrow({ where: { id: b.id } })).status).toBe("active");
+  expect(await db.refundRecord.count({ where: { paymentTransactionId: f.payment.id } })).toBe(1);
+ });
+ it("already reconciled provider ledger repairs historical active subscription on replay", async () => {
+  const f = await fixture();
+  const payment = await db.paymentTransaction.update({ where: { id: f.payment.id }, data: { providerName: "payuni", providerTradeNo: `synthetic-${f.payment.id}`, orderNumber: `synthetic-${f.payment.id}` } });
+  for (let replay = 0; replay < 2; replay++) {
+   const outcome = await reconcilePayUniRefund({ db, transactionId: payment.id, actor: { id: "synthetic-ops", label: "synthetic-recovery" },
+    providerSnapshot: { status: "refunded", providerTradeNo: payment.providerTradeNo!, orderNumber: payment.orderNumber!, grossAmountCents: 100, refundedAmountCents: 100, remainingRefundableAmountCents: 0 } });
+   expect(outcome).toMatchObject({ disposition: "already_reconciled", processedRefundRecordCount: 0 });
+  }
+  expect((await db.vendorSubscription.findUniqueOrThrow({ where: { id: f.subscription.id } })).status).toBe("payment_refunded");
+  expect(await db.vendorUsageLimit.findUniqueOrThrow({ where: { vendorId: f.vendor.id } })).toMatchObject({ entitlementStatus: "revoked", streamMinutesUsed: 4, creditsUsed: 3 });
+  expect(await db.refundRecord.count({ where: { paymentTransactionId: payment.id } })).toBe(1);
+ });
  it("revokes exactly once without resetting counters or inventing unlimited access", async () => {
   const f = await fixture();
   for (let retry = 0; retry < 2; retry++) await db.$transaction(tx => applyPlatformSubscriptionRefundProjection(tx, f.payment, new Date()), { isolationLevel: "Serializable" });

@@ -26,18 +26,27 @@ export function permitsWp4SyntheticPlan(vendorId: string, userId: string, planId
   return vendorId === WP4_SANDBOX_FIXTURE.vendorId && userId === WP4_SANDBOX_FIXTURE.userId
     && planId === WP4_SANDBOX_FIXTURE.planId && isWp4BoundNonProductionRuntime() && resolveWp4ExpectedSourceSha() !== null;
 }
-export function wp4Unavailable(status = 404) {
-  return NextResponse.json({ error: status === 401 ? "Unauthorized" : status === 503 ? "Service unavailable" : "Not found" }, { status, headers: { "Cache-Control": "no-store" } });
+/** Next can use localhost internally while preserving the loopback listener Host.
+ * Only an already verified disposable process admits this bounded alias. */
+export function wp4RequestOriginMatches(request: Request, env: Environment = process.env) {
+  const incoming = new URL(request.url), configured = url(env.NEXT_PUBLIC_APP_URL);
+  if (!configured) return false;
+  if (incoming.origin === configured.origin) return true;
+  return disposableRuntime(env) && incoming.protocol === "http:" && incoming.hostname === "localhost"
+    && incoming.port === configured.port && request.headers.get("host") === configured.host;
+}
+export function wp4Unavailable(status = 404, reason?: "RUNTIME_REJECTED" | "REQUEST_REJECTED") {
+  return NextResponse.json({ error: status === 401 ? "Unauthorized" : status === 503 ? "Service unavailable" : "Not found" }, { status, headers: { "Cache-Control": "no-store", ...(reason ? { "x-celebratedeal-wp4-fixture": reason } : {}) } });
 }
 /** Bearer first; rejected requests cannot consume a body or touch database/provider. */
 export async function authorizeWp4Ops(request: Request): Promise<{ sourceSha: string } | Response> {
   if (!requireJobSecret(request)) return wp4Unavailable(401);
-  if (!isWp4BoundNonProductionRuntime()) return wp4Unavailable();
+  if (!isWp4BoundNonProductionRuntime()) return wp4Unavailable(404, "RUNTIME_REJECTED");
   const expected = resolveWp4ExpectedSourceSha();
   if (!expected) return wp4Unavailable(503);
   const incoming = new URL(request.url);
-  if (incoming.origin !== process.env.NEXT_PUBLIC_APP_URL || incoming.search || !wp4SourceMatchesRequest(request, expected)
-    || await requestHasNonEmptyBody(request)) return wp4Unavailable();
+  if (!wp4RequestOriginMatches(request) || incoming.search || !wp4SourceMatchesRequest(request, expected)
+    || await requestHasNonEmptyBody(request)) return wp4Unavailable(404, "REQUEST_REJECTED");
   return { sourceSha: expected };
 }
 

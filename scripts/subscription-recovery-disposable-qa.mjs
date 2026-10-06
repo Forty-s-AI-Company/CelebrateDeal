@@ -16,8 +16,10 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
  if (!fs.existsSync(output)) throw new Error("subscription-test-receipt-missing");
  const result = JSON.parse(fs.readFileSync(output, "utf8"));
  tests = { total: result.numTotalTests, passed: result.numPassedTests, failed: result.numFailedTests, skipped: result.numPendingTests,
-  failedTitles: result.testResults.flatMap(s => s.assertionResults.filter(t => t.status === "failed").map(t => t.title)) };
- if (child.status !== 0 || !result.success || tests.total !== 58 || tests.passed !== 58 || tests.skipped !== 0) throw new Error("subscription-db-regression-failed");
+  failedTitles: result.testResults.flatMap(s => s.assertionResults.filter(t => t.status === "failed").map(t => t.title)),
+  failedLocations: result.testResults.flatMap(s => s.assertionResults.filter(t => t.status === "failed").flatMap(t =>
+   (t.failureMessages ?? []).flatMap(message => [...message.matchAll(/(wp4-buyer-ops\.db\.test\.ts):(\d+):(\d+)/g)].map(match => ({ file: match[1], line: Number(match[2]) }))))) };
+ if (child.status !== 0 || !result.success || tests.total !== 62 || tests.passed !== 62 || tests.skipped !== 0) throw new Error("subscription-db-regression-failed");
  if (process.argv.includes("--browser")) {
     // Reuse only the installed executable. The browser profile stays isolated;
     // changing HOME must not hide the installation and fail before the UI runs.
@@ -39,6 +41,15 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
     if (browser.status !== 0) browserFailure = `${browser.stdout ?? ""}\n${browser.stderr ?? ""}`.split(/\r?\n/u).filter((line) => /^::error(?: file=tests\/e2e\/[A-Za-z0-9_.\/-]+,line=\d+)?::playwright /u.test(line)).slice(0, 10);
     const browserResult = JSON.parse(fs.readFileSync(browserReport, "utf8"));
     browserProof = { expected: browserResult.stats.expected, unexpected: browserResult.stats.unexpected, skipped: browserResult.stats.skipped, flaky: browserResult.stats.flaky };
+    const diagnostics = [];
+    function visit(suites) { for (const suite of suites ?? []) {
+      for (const spec of suite.specs ?? []) for (const test of spec.tests ?? []) for (const annotation of test.annotations ?? []) {
+        if (annotation.type !== "q2-fixture-result") continue;
+        try { const value = JSON.parse(annotation.description); if (Number.isInteger(value.status) && (value.outcome === null || /^[A-Z_]+$/.test(value.outcome))) diagnostics.push(value); } catch { }
+      }
+      visit(suite.suites);
+    } }
+    visit(browserResult.suites); browserProof.diagnostics = diagnostics;
     if (browser.status !== 0 || browserProof.expected !== 1 || browserProof.unexpected !== 0 || browserProof.skipped !== 0 || browserProof.flaky !== 0) throw new Error("q2-browser-gate-failed");
  }
 } });
