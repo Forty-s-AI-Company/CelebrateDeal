@@ -48,7 +48,7 @@
     "package-lock.json",
     "src/lib/webhook-retry.ts"
   ],
-  "source_revision": "sha256:963ed6c1e63467756f4b0e946856dd9932cd1fbdec00094ea708bdd08dd40f9c",
+  "source_revision": "sha256:9bae439e8832751caf5c3503ede2cdd5ee3ea0949c7b4385edc6e485604b9079",
   "test_files": [
     "scripts/g7-email-operations-browser-qa.test.mjs",
     "scripts/prisma-invariant-inventory.test.ts",
@@ -79,8 +79,8 @@
     "src/lib/wp4-runtime-boundary.test.ts",
     "src/lib/wp4-subscription-ops.db.test.ts",
     "src/lib/wp4-subscription-state.test.ts",
-    "tests/subscription-recovery/native-subscription-recovery.spec.ts",
-    "tests/subscription-recovery/native-buyer-recovery.spec.ts",
+    "tests/subscription-recovery/native-subscription-recovery.browser.ts",
+    "tests/subscription-recovery/native-buyer-recovery.browser.ts",
     "src/app/api/admin/ops/payuni/test-support/recovery-boundary.ts",
     "src/app/api/admin/ops/payuni/wp4-buyer-callback-retry/route.test.ts",
     "src/app/api/admin/ops/payuni/wp4-buyer-existing-state/route.test.ts",
@@ -95,7 +95,7 @@
     "scripts/playwright-ci-reporter.ts",
     "scripts/playwright-ci-reporter.test.ts"
   ],
-  "test_revision": "sha256:06c78894cc9d444ef23fecfebe0cc1ac09408fbb324c299da1da761c168d2de7",
+  "test_revision": "sha256:d48a6dc18fc3b90a27da74563e3b3accab6a68d705a928d92730586fb887b7cb",
   "status": "CI_CORRECTION_VERIFIED_PENDING_ADDITIONAL_REVIEW_AND_EXACT_HEAD_CI",
   "dispatch_used": 4,
   "dispatch_limit": 4,
@@ -141,9 +141,9 @@
     "full_node_tap_latest": "1067/1067 PASS,zero skipped;tracked non-sensitive LF mirror,read-only Git object alternates/core.longpaths;historical checksums unchanged",
     "ci_browser_failure": "Exact ca9e8e1 CI failures were both fixture HTTP status assertions: generic release server lacked Q2-specific verified runner/source/secret configuration. Move both unchanged scenarios to a mandatory dedicated CI gate; no skip or assertion changes.",
     "ci_correction_browser_current": {
-      "sourceShaAtLaunch": "ca9e8e1cd956b426960c2f633833def21e4bee64",
-      "sourceRevision": "sha256:963ed6c1e63467756f4b0e946856dd9932cd1fbdec00094ea708bdd08dd40f9c",
-      "testRevision": "sha256:06c78894cc9d444ef23fecfebe0cc1ac09408fbb324c299da1da761c168d2de7",
+      "sourceShaAtLaunch": "f989dba69361b38d764b46cb1736203109315504",
+      "sourceRevision": "sha256:9bae439e8832751caf5c3503ede2cdd5ee3ea0949c7b4385edc6e485604b9079",
+      "testRevision": "sha256:d48a6dc18fc3b90a27da74563e3b3accab6a68d705a928d92730586fb887b7cb",
       "migrations": 87,
       "database": {
         "total": 67,
@@ -158,6 +158,7 @@
         "unexpected": 0,
         "skipped": 0,
         "flaky": 0,
+        "errorCodes": [],
         "diagnostics": [
           {
             "status": 200,
@@ -168,8 +169,12 @@
       "cleanup": {
         "container": "PASS",
         "tempRoot": "PASS"
-      }
-    }
+      },
+      "priorFlakyRootCause": "UNCONFIRMED;previous failures retained; latest diagnostic-instrumented run has zero error codes/flaky"
+    },
+    "unit_discovery_correction": "4655 unit assertions passed, but Vitest attempted both Playwright-only .spec.ts files. Rename only those files to .browser.ts and keep both explicit Playwright testMatch entries in the mandatory CI gate. No Vitest excludes or assertions changed.",
+    "latest_browser_failure": "67 DB PASS; browser 1 expected+1 flaky,gateFAIL. Failure at page.goto line48 after intentionally blocked provider navigation. Wait for exact provider requestfailed event before new navigation; all existing assertions retained.",
+    "navigation_wait_result": "Exact requestfailed wait did not fix failure;67DBPASS but browser1expected+1flakyFAIL. Stop blind reruns; next run adds allowlisted error classification to distinguish navigation interruption versus blocked network."
   },
   "next": "Additional readonly review requires explicit dispatch cap increase; exact new-head CI must pass before protected merge."
 }

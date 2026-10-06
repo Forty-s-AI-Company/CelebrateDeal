@@ -129,6 +129,7 @@
       "unexpected": 0,
       "skipped": 0,
       "flaky": 0,
+      "errorCodes": [],
       "diagnostics": [
         {
           "status": 200,
@@ -137,12 +138,15 @@
       ]
     },
     "browserFailure": null,
-    "sourceSha": "ca9e8e1cd956b426960c2f633833def21e4bee64",
-    "sourceRevision": "sha256:963ed6c1e63467756f4b0e946856dd9932cd1fbdec00094ea708bdd08dd40f9c",
-    "testRevision": "sha256:06c78894cc9d444ef23fecfebe0cc1ac09408fbb324c299da1da761c168d2de7",
+    "sourceSha": "f989dba69361b38d764b46cb1736203109315504",
+    "sourceRevision": "sha256:9bae439e8832751caf5c3503ede2cdd5ee3ea0949c7b4385edc6e485604b9079",
+    "testRevision": "sha256:d48a6dc18fc3b90a27da74563e3b3accab6a68d705a928d92730586fb887b7cb",
     "providerNetworkAttempted": false
   },
   "assertionsChanged": false,
   "testsSkipped": false,
-  "mandatoryGate": "Subscription recovery database and browser gate"
+  "vitestExcludesAdded": false,
+  "playwrightFilesRenamedOnlyForCorrectFramework": "*.browser.ts",
+  "mandatoryGate": "Subscription recovery database and browser gate",
+  "priorFlakyRootCause": "UNCONFIRMED; retained UUID reports are not overwritten"
 }

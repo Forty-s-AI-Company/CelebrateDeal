@@ -58,6 +58,16 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
     if (browser.status !== 0) browserFailure = `${browser.stdout ?? ""}\n${browser.stderr ?? ""}`.split(/\r?\n/u).filter((line) => /^::error(?: file=tests\/(?:e2e|subscription-recovery)\/[A-Za-z0-9_.\/-]+,line=\d+)?::playwright /u.test(line)).slice(0, 10);
     const browserResult = JSON.parse(fs.readFileSync(browserReport, "utf8"));
     browserProof = { expected: browserResult.stats.expected, unexpected: browserResult.stats.unexpected, skipped: browserResult.stats.skipped, flaky: browserResult.stats.flaky };
+    const errorCodes = [];
+    function classifyBrowserErrors(suites) { for (const suite of suites ?? []) {
+      for (const spec of suite.specs ?? []) for (const test of spec.tests ?? []) for (const result of test.results ?? []) for (const error of result.errors ?? []) {
+        const message = String(error.message ?? "");
+        const networkCode = message.match(/net::(ERR_(?:ABORTED|FAILED|BLOCKED_BY_CLIENT|CONNECTION_REFUSED|CONNECTION_RESET|EMPTY_RESPONSE|NAME_NOT_RESOLVED))/)?.[1];
+        errorCodes.push(networkCode ?? (/interrupted by another navigation/.test(message) ? "NAVIGATION_INTERRUPTED" : /Timeout/.test(message) ? "TIMEOUT" : "UNCLASSIFIED"));
+      }
+      classifyBrowserErrors(suite.suites);
+    } }
+    classifyBrowserErrors(browserResult.suites); browserProof.errorCodes = [...new Set(errorCodes)];
     const diagnostics = [];
     function visit(suites) { for (const suite of suites ?? []) {
       for (const spec of suite.specs ?? []) for (const test of spec.tests ?? []) for (const annotation of test.annotations ?? []) {

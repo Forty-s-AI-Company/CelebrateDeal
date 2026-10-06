@@ -37,11 +37,14 @@ test("fixed owner selects a private sandbox plan, reloads real entitlement/refun
   expect((await ops(page, "wp4-session")).status).toBe(204);
   await page.goto("/billing/plans");
   await expect(page.getByRole("heading", { name: "WP4 Synthetic Sandbox Plan" })).toBeVisible();
+  // Await the intentionally aborted provider navigation before starting a new app navigation.
+  const providerFailure = page.waitForEvent("requestfailed", { predicate: request => request.url() === "https://sandbox-api.payuni.com.tw/api/upp" && request.method() === "POST" && request.isNavigationRequest() });
   const selection = page.waitForResponse(response => response.url().endsWith("/api/billing/plans/select") && response.request().method() === "POST");
   await page.locator(`form:has(input[name="planId"][value="${fixed.planId}"])`).getByRole("button").click();
   expect((await selection).status()).toBe(200);
   await expect.poll(() => blockedProviderRequests.filter(request => request.url === "https://sandbox-api.payuni.com.tw/api/upp" && request.method === "POST").length).toBe(1);
   expect(blockedProviderRequests.every(request => request.url === "https://sandbox-api.payuni.com.tw/api/upp")).toBe(true);
+  await providerFailure;
   const payments = await db.paymentTransaction.findMany({ where: { vendorId: fixed.vendorId, providerName: "payuni" } });
   expect(payments).toHaveLength(1); const payment = payments[0]!;
   expect(payment).toMatchObject({ status: "pending", grossAmountCents: 100, currency: "TWD", paymentMode: "platform", metadata: expect.objectContaining({ billingPurpose: "platform_subscription_checkout", billingPlanId: fixed.planId, wp4SourceCommit: source }) });

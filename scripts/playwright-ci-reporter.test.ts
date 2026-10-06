@@ -196,8 +196,8 @@ describe("SanitizedPlaywrightCiReporter", () => {
 
  it("retains annotations for both mandatory isolated recovery scenarios", () => {
   for (const name of ["native-subscription-recovery", "native-buyer-recovery"]) {
-    expect(formatSanitizedPlaywrightAnnotation({ file: `tests/subscription-recovery/${name}.spec.ts`, line: 35, status: "failed", retry: 0 }))
-      .toBe(`::error file=tests/subscription-recovery/${name}.spec.ts,line=35::playwright status=failed retry=0`);
+    expect(formatSanitizedPlaywrightAnnotation({ file: `tests/subscription-recovery/${name}.browser.ts`, line: 35, status: "failed", retry: 0 }))
+      .toBe(`::error file=tests/subscription-recovery/${name}.browser.ts,line=35::playwright status=failed retry=0`);
   }
   expect(formatSanitizedPlaywrightAnnotation({ file: "tests/subscription-recovery/credentials.ts", line: 1, status: "failed", retry: 0 })).toBeNull();
  });
