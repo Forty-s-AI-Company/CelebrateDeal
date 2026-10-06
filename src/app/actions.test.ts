@@ -66,6 +66,7 @@ const mocks = vi.hoisted(() => ({
   createLiveReminderReconciliationSnapshot: vi.fn(),
   queueLiveReminderReconciliation: vi.fn(),
   materializeLiveNotificationRules: vi.fn(),
+  recordLearnerLiveStartedSources: vi.fn(),
   dispatchLiveStartedLineNotificationsSafely: vi.fn(),
   captureOperationalError: vi.fn(),
   productFindMany: vi.fn(),
@@ -198,6 +199,7 @@ vi.mock("@/lib/live-notification-delivery", async (importOriginal) => ({
   materializeLiveNotificationRules: mocks.materializeLiveNotificationRules,
 }));
 vi.mock("@/lib/monitoring", () => ({ captureOperationalError: mocks.captureOperationalError }));
+vi.mock("@/lib/learner-live-notifications", () => ({ recordLearnerLiveStartedSources: mocks.recordLearnerLiveStartedSources }));
 vi.mock("@/lib/line-live-started", () => ({
   dispatchLiveStartedLineNotificationsSafely: mocks.dispatchLiveStartedLineNotificationsSafely,
 }));
@@ -2513,6 +2515,7 @@ describe("upsertLiveAction", () => {
 
     const lifecycleUpdate = mocks.liveUpdate.mock.calls.at(-1)?.[0];
     expect(lifecycleUpdate.data).toEqual(expect.objectContaining({ status: "live", startedAt: expect.any(Date) }));
+    expect(mocks.recordLearnerLiveStartedSources).toHaveBeenCalledWith(expect.anything(), { vendorId: "vendor-1", liveId: "live-1", startedAt: lifecycleUpdate.data.startedAt });
     expect(mocks.dispatchLiveStartedLineNotificationsSafely).toHaveBeenCalledWith(
       expect.anything(),
       "vendor-1",

@@ -13,8 +13,9 @@ import { dispatchClaimedLearnerNotification } from "../src/lib/learner-notificat
 import { claimLearnerVerificationDelivery, dispatchLearnerVerificationDelivery } from "../src/lib/learner-verification-delivery.ts";
 import { saveCourseLesson } from "../src/lib/course-curriculum.ts";
 import { saveStudentLessonProgress } from "../src/lib/student-course-learning.ts";
+import { recordLearnerLiveStartedSources } from "../src/lib/learner-live-notifications.ts";
 import { recordLearnerNotificationSourceEvent, materializeLearnerNotificationSourceEvent } from "../src/lib/learner-notification-source-events.ts";
-const sourceFiles = ["src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
+const sourceFiles = ["src/app/actions.ts","src/lib/learner-live-notifications.ts","src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
  "src/lib/learner-notification-contract.ts", "src/lib/learner-notification-preferences.ts", "src/lib/learner-notification-outbox.ts", "src/lib/learner-notification-dispatch.ts", "src/lib/learner-notification-providers.ts", "src/lib/learner-notification-verification.ts",
  "src/lib/student-course-learning.ts", "src/lib/sensitive-data.ts", "src/lib/commerce-order-pii.ts", "src/lib/commerce-order-fulfillment.ts", "src/lib/commerce-orders.ts", "scripts/learner-notification-disposable-qa.mjs"];
 function sourceSnapshot() {
@@ -264,6 +265,43 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
       try{assert.equal((await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id)).status,"completed");const queued=await db.learnerNotificationDelivery.findMany({where:{vendorId:vendor.id,eventIdentity:"synthetic_no_retroactive_consent"},select:{preferenceId:true}});assert.equal(queued.length,1);assert.equal(queued.some(row=>row.preferenceId===preference.id),false);}
       finally{await db.learnerNotificationPreference.update({where:{id:preference.id},data:{consentedAt:existing.consentedAt}});}
     });
+    const live = await db.live.create({data:{vendorId:vendor.id,title:"Synthetic purchased course live",slug:`synthetic-notify-live-${randomUUID()}`,scheduledAt:new Date(),status:"scheduled"}});
+    await db.liveProduct.create({data:{vendorId:vendor.id,liveId:live.id,productId:product.id,isVisible:true}});
+    const liveStart=new Date();
+    await check("live source insert failure rolls back owning lifecycle transition",async()=>{
+      await db.$executeRawUnsafe(`CREATE FUNCTION learner_live_synthetic_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW."event"='live_started' THEN RAISE EXCEPTION 'synthetic live source fault' USING ERRCODE='40001'; END IF; RETURN NEW; END $$`);
+      await db.$executeRawUnsafe(`CREATE TRIGGER learner_live_synthetic_fault BEFORE INSERT ON "LearnerNotificationSourceEvent" FOR EACH ROW EXECUTE FUNCTION learner_live_synthetic_fault()`);
+      try{
+        await assert.rejects(()=>db.$transaction(async tx=>{await tx.live.update({where:{id:live.id},data:{status:"live",startedAt:liveStart}});await recordLearnerLiveStartedSources(tx,{vendorId:vendor.id,liveId:live.id,startedAt:liveStart});}),error=>error.code==="P2034");
+        assert.equal((await db.live.findUniqueOrThrow({where:{id:live.id}})).status,"scheduled");assert.equal(await db.learnerNotificationSourceEvent.count({where:{event:"live_started"}}),0);
+      }finally{await db.$executeRawUnsafe(`DROP TRIGGER learner_live_synthetic_fault ON "LearnerNotificationSourceEvent"`);await db.$executeRawUnsafe(`DROP FUNCTION learner_live_synthetic_fault()`);}
+    });
+    await check("live source requires exact owning active session and persisted course binding",async()=>{
+      await db.$transaction(async tx=>{await tx.live.update({where:{id:live.id},data:{status:"live",startedAt:liveStart}});await recordLearnerLiveStartedSources(tx,{vendorId:vendor.id,liveId:live.id,startedAt:liveStart});});
+      await db.$transaction(tx=>recordLearnerLiveStartedSources(tx,{vendorId:foreign.id,liveId:live.id,startedAt:liveStart}));
+      await db.$transaction(tx=>recordLearnerLiveStartedSources(tx,{vendorId:vendor.id,liveId:live.id,startedAt:new Date(liveStart.getTime()+1)}));
+      await db.$transaction(tx=>recordLearnerLiveStartedSources(tx,{vendorId:vendor.id,liveId:live.id,startedAt:liveStart}));
+      const sources=await db.learnerNotificationSourceEvent.findMany({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}});assert.equal(sources.length,1);assert.equal(sources[0].audienceCustomerKeyHash,null);
+      assert.equal((await materializeLearnerNotificationSourceEvent(db,vendor.id,sources[0].id)).status,"completed");assert.equal(await db.learnerNotificationDelivery.count({where:{vendorId:vendor.id,event:"live_started"}}),2);
+    });
+    await check("owning active live dispatch has one bounded authorized provider attempt",async()=>{
+      const row=await db.learnerNotificationDelivery.findFirstOrThrow({where:{vendorId:vendor.id,event:"live_started",preferenceId:preference.id}}),claim=await claimLearnerNotification(db,vendor.id,row.id);assert.ok(claim);
+      let calls=0;const result=await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:row.id,claimToken:claim.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent",providerReceipt:"synthetic-live-receipt"};}});assert.equal(result.status,"sent");assert.equal(calls,1);
+    });
+    await check("live ending after claim suppresses queued session without provider call",async()=>{
+      const row=await db.learnerNotificationDelivery.findFirstOrThrow({where:{vendorId:vendor.id,event:"live_started",status:"queued"}}),claim=await claimLearnerNotification(db,vendor.id,row.id);assert.ok(claim);
+      await db.live.update({where:{id:live.id},data:{status:"ended",endedAt:new Date()}});let calls=0;
+      assert.equal((await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:row.id,claimToken:claim.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent"};}})).status,"suppressed");assert.equal(calls,0);
+    });
+    await check("reopened live has new source identity and removed binding suppresses dispatch",async()=>{
+      const startedAt=new Date(liveStart.getTime()+1000);
+      await db.$transaction(async tx=>{await tx.live.update({where:{id:live.id},data:{status:"live",startedAt,endedAt:null}});await recordLearnerLiveStartedSources(tx,{vendorId:vendor.id,liveId:live.id,startedAt});});
+      const source=await db.learnerNotificationSourceEvent.findFirstOrThrow({where:{vendorId:vendor.id,event:"live_started",occurredAt:startedAt}});assert.equal((await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id)).status,"completed");
+      assert.equal(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,event:"live_started"}}),2);
+      const row=await db.learnerNotificationDelivery.findFirstOrThrow({where:{vendorId:vendor.id,eventIdentity:source.eventIdentity,preferenceId:preference.id}}),claim=await claimLearnerNotification(db,vendor.id,row.id);assert.ok(claim);
+      await db.liveProduct.deleteMany({where:{vendorId:vendor.id,liveId:live.id,productId:product.id}});let calls=0;
+      assert.equal((await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:row.id,claimToken:claim.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent"};}})).status,"suppressed");assert.equal(calls,0);
+    });
     const payment = await db.paymentTransaction.create({ data: { vendorId: vendor.id, providerName: "synthetic_no_provider", status: "paid", grossAmountCents: 1000, netAmountCents: 1000 } });
     await db.commerceOrder.update({ where: { id: orderId }, data: { status: "pending_payment", paidAmountCents: 0, primaryPaymentTransactionId: payment.id } });
     await db.commerceEntitlement.update({ where: { id: entitlement.id }, data: { status: "pending", grantedAt: null } });
@@ -406,9 +444,9 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
   if (sourceSnapshot().revision !== sourceAtStart.revision) throw new Error("notification-source-changed-during-verification");
   } finally { await db.$disconnect(); }
 } });
-const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 40 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
+const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 45 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
 fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 40 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 45 || results.some(test => test.status !== "PASS")) process.exitCode = 1;

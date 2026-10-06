@@ -93,3 +93,9 @@ F1 通知補記：已接上 configured-only email／Web Push／Twilio SMS／What
 - 最新88 migrations/40 DB/43 targeted unit/lint PASS；新增source fault rollback與foreign/repeated paid回歸。40案例第一次全PASS但舊38數量gate exit1已保留，更新精確40及receipt一致性後整個runner exit0 PASS。TS待收齊。
 - fd7394c5完整course7DB/1actualbrowser/0skip/0flaky PASS，早於payment source修改；CI37522734648仍RUNNING，不可支撐新candidate。
 - 證據 docs/remaining-capabilities-f1-notifications-payment-source-20261007.json；NOT_READY；未完成項目保持Goal範圍。
+
+### F1 課程綁定直播通知 source checkpoint 2026-10-07
+
+- ID f1-learner-notifications；owner root；dispatch0/4。實際 owner commitLiveDraft 同交易讀取已持久化live/course binding並發布來源；delivery持鎖檢查精確 session/目前綁定及購買權益。直播结束/重新session/移除binding不發舊通知。
+- 88 migrations、45/45 DB、329 existing action unit、42 notification contract/provider/job unit、lint、TypeScript PASS。DB包含lifecycle source fault完整rollback、foreign/wrong session、single attempt、ended afterclaim、restart/unbind suppression。Callbacks均合成，不代表真實送達。
+- 證據 docs/remaining-capabilities-f1-notifications-live-source-20261007.json。NOT_READY；latest actual owner browser、consultation/discussion及非course適用契約、渠道完整旅程、Critical review、canonical acceptance、exact CI/protected delivery仍未完成。

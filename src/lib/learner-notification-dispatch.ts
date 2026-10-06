@@ -40,6 +40,18 @@ export async function dispatchClaimedLearnerNotification(db:Database,raw:unknown
    const channel=LearnerNotificationChannel.parse(preference.channel);
    const destination=revealLearnerNotificationDestination(scope,channel,preference.destinationEncryptedEnvelope!);
    const message=LearnerNotificationMessage.parse(JSON.parse(decryptSensitiveValue(row.payloadEncryptedEnvelope,`learner-notification-payload-v1:${JSON.stringify([input.vendorId,row.deduplicationKey])}`)));
+   if (row.event === "live_started") {
+    const session = message.liveSession;
+    const active = session ? await tx.$queryRaw<Array<{id:string}>>`SELECT l."id" FROM "Live" l
+      JOIN "LiveProduct" p ON p."vendorId"=l."vendorId" AND p."liveId"=l."id"
+      WHERE l."vendorId"=${input.vendorId} AND l."id"=${session.id} AND l."status"='live'
+      AND l."startedAt"=${new Date(session.startedAt)} AND l."endedAt" IS NULL
+      AND p."productId"=${row.productId} AND p."isVisible"=true FOR UPDATE OF l,p` : [];
+    if (active.length !== 1) {
+      await tx.learnerNotificationDelivery.update({where:{id:row.id},data:{status:"suppressed",claimTokenHash:null,nextAttemptAt:null,lastErrorCode:"LIVE_SESSION_UNAVAILABLE"}});
+      return {status:"suppressed"} as const;
+    }
+   }
    attempted=true;
    const result:NotificationProviderResult=await (options.sender??sendLearnerNotificationProvider)({channel,destination,message,appOrigin:options.appOrigin,idempotencyKey:row.deduplicationKey},options.configuration);
    if(!["sent","not_delivered","indeterminate"].includes(result.outcome))throw new Error("Invalid provider result.");
