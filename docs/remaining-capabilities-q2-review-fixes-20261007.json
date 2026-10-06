@@ -45,9 +45,10 @@
     "vitest.subscription-recovery-db.config.ts",
     "prisma/migrations/20261007002000_reconcile_legacy_subscription_refund_state/migration.sql",
     "package.json",
-    "package-lock.json"
+    "package-lock.json",
+    "src/lib/webhook-retry.ts"
   ],
-  "source_revision": "sha256:5319d4a02cedeba480985ad3694bf0c858966972ba670de8ed6ca5e3058c333a",
+  "source_revision": "sha256:76d494be501f758cf89474a2bafdac0a00060c3d5f40683a4055496aa4b4567c",
   "test_files": [
     "scripts/g7-email-operations-browser-qa.test.mjs",
     "scripts/prisma-invariant-inventory.test.ts",
@@ -82,9 +83,9 @@
     "tests/e2e/native-subscription-recovery.spec.ts",
     "tests/e2e/native-buyer-recovery.spec.ts"
   ],
-  "test_revision": "sha256:7e3c937f3adfc2da0720ffa8c3a428b34cdbb90cfdccb1a914a0e2021ab09c1e",
+  "test_revision": "sha256:03e5387bd84d3dadda33407c424fb2a4b65076f2ace224e1ee7952d6a651b6d9",
   "status": "IMPLEMENTED_PENDING_FINAL_VERIFICATION",
-  "dispatch_used": 3,
+  "dispatch_used": 4,
   "dispatch_limit": 4,
   "observed_model": "unknown",
   "observed_effort": "unknown",
@@ -98,6 +99,16 @@
       "id": "Q2-CR-2",
       "severity": "MAJOR",
       "status": "FIX_IMPLEMENTED_DB_REGRESSION_PASS"
+    },
+    {
+      "severity": "MAJOR",
+      "id": "Q2-CR-3",
+      "status": "FOREIGN_VENDOR_SLUG_AND_CONFLICTING_TRADE_REJECTED_PENDING_REGRESSION"
+    },
+    {
+      "severity": "MINOR",
+      "id": "Q2-CR-4",
+      "status": "DECLARED_SCOPE_NOW_INCLUDES_ALL_MODIFIED_RUNTIME_FILES_INCLUDING_WEBHOOK_RETRY"
     }
   ],
   "verification": {
@@ -113,5 +124,5 @@
     "affected_unit": "89/89 PASS",
     "scoped_secret_scan": "0 findings in declared Q2 product/test/doc scope; full repository CI scan remains required"
   },
-  "next": "Final bound-source/test 63 DB + both browser journeys, final Critical review dispatch4/4, canonical acceptance and exact-head CI protected PR delivery."
+  "next": "Within ongoing final review dispatch4/4 verify immutable fixed candidate; new 65 DB + 2 browser bound-source verification and full CI. Earlier runner source-change failure is expected and preserved after actual review fixes."
 }

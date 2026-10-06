@@ -22,8 +22,14 @@ export async function retryWp4HistoricalBuyerCallback(db: Pick<PrismaClient, "$t
     if (!parsed.success || parsed.data.provider !== "payuni" || parsed.data.eventId !== event.eventId || parsed.data.eventType !== "paid"
       || (event.vendorId !== null && event.vendorId !== payment.vendorId)
       || (parsed.data.vendorId !== undefined && parsed.data.vendorId !== payment.vendorId) || parsed.data.orderNumber !== payment.orderNumber
+      || (parsed.data.vendorSlug !== undefined && parsed.data.vendorSlug !== WP4_SANDBOX_FIXTURE.vendorSlug)
+      || (parsed.data.providerTradeNo !== undefined && payment.providerTradeNo !== null && parsed.data.providerTradeNo !== payment.providerTradeNo)
       || parsed.data.grossAmountCents !== payment.grossAmountCents
       || (parsed.data.currency !== undefined && parsed.data.currency !== payment.currency)) return { status: "RETRY_REJECTED" };
+    if (parsed.data.vendorSlug !== undefined) {
+      const vendor = await tx.vendor.findUnique({ where: { id: payment.vendorId }, select: { slug: true } });
+      if (!vendor || vendor.slug !== parsed.data.vendorSlug) return { status: "RETRY_REJECTED" };
+    }
     if (event.status === "processed") return { status: "ALREADY_PROCESSED" };
     const metadata = payment.metadata;
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata) || metadata.wp4CallbackRetryReserved === true

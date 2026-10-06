@@ -15,7 +15,7 @@ function snapshot(files) {
  if (!Array.isArray(files) || files.length < 1 || files.length > 64) throw new Error("q2-invalid-snapshot-scope");
  const digest = createHash("sha256");
  for (const name of [...new Set(files)].sort()) {
-  if (typeof name !== "string" || path.isAbsolute(name) || name.split(/[\\/]/).some(part => part.startsWith(".env") || [".git", "node_modules"].includes(part))) throw new Error("q2-invalid-snapshot-path");
+  if (typeof name !== "string" || !name || path.isAbsolute(name) || [".pem", ".key", ".p12", ".pfx", ".db", ".sqlite", ".csv"].includes(path.extname(name).toLowerCase()) || name.split(/[\\/]/).some(part => part.startsWith(".env") || [".git", "node_modules"].includes(part))) throw new Error("q2-invalid-snapshot-path");
   const target = fs.realpathSync(path.resolve(root, name)), relative = path.relative(root, target);
   if (relative.startsWith("..") || path.isAbsolute(relative) || !fs.statSync(target).isFile() || fs.statSync(target).size > 4_000_000) throw new Error("q2-invalid-snapshot-file");
   const data = fs.readFileSync(target), length = Buffer.alloc(8); length.writeBigUInt64BE(BigInt(data.length));
@@ -36,7 +36,7 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
   failedTitles: result.testResults.flatMap(s => s.assertionResults.filter(t => t.status === "failed").map(t => t.title)),
   failedLocations: result.testResults.flatMap(s => s.assertionResults.filter(t => t.status === "failed").flatMap(t =>
    (t.failureMessages ?? []).flatMap(message => [...message.matchAll(/(wp4-buyer-ops\.db\.test\.ts):(\d+):(\d+)/g)].map(match => ({ file: match[1], line: Number(match[2]) }))))) };
- if (child.status !== 0 || !result.success || tests.total !== 63 || tests.passed !== 63 || tests.skipped !== 0) throw new Error("subscription-db-regression-failed");
+ if (child.status !== 0 || !result.success || tests.total !== 65 || tests.passed !== 65 || tests.skipped !== 0) throw new Error("subscription-db-regression-failed");
  if (process.argv.includes("--browser")) {
     // Reuse only the installed executable. The browser profile stays isolated;
     // changing HOME must not hide the installation and fail before the UI runs.

@@ -11,7 +11,7 @@ import { retryWp4HistoricalBuyerCallback } from "./wp4-buyer-callback-retry";
 const db = getDb();
 afterEach(async () => {
  vi.unstubAllEnvs();
- await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: { in: ["synthetic-buyer-route-paid", "synthetic-buyer-concurrent-paid"] } }] } });
+ await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: { in: ["synthetic-buyer-paid", "synthetic-buyer-route-paid", "synthetic-buyer-concurrent-paid"] } }] } });
  await db.vendor.deleteMany({ where: { id: fixed.vendorId } });
  await db.user.deleteMany({ where: { id: fixed.userId } });
  await db.billingPlan.deleteMany({ where: { id: fixed.planId } });
@@ -88,6 +88,16 @@ describe("fixed historical buyer PostgreSQL recovery", () => {
   await db.webhookEvent.create({ data: { provider: "payuni", eventId: payload.eventId, eventType: "paid", vendorId: fixed.vendorId, status: "failed", retryCount: 0, maxRetries: 3, payload: { normalized: { ...JSON.parse(JSON.stringify(payload)), vendorId: "foreign-tenant" } } } });
   await expect(retryWp4HistoricalBuyerCallback(db)).resolves.toEqual({ status: "RETRY_REJECTED", retryAttempts: 0, failureCode: "UNKNOWN" });
   expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).metadata).not.toHaveProperty("wp4CallbackRetryReserved");
+ });
+ it.each([{ vendorSlug: "foreign-synthetic-tenant" }, { providerTradeNo: "foreign-synthetic-trade" }])("rejects a signed payload's conflicting tenant or trade before reservation or retry: %s", async conflict => {
+  const { payment, payload } = await checkout();
+  const normalized = { ...payload }; delete normalized.vendorId;
+  const event = await db.webhookEvent.create({ data: { provider: "payuni", eventId: payload.eventId, eventType: "paid", status: "failed", retryCount: 1, maxRetries: 5,
+   payload: { normalized: JSON.parse(JSON.stringify({ ...normalized, ...conflict })) } } });
+  await expect(retryWp4HistoricalBuyerCallback(db)).resolves.toEqual({ status: "RETRY_REJECTED", retryAttempts: 0, failureCode: "UNKNOWN" });
+  expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).metadata).not.toHaveProperty("wp4CallbackRetryReserved");
+  expect(await db.webhookEvent.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({ status: "failed", retryCount: 1, vendorId: null, updatedAt: event.updatedAt });
+  expect(await db.paymentTransaction.count({ where: { vendorId: fixed.vendorId } })).toBe(1);
  });
  it("ignores a payment whose source has changed even if all monetary fields match", async () => {
   const { payment } = await checkout();
