@@ -1,6 +1,8 @@
 import type {StudentPortalLocale} from "@/lib/student-portal-locale";
 /** Only product copy is translated. Merchant/learner content remains untouched. */
 export const PORTAL_ENGLISH_COPY:Readonly<Record<string,string>>=Object.freeze({
+  "回到課程討論":"Back to course discussion",
+  "・討論回覆":" · Discussion replies",
   " · 公告": " · Announcement",
   " · 置頂": " · Pinned",
   "% 完成": "% complete",

@@ -1,9 +1,16 @@
 import { isValidElement, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CoursePlayer } from "@/components/course-player";
+import {renderToStaticMarkup} from "react-dom/server";
 import { getCsrfToken, verifyCsrfToken } from "@/lib/csrf";
 
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }), headers: async () => new Headers() }));
+
+it("renders English empty-course copy without translating merchant course data",()=>{
+ const html=renderToStaticMarkup(CoursePlayer({vendorSlug:"teacher",course:{id:"course_a",name:"商家課程"},lessons:[],initialProgress:[],csrfToken:"synthetic",locale:"en"}));
+ expect(html).toContain("Course content is being prepared");
+ expect(html).not.toContain("課程內容準備中");
+});
 
 // Exercise the actual media handlers without relying on a browser's media clock.
 vi.mock("react", async (importOriginal) => ({

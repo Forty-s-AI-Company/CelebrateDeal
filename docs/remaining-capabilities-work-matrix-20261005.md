@@ -1,5 +1,9 @@
 # 剩餘功能交付矩陣
 
+2026-10-07 locale 增量：登入頁、播放器、討論 feed／精確 thread 已接 locale；保留 SSR hydration、既有 CSRF／paid-course progress、initialThread、商家／學員原文與 React escaping。30 targeted unit、TS、scoped lint、diff check PASS。前一 browser 在語言 selector 有歧義，已改 named combobox，失敗收據保留；新的完整 browser98929 執行中，未使用前一 PWA PASS 證據支持新 locale source。證據：`remaining-capabilities-f1-notifications-locale-checkpoint-20261007.json`。Full notification review／provider／non-course／全 UI locale／acceptance／交付仍未完成。
+
+2026-10-07 最新增量：PWA 候選 `e441334c478a33439422c7973055b8d662621478` 實際 disposable browser PASS：90 migrations、4/4 Chromium、0 unexpected/skip/flaky、cleanup PASS，1487 source hashes 與候選逐一一致。PWA 起始頁已固定在 `/portal/start/welcome`，保留 `/portal/` worker scope；actual provider delivery=false。精確 head CI37542190238 仍在執行。後續登入頁／播放器 locale 增量保留原有 hydration、CSRF、progress 契約，16 targeted unit、TS、lint PASS；新 English 同筆課程 mark/reload browser6736 仍執行，不能沿用上一版 browser 證據。整批通知及其餘 Goal scope 未 READY／未交付。
+
 目前狀態以本段及後續最新 checkpoint 為準；下方接手基準與歷史收據保留。2026-10-07 核對：F1.1 PR370 已交付；F3.2 PR372、Community PR373、F2.2 與 Q2 PR379 尚待最新候選額外 review 核准，不能宣稱交付。Q1 PR371 尚缺核准的精確 sandbox 注入。F1 通知的六個課程來源已接入，目前新增 PWA push 接收與離線隔離驗證，整批 NOT_READY。精確 head `3287fbd1ce4a189ac2bc3d9fae8aa64045388bb5` CI37538579027：4721 Vitest PASS，Node TAP 1066 PASS／1 migration inventory 測試失敗；固定歷史 runner 不變，新增 migration 清單已校正，12 targeted TAP PASS。新 PWA 候選需獨立的新 browser／CI 證據。
 
 接手基準：`origin/master` `1cb2a32ea08e429de4e148ce24abc3d157b34f0c`，PR #368 已合併，接手時 open PR 為空。以上更新優先於歷史 publication／delivery-state snapshot；來源分支與原始 dirty 工作保持原狀。

@@ -85,6 +85,7 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
  const foreign=await db.vendor.create({data:{name:"Synthetic foreign academy",slug:`notification-foreign-${suffix}`,email:`foreign-${suffix}@invalid.example`,passwordHash:"synthetic-login-disabled"}});
  try{
   const product=await db.product.create({data:{vendorId:vendor.id,name:"通知設定瀏覽器課程",slug:randomUUID(),priceCents:1000,commerceDomain:"course",fulfillmentType:"course"}});
+  const lesson=await db.courseLesson.create({data:{vendorId:vendor.id,productId:product.id,title:"保留講師原文",chapterTitle:"原文章節",position:1,durationSeconds:100,publishedAt:new Date()}});
   const foreignProduct=await db.product.create({data:{vendorId:foreign.id,name:"Foreign course",slug:randomUUID(),priceCents:1000,commerceDomain:"course",fulfillmentType:"course"}});
   const orderId=randomUUID(),email=`learner-${suffix}@invalid.example`,customerKeyHash=automationCustomerKeyHash(vendor.id,email);
   const pii=protectCommerceOrderPii({buyer:{name:"Synthetic learner",email},shipping:null},{vendorId:vendor.id,orderId});
@@ -99,6 +100,18 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   const token=await createStudentPortalAccessToken(db,{vendorId:vendor.id,email,purpose:"magic_link"});
   await page.goto(`${baseURL}/portal/${vendor.slug}/access?token=${encodeURIComponent(token)}`);await expect(page).toHaveURL(new RegExp(`/portal/${vendor.slug}$`));
   await page.goto(`/portal/${vendor.slug}/learn/${product.id}`);
+  // Locale changes product copy only; the exact learner/course session and
+  // paid progress write remain the same across the real server-action reload.
+  await page.getByRole("combobox",{name:"語言",exact:true}).selectOption("en");
+  await page.getByRole("button",{name:"套用",exact:true}).click();
+  await expect(page.getByText("Learning progress",{exact:true})).toBeVisible();
+  await expect(page.getByRole("heading",{name:product.name,exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Mark complete",exact:true}).click();
+  await expect.poll(async()=>Boolean((await db.courseLessonProgress.findFirst({where:{vendorId:vendor.id,productId:product.id,lessonId:lesson.id,customerKeyHash}}))?.completedAt)).toBe(true);
+  await page.reload();await expect(page.getByRole("button",{name:"Marked complete",exact:true})).toBeVisible();
+  await expect(page.getByRole("heading",{name:"保留講師原文",exact:true})).toBeVisible();
+  await page.getByRole("combobox",{name:"Language",exact:true}).selectOption("zh-TW");
+  await page.getByRole("button",{name:"Apply",exact:true}).click();
   const settings=page.getByRole("region",{name:"課程通知"});
   await expect(settings).toBeVisible();await settings.getByRole("button",{name:"載入通知設定"}).click();
   await expect(settings.getByRole("button",{name:"取消通知"})).toBeEnabled();
@@ -204,6 +217,15 @@ test("two purchasing learners post and reply; notification opens exact thread an
   const source=await db.learnerNotificationSourceEvent.findFirstOrThrow({where:{vendorId:vendor.id,productId:product.id,event:"discussion_reply"}});expect(source.audienceCustomerKeyHash).toBe(author.customerKeyHash);expect(source.payloadEncryptedEnvelope).not.toContain("合成回答內容");
   const link=`${baseURL}/portal/${vendor.slug}/learn/${product.id}/community/${parent.id}`;
   await a.goto(link);await expect(a.getByRole("region",{name:"完整討論"}).getByText("合成回答內容",{exact:true})).toBeVisible();await a.reload();await expect(a.getByRole("region",{name:"完整討論"})).toBeVisible();
+  await a.getByRole("combobox",{name:"語言",exact:true}).selectOption("en");
+  await a.getByRole("button",{name:"套用",exact:true}).click();
+  await expect(a).toHaveURL(link);
+  await expect(a.getByRole("region",{name:"Full discussion"}).getByText("合成回答內容",{exact:true})).toBeVisible();
+  await expect(a.getByRole("form",{name:"Reply to discussion"})).toBeVisible();
+  await a.reload();await expect(a.getByRole("region",{name:"Full discussion"})).toBeVisible();
+  await a.getByRole("combobox",{name:"Language",exact:true}).selectOption("zh-TW");
+  await a.getByRole("button",{name:"Apply",exact:true}).click();
+  await expect(a.getByRole("region",{name:"完整討論"})).toBeVisible();
   expect(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,event:"discussion_reply"}})).toBe(1);
   // Next.js streamed notFound pages can have HTTP 200. The data boundary must
   // still return exact 404, while the rendered page must expose no thread.
