@@ -239,6 +239,7 @@ export function AppShell({
             <Activity className="size-3.5" aria-hidden="true" />
           </div>
           <AppShellAccountMenu vendorName={vendorName} roleLabel={roleLabel} vendorInitial={vendorInitial} planLabel={planLabel}>
+            <Link href="/affiliate-portal" className="flex min-h-11 items-center rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100">夥伴入口</Link>
             {accountMenuSections.map((section) => {
               const items = section.hrefs.flatMap((href) => {
                 const item = accountItemByHref.get(href);

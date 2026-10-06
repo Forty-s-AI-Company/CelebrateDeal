@@ -101,7 +101,7 @@ function dockerPort(container, environment) {
 
 function waitForPostgres(container, environment) {
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const ready = result("docker", ["exec", container, "pg_isready", "-U", "postgres", "-d", "celebratedeal_test"], environment);
+    const ready = result("docker", ["exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "celebratedeal_test"], environment);
     if (ready.exitCode === 0) return true;
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
   }

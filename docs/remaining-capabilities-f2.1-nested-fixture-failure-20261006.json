@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "affiliate-portal-browser/v1",
+  "status": "BLOCKED_OR_FAILED",
+  "tests": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "startedAt": "2026-10-05T23:25:48.652Z",
+  "finishedAt": "2026-10-05T23:32:15.249Z",
+  "failedTitles": [],
+  "browserFailure": [
+    "::error file=tests/e2e/affiliate-portal.spec.ts,line=24::playwright status=failed retry=0 class=test_error_location",
+    "::error file=tests/e2e/affiliate-portal.spec.ts,line=24::playwright status=failed retry=1 class=test_error_location",
+    "::error file=tests/e2e/affiliate-portal.spec.ts,line=9::playwright status=failed retry=1 first_status=failed first_duration_ms=3246"
+  ],
+  "browser": {
+    "expected": 0,
+    "unexpected": 1,
+    "skipped": 0,
+    "flaky": 0
+  }
+}
