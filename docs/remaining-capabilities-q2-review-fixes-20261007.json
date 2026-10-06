@@ -82,7 +82,7 @@
     "tests/e2e/native-subscription-recovery.spec.ts",
     "tests/e2e/native-buyer-recovery.spec.ts"
   ],
-  "test_revision": "sha256:38b7f6c0a1a2b99936c7c395349a0dbc1ced85d5f028a301418b95e2f2c65892",
+  "test_revision": "sha256:7e3c937f3adfc2da0720ffa8c3a428b34cdbb90cfdccb1a914a0e2021ab09c1e",
   "status": "IMPLEMENTED_PENDING_FINAL_VERIFICATION",
   "dispatch_used": 3,
   "dispatch_limit": 4,
@@ -107,8 +107,11 @@
     "typescript": "PASS",
     "targeted_lint": "PASS",
     "real_route_regression": "63/63 DB PASS for prior bound candidate 462245e9; exact paid route failure, concurrent at-most-one retry and replay",
-    "real_browser": "63/63 DB + 1 owner browser PASS at 462245e9 with sharp; new actual browser buyer callback/retry/refund route journey pending",
-    "sharp_dependency": "Merged verified PR378 candidate; protected delivery pending CI"
+    "real_browser": "63/63 DB + 2/2 actual browser PASS, zero skip/flaky, at 97e23d45 with identical product source hash; final test-fixture-only hash refresh pending",
+    "sharp_dependency": "Merged verified PR378 candidate; protected delivery pending CI",
+    "ci_correction": "Remove unnecessary synthetic credentials from external-host identity unit fixture URLs; keep exact host identity, assertions and secret scan unchanged",
+    "affected_unit": "89/89 PASS",
+    "scoped_secret_scan": "0 findings in declared Q2 product/test/doc scope; full repository CI scan remains required"
   },
-  "next": "Verify both owner and buyer browser journeys at the new exact source/test hash, last Critical review dispatch4/4, canonical acceptance, exact-head CI, protected PR."
+  "next": "Final bound-source/test 63 DB + both browser journeys, final Critical review dispatch4/4, canonical acceptance and exact-head CI protected PR delivery."
 }

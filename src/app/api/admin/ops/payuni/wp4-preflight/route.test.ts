@@ -145,9 +145,9 @@ beforeEach(() => {
   vi.stubEnv("VERCEL_PROJECT_ID", "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://celebrate-deal-staging.carry-digital-nomad.in.net");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ocbugvgojrunvenozsbx.supabase.co");
-  vi.stubEnv("DATABASE_URL", "postgresql://synthetic:synthetic@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
-  vi.stubEnv("DIRECT_URL", "postgresql://synthetic:synthetic@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
-  vi.stubEnv("STAGING_DATABASE_URL", "postgresql://synthetic:synthetic@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
+  vi.stubEnv("DATABASE_URL", "postgresql://db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
+  vi.stubEnv("DIRECT_URL", "postgresql://db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
+  vi.stubEnv("STAGING_DATABASE_URL", "postgresql://db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
   vi.stubEnv("VERCEL_ENV", "preview");
   vi.stubEnv("PAYUNI_ENV", "sandbox");
   vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true");

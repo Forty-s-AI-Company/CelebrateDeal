@@ -18,7 +18,7 @@ describe("WP4 fixed runtime boundary", () => {
   it.each([
     { VERCEL_ENV: "production" }, { PAYUNI_ENV: "production" }, { VERCEL_PROJECT_ID: "other-project" },
     { WP4_DISPOSABLE_RUNNER_MARKER: "" }, { NEXT_PUBLIC_APP_URL: "https://customer.example" },
-    { DATABASE_URL: "postgresql://synthetic:synthetic@127.0.0.1:5544/customer" },
+    { DATABASE_URL: "postgresql://127.0.0.1:5544/customer" },
     { DIRECT_URL: "postgresql://synthetic:synthetic@127.0.0.1:5545/celebratedeal_test" },
   ])("rejects runtime drift %#", (drift) => expect(isWp4BoundNonProductionRuntime({ ...runtime, ...drift })).toBe(false));
 });
