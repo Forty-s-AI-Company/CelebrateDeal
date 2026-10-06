@@ -1,5 +1,7 @@
 # 剩餘功能交付矩陣
 
+目前狀態以本段及後續最新 checkpoint 為準；下方接手基準與歷史收據保留。2026-10-07 核對：F1.1 PR370 已交付；F3.2 PR372、Community PR373、F2.2 與 Q2 PR379 尚待最新候選額外 review 核准，不能宣稱交付。Q1 PR371 尚缺核准的精確 sandbox 注入。F1 通知的六個課程來源已接入，目前新增 PWA push 接收與離線隔離驗證，整批 NOT_READY。精確 head `3287fbd1ce4a189ac2bc3d9fae8aa64045388bb5` CI37538579027：4721 Vitest PASS，Node TAP 1066 PASS／1 migration inventory 測試失敗；固定歷史 runner 不變，新增 migration 清單已校正，12 targeted TAP PASS。新 PWA 候選需獨立的新 browser／CI 證據。
+
 接手基準：`origin/master` `1cb2a32ea08e429de4e148ce24abc3d157b34f0c`，PR #368 已合併，接手時 open PR 為空。以上更新優先於歷史 publication／delivery-state snapshot；來源分支與原始 dirty 工作保持原狀。
 
 Goal：`remaining-capabilities-20261005`，狀態 **IN_PROGRESS**。承接既有 `CELEBRATEDEAL-M2-M7` 的功能待辦，不覆寫其來源狀態。只有下列全部必要交付與驗收通過才能完成。

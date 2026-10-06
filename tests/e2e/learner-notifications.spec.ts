@@ -10,6 +10,73 @@ import { createStudentPortalAccessToken } from "../../src/lib/student-portal-aut
 import { saveLearnerNotificationConsent } from "../../src/lib/learner-notification-preferences";
 import { protectLearnerNotificationDestination } from "../../src/lib/learner-notification-contract";
 
+test("actual portal worker receives a synthetic device message and keeps authenticated traffic out of cache",async({page,context,baseURL})=>{
+ test.setTimeout(120000);
+ if(!baseURL)throw new Error("Owned loopback browser origin required");
+ await context.grantPermissions(["notifications"],{origin:baseURL});
+ const session=await context.newCDPSession(page);let registrationId:string|undefined;
+ session.on("ServiceWorker.workerRegistrationUpdated",({registrations})=>{
+  for(const registration of registrations)if(registration.scopeURL===`${baseURL}/portal/`&&!registration.isDeleted)registrationId=registration.registrationId;
+ });
+ await session.send("ServiceWorker.enable");
+ // Observe the application's own registration call without initiating one or
+ // retaining browser errors, URLs, account data, or provider credentials.
+ await page.addInitScript(()=>{
+  const state={attempted:false,accepted:false,error:"none"};
+  Object.defineProperty(window,"portalWorkerProbe",{value:state});
+  const original=navigator.serviceWorker.register.bind(navigator.serviceWorker);
+  navigator.serviceWorker.register=(...args)=>{
+   state.attempted=true;
+   return original(...args).then(result=>{state.accepted=true;return result;},error=>{
+    state.error=["TypeError","SecurityError","InvalidStateError","AbortError"].includes(error?.name)?error.name:"other";
+    throw error;
+   });
+  };
+ });
+ try{
+  await page.goto(`${baseURL}/portal/`);await expect(page.getByRole("heading",{name:"你的學習中心",exact:true})).toBeVisible();
+  await expect(page).toHaveURL(`${baseURL}/portal/start/welcome`);
+  expect(await page.evaluate(()=>window.isSecureContext)).toBe(true);
+  const workerScript=await page.request.get(`${baseURL}/portal/sw.js`);expect(workerScript.status()).toBe(200);expect(workerScript.headers()["content-type"]).toContain("javascript");
+  for(const asset of ["/portal/offline.html","/portal/manifest.webmanifest","/portal/icon-192.png","/portal/icon-512.png"])expect((await page.request.get(`${baseURL}${asset}`)).status()).toBe(200);
+  await expect.poll(()=>page.evaluate(()=>navigator.serviceWorker.controller?.scriptURL??null)).toBe(`${baseURL}/portal/sw.js`);
+  await expect.poll(()=>registrationId).toBeTruthy();
+  const manifest=await page.locator('link[rel="manifest"]').getAttribute("href");expect(manifest).toBe("/portal/manifest.webmanifest");
+  const manifestData=await (await page.request.get(`${baseURL}${manifest}`)).json();
+  expect(manifestData.scope).toBe("/portal/");expect(manifestData.start_url).toBe("/portal/start/welcome");
+  // This is browser-local CDP delivery of a synthetic payload, never a receipt
+  // from Google/Apple/Mozilla or any configured external push provider.
+  await session.send("ServiceWorker.deliverPushMessage",{origin:baseURL,registrationId:registrationId!,data:JSON.stringify({title:"合成裝置通知",body:"只驗證本機 worker 接收",path:"/portal/academy/learn/course_a/community/post_a"})});
+  await expect.poll(()=>page.evaluate(async()=>{
+   const registration=await navigator.serviceWorker.ready;
+   const messages=await registration.getNotifications();
+   return messages.map(message=>({title:message.title,body:message.body,data:message.data}));
+  })).toEqual([{title:"合成裝置通知",body:"只驗證本機 worker 接收",data:{path:"/portal/academy/learn/course_a/community/post_a"}}]);
+  const cachePaths=await page.evaluate(async()=>{
+   const names=(await caches.keys()).filter(name=>name.startsWith("celebratedeal-portal-public-"));
+   return (await Promise.all(names.map(async name=>(await (await caches.open(name)).keys()).map(request=>new URL(request.url).pathname)))).flat().sort();
+  });
+  expect(cachePaths).toEqual(["/portal/icon-192.png","/portal/icon-512.png","/portal/manifest.webmanifest","/portal/offline.html"]);
+  const originalUrl=page.url();await context.setOffline(true);
+  const privateResults=await page.evaluate(async()=>{
+   const request=async(path:string,options?:RequestInit)=>{try{const response=await fetch(path,options);return {networkFailed:false,status:response.status};}catch{return {networkFailed:true};}};
+   return Promise.all([request("/portal/synthetic/learn/course_a/community/data"),request("/portal/synthetic?_rsc=synthetic",{headers:{rsc:"1"}}),request("/portal/synthetic/learn/course_a/progress",{method:"POST",body:"{}"})]);
+  });
+  expect(privateResults).toEqual([{networkFailed:true},{networkFailed:true},{networkFailed:true}]);expect(page.url()).toBe(originalUrl);
+  const offline=await page.goto(`${baseURL}/portal/synthetic/learn/course_a`);expect(offline?.status()).toBe(503);await expect(page.getByRole("heading",{name:"目前沒有網路連線",exact:true})).toBeVisible();
+  await context.setOffline(false);await page.goto(`${baseURL}/portal/`);await expect(page.getByRole("heading",{name:"你的學習中心",exact:true})).toBeVisible();
+  expect(await page.evaluate(async()=>(await (await caches.open("celebratedeal-portal-public-v1")).keys()).map(request=>new URL(request.url).pathname).sort())).toEqual(cachePaths);
+ }finally{
+  const probe=await page.evaluate(()=>Reflect.get(window,"portalWorkerProbe")).catch(()=>null);
+  if(probe&&typeof probe.attempted==="boolean"&&typeof probe.accepted==="boolean"&&["none","TypeError","SecurityError","InvalidStateError","AbortError","other"].includes(probe.error)){
+   console.log(`::notice::portal-worker attempted=${probe.attempted} accepted=${probe.accepted} error=${probe.error}`);
+  }
+  await context.setOffline(false);
+  await page.evaluate(async()=>{const registration=await navigator.serviceWorker.getRegistration("/portal/");if(registration)for(const notification of await registration.getNotifications())notification.close();}).catch(()=>undefined);
+  await session.detach();
+ }
+});
+
 test.use({trace:"off",screenshot:"off",video:"off"});
 test("purchasing learner withdraws real notification consent and reloads; foreign course and CSRF are refused",async({page,baseURL})=>{
  test.setTimeout(120000);

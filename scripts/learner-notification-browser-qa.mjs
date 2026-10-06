@@ -23,9 +23,15 @@ const migration=await runMigration({afterMigrate:async({databaseUrl,environment,
   env:{...environment,DATABASE_URL:databaseUrl,DIRECT_URL:databaseUrl,LEARNER_NOTIFICATIONS_BROWSER_MIRROR:mirror,LEARNER_NOTIFICATIONS_BROWSER_REPORT:reportFile,PLAYWRIGHT_EXECUTABLE_PATH:executable,E2E_PORT:"31035",E2E_BASE_URL:"http://127.0.0.1:31035",NEXT_PUBLIC_APP_URL:"http://127.0.0.1:31035",E2E_TEST_MODE:"true",LEARNER_NOTIFICATIONS_EXECUTOR_ENABLED:"false"}});
  if(!fs.existsSync(reportFile))throw new Error("notification-browser-receipt-missing");
  const result=JSON.parse(fs.readFileSync(reportFile,"utf8"));receipt.browser={expected:result.stats.expected,unexpected:result.stats.unexpected,skipped:result.stats.skipped,flaky:result.stats.flaky};
+ // The privacy reporter suppresses stdout; JSON retains test output in memory.
+ // Extract only this closed diagnostic grammar, never raw browser output.
+ const workerLines=[];
+ function collectWorkerLines(suites){for(const suite of suites??[]){for(const spec of suite.specs??[])for(const test of spec.tests??[])for(const result of test.results??[])for(const item of result.stdout??[])if(typeof item.text==="string")workerLines.push(...item.text.split(/\r?\n/u));collectWorkerLines(suite.suites);}}
+ collectWorkerLines(result.suites);
+ receipt.workerDiagnostics=workerLines.filter(line=>/^::notice::portal-worker attempted=(true|false) accepted=(true|false) error=(none|TypeError|SecurityError|InvalidStateError|AbortError|other)$/u.test(line)).slice(0,2);
  if(child.status!==0)receipt.failureAnnotations=`${child.stdout??""}
 ${child.stderr??""}`.split(/\r?\n/u).filter(line=>/^::error file=tests\/e2e\/learner-notifications\.spec\.ts,line=\d+::playwright /u.test(line)).slice(0,10);
- if(child.status!==0 || receipt.browser.expected!==3 || receipt.browser.unexpected!==0 || receipt.browser.skipped!==0 || receipt.browser.flaky!==0)throw new Error("notification-browser-gate-failed");
+ if(child.status!==0 || receipt.browser.expected!==4 || receipt.browser.unexpected!==0 || receipt.browser.skipped!==0 || receipt.browser.flaky!==0)throw new Error("notification-browser-gate-failed");
  if(snapshot().revision!==source.revision)throw new Error("notification-browser-source-changed");
 }});
 receipt.status=migration.status;receipt.migrationCount=migration.migrationNames?.length;receipt.cleanup=migration.cleanup;
