@@ -66,12 +66,14 @@ test("manager publishes a lesson; a purchasing learner saves, resumes, completes
       return (await db.courseLessonProgress.findFirst({ where: { vendorId: vendor.id } }))?.watchedSeconds;
     }).toBe(75);
     await learner.reload();
-    await learner.locator("video").evaluate((element) => {
+    // Recreate metadata in the bounded poll so SSR visibility alone cannot
+    // consume the synthetic event before the real resume handler is attached.
+    await expect.poll(() => learner.locator("video").evaluate((element) => {
       Object.defineProperty(element, "duration", { configurable: true, value: 100 });
       Object.defineProperty(element, "currentTime", { configurable: true, writable: true, value: 0 });
       element.dispatchEvent(new Event("loadedmetadata"));
-    });
-    await expect.poll(() => learner.locator("video").evaluate((element) => (element as HTMLVideoElement).currentTime)).toBe(75);
+      return (element as HTMLVideoElement).currentTime;
+    })).toBe(75);
     await learner.getByRole("button", { name: "標記完成", exact: true }).click();
     await expect(learner.getByText("100% 完成")).toBeVisible();
     await learner.reload();
