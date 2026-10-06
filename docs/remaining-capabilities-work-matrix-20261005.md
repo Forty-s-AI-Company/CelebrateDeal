@@ -32,3 +32,16 @@ F1.1：native curriculum/player/progress/certificate 位於 `codex/remaining-cou
 F2.1 `codex/remaining-affiliate-portal-20261006`：明確 tenant/member 授權、版本 CAS、停用後可撤權、帳本淨額／退款、佣金與授權分頁、商家公開ref連結、超過200名成員搜尋已實作。6項 disposable PostgreSQL 回歸PASS，第三輪獨立 Critical review 無findings（dispatch3/4、observed unknown）；完整 browser 與最新精確source gate執行中，尚未READY／PR／交付。歷次 browser fixture失敗單獨保存，未降低金額或歸因assertion。
 
 F2.1 latest source `sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0`：9 targeted unit、TS/strict-index/lint、1067 Node TAP零skip、85migrations、6DB、1實際browser zero flaky全部PASS；第4/4獨立Critical複審精確25檔及hash一致無findings，canonical READY。精確head CI與protected PR待交付，其餘F2 scope未縮減。證據 `remaining-capabilities-f2.1-local-receipt-20261006.json`。
+
+## 2026-10-07 接續狀態補記
+
+歷史行與證據保留；以下是本次實際狀態。
+
+| ID | 精確來源／相依 | owner 與缺口 | 驗收／新證據 | 狀態 |
+|---|---|---|---|---|
+| F1.1 | PR370，merge `728f0e591c0a5d4a83fe98d6a98146f9d7d0d842` | root；課程批次已交付 | 已驗收 tree 與 merge tree `8cbbcc07a75af21815d57ec9b276517293fe1486` 一致 | DELIVERED |
+| F2.1 | PR374，merge `daa6372a6e0f060e93de2c2e10afa0c9c4d09c73` | root；affiliate portal 已交付 | 已驗收／merge tree `4f63c92d6c24e6585484912863704b3ecffd1f43` 一致 | DELIVERED |
+| F1 通知 | retained `e1f38be324e349969a657be376aa1602e804c2dd`；現行課程與權益 | root 唯一 writer；email/push/SMS/WhatsApp、六個 retained event 完整範圍保留。provider、push enrollment、event producer、UI/browser 尚未完成 | `remaining-capabilities-f1-notifications-outbox-20261007.json`：86 migrations、20 PG、14 unit、12 TAP、TS/lint PASS。內部驗證 token 為合成，未聲稱外部聯絡方式或送達成功 | IMPLEMENTED_BACKEND_PHASE_NOT_READY |
+| Q2 | PR379；`f989dba69361b38d764b46cb1736203109315504` CI 的兩個 Playwright 檔案被 Vitest 誤載 | root；.browser.ts 配置修正正在獨立隔離 runner 驗證；新增 review 超過4/4，等待明確增額核准 | 前一配置87 migrations／67DB／2browser PASS；新配置尚待本次收據／精確 head CI | IN_PROGRESS |
+| F1.2／F2.2／F3.2 | PR373／commission branch／PR372 | 最新候選 review 上限4/4已滿，額外1次仍待核准；不能以其他批次 review 取代 | 已存在測試不代替最新候選 review | REVIEW_AUTHORIZATION_PENDING |
+| F1其餘／F2其餘／F3其餘／Q1／A1／E1 | 原 work matrix 與 future-work 精確來源 | 保留完整功能及相依；Q1精確sandbox注入仍阻塞外部旅程 | 本次補記沒有縮減或轉移範圍；整體 Goal 未完成 | IN_PROGRESS |

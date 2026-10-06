@@ -1,15 +1,34 @@
 import fs from "node:fs";
 import path from "node:path";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { main as migrate } from "./prisma-loopback-disposable-migration-runner.mjs";
 import { learnerNotificationDeliveryKey, protectLearnerNotificationDestination } from "../src/lib/learner-notification-contract.ts";
 import { saveLearnerNotificationConsent } from "../src/lib/learner-notification-preferences.ts";
+import { enqueueLearnerNotification, claimLearnerNotification, finishLearnerNotification } from "../src/lib/learner-notification-outbox.ts";
+import { protectCommerceOrderPii } from "../src/lib/commerce-order-pii.ts";
+import { reconcileCommerceOrderRefund } from "../src/lib/commerce-orders.ts";
+const sourceFiles = ["package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
+ "src/lib/learner-notification-contract.ts", "src/lib/learner-notification-preferences.ts", "src/lib/learner-notification-outbox.ts", "src/lib/learner-notification-verification.ts",
+ "src/lib/student-course-learning.ts", "src/lib/sensitive-data.ts", "src/lib/commerce-order-pii.ts", "src/lib/commerce-order-fulfillment.ts", "src/lib/commerce-orders.ts", "scripts/learner-notification-disposable-qa.mjs"];
+function sourceSnapshot() {
+ const hashes = Object.fromEntries(sourceFiles.map(file => [file,createHash("sha256").update(fs.readFileSync(path.resolve(file))).digest("hex")]));
+ return { files: hashes, revision: `sha256:${createHash("sha256").update(JSON.stringify(hashes)).digest("hex")}` };
+}
+const sourceAtStart = sourceSnapshot();
+let fixtureStage = "not_started";
+import { grantCommerceEntitlement } from "../src/lib/commerce-order-fulfillment.ts";
+import { requestLearnerContactVerification, consumeLearnerContactVerification } from "../src/lib/learner-notification-verification.ts";
 const results = [];
 async function check(name, run) {
   try { await run(); results.push({ name, status: "PASS" }); }
-  catch { results.push({ name, status: "FAIL" }); throw new Error("notification-db-regression-failed"); }
+  catch (error) {
+    const code = typeof error?.code === "string" && /^P[0-9]{4}$/.test(error.code) ? error.code : "UNKNOWN";
+    const constraint = String(error?.message ?? "").match(/constraint ["']([A-Za-z0-9_]{1,128})["']/)?.[1] ?? null;
+    const errorClass = ["PrismaClientValidationError","PrismaClientUnknownRequestError","PrismaClientKnownRequestError","TypeError","ReferenceError","CommerceOrderPiiValidationError","AssertionError"].includes(error?.constructor?.name) ? error.constructor.name : "UNKNOWN";
+    results.push({ name, status: "FAIL", code, constraint, errorClass, fixtureStage }); throw new Error("notification-db-regression-failed");
+  }
 }
 const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
   // The migration runner has already verified its own loopback marker and disposable resources.
@@ -88,11 +107,100 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
       await assert.rejects(() => db.learnerNotificationVerification.create({ data: { ...data, expiresAt: new Date("2000-01-01") } }));
       assert.equal(await db.learnerNotificationVerification.count(), 0);
     });
+    await check("owned synthetic purchase fixture is created", async () => {
+    const orderId = randomUUID();
+    fixtureStage = "encrypt_order";
+    const pii = protectCommerceOrderPii({ buyer: { name: "Synthetic learner", email: "outbox@invalid.example" }, shipping: null }, { vendorId: vendor.id, orderId });
+    fixtureStage = "create_order";
+    await db.commerceOrder.create({ data: { id: orderId, vendorId: vendor.id, automationCustomerKeyHash: identity.customerKeyHash, orderNumber: orderId,
+      checkoutIdempotencyKey: randomUUID(), checkoutIdentityHash: pii.checkoutIdentityHash, status: "paid", subtotalAmountCents: 1000, totalAmountCents: 1000, paidAmountCents: 1000,
+      buyerEncryptedEnvelope: pii.buyerEncrypted, buyerMaskedName: pii.buyerNameMasked, buyerMaskedEmail: pii.buyerEmailMasked } });
+    fixtureStage = "create_item";
+    const item = await db.commerceOrderItem.create({ data: { vendorId: vendor.id, orderId, productId: product.id, lineIndex: 0, productName: product.name, productSlug: product.slug,
+      commerceDomain: "course", fulfillmentType: "course", unitPriceCents: 1000, quantity: 1, lineTotalCents: 1000, nonSensitiveSnapshot: {} } });
+    fixtureStage = "create_entitlement";
+    const entitlement = await db.commerceEntitlement.create({ data: { vendorId: vendor.id, orderItemId: item.id } });
+    await db.$transaction(tx => grantCommerceEntitlement(tx,{ vendorId: vendor.id, entitlementId: entitlement.id, expectedRevision: entitlement.revision, actor: { id: "synthetic-notification-fixture" } }));
+    fixtureStage = "enable_preference";
+    // Verified synthetic destination is a fixture, never evidence of a provider delivery or contact verification.
+    await db.learnerNotificationPreference.update({ where: { id: preference.id }, data: { enabled: true, consentedAt: new Date(), destinationVerifiedAt: new Date() } });
+    await check("contact proof refuses foreign recipient and locks after five wrong attempts", async () => {
+      const requested = await requestLearnerContactVerification(db,identity,product.id,{ channel: "email", expectedRevision: 0, destination: { email: "verified@invalid.example" } });
+      assert.equal(requested.status,"challenge_created");
+      assert.equal(requested.preference.enabled,false);
+      assert.equal((await consumeLearnerContactVerification(db,{ ...identity,customerKeyHash: "b".repeat(43) },product.id,{ challengeId: requested.challenge.id,token: requested.delivery.token })).status,"not_found");
+      assert.equal((await db.learnerNotificationVerification.findUniqueOrThrow({ where: { id: requested.challenge.id } })).attemptCount,0);
+      for (let attempt=0;attempt<5;attempt++) assert.equal((await consumeLearnerContactVerification(db,identity,product.id,{ challengeId: requested.challenge.id,token: "x".repeat(43) })).status,"invalid_challenge");
+      assert.equal((await consumeLearnerContactVerification(db,identity,product.id,{ challengeId: requested.challenge.id,token: requested.delivery.token })).status,"invalid_challenge");
+      assert.equal((await db.learnerNotificationVerification.findUniqueOrThrow({ where: { id: requested.challenge.id } })).attemptCount,5);
+    });
+    await check("expired contact proof cannot mark destination verified", async () => {
+      const requested = await requestLearnerContactVerification(db,identity,product.id,{ channel: "email", expectedRevision: 1, destination: { email: "expired@invalid.example" } });
+      assert.equal(requested.status,"challenge_created");
+      await db.learnerNotificationVerification.update({ where: { id: requested.challenge.id },data: { createdAt: new Date(Date.now()-60000),expiresAt: new Date(Date.now()-1000) } });
+      assert.equal((await consumeLearnerContactVerification(db,identity,product.id,{ challengeId: requested.challenge.id,token: requested.delivery.token })).status,"invalid_challenge");
+      assert.equal((await db.learnerNotificationPreference.findUniqueOrThrow({ where: { id: requested.preference.id } })).destinationVerifiedAt,null);
+    });
+    await check("rotated contact proof consumes once without granting notification consent", async () => {
+      const requested = await requestLearnerContactVerification(db,identity,product.id,{ channel: "email", expectedRevision: 2, destination: { email: "final@invalid.example" } });
+      assert.equal(requested.status,"challenge_created");
+      const outcomes = await Promise.all([consumeLearnerContactVerification(db,identity,product.id,{ challengeId: requested.challenge.id,token: requested.delivery.token }),consumeLearnerContactVerification(db,identity,product.id,{ challengeId: requested.challenge.id,token: requested.delivery.token })]);
+      assert.equal(outcomes.filter(result=>result.status==="verified").length,1);
+      assert.equal(outcomes.filter(result=>result.status==="invalid_challenge").length,1);
+      const verified = outcomes.find(result=>result.status==="verified").preference;
+      assert.equal(verified.enabled,false);assert.ok(verified.destinationVerifiedAt);
+      assert.equal("destinationEncryptedEnvelope" in verified,false);
+      assert.equal((await saveLearnerNotificationConsent(db,identity,product.id,{ channel:"email",enabled:true,expectedRevision:verified.revision })).status,"saved");
+    });
+    const event = { channel: "sms", event: "lesson_published", eventIdentity: "synthetic_outbox_first", message: { title: "Synthetic lesson", body: "Synthetic only private message", path: "/portal/synthetic/learn/course" } };
+    let queued, claim;
+    await check("outbox deduplicates concurrent real database event producers", async () => {
+      const outcomes = await Promise.all([enqueueLearnerNotification(db, identity, event), enqueueLearnerNotification(db, identity, event)]);
+      assert.ok(outcomes[0]); assert.equal(outcomes[0].id, outcomes[1].id); queued = outcomes[0];
+      const row = await db.learnerNotificationDelivery.findUniqueOrThrow({ where: { id: queued.id } });
+      assert.equal(row.payloadEncryptedEnvelope.includes(event.message.body), false);
+    });
+    await check("outbox foreign scope cannot queue or claim owning recipient", async () => {
+      assert.equal(await enqueueLearnerNotification(db, { ...identity, vendorId: foreign.id }, event), null);
+      assert.equal(await claimLearnerNotification(db, foreign.id, queued.id), null);
+      assert.equal((await db.learnerNotificationDelivery.findUniqueOrThrow({ where: { id: queued.id } })).status, "queued");
+    });
+    await check("concurrent worker claim admits exactly one owner", async () => {
+      const claims = await Promise.all([claimLearnerNotification(db,vendor.id,queued.id), claimLearnerNotification(db,vendor.id,queued.id)]);
+      assert.equal(claims.filter(Boolean).length, 1); claim = claims.find(Boolean);
+      assert.equal(claim.message.body, event.message.body);
+      assert.equal((await db.learnerNotificationDelivery.findUniqueOrThrow({ where: { id: queued.id } })).attemptCount, 1);
+    });
+    await check("forged or replayed worker completion cannot mark delivery", async () => {
+      assert.equal(await finishLearnerNotification(db, { vendorId: vendor.id, id: queued.id, claimToken: "x".repeat(43), outcome: "sent" }), false);
+      assert.equal(await finishLearnerNotification(db, { vendorId: vendor.id, id: queued.id, claimToken: claim.claimToken, outcome: "indeterminate" }), true);
+      assert.equal(await finishLearnerNotification(db, { vendorId: vendor.id, id: queued.id, claimToken: claim.claimToken, outcome: "sent" }), false);
+      assert.equal(await claimLearnerNotification(db,vendor.id,queued.id), null);
+      assert.equal((await db.learnerNotificationDelivery.findUniqueOrThrow({ where: { id: queued.id } })).status, "indeterminate");
+    });
+    await check("consent revision change suppresses a queued event", async () => {
+      const pending = await enqueueLearnerNotification(db,identity,{ ...event, eventIdentity: "synthetic_outbox_changed_consent" });
+      assert.ok(pending);
+      assert.equal((await saveLearnerNotificationConsent(db,identity,product.id,{ channel: "sms", enabled: false, expectedRevision: 3 })).status,"saved");
+      assert.equal(await claimLearnerNotification(db,vendor.id,pending.id),null);
+      assert.equal((await db.learnerNotificationDelivery.findUniqueOrThrow({ where: { id: pending.id } })).status,"suppressed");
+    });
+    await check("real full refund suppresses queued delivery and further producer events", async () => {
+      assert.equal((await saveLearnerNotificationConsent(db,identity,product.id,{ channel: "sms", enabled: true, expectedRevision: 4 })).status,"saved");
+      const pending = await enqueueLearnerNotification(db,identity,{ ...event, eventIdentity: "synthetic_outbox_before_refund" });
+      assert.ok(pending);
+      await db.$transaction(tx => reconcileCommerceOrderRefund(tx,{ vendorId: vendor.id, orderId, providerName: "synthetic", eventIdentity: randomUUID(), amountCents: 1000, occurredAt: new Date() }));
+      assert.equal(await claimLearnerNotification(db,vendor.id,pending.id),null);
+      assert.equal((await db.learnerNotificationDelivery.findUniqueOrThrow({ where: { id: pending.id } })).status,"suppressed");
+      assert.equal(await enqueueLearnerNotification(db,identity,{ ...event, eventIdentity: "synthetic_outbox_after_refund" }),null);
+    });
+    });
+  if (sourceSnapshot().revision !== sourceAtStart.revision) throw new Error("notification-source-changed-during-verification");
   } finally { await db.$disconnect(); }
 } });
-const receipt = { status: migration.status, migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, rawLogsSaved: false } };
+const receipt = { source: sourceAtStart, status: migration.status, migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, rawLogsSaved: false } };
 fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 10 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 20 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
