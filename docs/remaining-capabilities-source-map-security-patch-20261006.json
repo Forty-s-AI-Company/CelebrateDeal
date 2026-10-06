@@ -1,0 +1,90 @@
+{
+  "task_id": "source-map-security-patch",
+  "source_revision": "sha256:b1f8a4da221b2a655165adedb1568caebaa8aca998d204c660bde5fc6b50d352",
+  "base": "daa6372a6e0f060e93de2c2e10afa0c9c4d09c73",
+  "changed_files": [
+    "package.json",
+    "package-lock.json"
+  ],
+  "advisory": "https://github.com/advisories/GHSA-68fv-2mgg-jv7q",
+  "patch": "source-map-js 1.2.2 exact override and lock",
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "audit",
+      "revision": "sha256:b1f8a4da221b2a655165adedb1568caebaa8aca998d204c660bde5fc6b50d352",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 2.922,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\source-map-security-patch\\CelebrateDeal\\.ai-team\\tmp\\source-map-patch\\audit.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lockfile",
+      "revision": "sha256:b1f8a4da221b2a655165adedb1568caebaa8aca998d204c660bde5fc6b50d352",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.078,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\source-map-security-patch\\CelebrateDeal\\.ai-team\\tmp\\source-map-patch\\lockfile.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "source-map",
+      "revision": "sha256:b1f8a4da221b2a655165adedb1568caebaa8aca998d204c660bde5fc6b50d352",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.125,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\source-map-security-patch\\CelebrateDeal\\.ai-team\\tmp\\source-map-patch\\source-map.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:b1f8a4da221b2a655165adedb1568caebaa8aca998d204c660bde5fc6b50d352",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 91.734,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\source-map-security-patch\\CelebrateDeal\\.ai-team\\tmp\\source-map-patch\\typecheck.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:b1f8a4da221b2a655165adedb1568caebaa8aca998d204c660bde5fc6b50d352",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 88.563,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\source-map-security-patch\\CelebrateDeal\\.ai-team\\tmp\\source-map-patch\\lint.json"
+    }
+  ],
+  "critical_review": {
+    "kind": "review",
+    "revision": "sha256:b1f8a4da221b2a655165adedb1568caebaa8aca998d204c660bde5fc6b50d352",
+    "status": "PASS",
+    "independent": true,
+    "source": "desktop_native",
+    "role": "critical_review",
+    "model": "gpt-6-astra",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "findings": [],
+    "dispatch": 1,
+    "reviewer": "/root/merchant_policy_critical_review",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\source-map-security-patch\\CelebrateDeal\\.ai-team\\tmp\\source-map-patch\\review.json"
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:b1f8a4da221b2a655165adedb1568caebaa8aca998d204c660bde5fc6b50d352"
+  },
+  "status": "LOCAL_READY_REMOTE_CI_PENDING",
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "ownership": "root only writer; one readonly reviewer; depth 1; dispatch 1/4",
+  "no_production_operation": true
+}
