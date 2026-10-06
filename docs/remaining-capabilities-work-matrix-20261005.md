@@ -131,3 +131,5 @@ F1 通知補記：已接上 configured-only email／Web Push／Twilio SMS／What
 - 90 migrations/70 DB PASS，保留原63並新增7 real service/DB回歸；118 unit/12files、TypeScript、lint PASS。第三條實際雙學員發文→回覆→exact thread/reload→hidden/refund拒絕 browser handle48629仍執行，舊 browser 不支持新source。
 - 前head435dcfbc CI37536141538 FAIL因API registry遺漏完整POST reminders path，已補文件且registry測試PASS；無品質門檻/assertion變更。
 - 證據 docs/remaining-capabilities-f1-notifications-discussion-20261007.json；NOT_READY、NOT_DELIVERED。新 browser、完整非course/channel/nativepush契約、Critical review、canonical acceptance、exactCI/protected交付及其他Goal範圍保持未完成。
+
+- 本次整合 actual browser 最終 PASS：90 migrations、3/3 Chromium、0unexpected/skip/flaky、cleanupPASS；全部收據source檔案hash逐一與當前候選一致。Browser source sha256:f6e90cc860a2e8ef4ac3023cc572921a1de72c60350f663df8fd4a3da4bb0468；已推送checkpoint `0aed9ac98e2cba6faef25e25cefccdd85c7a6373`。獨立native Sol high backend五檔findings[]、dispatch2/4；AGY前置BLOCKED_SENSITIVE_INPUT/0externalattempt如實保留，不代表Claude不可用。非course/fullchannel與整批review/acceptance尚未完成，NOT_READY/NOT_DELIVERED。

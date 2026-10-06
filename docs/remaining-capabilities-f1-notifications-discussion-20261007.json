@@ -33,7 +33,7 @@
     "scripts/staging-migration-compat-preflight.test.mjs": "bd6cb37fdd60570f2d43f2b043951a529e0dde1d6b2329f74ad01537787595ef",
     "scripts/staging-migration-isolated-replay.test.mjs": "965acd2af4e0082de3d7fa057bb4accbc761c7be91ca9aacd692aad277b8f037"
   },
-  "status": "IMPLEMENTED_PARTIALLY_VERIFIED_NOT_READY",
+  "status": "IMPLEMENTED_VERIFIED_DISCUSSION_NOT_READY",
   "database": {
     "source": {
       "files": {
@@ -374,11 +374,24 @@
   "typescript": "PASS",
   "lint": "PASS",
   "browser": {
-    "status": "RUNNING",
-    "handle": 85838,
-    "expected": 3,
-    "oldEvidenceNotReused": true,
-    "previous_failure": "Next.js streamed notFound HTTP 200; corrected to exact data API 404 plus notFound heading and absence of thread/content; original failure receipt preserved"
+    "status": "PASS",
+    "source_revision": "sha256:f6e90cc860a2e8ef4ac3023cc572921a1de72c60350f663df8fd4a3da4bb0468",
+    "source_file_hashes_checked": 1472,
+    "changed_files": [],
+    "migrations": 90,
+    "tests": {
+      "expected": 3,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "actualProviderDelivery": false,
+    "receipt": ".ai-team/reports/learner-notification-browser-latest.json",
+    "previous_failure_retained": "Streamed notFound semantics; exact API404 and no thread UI now verified for hidden/refunded cases"
   },
   "ci_previous": {
     "run": 37536141538,
@@ -418,7 +431,7 @@
   "acceptance": "NOT_READY",
   "delivery": "NOT_DELIVERED",
   "remaining": [
-    "Current browser completion",
+    "Current exact-head CI",
     "All retained non-course notification contracts and channel enrollment/verification/native push journeys",
     "Independent Critical review",
     "Canonical acceptance",
@@ -441,5 +454,12 @@
     "tests": 6,
     "failed": 0,
     "skipped": 0
+  },
+  "verified_checkpoint": "0aed9ac98e2cba6faef25e25cefccdd85c7a6373",
+  "ci_current": {
+    "head": "0aed9ac98e2cba6faef25e25cefccdd85c7a6373",
+    "run": 37538448661,
+    "status": "IN_PROGRESS",
+    "later_evidence_commit_requires_own_exact_head": true
   }
 }
