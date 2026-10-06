@@ -1,3 +1,4 @@
+import { hashPassword } from "../../src/lib/password";
 import { randomUUID } from "node:crypto";
 import { expect,test } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
@@ -53,4 +54,38 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   const foreignStatus=await page.evaluate(async(path)=>(await fetch(path,{headers:{"x-celebratedeal-client":"web"},cache:"no-store"})).status,`/portal/${vendor.slug}/learn/${foreignProduct.id}/notifications`);
   expect(foreignStatus).toBe(404);expect(await db.learnerNotificationPreference.count({where:{vendorId:foreign.id}})).toBe(0);
  }finally{await db.vendor.deleteMany({where:{id:{in:[vendor.id,foreign.id]}}});await db.$disconnect();}
+});
+
+
+test("real manager starts course-linked live, reloads and ends it without republishing the source",async({page})=>{
+ // Multiple cold owner navigations share a bounded journey budget; assertion limits stay unchanged.
+ test.setTimeout(120000);
+ const db=new PrismaClient(),suffix=randomUUID(),password="SyntheticLiveNotificationManager!";
+ const vendor=await db.vendor.create({data:{name:"Synthetic live notifications",slug:`notify-live-${suffix}`,email:`owner-${suffix}@invalid.example`,passwordHash:hashPassword(password),tracking:{create:{}}}});
+ let userId:string|undefined;
+ try{
+  const user=await db.user.create({data:{email:`manager-${suffix}@invalid.example`,name:"Synthetic manager",passwordHash:hashPassword(password),status:"active",memberships:{create:{vendorId:vendor.id,role:"admin",status:"active"}}}});userId=user.id;
+  const product=await db.product.create({data:{vendorId:vendor.id,name:"Synthetic live course",slug:randomUUID(),priceCents:1000,commerceDomain:"course",fulfillmentType:"course",fulfillmentTypeConfirmed:true,isActive:true}});
+  const video=await db.video.create({data:{vendorId:vendor.id,title:"Synthetic media",sourceType:"url",status:"ready",videoUrl:"https://media.example.test/notification-live.mp4",durationSec:100}});
+  const form=await db.registrationForm.create({data:{vendorId:vendor.id,name:"Synthetic registration",slug:randomUUID(),headline:"Synthetic registration",fields:[{key:"name",label:"姓名",type:"text",required:true},{key:"email",label:"Email",type:"email",required:true}]}});
+  const registration=await db.messageTemplate.create({data:{vendorId:vendor.id,name:"Synthetic registration message",channel:"email",trigger:"registration_confirmed",subject:"{{live_title}}",body:"{{name}} {{unsubscribe_url}}",isActive:true}});
+  const reminder=await db.messageTemplate.create({data:{vendorId:vendor.id,name:"Synthetic reminder",channel:"email",trigger:"live_reminder",subject:"{{live_title}}",body:"{{live_url}} {{unsubscribe_url}}",isActive:true}});
+  const script=await db.interactionScript.create({data:{vendorId:vendor.id,name:"Synthetic published script",status:"published"}});
+  const live=await db.live.create({data:{vendorId:vendor.id,title:"Actual manager notification live",slug:randomUUID(),scheduledAt:new Date(Date.now()+3600000),status:"scheduled",streamMode:"vod",videoId:video.id,formId:form.id,messageTemplateId:registration.id,liveReminderTemplateId:reminder.id,interactionScriptId:script.id,products:{create:{productId:product.id}}}});
+  await page.route("https://media.example.test/**",route=>route.abort());
+  await page.goto("/login");await page.getByLabel("Email").fill(user.email);await page.getByLabel("密碼").fill(password);await page.getByRole("button",{name:"登入",exact:true}).click();await expect(page).toHaveURL(/\/dashboard$/u);
+  const path=`/lives/${live.id}/edit`;
+  await page.goto(path);await page.getByRole("button",{name:/桌機／手機預覽發布/u}).click();
+  const start=page.getByRole("button",{name:"開始直播",exact:true});await expect(start).toBeEnabled();
+  page.once("dialog",dialog=>dialog.accept());await start.click();
+  await expect.poll(async()=>(await db.live.findUniqueOrThrow({where:{id:live.id}})).status).toBe("live");
+  await expect.poll(()=>db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}})).toBe(1);
+  const source=await db.learnerNotificationSourceEvent.findFirstOrThrow({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}});expect(source.audienceCustomerKeyHash).toBeNull();expect(source.payloadEncryptedEnvelope).not.toContain(live.title);
+  const beforeSave=(await db.live.findUniqueOrThrow({where:{id:live.id}})).updatedAt.toISOString();
+  await page.reload();await page.getByRole("button",{name:/桌機／手機預覽發布/u}).click();await expect(page.getByRole("button",{name:"儲存變更",exact:true})).toBeEnabled();await page.getByRole("button",{name:"儲存變更",exact:true}).click();
+  await expect.poll(async()=>(await db.live.findUniqueOrThrow({where:{id:live.id}})).updatedAt.toISOString()).not.toBe(beforeSave);
+  await expect.poll(()=>db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}})).toBe(1);
+  await page.reload();await page.getByRole("button",{name:/桌機／手機預覽發布/u}).click();const end=page.getByRole("button",{name:"結束直播",exact:true});await expect(end).toBeEnabled();page.once("dialog",dialog=>dialog.accept());await end.click();
+  await expect.poll(async()=>(await db.live.findUniqueOrThrow({where:{id:live.id}})).status).toBe("ended");expect(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}})).toBe(1);
+ }finally{await db.vendor.delete({where:{id:vendor.id}});if(userId)await db.user.delete({where:{id:userId}});await db.$disconnect();}
 });

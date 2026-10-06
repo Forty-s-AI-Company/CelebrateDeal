@@ -99,3 +99,11 @@ F1 通知補記：已接上 configured-only email／Web Push／Twilio SMS／What
 - ID f1-learner-notifications；owner root；dispatch0/4。實際 owner commitLiveDraft 同交易讀取已持久化live/course binding並發布來源；delivery持鎖檢查精確 session/目前綁定及購買權益。直播结束/重新session/移除binding不發舊通知。
 - 88 migrations、45/45 DB、329 existing action unit、42 notification contract/provider/job unit、lint、TypeScript PASS。DB包含lifecycle source fault完整rollback、foreign/wrong session、single attempt、ended afterclaim、restart/unbind suppression。Callbacks均合成，不代表真實送達。
 - 證據 docs/remaining-capabilities-f1-notifications-live-source-20261007.json。NOT_READY；latest actual owner browser、consultation/discussion及非course適用契約、渠道完整旅程、Critical review、canonical acceptance、exact CI/protected delivery仍未完成。
+
+### F1 通知實際介面與 consultation 回歸 2026-10-07
+
+- ID f1-learner-notifications；owner root；dispatch0/4。修正實際 consultation reservation 的 Prisma salesProject relation；公開預約尚未寫入個人提醒，必須先完成 verified recipient authorization。
+- 88 migrations、48 PostgreSQL regressions、25 targeted unit、lint、TypeScript PASS。Latest actual Chromium 2/2、0 skip/flaky、cleanup PASS，涵蓋 learner refund settings 與 owner live start/Save/reload/end；source sha256:c0edc059f82eb208111b01f207442948be3ea48aa96c96560b606fbc48bce916。
+- 完整 Vitest 628 files/4662 tests PASS；完整 coverage attempt exit1，尚未取得 merged coverage。Node TAP 診斷1056/1067 PASS、11 FAIL；已確認 mirror staged index 與診斷 TEMP 在 workspace 內的環境問題，隔離修正後重跑 RUNNING，不宣稱品質 gate 通過。
+- 證據 docs/remaining-capabilities-f1-notifications-current-regressions-20261007.json；NOT_READY。Consultation/discussion、非course適用契約、渠道及 native push 完整旅程、Critical review、canonical acceptance、exact CI/protected delivery仍需完成。
+- 上述隔離環境修正後，完整 Node TAP 1067/1067 PASS、fail0、skip0。合併 coverage 門檻重跑中；不以單獨 TAP PASS 代替 coverage acceptance。

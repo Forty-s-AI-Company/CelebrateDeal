@@ -218,7 +218,7 @@ describe("consultation reservation concurrency", () => {
     const membershipUpsert = vi.fn().mockResolvedValue({ id: "membership-1" });
     const transaction = {
       $executeRaw: vi.fn().mockResolvedValue(undefined),
-      consultationEvent: { findFirst: vi.fn().mockResolvedValue({ ...event, projectId: "project-trusted", project: { status: "published", publishedAt: new Date("2026-09-01T00:00:00Z") } }) },
+      consultationEvent: { findFirst: vi.fn().mockResolvedValue({ ...event, projectId: "project-trusted", salesProject: { status: "published", publishedAt: new Date("2026-09-01T00:00:00Z") } }) },
       consultationBooking: {
         findMany: vi.fn().mockResolvedValue([]),
         findFirst: vi.fn().mockResolvedValue(null),

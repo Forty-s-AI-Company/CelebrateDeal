@@ -13,9 +13,10 @@ import { dispatchClaimedLearnerNotification } from "../src/lib/learner-notificat
 import { claimLearnerVerificationDelivery, dispatchLearnerVerificationDelivery } from "../src/lib/learner-verification-delivery.ts";
 import { saveCourseLesson } from "../src/lib/course-curriculum.ts";
 import { saveStudentLessonProgress } from "../src/lib/student-course-learning.ts";
+import { reserveConsultationBooking } from "../src/app/actions/consultation-actions.ts";
 import { recordLearnerLiveStartedSources } from "../src/lib/learner-live-notifications.ts";
 import { recordLearnerNotificationSourceEvent, materializeLearnerNotificationSourceEvent } from "../src/lib/learner-notification-source-events.ts";
-const sourceFiles = ["src/app/actions.ts","src/lib/learner-live-notifications.ts","src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
+const sourceFiles = ["src/app/actions/consultation-actions.ts","src/app/actions.ts","src/lib/learner-live-notifications.ts","src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
  "src/lib/learner-notification-contract.ts", "src/lib/learner-notification-preferences.ts", "src/lib/learner-notification-outbox.ts", "src/lib/learner-notification-dispatch.ts", "src/lib/learner-notification-providers.ts", "src/lib/learner-notification-verification.ts",
  "src/lib/student-course-learning.ts", "src/lib/sensitive-data.ts", "src/lib/commerce-order-pii.ts", "src/lib/commerce-order-fulfillment.ts", "src/lib/commerce-orders.ts", "scripts/learner-notification-disposable-qa.mjs"];
 function sourceSnapshot() {
@@ -302,6 +303,25 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
       await db.liveProduct.deleteMany({where:{vendorId:vendor.id,liveId:live.id,productId:product.id}});let calls=0;
       assert.equal((await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:row.id,claimToken:claim.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent"};}})).status,"suppressed");assert.equal(calls,0);
     });
+    const project=await db.salesProject.create({data:{vendorId:vendor.id,name:"Synthetic consultation project",slug:randomUUID(),mode:"consulting",primaryFlow:"consultation",status:"published",publishedAt:new Date()}});
+    const day=new Date();day.setUTCDate(day.getUTCDate()+1);day.setUTCHours(8,0,0,0);
+    const consultation=await db.consultationEvent.create({data:{vendorId:vendor.id,projectId:project.id,title:"Synthetic real booking",durationMinutes:30,timezone:"UTC",weeklySchedule:[{day:day.getUTCDay(),ranges:["08:00-12:00"]}],intakeFormFields:[],isActive:true}});
+    const bookingInput={eventId:consultation.id,startTime:day.toISOString(),clientName:"Synthetic learner",clientEmail:"consultation@invalid.example",clientPhone:"0900000000",answers:{}};
+    await check("real consultation reservation resolves actual salesProject relation and owning membership",async()=>{
+      const result=await reserveConsultationBooking(db,bookingInput);assert.equal(result.status,"booked");
+      const booking=await db.consultationBooking.findUniqueOrThrow({where:{id:result.booking.id}});assert.equal(booking.vendorId,vendor.id);assert.equal(booking.eventId,consultation.id);assert.match(booking.customerKeyHash,/^[A-Za-z0-9_-]{43}$/u);
+      assert.equal(await db.salesProjectCustomer.count({where:{vendorId:vendor.id,projectId:project.id,customerKeyHash:booking.customerKeyHash}}),1);
+      assert.equal(await db.consultationBooking.count({where:{vendorId:foreign.id}}),0);
+    });
+    await check("real concurrent consultation reservation admits only one exact slot",async()=>{
+      const startTime=new Date(day.getTime()+3600000).toISOString();const results=await Promise.all([1,2].map(index=>reserveConsultationBooking(db,{...bookingInput,startTime,clientEmail:`parallel-${index}@invalid.example`})));
+      assert.equal(results.filter(result=>result.status==="booked").length,1);assert.equal(results.filter(result=>result.status==="unavailable").length,1);
+      assert.equal(await db.consultationBooking.count({where:{vendorId:vendor.id,eventId:consultation.id,startTime:new Date(startTime)}}),1);
+    });
+    await check("unpublished consultation project refuses new reservation without writes",async()=>{
+      await db.salesProject.update({where:{id:project.id},data:{status:"draft",publishedAt:null}});const count=await db.consultationBooking.count({where:{vendorId:vendor.id,eventId:consultation.id}});
+      const result=await reserveConsultationBooking(db,{...bookingInput,startTime:new Date(day.getTime()+7200000).toISOString(),clientEmail:"unpublished@invalid.example"});assert.equal(result.status,"unavailable");assert.equal(await db.consultationBooking.count({where:{vendorId:vendor.id,eventId:consultation.id}}),count);
+    });
     const payment = await db.paymentTransaction.create({ data: { vendorId: vendor.id, providerName: "synthetic_no_provider", status: "paid", grossAmountCents: 1000, netAmountCents: 1000 } });
     await db.commerceOrder.update({ where: { id: orderId }, data: { status: "pending_payment", paidAmountCents: 0, primaryPaymentTransactionId: payment.id } });
     await db.commerceEntitlement.update({ where: { id: entitlement.id }, data: { status: "pending", grantedAt: null } });
@@ -444,9 +464,9 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
   if (sourceSnapshot().revision !== sourceAtStart.revision) throw new Error("notification-source-changed-during-verification");
   } finally { await db.$disconnect(); }
 } });
-const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 45 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
+const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 48 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
 fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 45 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 48 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
