@@ -57,3 +57,11 @@ F1 通知補記：已接上 configured-only email／Web Push／Twilio SMS／What
 - 狀態：IMPLEMENTED_WORKER_PHASE_NOT_READY；仍缺 durable challenge delivery、全部六種 event producer、UI/browser、核准非 Production provider 驗證、Critical review、canonical acceptance、精確 head CI 與 PR 交付。整體 Goal 保持 IN_PROGRESS。
 
 - F1 notifications proof API checkpoint：POST /notifications/verify 已接上 server session、CSRF、exact challenge/session/course、strict 4KiB body 與安全 response projection；8 API + 1 registry unit、26 PG/86 migrations、lint、TypeScript PASS。證據 remaining-capabilities-f1-notifications-proof-api-20261007.json。狀態 NOT_READY，驗證碼 durable delivery、六事件 producer、UI/browser、外部 provider、review/gate/CI/交付仍未完成。
+
+### F1 durable contact proof checkpoint 2026-10-07
+
+- ID f1-learner-notifications；owner root；dispatch 0/4；exact source e1f38be324e349969a657be376aa1602e804c2dd。
+- Enroll API 已接上購買權益、server session/CSRF、核准租戶/provider、HTTPS origin、CAS 與同收件人/渠道跨課程 60 秒 cooldown。驗證碼加密 durable queue，輪替/過期/退款拒絕 provider；單筆 provider attempt、不明結果或 commit failure 不自動重送；回應不包含 token/contact。沿用既有 job，沒有新排程。
+- 87 migrations、32 DB、44 targeted unit、12 migration contract、scoped lint、TypeScript PASS；合成 callback，實際渠道/browser 尚未執行。
+- 證據：docs/remaining-capabilities-f1-notifications-durable-proof-20261007.json；revision sha256:984c302d5b8b4baddb9efdd20c0a8239330b923c1558ef25ca5d304859875827。狀態 IMPLEMENTED_DURABLE_PROOF_DELIVERY_PHASE_NOT_READY。all six retained event producers；actual settings UI and browser journeys；approved nonproduction provider injection and validation；independent Critical review；canonical acceptance；exact-head CI/protected PR delivery 尚未完成。
+- Q2 PR379 head 080692a970bcadb312825eda691be63f10d7e093：PR run 37511340335 與 push run 37511330840 SUCCESS；最新修正複審需第 5 次 readonly dispatch 授權，仍未合併/READY。

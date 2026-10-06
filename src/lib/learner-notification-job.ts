@@ -2,6 +2,7 @@ import { getDb } from "./db";
 import { getCanonicalAppUrl } from "./app-url";
 import { claimLearnerNotification } from "./learner-notification-outbox";
 import { dispatchClaimedLearnerNotification } from "./learner-notification-dispatch";
+import { claimLearnerVerificationDelivery, dispatchLearnerVerificationDelivery } from "./learner-verification-delivery";
 import type { NotificationProviderConfiguration } from "./learner-notification-providers";
 import { LearnerPhoneDestination } from "./learner-notification-contract";
 
@@ -34,6 +35,14 @@ export async function processDueLearnerNotifications(env:NodeJS.ProcessEnv=proce
  catch{return [{status:"configuration_missing"}];}
  const db=getDb(),results:Array<{status:string}>=[],deadline=Date.now()+20000;
  try{
+  // Reserve one bounded challenge slot; both queues share the invocation deadline.
+  const proofs=await db.learnerNotificationVerification.findMany({where:{vendorId:{in:vendors},deliveryStatus:"queued",deliveryAttemptCount:0,deliveryNextAttemptAt:{lte:new Date()},preference:{is:{channel:{in:channels}}}},orderBy:[{createdAt:"asc"},{id:"asc"}],take:1,select:{vendorId:true,id:true}});
+  for(const row of proofs){
+   if(Date.now()>=deadline)break;
+   const claim=await claimLearnerVerificationDelivery(db,row);
+   if(!claim){results.push({status:"claimed_elsewhere"});continue;}
+   const outcome=await dispatchLearnerVerificationDelivery(db,claim,{appOrigin,configuration});results.push({status:outcome.status});
+  }
   const due=await db.learnerNotificationDelivery.findMany({where:{vendorId:{in:vendors},status:"queued",attemptCount:{lt:5},nextAttemptAt:{lte:new Date()},preference:{is:{channel:{in:channels}}}},orderBy:[{createdAt:"asc"},{id:"asc"}],take:5,select:{vendorId:true,id:true}});
   for(const row of due){
    if(Date.now()>=deadline)break;

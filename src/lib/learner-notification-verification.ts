@@ -1,11 +1,12 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { getStudentCourse, type CourseLearningStore } from "./student-course-learning";
+import { encryptSensitiveValue } from "./sensitive-data";
 import type { StudentPortalScope } from "./student-portal";
 import { LearnerEmailDestination, LearnerPhoneDestination, LearnerPushDestination, LearnerNotificationScope, protectLearnerNotificationDestination } from "./learner-notification-contract";
 
-const Enrollment = z.discriminatedUnion("channel", [
+export const LearnerContactEnrollmentInput = z.discriminatedUnion("channel", [
  z.object({ channel: z.literal("push"), destination: LearnerPushDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),
  z.object({ channel: z.literal("email"), destination: LearnerEmailDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),
  z.object({ channel: z.literal("sms"), destination: LearnerPhoneDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),
@@ -29,18 +30,21 @@ const publicFields = { id: true, channel: true, enabled: true, revision: true, d
  * requesting browser. Merely requesting a challenge cannot verify a destination. */
 export async function requestLearnerContactVerification(db: Database, session: StudentPortalScope, productId: string, raw: unknown) {
  const scope = LearnerNotificationScope.parse({ vendorId: session.vendorId, customerKeyHash: session.customerKeyHash, productId });
- const input = Enrollment.parse(raw), token = randomBytes(32).toString("base64url");
+ const input = LearnerContactEnrollmentInput.parse(raw), token = randomBytes(32).toString("base64url");
  const destination = protectLearnerNotificationDestination(scope,input.channel,input.destination);
  return verificationTransaction(db,async tx => {
   if (!await getStudentCourse(tx,session,productId)) return { status: "not_found" } as const;
   const identity = { ...scope, channel: input.channel };
   const existing = await tx.learnerNotificationPreference.findFirst({ where: identity });
   if ((existing?.revision ?? 0) !== input.expectedRevision) return { status: "conflict" } as const;
+  if (await tx.learnerNotificationVerification.findFirst({ where: { vendorId: scope.vendorId, preference: { is: { vendorId: scope.vendorId, customerKeyHash: scope.customerKeyHash, channel: input.channel } }, createdAt: { gt: new Date(Date.now()-60000) } }, select: { id: true } })) return { status: "rate_limited" } as const;
   // The new contact invalidates all pending old challenges and previous dispatch consent.
   const preference = existing ? await tx.learnerNotificationPreference.update({ where: { id: existing.id },
    data: { enabled: false, destinationVerifiedAt: null, destinationEncryptedEnvelope: null, destinationKeyHash: null, revision: { increment: 1 } }, select: publicFields })
    : await tx.learnerNotificationPreference.create({ data: identity, select: publicFields });
-  const challenge = await tx.learnerNotificationVerification.create({ data: { vendorId: scope.vendorId, productId, preferenceId: preference.id,
+  await tx.learnerNotificationVerification.updateMany({ where: { vendorId: scope.vendorId, productId, preferenceId: preference.id, deliveryStatus: "queued" }, data: { deliveryStatus: "suppressed", deliveryTokenEncryptedEnvelope: null, deliveryNextAttemptAt: null } });
+  const challengeId = randomUUID();
+  const challenge = await tx.learnerNotificationVerification.create({ data: { id: challengeId, deliveryStatus: "queued", deliveryNextAttemptAt: new Date(), deliveryTokenEncryptedEnvelope: encryptSensitiveValue(token,`learner-contact-proof-v1:${JSON.stringify([scope.vendorId,challengeId])}`), vendorId: scope.vendorId, productId, preferenceId: preference.id,
    consentRevision: preference.revision, tokenHash: hashToken(token), destinationEncryptedEnvelope: destination.encryptedEnvelope,
    destinationKeyHash: destination.destinationKeyHash, expiresAt: new Date(Date.now()+15*60*1000) }, select: { id: true, expiresAt: true } });
   return { status: "challenge_created", challenge, preference, delivery: { channel: input.channel, destination: input.destination, token } } as const;

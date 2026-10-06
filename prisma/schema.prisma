@@ -3715,6 +3715,13 @@ model LearnerNotificationVerification {
   tokenHash String @unique
   destinationEncryptedEnvelope String
   destinationKeyHash String
+  deliveryTokenEncryptedEnvelope String?
+  deliveryStatus String @default("suppressed")
+  deliveryAttemptCount Int @default(0)
+  deliveryClaimTokenHash String?
+  deliveryNextAttemptAt DateTime?
+  deliveryReceiptEncryptedEnvelope String?
+  deliveredAt DateTime?
   attemptCount Int @default(0)
   expiresAt DateTime
   consumedAt DateTime?
@@ -3722,4 +3729,5 @@ model LearnerNotificationVerification {
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   preference LearnerNotificationPreference @relation(fields: [vendorId, productId, preferenceId], references: [vendorId, productId, id], onDelete: Cascade, map: "LearnerNotificationVerification_preference_fkey")
   @@index([vendorId, preferenceId, expiresAt], map: "LearnerNotificationVerification_scope_expiry_idx")
+  @@index([vendorId, deliveryStatus, deliveryNextAttemptAt], map: "LearnerNotificationVerification_delivery_due_idx")
 }

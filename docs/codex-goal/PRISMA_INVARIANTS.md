@@ -11,7 +11,7 @@
 | 項目 | 結果 |
 |---|---:|
 | Prisma models | 129 |
-| Migration directories | 86 |
+| Migration directories | 87 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -227,3 +227,5 @@ F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_af
 ## 2026-10-07 通知資料層候選
 
 新增 `LearnerNotificationPreference`、`LearnerNotificationDelivery`、`LearnerNotificationVerification` 與前向 `20261007010000_learner_notifications`。129 models、86 migrations；owned disposable PostgreSQL 全部套用成功，10 項回歸通過，包含匿名角色實際 RLS 讀取隔離/寫入拒絕、跨租戶 composite FK、CAS、退款後取消同意與無權益 opt-in 拒絕。驗證聯絡方式、實際渠道、UI、獨立審查與 canonical gate 尚未完成；不可宣稱 READY。
+
+新增前向 `20261007020000_learner_verification_delivery`，驗證碼僅加密保存；歷史 challenge 無可恢復 token，保持 suppressed。新增 status/attempt/claim/payload CHECK 與 due index；129 models、87 migrations。整批仍 NOT_READY。

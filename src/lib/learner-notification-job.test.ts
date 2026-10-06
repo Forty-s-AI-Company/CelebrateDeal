@@ -1,12 +1,13 @@
 import { beforeEach,expect,it,vi } from "vitest";
-const mocks=vi.hoisted(()=>({getDb:vi.fn(),find:vi.fn(),claim:vi.fn(),dispatch:vi.fn()}));
+const mocks=vi.hoisted(()=>({getDb:vi.fn(),find:vi.fn(),claim:vi.fn(),dispatch:vi.fn(),proofFind:vi.fn(),proofClaim:vi.fn(),proofDispatch:vi.fn()}));
 vi.mock("./db",()=>({getDb:mocks.getDb}));
 vi.mock("./learner-notification-outbox",()=>({claimLearnerNotification:mocks.claim}));
 vi.mock("./learner-notification-dispatch",()=>({dispatchClaimedLearnerNotification:mocks.dispatch}));
+vi.mock("./learner-verification-delivery",()=>({claimLearnerVerificationDelivery:mocks.proofClaim,dispatchLearnerVerificationDelivery:mocks.proofDispatch}));
 import { processDueLearnerNotifications,readLearnerNotificationProviderConfiguration } from "./learner-notification-job";
-const db={learnerNotificationDelivery:{findMany:mocks.find}};
+const db={learnerNotificationDelivery:{findMany:mocks.find},learnerNotificationVerification:{findMany:mocks.proofFind}};
 const env:NodeJS.ProcessEnv={NODE_ENV:"test",NEXT_PUBLIC_APP_URL:"https://app.example.test",LEARNER_NOTIFICATIONS_EXECUTOR_ENABLED:"true",LEARNER_NOTIFICATIONS_JOB_VENDOR_IDS:"vendor-1,vendor-2",RESEND_API_KEY:"synthetic-provider-credential",EMAIL_FROM:"synthetic@invalid.example"};
-beforeEach(()=>{vi.clearAllMocks();mocks.getDb.mockReturnValue(db);mocks.find.mockResolvedValue([{vendorId:"vendor-1",id:"delivery-1"}]);mocks.claim.mockResolvedValue({claimToken:"a".repeat(43)});mocks.dispatch.mockResolvedValue({status:"sent",providerReceipt:"private-provider-receipt"});});
+beforeEach(()=>{vi.clearAllMocks();mocks.proofFind.mockResolvedValue([]);mocks.proofClaim.mockResolvedValue(null);mocks.getDb.mockReturnValue(db);mocks.find.mockResolvedValue([{vendorId:"vendor-1",id:"delivery-1"}]);mocks.claim.mockResolvedValue({claimToken:"a".repeat(43)});mocks.dispatch.mockResolvedValue({status:"sent",providerReceipt:"private-provider-receipt"});});
 it("disabled executor never reads the database or dispatches",async()=>{
  expect(await processDueLearnerNotifications({...env,LEARNER_NOTIFICATIONS_EXECUTOR_ENABLED:"false"})).toEqual([]);expect(mocks.getDb).not.toHaveBeenCalled();expect(mocks.dispatch).not.toHaveBeenCalled();
 });
@@ -40,4 +41,15 @@ it("spent invocation budget never claims another delivery",async()=>{
  const clock=vi.spyOn(Date,"now").mockReturnValue(20000);clock.mockReturnValueOnce(0);
  try{expect(await processDueLearnerNotifications(env)).toEqual([]);expect(mocks.claim).not.toHaveBeenCalled();expect(mocks.dispatch).not.toHaveBeenCalled();}
  finally{clock.mockRestore();}
+});
+
+it("drains one exact challenge through the same approved tenant/provider boundary",async()=>{
+ mocks.proofFind.mockResolvedValue([{vendorId:"vendor-2",id:"proof-1"}]);mocks.proofClaim.mockResolvedValue({vendorId:"vendor-2",id:"proof-1",claimToken:"b".repeat(43)});mocks.proofDispatch.mockResolvedValue({status:"sent"});
+ expect(await processDueLearnerNotifications(env)).toEqual([{status:"sent"},{status:"sent"}]);
+ expect(mocks.proofFind).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({vendorId:{in:["vendor-1","vendor-2"]},deliveryStatus:"queued",deliveryAttemptCount:0,preference:{is:{channel:{in:["email"]}}}}),take:1,select:{vendorId:true,id:true}}));
+ expect(mocks.proofDispatch).toHaveBeenCalledWith(db,{vendorId:"vendor-2",id:"proof-1",claimToken:"b".repeat(43)},expect.objectContaining({appOrigin:"https://app.example.test"}));
+});
+it("claimed challenge is never replaced or replayed",async()=>{
+ mocks.proofFind.mockResolvedValue([{vendorId:"vendor-2",id:"proof-1"}]);
+ expect(await processDueLearnerNotifications(env)).toEqual([{status:"claimed_elsewhere"},{status:"sent"}]);expect(mocks.proofDispatch).not.toHaveBeenCalled();
 });

@@ -159,3 +159,5 @@
 2026-10-07 通知 worker 補記：既有 `GET /api/jobs/email-deliveries`／`POST /api/jobs/email-deliveries` 沿用 Cron／Job Bearer 驗證。新增通知 draining 只在明確 executor flag 與最多25個核准 tenant ID 的 process config 存在時啟用；每次最多5個due ID、有限時間預算。回應只新增有界status/count，不公開recipient、claim token、contact、payload或provider body。未新增第二個cron／workflow。此批全流程provider/browser/獨立review仍待驗收。
 
 | `POST /portal/[vendorSlug]/learn/[courseId]/notifications/verify` | 同源 client marker、CSRF、學員 session | 嚴格 4KiB JSON proof；session/course scope，禁止 caller tenant | 目前權益、TTL、五次嘗試與 atomic consume；成功保持 opt-in 關閉；只回公開欄位，private no-store；400/404/409/503 | 同路徑 8 unit、verification DB 回歸；browser 待驗證 |
+
+| `POST /portal/[vendorSlug]/learn/[courseId]/notifications/enroll` | 同源 client marker、CSRF、學員 session、server approved executor/provider/tenant | strict 4KiB destination，購買權益與 CAS；60 秒 cooldown | 加密持久化 challenge，202 只回 challenge id/expiry/公開偏好，不回 token/contact；400/404/409/429/503 | 同路徑 unit、disposable PG；browser 待驗證 |
