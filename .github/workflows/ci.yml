@@ -80,6 +80,10 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Affiliate portal database boundaries
+        run: npx vitest run --config vitest.affiliate-portal-db.config.ts
+        env:
+          COURSE_LEARNING_DISPOSABLE: verified-loopback
       - name: Native course database boundaries
         run: npx vitest run --config vitest.course-learning-db.config.ts
         env:

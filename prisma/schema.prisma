@@ -293,6 +293,7 @@ model VendorMember {
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  affiliatePortalAccesses     AffiliatePortalAccess[]
   teamMemberships             TeamMembership[]
   createdTeamTemplateVersions TeamFunnelTemplateVersion[]   @relation("TeamTemplateVersionCreatedBy")
   templateFieldLocks          TeamFunnelTemplateFieldLock[]
@@ -1126,9 +1127,26 @@ model Affiliate {
   clicks          AffiliateClick[]
   commissions     AffiliateCommission[]
   payouts         AffiliatePayout[]
+  portalAccess    AffiliatePortalAccess?
   teamMemberships TeamMembership[]
 
   @@unique([vendorId, id])
+}
+
+/// Access is granted by a tenant manager to an existing tenant member.
+/// Composite FKs forbid linking a foreign member or affiliate.
+model AffiliatePortalAccess {
+  vendorId       String
+  affiliateId    String
+  vendorMemberId String
+  active         Boolean @default(true)
+  revision       Int @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  affiliate      Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Cascade)
+  member         VendorMember @relation(fields: [vendorId, vendorMemberId], references: [vendorId, id], onDelete: Cascade)
+  @@id([vendorId, affiliateId])
+  @@index([vendorId, vendorMemberId, active])
 }
 
 model AffiliateClick {
