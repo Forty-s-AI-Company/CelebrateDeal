@@ -1,0 +1,64 @@
+{
+  "status": "IMPLEMENTED_DATA_LAYER_ONLY",
+  "capturedAt": "2026-10-06T17:54:25.251220+00:00",
+  "files": {
+    "prisma/schema.prisma": "abf1645262725ee127f43a8efad727db5725d85832fdc3157dea59e0129bb60f",
+    "prisma/migrations/20261007010000_learner_notifications/migration.sql": "9556eb9165d262a8c17b26a2ca87a06da024d8e95cf3a1167b4e3f1556071515",
+    "src/lib/learner-notification-contract.ts": "c66cb4018d6b7888caa0bf7f332d7f21faff7aba6c36244565abd2175fc36efa",
+    "src/lib/learner-notification-contract.test.ts": "8339c43ff7801a0fd08fcdfeea30cbe8edcc7a8720141e1b0fa3d5f72f0b621a",
+    "scripts/learner-notification-disposable-qa.mjs": "083ac9b82f32c83760419b6f7a0c80d65be68c4e46a10589f7fc1a0dea7664d1"
+  },
+  "database": {
+    "status": "PASS",
+    "migrationCount": 86,
+    "tests": [
+      {
+        "name": "cross-tenant product FK refuses preference",
+        "status": "PASS"
+      },
+      {
+        "name": "cross-tenant delivery/preference FK refuses dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent consent CAS admits one writer",
+        "status": "PASS"
+      },
+      {
+        "name": "event uniqueness survives a consent revision change",
+        "status": "PASS"
+      },
+      {
+        "name": "default-deny RLS hides rows and rejects anonymous-role writes",
+        "status": "PASS"
+      },
+      {
+        "name": "verification rejects exhausted attempts and expired enrollment",
+        "status": "PASS"
+      }
+    ],
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "safety": {
+      "loopbackOnly": true,
+      "syntheticOnly": true,
+      "externalOperations": false,
+      "rawLogsSaved": false
+    }
+  },
+  "unit": {
+    "passed": 4,
+    "failed": 0
+  },
+  "lint": "PASS",
+  "remaining": [
+    "authenticated preference and verification APIs",
+    "durable delivery claim and entitlement checks",
+    "provider adapters and configured non-production journeys",
+    "learner interface and complete channel flows",
+    "independent review and canonical acceptance and exact-head CI"
+  ],
+  "deliveryReady": false
+}

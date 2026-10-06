@@ -10,7 +10,7 @@ export const LearnerNotificationScope = z.object({
   productId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u),
 }).strict();
 export type LearnerNotificationScope = z.infer<typeof LearnerNotificationScope>;
-export const LearnerNotificationEvent = z.enum(["lesson_published", "discussion_reply", "course_completed"]);
+export const LearnerNotificationEvent = z.enum(["lesson_published", "discussion_reply", "course_completed", "live_started", "consultation_reminder", "payment_success"]);
 export type LearnerNotificationEvent = z.infer<typeof LearnerNotificationEvent>;
 const Phone = z.string().regex(/^\+[1-9][0-9]{7,14}$/u);
 

@@ -185,6 +185,10 @@ model Vendor {
   courseLessons CourseLesson[]
   courseLessonProgress CourseLessonProgress[]
 
+  learnerNotificationPreferences LearnerNotificationPreference[]
+  learnerNotificationDeliveries LearnerNotificationDelivery[]
+  learnerNotificationVerifications LearnerNotificationVerification[]
+
 }
 
 model User {
@@ -426,6 +430,8 @@ model Product {
   @@index([imageAssetId])
   courseLessons CourseLesson[]
   courseLessonProgress CourseLessonProgress[]
+
+  learnerNotificationPreferences LearnerNotificationPreference[]
 
 }
 
@@ -3644,4 +3650,76 @@ model CourseLessonProgress {
 
   @@unique([vendorId, lessonId, customerKeyHash])
   @@index([vendorId, productId, customerKeyHash])
+}
+
+/// Preferences are scoped to the authenticated buyer and the purchased product.
+model LearnerNotificationPreference {
+  id String @id @default(cuid())
+  vendorId String
+  productId String
+  customerKeyHash String
+  channel String
+  enabled Boolean @default(false)
+  revision Int @default(1)
+  consentedAt DateTime?
+  destinationEncryptedEnvelope String?
+  destinationKeyHash String?
+  destinationVerifiedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  deliveries LearnerNotificationDelivery[]
+  verifications LearnerNotificationVerification[]
+  @@unique([vendorId, productId, id])
+  @@unique([vendorId, customerKeyHash, productId, channel], map: "LearnerNotificationPreference_scope_channel_key")
+  @@index([vendorId, productId, enabled], map: "LearnerNotificationPreference_product_enabled_idx")
+}
+
+/// A durable event identity survives consent changes and provider response loss.
+model LearnerNotificationDelivery {
+  id String @id @default(cuid())
+  vendorId String
+  productId String
+  preferenceId String
+  event String
+  eventIdentity String
+  deduplicationKey String
+  consentRevision Int
+  payloadEncryptedEnvelope String
+  status String @default("queued")
+  attemptCount Int @default(0)
+  claimTokenHash String?
+  claimedAt DateTime?
+  nextAttemptAt DateTime? @default(now())
+  providerReceiptEncryptedEnvelope String?
+  lastErrorCode String?
+  dispatchedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  preference LearnerNotificationPreference @relation(fields: [vendorId, productId, preferenceId], references: [vendorId, productId, id], onDelete: Cascade, map: "LearnerNotificationDelivery_preference_fkey")
+  @@unique([vendorId, id])
+  @@unique([vendorId, deduplicationKey])
+  @@index([status, nextAttemptAt])
+  @@index([vendorId, preferenceId, createdAt])
+}
+
+/// Verification is bounded and attached to the same recipient/course consent revision.
+model LearnerNotificationVerification {
+  id String @id @default(cuid())
+  vendorId String
+  productId String
+  preferenceId String
+  consentRevision Int
+  tokenHash String @unique
+  destinationEncryptedEnvelope String
+  destinationKeyHash String
+  attemptCount Int @default(0)
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  preference LearnerNotificationPreference @relation(fields: [vendorId, productId, preferenceId], references: [vendorId, productId, id], onDelete: Cascade, map: "LearnerNotificationVerification_preference_fkey")
+  @@index([vendorId, preferenceId, expiresAt], map: "LearnerNotificationVerification_scope_expiry_idx")
 }
