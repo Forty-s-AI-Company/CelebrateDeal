@@ -1,0 +1,185 @@
+{
+  "schemaVersion": "celebratedeal-affiliate-portal/v1",
+  "status": "LOCAL_ACCEPTED_REMOTE_CI_PENDING",
+  "source_revision": "sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0",
+  "snapshot_files": [
+    ".github/workflows/ci.yml",
+    "docs/codex-goal/PRISMA_INVARIANTS.md",
+    "playwright.affiliate-portal.config.ts",
+    "prisma/migrations/20261006080000_affiliate_portal_access/migration.sql",
+    "prisma/schema.prisma",
+    "scripts/affiliate-portal-browser-qa.mjs",
+    "scripts/affiliate-portal-disposable-qa.mjs",
+    "scripts/g7-email-operations-browser-qa.test.mjs",
+    "scripts/prisma-invariant-inventory.test.ts",
+    "scripts/prisma-loopback-disposable-migration-runner.mjs",
+    "scripts/staging-migration-compat-preflight.test.mjs",
+    "scripts/staging-migration-isolated-replay.test.mjs",
+    "scripts/staging-payuni-management-migrate.test.ts",
+    "src/app/(app)/affiliates/[id]/access/page.tsx",
+    "src/app/(app)/affiliates/[id]/page.tsx",
+    "src/app/actions/affiliate-portal-actions.ts",
+    "src/app/affiliate-portal/[vendorSlug]/[affiliateId]/page.tsx",
+    "src/app/affiliate-portal/page.tsx",
+    "src/components/app-shell.tsx",
+    "src/lib/affiliate-portal.db.test.ts",
+    "src/lib/affiliate-portal.test.ts",
+    "src/lib/affiliate-portal.ts",
+    "tests/e2e/affiliate-portal.spec.ts",
+    "tests/e2e/wp88-direct-url-guard-matrix.spec.ts",
+    "vitest.affiliate-portal-db.config.ts"
+  ],
+  "base": "728f0e591c0a5d4a83fe98d6a98146f9d7d0d842",
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.468,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\affiliate-portal\\unit-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 23.5,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\affiliate-portal\\typecheck-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "strict_index",
+      "revision": "sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 69.234,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\affiliate-portal\\strict_index-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 16.704,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\affiliate-portal\\lint-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "db",
+      "revision": "sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 21.766,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\affiliate-portal\\db-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser",
+      "revision": "sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 322.031,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\affiliate-portal\\browser-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "contracts",
+      "revision": "sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 117.234,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\affiliate-portal\\contracts-final.json"
+    }
+  ],
+  "browser": {
+    "schemaVersion": "affiliate-portal-browser/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-05T23:40:20.685Z",
+    "finishedAt": "2026-10-05T23:45:41.728Z",
+    "failedTitles": [],
+    "browser": {
+      "expected": 1,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "db": {
+    "schemaVersion": "affiliate-portal-disposable/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-05T23:39:58.144Z",
+    "finishedAt": "2026-10-05T23:40:19.788Z",
+    "failedTitles": [],
+    "failureDiagnostics": []
+  },
+  "review": {
+    "kind": "review",
+    "revision": "sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0",
+    "status": "PASS",
+    "independent": true,
+    "source": "desktop_native",
+    "role": "critical_review",
+    "model": "gpt-6-astra",
+    "requested_effort": "high",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "findings": [],
+    "dispatches": 4,
+    "summary": "Independent readonly affiliate_portal_critical_review final dispatch verified all 25 snapshot files and exact source hash; no BLOCKER/MAJOR/MINOR/NIT findings. No claim of reviewer test execution.",
+    "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\affiliate-portal\\review-final.json"
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0"
+  },
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "writer": "root",
+  "dispatches": 4,
+  "dispatch_limit": 4,
+  "depth_limit": 1,
+  "readonly_helpers_max": 1,
+  "fallback_events": [],
+  "observed": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "migration_count": 85,
+  "production": "NOT_PERFORMED",
+  "delivery": "PENDING_EXACT_HEAD_CI_AND_PROTECTED_MERGE",
+  "contract": "Explicit tenant-qualified member access, CAS revoke even after disabled, immutable ledger net/refund, 25+1 searchable manager members and bounded statement/public destination pages; public merchant ?ref destination + real tracking handler tested. Scheduled fixture does not claim admitted automatic playback tracking. Remaining F2 tiers/tax/payout/upsell/messages still pending."
+}

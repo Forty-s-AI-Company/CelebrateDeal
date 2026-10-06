@@ -4,14 +4,14 @@
 
 基準 revision：`4ed3b463`
 
-> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 84，該歷史收據不代表新 migration、Staging 或 Production 已套用。
+> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 85，該歷史收據不代表新 migration、Staging 或 Production 已套用。
 
 ## Inventory 基準
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 125 |
-| Migration directories | 84 |
+| Prisma models | 126 |
+| Migration directories | 85 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -221,3 +221,5 @@
 ## 2026-10-06 原生課程候選
 
 新增 `CourseLesson` 與 `CourseLessonProgress`；前向 migration `20261006040000_native_course_learning`。三欄位 lesson 外鍵同時約束 tenant、course、lesson，進度具非負上限約束。此候選的 disposable PostgreSQL 證據尚待執行，不沿用上方歷史收據。
+
+F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。

@@ -33,6 +33,7 @@ export default async function AffiliateDetailPage({ params }: { params: Promise<
         action={<ButtonLink href={`/affiliates/${affiliate.id}/edit`}><Pencil size={16} />編輯夥伴</ButtonLink>}
       />
 
+      <div className="mb-5"><ButtonLink href={`/affiliates/${encodeURIComponent(affiliate.id)}/access`} tone="secondary">夥伴入口授權</ButtonLink></div>
       <div className="mb-6 grid gap-4 md:grid-cols-4">
         <Card>
           <p className="text-sm text-slate-500">點擊</p>
