@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "celebratedeal-affiliate-remuneration-foundation/v1",
+  "goal_id": "remaining-capabilities-20261005",
+  "task_id": "f2-merchant-remuneration",
+  "source_commit": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "source_paths": [
+    "src/lib/taiwan-tax-withholding.ts",
+    "src/lib/tax-identity.ts",
+    "src/components/affiliate-remuneration-dialog.tsx",
+    "src/app/actions/affiliate-payout-validation.ts",
+    "prisma/migrations/20260907200000_affiliate_payout_taiwan_withholding/migration.sql"
+  ],
+  "dependency_head": "f3e65b97940448e0b2d0803c751591ff8d49f01c",
+  "integrated_master": "f739c7e017d430f05cc10a85728f5335e1bc20be",
+  "base_head": "3b12bdaa4e6f14119670606ca6ef8c1859b52562",
+  "owner": "root",
+  "readonly_helpers": 0,
+  "dispatches": 0,
+  "dispatch_limit": 4,
+  "status": "CALCULATION_FOUNDATION_IMPLEMENTED_NOT_READY",
+  "source_files": {
+    "src/lib/affiliate-remuneration.ts": "e7c895000403f0c2642486d3dc006f6aa71c629c84e5b4c1e52fcb644b19e775",
+    "src/lib/affiliate-remuneration.test.ts": "c961c43b854defb0dfd01cf3e4d30e411779f6bb006a2693d37c7b50ad03e45c"
+  },
+  "checks": {
+    "unit_passed": 17,
+    "unit_files": 1,
+    "typescript": "PASS",
+    "lint": "PASS",
+    "db": "NOT_RUN_NO_SCHEMA_CHANGE",
+    "browser": "NOT_RUN_NO_UI_YET",
+    "independent_critical_review": "NOT_COMPLETE",
+    "canonical_acceptance": "NOT_READY",
+    "exact_head_ci": "NOT_RUN"
+  },
+  "implemented": [
+    "Integer-only PostgreSQL cent bounds and versioned quotes",
+    "Resident/nonresident and invoice-business classification kept explicit",
+    "Distinct whole-NTD income-tax truncation and NHI half-up rounding",
+    "20k inclusive NHI threshold and 10m NTD per-payment basis cap",
+    "Approved exemption/invoice reference contracts; no client rate override",
+    "Positive net amount and complete deductions identity"
+  ],
+  "official_rule_sources": [
+    "https://www.etax.nat.gov.tw/etwmain/tax-info/innotative-tax-e-reference/withheld/regulation/Prj8q2V",
+    "https://www.etax.nat.gov.tw/etwmain/tax-info/understanding/tax-q-and-a/national/individual-income-tax/withheld-rule/rule/7owOpjr",
+    "https://www.etax.nat.gov.tw/download/doc/v2/OvDueFCal_tax_doc.pdf",
+    "https://www.nhi.gov.tw/ch/cp-4516-74b0f-2613-1.html"
+  ],
+  "remaining": [
+    "Recipient profile and approved classification storage",
+    "Encrypted scope-bound bank/tax identity",
+    "Signed payable snapshot and exact ledger/refund concurrency",
+    "Payout lifecycle and export authentication/CSRF/permissions",
+    "Actual manager/affiliate UI and disposable DB/browser flows",
+    "Independent Critical review, canonical acceptance, exact-head CI and protected delivery"
+  ],
+  "safety": {
+    "original_dirty_untouched": true,
+    "historical_migration_restored": false,
+    "production_operations": false,
+    "external_payment": false,
+    "credentials_read": false,
+    "synthetic_only": true
+  },
+  "review_plan": "Critical review at coherent database/API/UI candidate; F2.2 review authorization remains a separate dependency, never replaced by this task."
+}
