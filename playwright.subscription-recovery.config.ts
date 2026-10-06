@@ -11,5 +11,5 @@ const environment = { ...server.env, VERCEL_ENV: "preview", VERCEL_PROJECT_ID: "
  PAYUNI_ENV: "sandbox", PAYMENT_PROVIDER: "payuni", WP4_DISPOSABLE_RUNNER_MARKER: "verified-loopback", WP4_SANDBOX_EXECUTOR_ENABLED: "true",
  JOB_SECRET: "synthetic-q2-browser-job-secret", PAYUNI_SANDBOX_MERCHANT_ID: "SYNTHETIC", PAYUNI_SANDBOX_HASH_KEY: "0123456789abcdef0123456789abcdef", PAYUNI_SANDBOX_HASH_IV: "0123456789abcdef" };
 Object.assign(process.env, environment);
-export default defineConfig({ ...base, testMatch: "native-subscription-recovery.spec.ts", timeout: 120000,
+export default defineConfig({ ...base, testMatch: ["native-subscription-recovery.spec.ts", "native-buyer-recovery.spec.ts"], timeout: 120000,
  reporter: [["./scripts/playwright-ci-reporter.ts"], ["json", { outputFile: report }]], webServer: { ...server, cwd: mirror, env: environment } });

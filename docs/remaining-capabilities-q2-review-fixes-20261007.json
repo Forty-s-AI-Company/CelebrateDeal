@@ -47,7 +47,7 @@
     "package.json",
     "package-lock.json"
   ],
-  "source_revision": "sha256:8af06ade92f1b3483d90f6325929679d6e942ecd8523d5e6e2c3cfe5d1e6ff52",
+  "source_revision": "sha256:5319d4a02cedeba480985ad3694bf0c858966972ba670de8ed6ca5e3058c333a",
   "test_files": [
     "scripts/g7-email-operations-browser-qa.test.mjs",
     "scripts/prisma-invariant-inventory.test.ts",
@@ -79,9 +79,10 @@
     "src/lib/wp4-runtime-boundary.test.ts",
     "src/lib/wp4-subscription-ops.db.test.ts",
     "src/lib/wp4-subscription-state.test.ts",
-    "tests/e2e/native-subscription-recovery.spec.ts"
+    "tests/e2e/native-subscription-recovery.spec.ts",
+    "tests/e2e/native-buyer-recovery.spec.ts"
   ],
-  "test_revision": "sha256:6f0b6eb14bab64546200ad55620f0fb8375c863f9561b136626dacdff7e0d2c2",
+  "test_revision": "sha256:38b7f6c0a1a2b99936c7c395349a0dbc1ced85d5f028a301418b95e2f2c65892",
   "status": "IMPLEMENTED_PENDING_FINAL_VERIFICATION",
   "dispatch_used": 3,
   "dispatch_limit": 4,
@@ -105,9 +106,9 @@
     "targeted_unit_latest": "36/36 PASS",
     "typescript": "PASS",
     "targeted_lint": "PASS",
-    "real_route_regression": "63/63 DB PASS including signed real route first failure and concurrent at-most-one retry; prior source before final runner binding",
-    "real_browser": "62/62 DB + 1 actual browser PASS before concurrent retry and sharp integration; final bound-source run pending",
+    "real_route_regression": "63/63 DB PASS for prior bound candidate 462245e9; exact paid route failure, concurrent at-most-one retry and replay",
+    "real_browser": "63/63 DB + 1 owner browser PASS at 462245e9 with sharp; new actual browser buyer callback/retry/refund route journey pending",
     "sharp_dependency": "Merged verified PR378 candidate; protected delivery pending CI"
   },
-  "next": "Final exact source+test hash 63-case DB/browser, last independent Critical review dispatch4/4, canonical acceptance, exact-head CI, protected PR. Full F1/F2/F3/Q1/Q2/A1/E1 goal remains active."
+  "next": "Verify both owner and buyer browser journeys at the new exact source/test hash, last Critical review dispatch4/4, canonical acceptance, exact-head CI, protected PR."
 }

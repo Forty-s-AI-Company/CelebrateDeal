@@ -67,7 +67,7 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
       visit(suite.suites);
     } }
     visit(browserResult.suites); browserProof.diagnostics = diagnostics;
-    if (browser.status !== 0 || browserProof.expected !== 1 || browserProof.unexpected !== 0 || browserProof.skipped !== 0 || browserProof.flaky !== 0) throw new Error("q2-browser-gate-failed");
+    if (browser.status !== 0 || browserProof.expected !== 2 || browserProof.unexpected !== 0 || browserProof.skipped !== 0 || browserProof.flaky !== 0) throw new Error("q2-browser-gate-failed");
  }
  if (snapshot(declared.source_files) !== sourceRevision || snapshot(declared.test_files) !== testRevision) throw new Error("q2-source-changed-during-verification");
 } });
