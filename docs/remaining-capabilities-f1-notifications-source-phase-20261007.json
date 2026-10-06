@@ -223,7 +223,7 @@
   },
   "lint": "PASS",
   "typecheck_source_kernel": "PASS",
-  "latest_typecheck": "RUNNING",
+  "latest_typecheck": "PASS",
   "ci_previous_head": {
     "head": "383466dd62711f406fe8a000d3cd875439794699",
     "run": 37518666624,
@@ -253,5 +253,42 @@
     "actualProviderDelivery": false,
     "productionOperations": false,
     "historicalEvidencePreserved": true
+  },
+  "migration_contract_tests": {
+    "status": "PASS",
+    "passed": 12,
+    "skipped": 0
+  },
+  "checkpoint_head": "fd7394c5f31466f392107c9ef801d91ec08a2e12",
+  "exact_head_ci": {
+    "run": 37522734648,
+    "status": "RUNNING"
+  },
+  "course_checkpoint_validation": {
+    "head": "fd7394c5f31466f392107c9ef801d91ec08a2e12",
+    "receipt": {
+      "schemaVersion": "course-learning-disposable/v1",
+      "status": "PASS",
+      "tests": {
+        "total": 7,
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      },
+      "startedAt": "2026-10-06T19:55:04.553Z",
+      "finishedAt": "2026-10-06T19:59:29.021Z",
+      "failedTitles": [],
+      "browser": {
+        "expected": 1,
+        "unexpected": 0,
+        "skipped": 0,
+        "flaky": 0
+      }
+    },
+    "latest_payment_candidate": false
   }
 }

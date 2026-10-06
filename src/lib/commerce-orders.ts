@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
+import { recordLearnerPaymentNotificationSources } from "@/lib/learner-payment-notifications";
 import {
   deriveRefundOrderStatus,
   type CommerceFulfillmentType,
@@ -38,6 +39,8 @@ export type CommerceOrdersTransaction = Pick<
   | "commerceEntitlement"
   | "serviceFulfillment"
   | "commerceOrderItemDeliverySnapshot"
+  | "vendor"
+  | "learnerNotificationSourceEvent"
 >;
 
 type OrderRecord = {
@@ -47,6 +50,7 @@ type OrderRecord = {
   totalAmountCents: number;
   paidAmountCents: number;
   refundedAmountCents: number;
+  automationCustomerKeyHash?: string | null;
 };
 
 const COURSE_DOMAIN = "course";
@@ -570,7 +574,7 @@ type PaymentTransitionInput = {
 async function canonicalOrderForPayment(tx: CommerceOrdersTransaction, vendorId: string, paymentTransactionId: string) {
   return tx.commerceOrder.findFirst({
     where: { vendorId, primaryPaymentTransactionId: paymentTransactionId },
-    select: { id: true, vendorId: true, status: true, totalAmountCents: true, paidAmountCents: true, refundedAmountCents: true },
+    select: { id: true, vendorId: true, status: true, totalAmountCents: true, paidAmountCents: true, refundedAmountCents: true, automationCustomerKeyHash: true },
   }) as Promise<OrderRecord | null>;
 }
 
@@ -640,6 +644,7 @@ export async function reconcileCommerceOrderPaymentTransition(
     if (updated.count !== 1) throw new CommerceOrderConflictError();
     const grantedEntitlementCount = await grantPaidEntitlements(tx, input.vendorId, order.id, now);
     await appendEvent(tx, { vendorId: input.vendorId, orderId: order.id, dedupKey, eventType: "payment.paid", occurredAt: now, data: sanitizedOrderData({ ...order, status: "paid", paidAmountCents: order.totalAmountCents }, { paymentTransactionId: input.paymentTransactionId, paidAmountCents: order.totalAmountCents, grantedEntitlementCount }) });
+    await recordLearnerPaymentNotificationSources(tx, { vendorId: input.vendorId, orderId: order.id, customerKeyHash: order.automationCustomerKeyHash ?? null, occurredAt: now });
     return { orderId: order.id, changed: true, status: "paid" as const };
   }
 

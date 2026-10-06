@@ -86,3 +86,10 @@ F1 通知補記：已接上 configured-only email／Web Push／Twilio SMS／What
 - 88 migrations、38 DB、25 source/inventory unit、9 player unit、lint及 source kernel TS PASS。通知1/1 actual Chromium/0skip/0flaky PASS早於最新 hydration correction；latest完整課程 browser及TS RUNNING。
 - CI37518666624/head383466dd 在 native-course-learning63/70 首次進度/續播失敗，retry flaky 擋 gate。保留 assertion及零 flaky門檻，修正 hydration同步待實測。
 - 證據 docs/remaining-capabilities-f1-notifications-source-phase-20261007.json；NOT_READY。渠道完整流程、Critical review、canonical acceptance、exact CI與 protected delivery仍待完成。
+
+### F1 課程付款通知 source checkpoint 2026-10-07
+
+- ID f1-learner-notifications；owner root；dispatch0/4。Exact canonical paid transaction內依order/vendor/product/buyer hash產生payment_success；legacy無buyer hash及已刪除product無學習資源不指定收件；course purchase範圍，未宣稱通用訂單渠道全部完成。
+- 最新88 migrations/40 DB/43 targeted unit/lint PASS；新增source fault rollback與foreign/repeated paid回歸。40案例第一次全PASS但舊38數量gate exit1已保留，更新精確40及receipt一致性後整個runner exit0 PASS。TS待收齊。
+- fd7394c5完整course7DB/1actualbrowser/0skip/0flaky PASS，早於payment source修改；CI37522734648仍RUNNING，不可支撐新candidate。
+- 證據 docs/remaining-capabilities-f1-notifications-payment-source-20261007.json；NOT_READY；未完成項目保持Goal範圍。

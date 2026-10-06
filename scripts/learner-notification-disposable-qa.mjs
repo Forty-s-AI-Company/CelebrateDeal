@@ -8,13 +8,13 @@ import { learnerNotificationDeliveryKey, protectLearnerNotificationDestination }
 import { listLearnerNotificationPreferences, saveLearnerNotificationConsent } from "../src/lib/learner-notification-preferences.ts";
 import { enqueueLearnerNotification, claimLearnerNotification, finishLearnerNotification } from "../src/lib/learner-notification-outbox.ts";
 import { protectCommerceOrderPii } from "../src/lib/commerce-order-pii.ts";
-import { reconcileCommerceOrderRefund } from "../src/lib/commerce-orders.ts";
+import { reconcileCommerceOrderRefund, reconcileCommerceOrderPaymentTransition } from "../src/lib/commerce-orders.ts";
 import { dispatchClaimedLearnerNotification } from "../src/lib/learner-notification-dispatch.ts";
 import { claimLearnerVerificationDelivery, dispatchLearnerVerificationDelivery } from "../src/lib/learner-verification-delivery.ts";
 import { saveCourseLesson } from "../src/lib/course-curriculum.ts";
 import { saveStudentLessonProgress } from "../src/lib/student-course-learning.ts";
 import { recordLearnerNotificationSourceEvent, materializeLearnerNotificationSourceEvent } from "../src/lib/learner-notification-source-events.ts";
-const sourceFiles = ["src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
+const sourceFiles = ["src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
  "src/lib/learner-notification-contract.ts", "src/lib/learner-notification-preferences.ts", "src/lib/learner-notification-outbox.ts", "src/lib/learner-notification-dispatch.ts", "src/lib/learner-notification-providers.ts", "src/lib/learner-notification-verification.ts",
  "src/lib/student-course-learning.ts", "src/lib/sensitive-data.ts", "src/lib/commerce-order-pii.ts", "src/lib/commerce-order-fulfillment.ts", "src/lib/commerce-orders.ts", "scripts/learner-notification-disposable-qa.mjs"];
 function sourceSnapshot() {
@@ -264,6 +264,31 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
       try{assert.equal((await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id)).status,"completed");const queued=await db.learnerNotificationDelivery.findMany({where:{vendorId:vendor.id,eventIdentity:"synthetic_no_retroactive_consent"},select:{preferenceId:true}});assert.equal(queued.length,1);assert.equal(queued.some(row=>row.preferenceId===preference.id),false);}
       finally{await db.learnerNotificationPreference.update({where:{id:preference.id},data:{consentedAt:existing.consentedAt}});}
     });
+    const payment = await db.paymentTransaction.create({ data: { vendorId: vendor.id, providerName: "synthetic_no_provider", status: "paid", grossAmountCents: 1000, netAmountCents: 1000 } });
+    await db.commerceOrder.update({ where: { id: orderId }, data: { status: "pending_payment", paidAmountCents: 0, primaryPaymentTransactionId: payment.id } });
+    await db.commerceEntitlement.update({ where: { id: entitlement.id }, data: { status: "pending", grantedAt: null } });
+    const paidInput = { vendorId: vendor.id, paymentTransactionId: payment.id, eventIdentity: "synthetic_exact_payment", transition: "paid", occurredAt: new Date() };
+    await check("payment source fault rolls back paid order entitlement and commerce event", async () => {
+      await db.$executeRawUnsafe(`CREATE FUNCTION learner_payment_synthetic_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW."event"='payment_success' THEN RAISE EXCEPTION 'synthetic payment source fault' USING ERRCODE='40001'; END IF; RETURN NEW; END $$`);
+      await db.$executeRawUnsafe(`CREATE TRIGGER learner_payment_synthetic_fault BEFORE INSERT ON "LearnerNotificationSourceEvent" FOR EACH ROW EXECUTE FUNCTION learner_payment_synthetic_fault()`);
+      try {
+        await assert.rejects(() => db.$transaction(tx => reconcileCommerceOrderPaymentTransition(tx, paidInput)), error => error.code === "P2034");
+        assert.equal((await db.commerceOrder.findUniqueOrThrow({ where: { id: orderId } })).status, "pending_payment");
+        assert.equal((await db.commerceEntitlement.findUniqueOrThrow({ where: { id: entitlement.id } })).status, "pending");
+        assert.equal(await db.commerceOrderEvent.count({ where: { vendorId: vendor.id, orderId, eventType: "payment.paid" } }), 0);
+      } finally { await db.$executeRawUnsafe(`DROP TRIGGER learner_payment_synthetic_fault ON "LearnerNotificationSourceEvent"`); await db.$executeRawUnsafe(`DROP FUNCTION learner_payment_synthetic_fault()`); }
+    });
+    await check("exact canonical payment publishes only owning buyer and repeated paid does not republish", async () => {
+      assert.equal(await db.$transaction(tx => reconcileCommerceOrderPaymentTransition(tx, { ...paidInput, vendorId: foreign.id })), null);
+      assert.equal((await db.$transaction(tx => reconcileCommerceOrderPaymentTransition(tx, paidInput))).changed, true);
+      assert.equal((await db.$transaction(tx => reconcileCommerceOrderPaymentTransition(tx, { ...paidInput, eventIdentity: "synthetic_repeated_provider_event" }))).changed, false);
+      assert.equal((await db.commerceEntitlement.findUniqueOrThrow({ where: { id: entitlement.id } })).status, "granted");
+      const sources = await db.learnerNotificationSourceEvent.findMany({ where: { vendorId: vendor.id, productId: product.id, event: "payment_success" } });
+      assert.equal(sources.length, 1); assert.equal(sources[0].audienceCustomerKeyHash, identity.customerKeyHash);
+      assert.equal(await db.learnerNotificationSourceEvent.count({ where: { vendorId: foreign.id, event: "payment_success" } }), 0);
+      assert.equal((await materializeLearnerNotificationSourceEvent(db, vendor.id, sources[0].id)).status, "completed");
+      assert.equal(await db.learnerNotificationDelivery.count({ where: { vendorId: vendor.id, productId: product.id, event: "payment_success" } }), 2);
+    });
     const event = { channel: "sms", event: "lesson_published", eventIdentity: "synthetic_outbox_first", message: { title: "Synthetic lesson", body: "Synthetic only private message", path: "/portal/synthetic/learn/course" } };
     let queued, claim;
     await check("outbox deduplicates concurrent real database event producers", async () => {
@@ -381,9 +406,9 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
   if (sourceSnapshot().revision !== sourceAtStart.revision) throw new Error("notification-source-changed-during-verification");
   } finally { await db.$disconnect(); }
 } });
-const receipt = { source: sourceAtStart, status: migration.status, migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
+const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 40 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
 fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 38 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 40 || results.some(test => test.status !== "PASS")) process.exitCode = 1;

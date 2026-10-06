@@ -1,0 +1,221 @@
+{
+  "task_id": "f1-learner-notifications",
+  "status": "IMPLEMENTED_COURSE_PAYMENT_SOURCE_NOT_READY",
+  "source": {
+    "files": {
+      "src/lib/learner-payment-notifications.ts": "7f6d038b98e9f4ce120b7d3cd948caed58be3b3a6733fb4fa7055588c4117016",
+      "src/lib/learner-notification-source-events.ts": "91f8f8a9fee12a019f63675d2bce26c8572c8744ffc5ac443b88877c83d26000",
+      "src/lib/course-curriculum.ts": "7f5abff9742ad45982e3770d52921acca623e15c8ee5ebbee45d641de8b1a4ac",
+      "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql": "6aaec73e4b1335966d44cd94c613f78d0da74af4421a3857549cd9ae2a730993",
+      "src/lib/learner-verification-delivery.ts": "d46b07f3605b1072ef155810c8050497a86477d2950a30dff6d0045ad9e503bf",
+      "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql": "a2b25be832ae9981b832dfa44e59217a2aab8b72c194a53c00a6b451745150e4",
+      "package.json": "3348ccdf618d1785b687f24a45b10efaf61dc4cc130f46cd53d5df9d3ad75094",
+      "package-lock.json": "316fe741454b5747c1afc8c09a62ff80a4ed819899d7ea4a51a77eace5f523f0",
+      "prisma/schema.prisma": "0866f159e2c2368b33870bf503eefd44134f8ed15fab5af844d7efbd688c31c4",
+      "prisma/migrations/20261007010000_learner_notifications/migration.sql": "9556eb9165d262a8c17b26a2ca87a06da024d8e95cf3a1167b4e3f1556071515",
+      "src/lib/learner-notification-contract.ts": "b09c722bbed2be39f174129bfebd04575a71e57cdc16c80a8686587f70364c02",
+      "src/lib/learner-notification-preferences.ts": "14c5f162ebc305dbe17367c9b5807c10bd7f5f85fae500f64c4c2ca616d25af0",
+      "src/lib/learner-notification-outbox.ts": "cc4a43833025c8e993251aecbfda485e2e4627bf8409d8eaf959eeb51f835aec",
+      "src/lib/learner-notification-dispatch.ts": "7d8aea99cb268fd0174b2a76f98205e4e70a77af34ca5f234e0a790c0825d9dc",
+      "src/lib/learner-notification-providers.ts": "a3a3eae976a8a35d6f36e2bc7a0d3f10d49fc9f79c7119a3f941a5824de47030",
+      "src/lib/learner-notification-verification.ts": "2ea5d1c1e798a12da8513c6f809c09411b0f308d08f72e480f909f5c34f2214d",
+      "src/lib/student-course-learning.ts": "3f2d57292b70207a7bb6ec63e8cd4153f595d6565993dc5176ab0315146e4f46",
+      "src/lib/sensitive-data.ts": "07c2eb967a8f03f661d98a8193f7153786598ddb6d94b831f51b72c08eac9822",
+      "src/lib/commerce-order-pii.ts": "6761a568619e2830ea51c150a064e3ee60b1e75572533734eb0fe6f7f9b04220",
+      "src/lib/commerce-order-fulfillment.ts": "b5a78f51f0455b96fd63939397677d71acc7869ed8ccdff8df0e73a69c3a8081",
+      "src/lib/commerce-orders.ts": "7405a79e074f8553bce9a1bb41acabd487fabb00f8443221691be7fe74481aa2",
+      "scripts/learner-notification-disposable-qa.mjs": "fc1380808cd3c23d11cce869da6fc0c0bcb3a25e6469c041a55d11fdb872ae7e"
+    },
+    "revision": "sha256:650ce6fc2e15456428b43442c7951586a502dba66a8a6399e839eebc905d1dad"
+  },
+  "db": {
+    "status": "PASS",
+    "migrationCount": 88,
+    "tests": [
+      {
+        "name": "cross-tenant product FK refuses preference",
+        "status": "PASS"
+      },
+      {
+        "name": "cross-tenant delivery/preference FK refuses dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent consent CAS admits one writer",
+        "status": "PASS"
+      },
+      {
+        "name": "event uniqueness survives a consent revision change",
+        "status": "PASS"
+      },
+      {
+        "name": "default-deny RLS hides rows and rejects anonymous-role writes",
+        "status": "PASS"
+      },
+      {
+        "name": "refunded recipient can unsubscribe using authenticated scope",
+        "status": "PASS"
+      },
+      {
+        "name": "service rejects stale consent revision",
+        "status": "PASS"
+      },
+      {
+        "name": "foreign recipient cannot unsubscribe another tenant",
+        "status": "PASS"
+      },
+      {
+        "name": "recipient without current purchase cannot opt in",
+        "status": "PASS"
+      },
+      {
+        "name": "verification rejects exhausted attempts and expired enrollment",
+        "status": "PASS"
+      },
+      {
+        "name": "contact proof refuses foreign recipient and locks after five wrong attempts",
+        "status": "PASS"
+      },
+      {
+        "name": "expired contact proof cannot mark destination verified",
+        "status": "PASS"
+      },
+      {
+        "name": "rotated contact proof consumes once without granting notification consent",
+        "status": "PASS"
+      },
+      {
+        "name": "native push subscription proves device separately from channel consent",
+        "status": "PASS"
+      },
+      {
+        "name": "durable proof is encrypted and repeat requests respect cooldown",
+        "status": "PASS"
+      },
+      {
+        "name": "cross-tenant and concurrent proof claims admit exactly one owner",
+        "status": "PASS"
+      },
+      {
+        "name": "expired proof suppresses provider and clears its encrypted payload",
+        "status": "PASS"
+      },
+      {
+        "name": "contact rotation suppresses old queued proof and rejects claimed old proof",
+        "status": "PASS"
+      },
+      {
+        "name": "unknown challenge provider outcome is terminal without automatic replay",
+        "status": "PASS"
+      },
+      {
+        "name": "failed proof commit after provider acceptance does not send again",
+        "status": "PASS"
+      },
+      {
+        "name": "real lesson publication commits one source and metadata saves do not republish",
+        "status": "PASS"
+      },
+      {
+        "name": "source insert failure rolls back the actual lesson and product revision",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent source consumers create only exact owning current recipients",
+        "status": "PASS"
+      },
+      {
+        "name": "real completed course source is recipient-bound and idempotent",
+        "status": "PASS"
+      },
+      {
+        "name": "bounded source fanout persists its cursor across more than twenty preferences",
+        "status": "PASS"
+      },
+      {
+        "name": "source materialization excludes consent granted after the domain event",
+        "status": "PASS"
+      },
+      {
+        "name": "payment source fault rolls back paid order entitlement and commerce event",
+        "status": "PASS"
+      },
+      {
+        "name": "exact canonical payment publishes only owning buyer and repeated paid does not republish",
+        "status": "PASS"
+      },
+      {
+        "name": "outbox deduplicates concurrent real database event producers",
+        "status": "PASS"
+      },
+      {
+        "name": "outbox foreign scope cannot queue or claim owning recipient",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent worker claim admits exactly one owner",
+        "status": "PASS"
+      },
+      {
+        "name": "forged or replayed worker completion cannot mark delivery",
+        "status": "PASS"
+      },
+      {
+        "name": "exact claimed dispatch cannot run twice or accept a forged token",
+        "status": "PASS"
+      },
+      {
+        "name": "provider uncertainty is durable and never invokes a second attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "failed database commit after provider acceptance never repeats the external attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "entitlement expiry after claim refuses provider dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "consent withdrawal waits for the bounded authorized provider attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "consent revision change suppresses a queued event",
+        "status": "PASS"
+      },
+      {
+        "name": "real full refund after claim suppresses dispatch and further producer events",
+        "status": "PASS"
+      },
+      {
+        "name": "owned synthetic purchase fixture is created",
+        "status": "PASS"
+      }
+    ],
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    }
+  },
+  "unit": {
+    "status": "PASS",
+    "passed": 43
+  },
+  "lint": "PASS",
+  "typecheck": "PASS",
+  "implemented": "Exact canonical course order paid transition records recipient-bound encrypted notification source inside same transaction; source failure rolls back paid status, entitlement and commerce event; repeated paid/foreign transaction do not republish.",
+  "safety": {
+    "syntheticOnly": true,
+    "actualProviderPayment": false,
+    "actualProviderNotification": false,
+    "productionOperations": false
+  },
+  "remaining": [
+    "discussion/live/consultation producers and resource contracts",
+    "Latest affected browser and full tests",
+    "Independent Critical review",
+    "Canonical acceptance",
+    "Exact-head CI/protected PR delivery"
+  ]
+}
