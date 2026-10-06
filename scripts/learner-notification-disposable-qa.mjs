@@ -11,7 +11,10 @@ import { protectCommerceOrderPii } from "../src/lib/commerce-order-pii.ts";
 import { reconcileCommerceOrderRefund } from "../src/lib/commerce-orders.ts";
 import { dispatchClaimedLearnerNotification } from "../src/lib/learner-notification-dispatch.ts";
 import { claimLearnerVerificationDelivery, dispatchLearnerVerificationDelivery } from "../src/lib/learner-verification-delivery.ts";
-const sourceFiles = ["src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
+import { saveCourseLesson } from "../src/lib/course-curriculum.ts";
+import { saveStudentLessonProgress } from "../src/lib/student-course-learning.ts";
+import { recordLearnerNotificationSourceEvent, materializeLearnerNotificationSourceEvent } from "../src/lib/learner-notification-source-events.ts";
+const sourceFiles = ["src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
  "src/lib/learner-notification-contract.ts", "src/lib/learner-notification-preferences.ts", "src/lib/learner-notification-outbox.ts", "src/lib/learner-notification-dispatch.ts", "src/lib/learner-notification-providers.ts", "src/lib/learner-notification-verification.ts",
  "src/lib/student-course-learning.ts", "src/lib/sensitive-data.ts", "src/lib/commerce-order-pii.ts", "src/lib/commerce-order-fulfillment.ts", "src/lib/commerce-orders.ts", "scripts/learner-notification-disposable-qa.mjs"];
 function sourceSnapshot() {
@@ -210,6 +213,57 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
       try{assert.equal((await dispatchLearnerVerificationDelivery(db,claim,{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent",providerReceipt:"synthetic-proof-before-commit-fault"};}})).status,"indeterminate");assert.equal(calls,1);const uncertain=await db.learnerNotificationVerification.findUniqueOrThrow({where:{id:q.challenge.id}});assert.ok(uncertain.deliveryReceiptEncryptedEnvelope);assert.equal(uncertain.deliveryReceiptEncryptedEnvelope.includes("synthetic-proof-before-commit-fault"),false);assert.equal(uncertain.deliveryTokenEncryptedEnvelope,null);assert.equal(await claimLearnerVerificationDelivery(db,{vendorId:vendor.id,id:q.challenge.id}),null);}
       finally{await db.$executeRawUnsafe(`DROP TRIGGER learner_proof_synthetic_commit_fault ON "LearnerNotificationVerification"`);await db.$executeRawUnsafe(`DROP FUNCTION learner_proof_synthetic_commit_fault()`);}
     });
+    let publishedLesson;
+    await check("real lesson publication commits one source and metadata saves do not republish",async()=>{
+      const current=await db.product.findUniqueOrThrow({where:{id:product.id}});
+      const draft={productId:product.id,revision:current.revision,chapterTitle:"Synthetic chapter",title:"Synthetic published lesson",videoUrl:"https://media.example.test/synthetic.mp4",durationSeconds:100,published:true};
+      publishedLesson=await saveCourseLesson(db,vendor.id,draft);
+      const source=await db.learnerNotificationSourceEvent.findFirstOrThrow({where:{vendorId:vendor.id,productId:product.id,event:"lesson_published"}});assert.equal(source.audienceCustomerKeyHash,null);assert.equal(source.payloadEncryptedEnvelope.includes(draft.title),false);
+      const revision=(await db.product.findUniqueOrThrow({where:{id:product.id}})).revision;
+      await saveCourseLesson(db,vendor.id,{...draft,lessonId:publishedLesson,revision,title:"Synthetic metadata edit"});
+      assert.equal(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,productId:product.id,event:"lesson_published"}}),1);
+    });
+    await check("source insert failure rolls back the actual lesson and product revision",async()=>{
+      const before=await db.product.findUniqueOrThrow({where:{id:product.id}}),lessons=await db.courseLesson.count({where:{vendorId:vendor.id,productId:product.id}});
+      await db.$executeRawUnsafe(`CREATE FUNCTION learner_source_synthetic_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW."event"='lesson_published' THEN RAISE EXCEPTION 'synthetic source fault' USING ERRCODE='40001'; END IF; RETURN NEW; END $$`);
+      await db.$executeRawUnsafe(`CREATE TRIGGER learner_source_synthetic_fault BEFORE INSERT ON "LearnerNotificationSourceEvent" FOR EACH ROW EXECUTE FUNCTION learner_source_synthetic_fault()`);
+      try{await assert.rejects(()=>saveCourseLesson(db,vendor.id,{productId:product.id,revision:before.revision,chapterTitle:"Synthetic",title:"Synthetic must roll back",videoUrl:"https://media.example.test/synthetic.mp4",durationSeconds:100,published:true}),error=>error.code==="P2034");
+        assert.equal((await db.product.findUniqueOrThrow({where:{id:product.id}})).revision,before.revision);assert.equal(await db.courseLesson.count({where:{vendorId:vendor.id,productId:product.id}}),lessons);
+      }finally{await db.$executeRawUnsafe(`DROP TRIGGER learner_source_synthetic_fault ON "LearnerNotificationSourceEvent"`);await db.$executeRawUnsafe(`DROP FUNCTION learner_source_synthetic_fault()`);}
+    });
+    await check("concurrent source consumers create only exact owning current recipients",async()=>{
+      const source=await db.learnerNotificationSourceEvent.findFirstOrThrow({where:{vendorId:vendor.id,productId:product.id,event:"lesson_published"}});
+      assert.equal((await materializeLearnerNotificationSourceEvent(db,foreign.id,source.id)).status,"not_pending");
+      const outcomes=await Promise.all([1,2].map(()=>materializeLearnerNotificationSourceEvent(db,vendor.id,source.id)));
+      assert.equal(outcomes.filter(value=>value.status==="completed").length,1);
+      const deliveries=await db.learnerNotificationDelivery.findMany({where:{vendorId:vendor.id,productId:product.id,eventIdentity:source.eventIdentity}});assert.equal(deliveries.length,2);
+      assert.equal(await db.learnerNotificationDelivery.count({where:{vendorId:foreign.id}}),0);assert.ok((await db.learnerNotificationSourceEvent.findUniqueOrThrow({where:{id:source.id}})).completedAt);
+    });
+    await check("real completed course source is recipient-bound and idempotent",async()=>{
+      await saveStudentLessonProgress(db,identity,{courseId:product.id,lessonId:publishedLesson,watchedSeconds:100,markedComplete:true});
+      await saveStudentLessonProgress(db,identity,{courseId:product.id,lessonId:publishedLesson,watchedSeconds:100,markedComplete:true});
+      const sources=await db.learnerNotificationSourceEvent.findMany({where:{vendorId:vendor.id,productId:product.id,event:"course_completed"}});assert.equal(sources.length,1);assert.equal(sources[0].audienceCustomerKeyHash,identity.customerKeyHash);
+      assert.equal((await materializeLearnerNotificationSourceEvent(db,vendor.id,sources[0].id)).status,"completed");assert.equal(await db.learnerNotificationDelivery.count({where:{vendorId:vendor.id,productId:product.id,event:"course_completed"}}),2);
+    });
+    await check("bounded source fanout persists its cursor across more than twenty preferences",async()=>{
+      const ids=[];const consentedAt=new Date(Date.now()-60000);
+      for(let index=0;index<25;index++){
+        const scope={...identity,customerKeyHash:Buffer.alloc(32,index+11).toString("base64url")},protectedContact=protectLearnerNotificationDestination(scope,"email",{email:`synthetic-${index}@invalid.example`}),id=`zz-source-pref-${String(index).padStart(2,"0")}`;ids.push(id);
+        await db.learnerNotificationPreference.create({data:{...scope,id,channel:"email",enabled:true,consentedAt,destinationVerifiedAt:new Date(),destinationEncryptedEnvelope:protectedContact.encryptedEnvelope,destinationKeyHash:protectedContact.destinationKeyHash}});
+      }
+      try{
+        const source=await db.$transaction(tx=>recordLearnerNotificationSourceEvent(tx,{vendorId:vendor.id,productId:product.id,event:"lesson_published",eventIdentity:"synthetic_bounded_fanout",audienceCustomerKeyHash:null,occurredAt:new Date(),message:{title:"Synthetic cursor",body:"Synthetic only",path:`/portal/${vendor.slug}/learn/${product.id}`}}));
+        const first=await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id);assert.equal(first.status,"page_materialized");const cursor=await db.learnerNotificationSourceEvent.findUniqueOrThrow({where:{id:source.id}});assert.ok(cursor.preferenceCursor);assert.equal(cursor.completedAt,null);
+        assert.equal((await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id)).status,"completed");assert.equal((await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id)).status,"not_pending");assert.equal(await db.learnerNotificationDelivery.count({where:{vendorId:vendor.id,eventIdentity:"synthetic_bounded_fanout"}}),2);
+      }finally{await db.learnerNotificationPreference.deleteMany({where:{vendorId:vendor.id,id:{in:ids}}});}
+    });
+    await check("source materialization excludes consent granted after the domain event",async()=>{
+      const existing=await db.learnerNotificationPreference.findUniqueOrThrow({where:{id:preference.id}}),occurredAt=new Date();
+      const source=await db.$transaction(tx=>recordLearnerNotificationSourceEvent(tx,{vendorId:vendor.id,productId:product.id,event:"lesson_published",eventIdentity:"synthetic_no_retroactive_consent",audienceCustomerKeyHash:null,occurredAt,message:{title:"Synthetic prior event",body:"Synthetic only",path:`/portal/${vendor.slug}/learn/${product.id}`}}));
+      await db.learnerNotificationPreference.update({where:{id:preference.id},data:{consentedAt:new Date(occurredAt.getTime()+1000)}});
+      try{assert.equal((await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id)).status,"completed");const queued=await db.learnerNotificationDelivery.findMany({where:{vendorId:vendor.id,eventIdentity:"synthetic_no_retroactive_consent"},select:{preferenceId:true}});assert.equal(queued.length,1);assert.equal(queued.some(row=>row.preferenceId===preference.id),false);}
+      finally{await db.learnerNotificationPreference.update({where:{id:preference.id},data:{consentedAt:existing.consentedAt}});}
+    });
     const event = { channel: "sms", event: "lesson_published", eventIdentity: "synthetic_outbox_first", message: { title: "Synthetic lesson", body: "Synthetic only private message", path: "/portal/synthetic/learn/course" } };
     let queued, claim;
     await check("outbox deduplicates concurrent real database event producers", async () => {
@@ -332,4 +386,4 @@ fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 32 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 38 || results.some(test => test.status !== "PASS")) process.exitCode = 1;

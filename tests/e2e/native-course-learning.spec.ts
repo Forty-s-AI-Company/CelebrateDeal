@@ -50,6 +50,8 @@ test("manager publishes a lesson; a purchasing learner saves, resumes, completes
     await expect(learner).toHaveURL(new RegExp(`/portal/${vendor.slug}$`));
     await learner.getByRole("link", { name: "開始課程學習" }).click();
     await expect(learner.getByRole("heading", { name: product.name })).toBeVisible();
+    // An SSR heading does not prove the media handlers have hydrated.
+    await expect(learner.getByRole("button", { name: "標記完成", exact: true })).toBeEnabled();
     const progressPath = `/portal/${vendor.slug}/learn/${product.id}/progress`;
     const rejected = await learner.request.post(progressPath, { headers: { origin: baseURL!, "x-celebratedeal-client": "web", "x-csrf-token": "invalid" }, data: { lessonId: lesson.id, watchedSeconds: 100, markedComplete: true } });
     expect(rejected.status()).toBe(403);
@@ -62,6 +64,7 @@ test("manager publishes a lesson; a purchasing learner saves, resumes, completes
     });
     await expect.poll(async () => (await db.courseLessonProgress.findFirst({ where: { vendorId: vendor.id } }))?.watchedSeconds).toBe(75);
     await learner.reload();
+    await expect(learner.getByRole("button", { name: "標記完成", exact: true })).toBeEnabled();
     await learner.locator("video").evaluate((element) => {
       Object.defineProperty(element, "duration", { configurable: true, value: 100 });
       Object.defineProperty(element, "currentTime", { configurable: true, writable: true, value: 0 });

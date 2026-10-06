@@ -79,3 +79,10 @@ F1 通知補記：已接上 configured-only email／Web Push／Twilio SMS／What
 - ID f1-learner-notifications；owner root；dispatch 0/4。學員中心新增通知管理入口；bounded cursor list21/visible20，限定 server vendor/customer；既有偏好可在退款/到期後讀取及撤回，不授予課程內容或新 opt-in，未登記者仍須目前權益。
 - 27 targeted unit、32 DB、87 migrations、latest1/1 actual Chromium、0 skip/flaky、cleanup、lint、TypeScript PASS。Actual browser 用 canonical refund ledger 及既有合成驗證 fixture，證明退款後取消/重載與有效 CSRF re-enable404；不代表真實退款或實際渠道送達。
 - 證據 docs/remaining-capabilities-f1-notifications-refunded-settings-20261007.json；revision sha256:3f59201892bdf5fa4f06156eb4637a249548061725802981dcf889fb58110346；browser source sha256:43c63ad4263144b8072f03cbfbd9283caa801c0189b91b2021f9fc54fb7c2252。NOT_READY；six retained event producers and applicable product/recipient contracts；full enroll/verification browser journeys with approved nonproduction providers；PWA integration and native push browser proof；independent Critical review；canonical acceptance；exact-head CI/protected PR delivery 仍須完成。
+
+### F1 通知 domain source checkpoint 2026-10-07
+
+- ID f1-learner-notifications；owner root；dispatch0/4。實際發布與完課同交易寫入加密 source outbox；20 recipient cursor、revision CAS、目前權益及事件前 consent 檢查；其餘四類事件未完成。
+- 88 migrations、38 DB、25 source/inventory unit、9 player unit、lint及 source kernel TS PASS。通知1/1 actual Chromium/0skip/0flaky PASS早於最新 hydration correction；latest完整課程 browser及TS RUNNING。
+- CI37518666624/head383466dd 在 native-course-learning63/70 首次進度/續播失敗，retry flaky 擋 gate。保留 assertion及零 flaky門檻，修正 hydration同步待實測。
+- 證據 docs/remaining-capabilities-f1-notifications-source-phase-20261007.json；NOT_READY。渠道完整流程、Critical review、canonical acceptance、exact CI與 protected delivery仍待完成。

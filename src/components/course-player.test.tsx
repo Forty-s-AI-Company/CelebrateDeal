@@ -8,6 +8,7 @@ vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined })
 // Exercise the actual media handlers without relying on a browser's media clock.
 vi.mock("react", async (importOriginal) => ({
   ...await importOriginal<typeof import("react")>(),
+  useSyncExternalStore: () => true,
   useState: (initial: unknown) => [initial, vi.fn()],
   useRef: (initial: unknown) => ({ current: initial }),
   useMemo: (calculate: () => unknown) => calculate(),

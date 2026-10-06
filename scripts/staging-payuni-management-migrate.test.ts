@@ -42,7 +42,8 @@ describe("exact staging migration adapter", () => {
 
   it("rejects the expanded candidate instead of applying unrelated LINE or course migrations", () => {
     const current = inventory();
-    expect(current).toHaveLength(87);
+    expect(current).toHaveLength(88);
+    expect(current.some((item) => item.name === "20261007030000_learner_notification_source_events")).toBe(true);
     expect(current.some((item) => item.name === "20261007010000_learner_notifications")).toBe(true);
     expect(current.some((item) => item.name === "20261007020000_learner_verification_delivery")).toBe(true);
     expect(current.some((item) => item.name === "20261004154500_student_portal_access_tokens")).toBe(true);

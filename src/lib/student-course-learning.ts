@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { revealCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { courseCompletion, nextLessonProgress, type CourseLesson, type CourseLessonProgress } from "@/lib/course-learning";
@@ -97,6 +99,16 @@ export async function saveStudentLessonProgress(db: CourseLearningDatabase, scop
     });
     await tx.courseLessonProgress.updateMany({ where: { ...identity, watchedSeconds: { lt: next.watchedSeconds } }, data: { watchedSeconds: next.watchedSeconds } });
     if (next.completedAt) await tx.courseLessonProgress.updateMany({ where: { ...identity, completedAt: null }, data: { completedAt: next.completedAt } });
+
+    if(next.completedAt){
+      const course=await getStudentCourse(tx,scope,input.courseId);
+      if(course?.completion.complete){
+        const vendor=await tx.vendor.findUniqueOrThrow({where:{id:scope.vendorId},select:{slug:true}});
+        const eventIdentity=createHash("sha256").update(JSON.stringify([input.courseId,scope.customerKeyHash,course.lessons.map(value=>value.id).sort()])).digest("hex");
+        await recordLearnerNotificationSourceEvent(tx,{vendorId:scope.vendorId,productId:input.courseId,event:"course_completed",eventIdentity,audienceCustomerKeyHash:scope.customerKeyHash,occurredAt:input.now??new Date(),
+          message:{title:"課程已完成",body:course.course.name,path:`/portal/${encodeURIComponent(vendor.slug)}/learn/${encodeURIComponent(input.courseId)}/certificate`}});
+      }
+    }
     return tx.courseLessonProgress.findFirst({ where: identity, select: { lessonId: true, watchedSeconds: true, completedAt: true } });
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   for (let attempt = 0; attempt < 3; attempt += 1) {

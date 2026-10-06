@@ -189,6 +189,7 @@ model Vendor {
   learnerNotificationDeliveries LearnerNotificationDelivery[]
   learnerNotificationVerifications LearnerNotificationVerification[]
 
+  learnerNotificationSourceEvents LearnerNotificationSourceEvent[]
 }
 
 model User {
@@ -433,6 +434,7 @@ model Product {
 
   learnerNotificationPreferences LearnerNotificationPreference[]
 
+  learnerNotificationSourceEvents LearnerNotificationSourceEvent[]
 }
 
 model RegistrationForm {
@@ -3730,4 +3732,24 @@ model LearnerNotificationVerification {
   preference LearnerNotificationPreference @relation(fields: [vendorId, productId, preferenceId], references: [vendorId, productId, id], onDelete: Cascade, map: "LearnerNotificationVerification_preference_fkey")
   @@index([vendorId, preferenceId, expiresAt], map: "LearnerNotificationVerification_scope_expiry_idx")
   @@index([vendorId, deliveryStatus, deliveryNextAttemptAt], map: "LearnerNotificationVerification_delivery_due_idx")
+}
+
+/// Domain facts commit atomically; bounded materialization resumes by preference ID.
+model LearnerNotificationSourceEvent {
+ id String @id @default(cuid())
+ vendorId String
+ productId String
+ event String
+ eventIdentity String
+ audienceCustomerKeyHash String?
+ payloadEncryptedEnvelope String
+ occurredAt DateTime
+ preferenceCursor String?
+ completedAt DateTime?
+ revision Int @default(1)
+ createdAt DateTime @default(now())
+ vendor Vendor @relation(fields:[vendorId],references:[id],onDelete:Cascade)
+ product Product @relation(fields:[vendorId,productId],references:[vendorId,id],onDelete:Cascade)
+ @@unique([vendorId,productId,event,eventIdentity],map:"LearnerNotificationSourceEvent_scope_key")
+ @@index([vendorId,completedAt,createdAt,id],map:"LearnerNotificationSourceEvent_due_idx")
 }

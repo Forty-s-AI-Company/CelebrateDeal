@@ -35,10 +35,10 @@ async function serializable<T>(db: Database, run: (tx: Prisma.TransactionClient)
 
 /** Internal event producers call this after committing a real lesson/order/live event.
  * This is never a public endpoint accepting arbitrary learner or event identities. */
-export async function enqueueLearnerNotification(db: Database, rawScope: Scope, raw: { channel: string; event: string; eventIdentity: string; message: unknown }) {
+export async function enqueueLearnerNotificationInTransaction(tx: Store, rawScope: Scope, raw: { channel: string; event: string; eventIdentity: string; message: unknown }) {
  const scope = LearnerNotificationScope.parse(rawScope), channel = LearnerNotificationChannel.parse(raw.channel), event = LearnerNotificationEvent.parse(raw.event);
  const message = LearnerNotificationMessage.parse(raw.message);
- return serializable(db, async tx => {
+
   const preference = await tx.learnerNotificationPreference.findFirst({ where: { ...scope, channel } });
   if (!preference?.enabled || !preference.destinationVerifiedAt || !preference.destinationEncryptedEnvelope || !preference.destinationKeyHash || !await hasRights(tx,scope)) return null;
   const key = learnerNotificationDeliveryKey(scope, channel, event, raw.eventIdentity, preference.revision);
@@ -46,7 +46,10 @@ export async function enqueueLearnerNotification(db: Database, rawScope: Scope, 
    create: { vendorId: scope.vendorId, productId: scope.productId, preferenceId: preference.id, event, eventIdentity: raw.eventIdentity,
     deduplicationKey: key, consentRevision: preference.revision, payloadEncryptedEnvelope: encryptSensitiveValue(JSON.stringify(message), payloadPurpose(scope.vendorId,key)) },
    select: { id: true, status: true } });
- });
+}
+
+export async function enqueueLearnerNotification(db: Database, rawScope: Scope, raw: { channel: string; event: string; eventIdentity: string; message: unknown }) {
+ return serializable(db,tx=>enqueueLearnerNotificationInTransaction(tx,rawScope,raw));
 }
 
 /** Exact ID claim, no "latest recipient" fallback. Only one worker receives a token.

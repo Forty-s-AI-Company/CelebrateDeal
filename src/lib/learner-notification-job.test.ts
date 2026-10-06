@@ -1,13 +1,14 @@
 import { beforeEach,expect,it,vi } from "vitest";
-const mocks=vi.hoisted(()=>({getDb:vi.fn(),find:vi.fn(),claim:vi.fn(),dispatch:vi.fn(),proofFind:vi.fn(),proofClaim:vi.fn(),proofDispatch:vi.fn()}));
+const mocks=vi.hoisted(()=>({getDb:vi.fn(),find:vi.fn(),claim:vi.fn(),dispatch:vi.fn(),proofFind:vi.fn(),proofClaim:vi.fn(),proofDispatch:vi.fn(),sourceFind:vi.fn(),materialize:vi.fn()}));
 vi.mock("./db",()=>({getDb:mocks.getDb}));
 vi.mock("./learner-notification-outbox",()=>({claimLearnerNotification:mocks.claim}));
 vi.mock("./learner-notification-dispatch",()=>({dispatchClaimedLearnerNotification:mocks.dispatch}));
 vi.mock("./learner-verification-delivery",()=>({claimLearnerVerificationDelivery:mocks.proofClaim,dispatchLearnerVerificationDelivery:mocks.proofDispatch}));
+vi.mock("./learner-notification-source-events",()=>({materializeLearnerNotificationSourceEvent:mocks.materialize}));
 import { processDueLearnerNotifications,readLearnerNotificationProviderConfiguration } from "./learner-notification-job";
-const db={learnerNotificationDelivery:{findMany:mocks.find},learnerNotificationVerification:{findMany:mocks.proofFind}};
+const db={learnerNotificationSourceEvent:{findMany:mocks.sourceFind},learnerNotificationDelivery:{findMany:mocks.find},learnerNotificationVerification:{findMany:mocks.proofFind}};
 const env:NodeJS.ProcessEnv={NODE_ENV:"test",NEXT_PUBLIC_APP_URL:"https://app.example.test",LEARNER_NOTIFICATIONS_EXECUTOR_ENABLED:"true",LEARNER_NOTIFICATIONS_JOB_VENDOR_IDS:"vendor-1,vendor-2",RESEND_API_KEY:"synthetic-provider-credential",EMAIL_FROM:"synthetic@invalid.example"};
-beforeEach(()=>{vi.clearAllMocks();mocks.proofFind.mockResolvedValue([]);mocks.proofClaim.mockResolvedValue(null);mocks.getDb.mockReturnValue(db);mocks.find.mockResolvedValue([{vendorId:"vendor-1",id:"delivery-1"}]);mocks.claim.mockResolvedValue({claimToken:"a".repeat(43)});mocks.dispatch.mockResolvedValue({status:"sent",providerReceipt:"private-provider-receipt"});});
+beforeEach(()=>{vi.clearAllMocks();mocks.sourceFind.mockResolvedValue([]);mocks.materialize.mockResolvedValue({status:"completed"});mocks.proofFind.mockResolvedValue([]);mocks.proofClaim.mockResolvedValue(null);mocks.getDb.mockReturnValue(db);mocks.find.mockResolvedValue([{vendorId:"vendor-1",id:"delivery-1"}]);mocks.claim.mockResolvedValue({claimToken:"a".repeat(43)});mocks.dispatch.mockResolvedValue({status:"sent",providerReceipt:"private-provider-receipt"});});
 it("disabled executor never reads the database or dispatches",async()=>{
  expect(await processDueLearnerNotifications({...env,LEARNER_NOTIFICATIONS_EXECUTOR_ENABLED:"false"})).toEqual([]);expect(mocks.getDb).not.toHaveBeenCalled();expect(mocks.dispatch).not.toHaveBeenCalled();
 });
@@ -52,4 +53,9 @@ it("drains one exact challenge through the same approved tenant/provider boundar
 it("claimed challenge is never replaced or replayed",async()=>{
  mocks.proofFind.mockResolvedValue([{vendorId:"vendor-2",id:"proof-1"}]);
  expect(await processDueLearnerNotifications(env)).toEqual([{status:"claimed_elsewhere"},{status:"sent"}]);expect(mocks.proofDispatch).not.toHaveBeenCalled();
+});
+
+it("materializes bounded exact domain sources using the same approved tenant scope",async()=>{
+ mocks.sourceFind.mockResolvedValue([{vendorId:"vendor-1",id:"source-1"}]);expect(await processDueLearnerNotifications(env)).toEqual([{status:"completed"},{status:"sent"}]);
+ expect(mocks.sourceFind).toHaveBeenCalledWith(expect.objectContaining({where:{vendorId:{in:["vendor-1","vendor-2"]},completedAt:null},take:2,select:{vendorId:true,id:true}}));expect(mocks.materialize).toHaveBeenCalledWith(db,"vendor-1","source-1");
 });
