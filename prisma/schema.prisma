@@ -3744,6 +3744,7 @@ model LearnerNotificationSourceEvent {
  audienceCustomerKeyHash String?
  payloadEncryptedEnvelope String
  occurredAt DateTime
+ availableAt DateTime @default(now())
  preferenceCursor String?
  completedAt DateTime?
  revision Int @default(1)
@@ -3752,4 +3753,5 @@ model LearnerNotificationSourceEvent {
  product Product @relation(fields:[vendorId,productId],references:[vendorId,id],onDelete:Cascade)
  @@unique([vendorId,productId,event,eventIdentity],map:"LearnerNotificationSourceEvent_scope_key")
  @@index([vendorId,completedAt,createdAt,id],map:"LearnerNotificationSourceEvent_due_idx")
+ @@index([vendorId,completedAt,availableAt,id],map:"LearnerNotificationSourceEvent_schedule_idx")
 }

@@ -1,0 +1,330 @@
+{
+  "task_id": "f1-learner-notifications",
+  "parent_goal_id": "remaining-capabilities-20261005",
+  "created_at": "2026-10-06T21:04:49.390437+00:00",
+  "source_revision": "sha256:c917d997cc8c9ee9bfb7c536fdf3497e12d306ee0bddcf835e4efd5bab34760a",
+  "source_files": {
+    "prisma/schema.prisma": "b84573bbddbad246b42ef1bb7052b0fd30fd426020b80e23f1f9ca4e78bf888f",
+    "prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql": "d65b53304d8a3e04005de9cf1c39ff407ef4a6c07d4c4c97f46995dfb627d567",
+    "src/lib/learner-notification-source-events.ts": "d32f1366813026bda373294e7559dd041fe72fa747cd08471828ec619c062a13",
+    "src/lib/learner-notification-source-events.test.ts": "3785089975d75e1f741197ac6a4a772f7cf3573b2ddd1ef5b61b53b428ff229e",
+    "src/lib/learner-notification-job.ts": "c8a1b4524b17be390b3689e3a8fba2dacf1cc3826d24ea5be8f60a9b9f0f56e8",
+    "src/lib/learner-notification-job.test.ts": "1c681b856a8ba9b417fdf40d6d1aeb8eaa67cc471983dfdae84ad1484d94a0a3",
+    "scripts/learner-notification-disposable-qa.mjs": "ff7100531d0c3991612cca22124dde33907aa81735197843a7f80a2f4cbf8b3f",
+    "scripts/g7-email-operations-browser-qa.test.mjs": "6d03adb760ea496345a7c69e7e087696fb9b2884a0137ff1f113c4996b5c1f69",
+    "scripts/staging-migration-compat-preflight.test.mjs": "83d437372511b375f88bffcb13d00607a307f0f81596c3940efc7a4e6b2d0409",
+    "scripts/staging-migration-isolated-replay.test.mjs": "e6a219b82843f697e987379848f8547e7c1e715469d7631c1a77ee2e298ea5ed"
+  },
+  "owner": "root",
+  "dispatches": 0,
+  "max_dispatches": 4,
+  "implementation": [
+    "Separate availableAt from occurredAt; existing sources backfilled to occurredAt via additive migration",
+    "Approved bounded source job filters due events and orders by due timestamp",
+    "Source materialization refuses premature expansion; prior-consent cutoff remains occurredAt"
+  ],
+  "database": {
+    "source": {
+      "files": {
+        "src/lib/learner-notification-job.ts": "c8a1b4524b17be390b3689e3a8fba2dacf1cc3826d24ea5be8f60a9b9f0f56e8",
+        "prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql": "d65b53304d8a3e04005de9cf1c39ff407ef4a6c07d4c4c97f46995dfb627d567",
+        "src/app/actions/consultation-actions.ts": "9e180cda49709058ae5719f04785170172d7c8282998cbeced2bdd7806b1e1fa",
+        "src/app/actions.ts": "abbee5f953c98e99581bbed05bfab7e0164a7c39a74dbc0dc4d41602062654d9",
+        "src/lib/learner-live-notifications.ts": "c1ec6dbc59b52af179466d19f45d05f2c00f231d0a5ae0e8a0a03fb61690a07c",
+        "src/lib/learner-payment-notifications.ts": "7f6d038b98e9f4ce120b7d3cd948caed58be3b3a6733fb4fa7055588c4117016",
+        "src/lib/learner-notification-source-events.ts": "d32f1366813026bda373294e7559dd041fe72fa747cd08471828ec619c062a13",
+        "src/lib/course-curriculum.ts": "7f5abff9742ad45982e3770d52921acca623e15c8ee5ebbee45d641de8b1a4ac",
+        "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql": "6aaec73e4b1335966d44cd94c613f78d0da74af4421a3857549cd9ae2a730993",
+        "src/lib/learner-verification-delivery.ts": "d46b07f3605b1072ef155810c8050497a86477d2950a30dff6d0045ad9e503bf",
+        "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql": "a2b25be832ae9981b832dfa44e59217a2aab8b72c194a53c00a6b451745150e4",
+        "package.json": "3348ccdf618d1785b687f24a45b10efaf61dc4cc130f46cd53d5df9d3ad75094",
+        "package-lock.json": "316fe741454b5747c1afc8c09a62ff80a4ed819899d7ea4a51a77eace5f523f0",
+        "prisma/schema.prisma": "b84573bbddbad246b42ef1bb7052b0fd30fd426020b80e23f1f9ca4e78bf888f",
+        "prisma/migrations/20261007010000_learner_notifications/migration.sql": "9556eb9165d262a8c17b26a2ca87a06da024d8e95cf3a1167b4e3f1556071515",
+        "src/lib/learner-notification-contract.ts": "b09c722bbed2be39f174129bfebd04575a71e57cdc16c80a8686587f70364c02",
+        "src/lib/learner-notification-preferences.ts": "14c5f162ebc305dbe17367c9b5807c10bd7f5f85fae500f64c4c2ca616d25af0",
+        "src/lib/learner-notification-outbox.ts": "e83d285923f56809524f7e1defe0337b43ba2d0fb9e6912ff96a38d4251b478b",
+        "src/lib/learner-notification-dispatch.ts": "a2fc7f8d5f85a7e8ed633745e40d27a636e93176d6b73303c57628e7cca61ba8",
+        "src/lib/learner-notification-providers.ts": "a3a3eae976a8a35d6f36e2bc7a0d3f10d49fc9f79c7119a3f941a5824de47030",
+        "src/lib/learner-notification-verification.ts": "2ea5d1c1e798a12da8513c6f809c09411b0f308d08f72e480f909f5c34f2214d",
+        "src/lib/student-course-learning.ts": "3f2d57292b70207a7bb6ec63e8cd4153f595d6565993dc5176ab0315146e4f46",
+        "src/lib/sensitive-data.ts": "07c2eb967a8f03f661d98a8193f7153786598ddb6d94b831f51b72c08eac9822",
+        "src/lib/commerce-order-pii.ts": "6761a568619e2830ea51c150a064e3ee60b1e75572533734eb0fe6f7f9b04220",
+        "src/lib/commerce-order-fulfillment.ts": "b5a78f51f0455b96fd63939397677d71acc7869ed8ccdff8df0e73a69c3a8081",
+        "src/lib/commerce-orders.ts": "7405a79e074f8553bce9a1bb41acabd487fabb00f8443221691be7fe74481aa2",
+        "scripts/learner-notification-disposable-qa.mjs": "ff7100531d0c3991612cca22124dde33907aa81735197843a7f80a2f4cbf8b3f"
+      },
+      "revision": "sha256:fa254abdcb5f6e6ed77afe9aa75dd8c831c696d40466a53aeab7a44e5947233b"
+    },
+    "status": "PASS",
+    "migrationCount": 89,
+    "tests": [
+      {
+        "name": "cross-tenant product FK refuses preference",
+        "status": "PASS"
+      },
+      {
+        "name": "cross-tenant delivery/preference FK refuses dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent consent CAS admits one writer",
+        "status": "PASS"
+      },
+      {
+        "name": "event uniqueness survives a consent revision change",
+        "status": "PASS"
+      },
+      {
+        "name": "default-deny RLS hides rows and rejects anonymous-role writes",
+        "status": "PASS"
+      },
+      {
+        "name": "refunded recipient can unsubscribe using authenticated scope",
+        "status": "PASS"
+      },
+      {
+        "name": "service rejects stale consent revision",
+        "status": "PASS"
+      },
+      {
+        "name": "foreign recipient cannot unsubscribe another tenant",
+        "status": "PASS"
+      },
+      {
+        "name": "recipient without current purchase cannot opt in",
+        "status": "PASS"
+      },
+      {
+        "name": "verification rejects exhausted attempts and expired enrollment",
+        "status": "PASS"
+      },
+      {
+        "name": "contact proof refuses foreign recipient and locks after five wrong attempts",
+        "status": "PASS"
+      },
+      {
+        "name": "expired contact proof cannot mark destination verified",
+        "status": "PASS"
+      },
+      {
+        "name": "rotated contact proof consumes once without granting notification consent",
+        "status": "PASS"
+      },
+      {
+        "name": "native push subscription proves device separately from channel consent",
+        "status": "PASS"
+      },
+      {
+        "name": "durable proof is encrypted and repeat requests respect cooldown",
+        "status": "PASS"
+      },
+      {
+        "name": "cross-tenant and concurrent proof claims admit exactly one owner",
+        "status": "PASS"
+      },
+      {
+        "name": "expired proof suppresses provider and clears its encrypted payload",
+        "status": "PASS"
+      },
+      {
+        "name": "contact rotation suppresses old queued proof and rejects claimed old proof",
+        "status": "PASS"
+      },
+      {
+        "name": "unknown challenge provider outcome is terminal without automatic replay",
+        "status": "PASS"
+      },
+      {
+        "name": "failed proof commit after provider acceptance does not send again",
+        "status": "PASS"
+      },
+      {
+        "name": "real lesson publication commits one source and metadata saves do not republish",
+        "status": "PASS"
+      },
+      {
+        "name": "source insert failure rolls back the actual lesson and product revision",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent source consumers create only exact owning current recipients",
+        "status": "PASS"
+      },
+      {
+        "name": "real completed course source is recipient-bound and idempotent",
+        "status": "PASS"
+      },
+      {
+        "name": "bounded source fanout persists its cursor across more than twenty preferences",
+        "status": "PASS"
+      },
+      {
+        "name": "source materialization excludes consent granted after the domain event",
+        "status": "PASS"
+      },
+      {
+        "name": "live source insert failure rolls back owning lifecycle transition",
+        "status": "PASS"
+      },
+      {
+        "name": "live source requires exact owning active session and persisted course binding",
+        "status": "PASS"
+      },
+      {
+        "name": "owning active live dispatch has one bounded authorized provider attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "live ending after claim suppresses queued session without provider call",
+        "status": "PASS"
+      },
+      {
+        "name": "reopened live has new source identity and removed binding suppresses dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "future notification source stays pending without early expansion or cursor mutation",
+        "status": "PASS"
+      },
+      {
+        "name": "source creation defaults immediate availability to the actual event timestamp",
+        "status": "PASS"
+      },
+      {
+        "name": "forward scheduling migration preserves existing timestamps and adds the immediate default",
+        "status": "PASS"
+      },
+      {
+        "name": "real consultation reservation resolves actual salesProject relation and owning membership",
+        "status": "PASS"
+      },
+      {
+        "name": "real concurrent consultation reservation admits only one exact slot",
+        "status": "PASS"
+      },
+      {
+        "name": "unpublished consultation project refuses new reservation without writes",
+        "status": "PASS"
+      },
+      {
+        "name": "payment source fault rolls back paid order entitlement and commerce event",
+        "status": "PASS"
+      },
+      {
+        "name": "exact canonical payment publishes only owning buyer and repeated paid does not republish",
+        "status": "PASS"
+      },
+      {
+        "name": "outbox deduplicates concurrent real database event producers",
+        "status": "PASS"
+      },
+      {
+        "name": "outbox foreign scope cannot queue or claim owning recipient",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent worker claim admits exactly one owner",
+        "status": "PASS"
+      },
+      {
+        "name": "forged or replayed worker completion cannot mark delivery",
+        "status": "PASS"
+      },
+      {
+        "name": "exact claimed dispatch cannot run twice or accept a forged token",
+        "status": "PASS"
+      },
+      {
+        "name": "provider uncertainty is durable and never invokes a second attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "failed database commit after provider acceptance never repeats the external attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "entitlement expiry after claim refuses provider dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "consent withdrawal waits for the bounded authorized provider attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "consent revision change suppresses a queued event",
+        "status": "PASS"
+      },
+      {
+        "name": "real full refund after claim suppresses dispatch and further producer events",
+        "status": "PASS"
+      },
+      {
+        "name": "owned synthetic purchase fixture is created",
+        "status": "PASS"
+      }
+    ],
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "safety": {
+      "loopbackOnly": true,
+      "syntheticOnly": true,
+      "externalOperations": false,
+      "providerCallbacks": "synthetic-only;not actual provider delivery",
+      "rawLogsSaved": false
+    }
+  },
+  "targeted_unit": {
+    "status": "PASS",
+    "tests": 32
+  },
+  "migration_inventory_contracts": {
+    "status": "PASS",
+    "tests": 12,
+    "skipped": 0
+  },
+  "typescript": "PASS",
+  "lint": "PASS",
+  "browser": {
+    "status": "RUNNING",
+    "session": 88775,
+    "claim": "No earlier browser evidence reused for scheduling candidate"
+  },
+  "failed_attempts": [
+    {
+      "tests_reached": 32,
+      "cause": "Existing reopened live fixture timestamp was future; use actual current time plus strict newer-session assertion"
+    },
+    {
+      "tests_reached": 40,
+      "cause": "New immediate schedule fixture used payment_success and contaminated canonical payment case; use separate reminder event"
+    }
+  ],
+  "prior_coverage": {
+    "head": "9c389a29822b50b423b87253f486384305595dde",
+    "status": "PASS",
+    "vitest": 4662,
+    "node_tap": 1067,
+    "lib_branches_pct": 80.15,
+    "receipt": "docs/remaining-capabilities-f1-notifications-coverage-20261007.json",
+    "claim": "Does not prove new scheduling candidate coverage"
+  },
+  "acceptance": "NOT_READY",
+  "remaining": [
+    "Actual verified learner confirmation and consultation reminder producer/delivery lifecycle",
+    "Discussion reply and applicable non-course resource contracts",
+    "Approved channel verification and native push journeys",
+    "Independent Critical review",
+    "Canonical acceptance",
+    "Exact-head CI and protected PR delivery"
+  ],
+  "safety": {
+    "external_operations": false,
+    "original_dirty_checkout_modified": false,
+    "historical_migrations_changed": false,
+    "assertions_reduced": false,
+    "raw_logs_saved": false
+  }
+}

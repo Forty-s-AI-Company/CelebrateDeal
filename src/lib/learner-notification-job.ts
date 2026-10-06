@@ -36,7 +36,7 @@ export async function processDueLearnerNotifications(env:NodeJS.ProcessEnv=proce
  catch{return [{status:"configuration_missing"}];}
  const db=getDb(),results:Array<{status:string}>=[],deadline=Date.now()+20000;
  try{
-  const sources=await db.learnerNotificationSourceEvent.findMany({where:{vendorId:{in:vendors},completedAt:null},orderBy:[{createdAt:"asc"},{id:"asc"}],take:2,select:{vendorId:true,id:true}});
+  const sources=await db.learnerNotificationSourceEvent.findMany({where:{vendorId:{in:vendors},completedAt:null,availableAt:{lte:new Date()}},orderBy:[{availableAt:"asc"},{id:"asc"}],take:2,select:{vendorId:true,id:true}});
   for(const source of sources){if(Date.now()>=deadline)break;const materialized=await materializeLearnerNotificationSourceEvent(db,source.vendorId,source.id);results.push({status:materialized.status});}
   // Reserve one bounded challenge slot; both queues share the invocation deadline.
   const proofs=await db.learnerNotificationVerification.findMany({where:{vendorId:{in:vendors},deliveryStatus:"queued",deliveryAttemptCount:0,deliveryNextAttemptAt:{lte:new Date()},preference:{is:{channel:{in:channels}}}},orderBy:[{createdAt:"asc"},{id:"asc"}],take:1,select:{vendorId:true,id:true}});

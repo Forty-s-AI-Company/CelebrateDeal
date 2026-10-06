@@ -57,5 +57,5 @@ it("claimed challenge is never replaced or replayed",async()=>{
 
 it("materializes bounded exact domain sources using the same approved tenant scope",async()=>{
  mocks.sourceFind.mockResolvedValue([{vendorId:"vendor-1",id:"source-1"}]);expect(await processDueLearnerNotifications(env)).toEqual([{status:"completed"},{status:"sent"}]);
- expect(mocks.sourceFind).toHaveBeenCalledWith(expect.objectContaining({where:{vendorId:{in:["vendor-1","vendor-2"]},completedAt:null},take:2,select:{vendorId:true,id:true}}));expect(mocks.materialize).toHaveBeenCalledWith(db,"vendor-1","source-1");
+ expect(mocks.sourceFind).toHaveBeenCalledWith(expect.objectContaining({where:{vendorId:{in:["vendor-1","vendor-2"]},completedAt:null,availableAt:{lte:expect.any(Date)}},orderBy:[{availableAt:"asc"},{id:"asc"}],take:2,select:{vendorId:true,id:true}}));expect(mocks.materialize).toHaveBeenCalledWith(db,"vendor-1","source-1");
 });

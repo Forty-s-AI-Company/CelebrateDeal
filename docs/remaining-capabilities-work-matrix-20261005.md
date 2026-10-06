@@ -107,3 +107,10 @@ F1 通知補記：已接上 configured-only email／Web Push／Twilio SMS／What
 - 完整 Vitest 628 files/4662 tests PASS；完整 coverage attempt exit1，尚未取得 merged coverage。Node TAP 診斷1056/1067 PASS、11 FAIL；已確認 mirror staged index 與診斷 TEMP 在 workspace 內的環境問題，隔離修正後重跑 RUNNING，不宣稱品質 gate 通過。
 - 證據 docs/remaining-capabilities-f1-notifications-current-regressions-20261007.json；NOT_READY。Consultation/discussion、非course適用契約、渠道及 native push 完整旅程、Critical review、canonical acceptance、exact CI/protected delivery仍需完成。
 - 上述隔離環境修正後，完整 Node TAP 1067/1067 PASS、fail0、skip0。合併 coverage 門檻重跑中；不以單獨 TAP PASS 代替 coverage acceptance。
+
+### F1 通知到期排程 checkpoint 2026-10-07
+
+- ID f1-learner-notifications；owner root；dispatch0/4。新增availableAt，與occurredAt/consent cutoff分離；approved tenant job只展開已到期來源，bounded2及20-recipient cursor保持。Additive89th migration保留既有資料時間；不修改歷史migration。
+- 89 migrations、51 PostgreSQL回歸、32 source/job unit、12 migration inventory contracts、TypeScript、lint PASS。兩次fixture失敗及修正保留UUID收據；51案例包含原48及future/no-early-expansion、immediate default、實際forward SQL backfill。最新browser session88775 RUNNING，未重用舊成功證據。
+- 前候選9c389a29完整coverage PASS：4662 Vitest、1067 Node TAP、0skip、lib branches80.15%符合80%原門檻；不支持後續schedule修改。證據 docs/remaining-capabilities-f1-notifications-coverage-20261007.json、docs/remaining-capabilities-f1-notifications-schedule-20261007.json。
+- NOT_READY；verified learner確認及consultation producer、discussion、非course適用契約、完整渠道/nativepush、Criticalreview、canonical acceptance、exactCI/protecteddelivery仍需完成。

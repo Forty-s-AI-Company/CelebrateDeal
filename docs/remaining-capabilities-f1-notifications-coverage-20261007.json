@@ -1,0 +1,70 @@
+{
+  "head": "9c389a29822b50b423b87253f486384305595dde",
+  "status": "PASS",
+  "global": {
+    "lines": {
+      "total": 42111,
+      "covered": 29627,
+      "skipped": 0,
+      "pct": 70.35
+    },
+    "statements": {
+      "total": 52662,
+      "covered": 34171,
+      "skipped": 0,
+      "pct": 64.88
+    },
+    "functions": {
+      "total": 9578,
+      "covered": 6517,
+      "skipped": 0,
+      "pct": 68.04
+    },
+    "branches": {
+      "total": 51308,
+      "covered": 32557,
+      "skipped": 0,
+      "pct": 63.45
+    },
+    "branchesTrue": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": "Unknown"
+    }
+  },
+  "lib": {
+    "lines": {
+      "total": 12597,
+      "covered": 11583,
+      "skipped": 0,
+      "pct": 91.95
+    },
+    "statements": {
+      "total": 15174,
+      "covered": 13154,
+      "skipped": 0,
+      "pct": 86.68
+    },
+    "functions": {
+      "total": 2802,
+      "covered": 2622,
+      "skipped": 0,
+      "pct": 93.57
+    },
+    "branches": {
+      "total": 14374,
+      "covered": 11522,
+      "skipped": 0,
+      "pct": 80.15
+    },
+    "branchesTrue": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": "Unknown"
+    }
+  },
+  "assertionsReduced": false,
+  "rawLogsSaved": false
+}

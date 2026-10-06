@@ -16,7 +16,7 @@ import { saveStudentLessonProgress } from "../src/lib/student-course-learning.ts
 import { reserveConsultationBooking } from "../src/app/actions/consultation-actions.ts";
 import { recordLearnerLiveStartedSources } from "../src/lib/learner-live-notifications.ts";
 import { recordLearnerNotificationSourceEvent, materializeLearnerNotificationSourceEvent } from "../src/lib/learner-notification-source-events.ts";
-const sourceFiles = ["src/app/actions/consultation-actions.ts","src/app/actions.ts","src/lib/learner-live-notifications.ts","src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
+const sourceFiles = ["src/lib/learner-notification-job.ts","prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql","src/app/actions/consultation-actions.ts","src/app/actions.ts","src/lib/learner-live-notifications.ts","src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
  "src/lib/learner-notification-contract.ts", "src/lib/learner-notification-preferences.ts", "src/lib/learner-notification-outbox.ts", "src/lib/learner-notification-dispatch.ts", "src/lib/learner-notification-providers.ts", "src/lib/learner-notification-verification.ts",
  "src/lib/student-course-learning.ts", "src/lib/sensitive-data.ts", "src/lib/commerce-order-pii.ts", "src/lib/commerce-order-fulfillment.ts", "src/lib/commerce-orders.ts", "scripts/learner-notification-disposable-qa.mjs"];
 function sourceSnapshot() {
@@ -295,13 +295,37 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
       assert.equal((await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:row.id,claimToken:claim.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent"};}})).status,"suppressed");assert.equal(calls,0);
     });
     await check("reopened live has new source identity and removed binding suppresses dispatch",async()=>{
-      const startedAt=new Date(liveStart.getTime()+1000);
+      const startedAt=new Date();assert.ok(startedAt.getTime()>liveStart.getTime());
       await db.$transaction(async tx=>{await tx.live.update({where:{id:live.id},data:{status:"live",startedAt,endedAt:null}});await recordLearnerLiveStartedSources(tx,{vendorId:vendor.id,liveId:live.id,startedAt});});
       const source=await db.learnerNotificationSourceEvent.findFirstOrThrow({where:{vendorId:vendor.id,event:"live_started",occurredAt:startedAt}});assert.equal((await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id)).status,"completed");
       assert.equal(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,event:"live_started"}}),2);
       const row=await db.learnerNotificationDelivery.findFirstOrThrow({where:{vendorId:vendor.id,eventIdentity:source.eventIdentity,preferenceId:preference.id}}),claim=await claimLearnerNotification(db,vendor.id,row.id);assert.ok(claim);
       await db.liveProduct.deleteMany({where:{vendorId:vendor.id,liveId:live.id,productId:product.id}});let calls=0;
       assert.equal((await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:row.id,claimToken:claim.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent"};}})).status,"suppressed");assert.equal(calls,0);
+    });
+    await check("future notification source stays pending without early expansion or cursor mutation",async()=>{
+      const occurredAt=new Date(),availableAt=new Date(occurredAt.getTime()+3600000);
+      const source=await db.$transaction(tx=>recordLearnerNotificationSourceEvent(tx,{vendorId:vendor.id,productId:product.id,event:"consultation_reminder",eventIdentity:"synthetic_future_reminder",audienceCustomerKeyHash:identity.customerKeyHash,occurredAt,availableAt,message:{title:"Synthetic reminder",body:"Synthetic consultation",path:"/portal/synthetic/notifications"}}));
+      const before=await db.learnerNotificationDelivery.count({where:{vendorId:vendor.id}});
+      assert.equal((await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id)).status,"not_pending");
+      const row=await db.learnerNotificationSourceEvent.findUniqueOrThrow({where:{id:source.id}});assert.equal(row.revision,1);assert.equal(row.completedAt,null);assert.equal(row.preferenceCursor,null);assert.equal(row.occurredAt.getTime(),occurredAt.getTime());assert.equal(row.availableAt.getTime(),availableAt.getTime());assert.equal(await db.learnerNotificationDelivery.count({where:{vendorId:vendor.id}}),before);
+    });
+    await check("source creation defaults immediate availability to the actual event timestamp",async()=>{
+      const occurredAt=new Date();const source=await db.$transaction(tx=>recordLearnerNotificationSourceEvent(tx,{vendorId:vendor.id,productId:product.id,event:"consultation_reminder",eventIdentity:"synthetic_immediate_schedule",audienceCustomerKeyHash:identity.customerKeyHash,occurredAt,message:{title:"Synthetic immediate",body:"Synthetic payment",path:"/portal/synthetic/notifications"}}));
+      const row=await db.learnerNotificationSourceEvent.findUniqueOrThrow({where:{id:source.id}});assert.equal(row.availableAt.getTime(),row.occurredAt.getTime());assert.equal((await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id)).status,"completed");
+    });
+    await check("forward scheduling migration preserves existing timestamps and adds the immediate default",async()=>{
+      await db.$transaction(async tx=>{
+        // Apply the exact forward SQL to an owned transaction-local copy, never rewrite migration history.
+        await tx.$executeRawUnsafe('CREATE TEMP TABLE "LearnerSourceScheduleSynthetic" (LIKE "LearnerNotificationSourceEvent" INCLUDING DEFAULTS) ON COMMIT DROP');
+        await tx.$executeRawUnsafe('ALTER TABLE "LearnerSourceScheduleSynthetic" DROP COLUMN "availableAt"');
+        await tx.$executeRawUnsafe(`INSERT INTO "LearnerSourceScheduleSynthetic" SELECT "id","vendorId","productId","event","eventIdentity","audienceCustomerKeyHash","payloadEncryptedEnvelope","occurredAt","preferenceCursor","completedAt","revision","createdAt" FROM "LearnerNotificationSourceEvent" WHERE "eventIdentity"='synthetic_future_reminder'`);
+        const sql=fs.readFileSync(path.resolve("prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql"),"utf8").replaceAll('"LearnerNotificationSourceEvent"','"LearnerSourceScheduleSynthetic"').replaceAll('"LearnerNotificationSourceEvent_schedule_idx"','"LearnerSourceScheduleSynthetic_schedule_idx"');
+        for(const statement of sql.split(";").map(value=>value.trim()).filter(Boolean))await tx.$executeRawUnsafe(statement);
+        const rows=await tx.$queryRawUnsafe('SELECT "occurredAt","availableAt" FROM "LearnerSourceScheduleSynthetic"');assert.equal(rows.length,1);assert.equal(rows[0].occurredAt.getTime(),rows[0].availableAt.getTime());
+        const defaults=await tx.$queryRawUnsafe("SELECT column_default,is_nullable FROM information_schema.columns WHERE table_schema=(SELECT nspname FROM pg_namespace WHERE oid=pg_my_temp_schema()) AND table_name='LearnerSourceScheduleSynthetic' AND column_name='availableAt'");
+        assert.equal(defaults.length,1);assert.equal(defaults[0].is_nullable,"NO");assert.match(defaults[0].column_default,/CURRENT_TIMESTAMP/u);
+      });
     });
     const project=await db.salesProject.create({data:{vendorId:vendor.id,name:"Synthetic consultation project",slug:randomUUID(),mode:"consulting",primaryFlow:"consultation",status:"published",publishedAt:new Date()}});
     const day=new Date();day.setUTCDate(day.getUTCDate()+1);day.setUTCHours(8,0,0,0);
@@ -464,9 +488,9 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
   if (sourceSnapshot().revision !== sourceAtStart.revision) throw new Error("notification-source-changed-during-verification");
   } finally { await db.$disconnect(); }
 } });
-const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 48 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
+const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 51 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
 fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 48 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 51 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
