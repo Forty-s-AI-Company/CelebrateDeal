@@ -66,6 +66,13 @@ export const PaymentWebhookPayload = z.object({
 });
 
 export type PaymentWebhookPayloadInput = z.infer<typeof PaymentWebhookPayload>;
+/** Optional server-owned identity fence for recovery of one existing payment. */
+export type PaymentWebhookExpectedScope = {
+  vendorId: string;
+  paymentTransactionId: string;
+  providerName: string;
+  orderNumber: string;
+};
 
 function monthKeyFromDate(date: Date) {
   return date.toISOString().slice(0, 7);
@@ -902,7 +909,7 @@ function shouldClearTransientCheckoutKey(eventType: PaymentWebhookPayloadInput["
   return isPaymentLifecycleEvent(eventType) && !hasCanonicalOrder;
 }
 
-async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, event?: WebhookEvent) {
+async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, event?: WebhookEvent, expectedScope?: PaymentWebhookExpectedScope) {
   const db = getDb();
   const { vendor, existingTransaction } = await resolveWebhookScope(payload);
 
@@ -937,6 +944,11 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       },
       include: { refunds: true, primaryCommerceOrder: { select: { id: true } } },
     });
+    // Revalidate the pinned payment inside the serializable write transaction.
+    if (expectedScope && (vendor.id !== expectedScope.vendorId || payload.provider !== expectedScope.providerName
+      || payload.orderNumber !== expectedScope.orderNumber || currentTransaction?.id !== expectedScope.paymentTransactionId)) {
+      throw new Error("Recovery payment identity changed before processing.");
+    }
     const invariant = validatePaymentWebhookInvariants({
       eventId: payload.eventId,
       eventType: payload.eventType,
@@ -1241,11 +1253,11 @@ function isRetryableCommissionWriteConflict(error: unknown) {
  * business identity. Retry a bounded number of times; the second read/upsert
  * then returns the existing commission instead of creating another row.
  */
-export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput, event?: WebhookEvent) {
+export async function processPaymentWebhook(payload: PaymentWebhookPayloadInput, event?: WebhookEvent, expectedScope?: PaymentWebhookExpectedScope) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return await processPaymentWebhookOnce(payload, event);
+      return await processPaymentWebhookOnce(payload, event, expectedScope);
     } catch (error) {
       lastError = error;
       if (!isRetryableCommissionWriteConflict(error) || attempt === 1) break;

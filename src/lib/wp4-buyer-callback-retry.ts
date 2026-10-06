@@ -47,7 +47,8 @@ export async function retryWp4HistoricalBuyerCallback(db: Pick<PrismaClient, "$t
     if (fenced.count !== 1) return { status: "RETRY_REJECTED" };
     await tx.paymentTransaction.update({ where: { id: payment.id, vendorId: WP4_SANDBOX_FIXTURE.vendorId },
       data: { metadata: { ...metadata, wp4CallbackRetryReserved: true } as Prisma.InputJsonObject } });
-    return { status: "RESERVED", eventId: event.id, expectedVersion: { retryCount: event.retryCount, updatedAt } };
+    return { status: "RESERVED", eventId: event.id, expectedVersion: { retryCount: event.retryCount, updatedAt,
+      paymentScope: { vendorId: payment.vendorId, paymentTransactionId: payment.id, providerName: payment.providerName, orderNumber: payment.orderNumber } } };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }).catch(error => {
     // A competing serializable reservation is a rejected retry, not a new dispatch.
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {

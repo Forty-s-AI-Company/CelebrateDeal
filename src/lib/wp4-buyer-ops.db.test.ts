@@ -9,10 +9,11 @@ import { PaymentWebhookPayload, processPaymentWebhook } from "./payment-webhooks
 import { readWp4ExistingBuyerState, wp4HistoricalBuyerWhere, WP4_BUYER_CONTINUATION_SOURCE as source } from "./wp4-buyer-recovery";
 import { retryWp4HistoricalBuyerCallback } from "./wp4-buyer-callback-retry";
 const db = getDb();
+const raceVendorId = "wp4_synthetic_slug_race_vendor";
 afterEach(async () => {
  vi.unstubAllEnvs();
  await db.webhookEvent.deleteMany({ where: { OR: [{ vendorId: fixed.vendorId }, { eventId: { in: ["synthetic-buyer-paid", "synthetic-buyer-route-paid", "synthetic-buyer-concurrent-paid"] } }] } });
- await db.vendor.deleteMany({ where: { id: fixed.vendorId } });
+ await db.vendor.deleteMany({ where: { id: { in: [fixed.vendorId, raceVendorId] } } });
  await db.user.deleteMany({ where: { id: fixed.userId } });
  await db.billingPlan.deleteMany({ where: { id: fixed.planId } });
 });
@@ -97,6 +98,42 @@ describe("fixed historical buyer PostgreSQL recovery", () => {
   await expect(retryWp4HistoricalBuyerCallback(db)).resolves.toEqual({ status: "RETRY_REJECTED", retryAttempts: 0, failureCode: "UNKNOWN" });
   expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).metadata).not.toHaveProperty("wp4CallbackRetryReserved");
   expect(await db.webhookEvent.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({ status: "failed", retryCount: 1, vendorId: null, updatedAt: event.updatedAt });
+  expect(await db.paymentTransaction.count({ where: { vendorId: fixed.vendorId } })).toBe(1);
+ });
+ it("fails closed when a slug is reassigned after reservation and before dispatch", async () => {
+  const { payment, payload } = await checkout();
+  const normalized = { ...payload, vendorSlug: fixed.vendorSlug }; delete normalized.vendorId;
+  const event = await db.webhookEvent.create({ data: { provider: "payuni", eventId: payload.eventId, eventType: "paid", status: "failed", retryCount: 1, maxRetries: 5,
+   payload: { normalized: JSON.parse(JSON.stringify(normalized)) } } });
+  let reassigned = false;
+  // Pause only at the real committed reservation boundary; processing remains real PostgreSQL.
+  const transaction = new Proxy(db.$transaction, { async apply(target, _receiver, args) {
+   const result: unknown = await Reflect.apply(target, db, args);
+   if (typeof result === "object" && result !== null && "status" in result && result.status === "RESERVED") {
+    await db.vendor.update({ where: { id: fixed.vendorId }, data: { slug: `${fixed.vendorSlug}-renamed` } });
+    await db.vendor.create({ data: { id: raceVendorId, name: "Synthetic race vendor", slug: fixed.vendorSlug,
+     email: "synthetic-race-vendor@invalid.example", passwordHash: "synthetic-login-disabled" } });
+    reassigned = true;
+   }
+   return result;
+  } });
+  await expect(retryWp4HistoricalBuyerCallback({ $transaction: transaction })).resolves.toEqual({ status: "RETRY_FAILED", retryAttempts: 1, failureCode: "processing_failed" });
+  expect(reassigned).toBe(true);
+  expect(await db.paymentTransaction.count({ where: { vendorId: raceVendorId } })).toBe(0);
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "pending", metadata: { wp4CallbackRetryReserved: true } });
+  expect(await db.webhookEvent.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({ status: "failed", retryCount: 2, vendorId: null });
+  const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
+  expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(0);
+  expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "email.queued" } })).toBe(0);
+  await expect(retryWp4HistoricalBuyerCallback(db)).resolves.toMatchObject({ status: "RETRY_REJECTED", retryAttempts: 0 });
+ });
+ it("rejects a changed reserved payment identity inside the processing transaction", async () => {
+  const { payment, payload } = await checkout();
+  await expect(processPaymentWebhook(payload, undefined, { vendorId: fixed.vendorId, paymentTransactionId: "synthetic-wrong-payment",
+   providerName: "payuni", orderNumber: payment.orderNumber! })).rejects.toThrow();
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "pending" });
+  const order = await db.commerceOrder.findFirstOrThrow({ where: { primaryPaymentTransactionId: payment.id } });
+  expect(await db.commerceOrderEvent.count({ where: { orderId: order.id, eventType: "payment.paid" } })).toBe(0);
   expect(await db.paymentTransaction.count({ where: { vendorId: fixed.vendorId } })).toBe(1);
  });
  it("ignores a payment whose source has changed even if all monetary fields match", async () => {
