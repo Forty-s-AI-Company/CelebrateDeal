@@ -55,7 +55,7 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
       env: { ...environment, DATABASE_URL: databaseUrl, DIRECT_URL: databaseUrl, Q2_BROWSER_MIRROR: mirror, Q2_BROWSER_REPORT: browserReport, Q2_BROWSER_SOURCE_SHA: sourceSha, PLAYWRIGHT_EXECUTABLE_PATH: executable, E2E_PORT: "31041", E2E_BASE_URL: "http://127.0.0.1:31041", NEXT_PUBLIC_APP_URL: "http://127.0.0.1:31041", E2E_TEST_MODE: "true" },
     });
     if (!fs.existsSync(browserReport)) throw new Error("q2-browser-receipt-missing");
-    if (browser.status !== 0) browserFailure = `${browser.stdout ?? ""}\n${browser.stderr ?? ""}`.split(/\r?\n/u).filter((line) => /^::error(?: file=tests\/e2e\/[A-Za-z0-9_.\/-]+,line=\d+)?::playwright /u.test(line)).slice(0, 10);
+    if (browser.status !== 0) browserFailure = `${browser.stdout ?? ""}\n${browser.stderr ?? ""}`.split(/\r?\n/u).filter((line) => /^::error(?: file=tests\/(?:e2e|subscription-recovery)\/[A-Za-z0-9_.\/-]+,line=\d+)?::playwright /u.test(line)).slice(0, 10);
     const browserResult = JSON.parse(fs.readFileSync(browserReport, "utf8"));
     browserProof = { expected: browserResult.stats.expected, unexpected: browserResult.stats.unexpected, skipped: browserResult.stats.skipped, flaky: browserResult.stats.flaky };
     const diagnostics = [];

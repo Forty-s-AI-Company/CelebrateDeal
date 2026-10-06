@@ -48,7 +48,7 @@
     "package-lock.json",
     "src/lib/webhook-retry.ts"
   ],
-  "source_revision": "sha256:2732308205fbc0573f4dce77f37949461654598486829430fbf627b141ce2b42",
+  "source_revision": "sha256:963ed6c1e63467756f4b0e946856dd9932cd1fbdec00094ea708bdd08dd40f9c",
   "test_files": [
     "scripts/g7-email-operations-browser-qa.test.mjs",
     "scripts/prisma-invariant-inventory.test.ts",
@@ -79,8 +79,8 @@
     "src/lib/wp4-runtime-boundary.test.ts",
     "src/lib/wp4-subscription-ops.db.test.ts",
     "src/lib/wp4-subscription-state.test.ts",
-    "tests/e2e/native-subscription-recovery.spec.ts",
-    "tests/e2e/native-buyer-recovery.spec.ts",
+    "tests/subscription-recovery/native-subscription-recovery.spec.ts",
+    "tests/subscription-recovery/native-buyer-recovery.spec.ts",
     "src/app/api/admin/ops/payuni/test-support/recovery-boundary.ts",
     "src/app/api/admin/ops/payuni/wp4-buyer-callback-retry/route.test.ts",
     "src/app/api/admin/ops/payuni/wp4-buyer-existing-state/route.test.ts",
@@ -90,10 +90,13 @@
     "src/app/api/admin/ops/payuni/wp4-subscription-state/route.test.ts",
     "src/app/api/admin/ops/payuni/wp4-subscription-refund/route.test.ts",
     "src/app/api/admin/ops/payuni/wp4-subscription-reconcile/route.test.ts",
-    "src/app/api/admin/ops/payuni/wp4-recovery-routes.test.ts"
+    "src/app/api/admin/ops/payuni/wp4-recovery-routes.test.ts",
+    ".github/workflows/ci.yml",
+    "scripts/playwright-ci-reporter.ts",
+    "scripts/playwright-ci-reporter.test.ts"
   ],
-  "test_revision": "sha256:551c2ba761452148937628838825eb8edd4d07a59cb9e15a35042058d0a9ca06",
-  "status": "IMPLEMENTED_PENDING_FINAL_VERIFICATION",
+  "test_revision": "sha256:06c78894cc9d444ef23fecfebe0cc1ac09408fbb324c299da1da761c168d2de7",
+  "status": "CI_CORRECTION_VERIFIED_PENDING_ADDITIONAL_REVIEW_AND_EXACT_HEAD_CI",
   "dispatch_used": 4,
   "dispatch_limit": 4,
   "observed_model": "unknown",
@@ -135,7 +138,38 @@
     "tenant_slug_trade_db": "65/65 PASS at ca8d3302 before pure selector helper extraction; exact new hash browser run required",
     "tenant_dispatch_race": "Both new PostgreSQL race and payment-ID tests passed; full 67-test run has one unrelated settlement failure pending diagnosis, zero skipped",
     "node_tap_ci_correction": "12/12 affected historical migration TAP tests PASS,zero skipped;full1067 TAP currently running. Exact87 inventory and final migration name checked; product source unchanged.",
-    "full_node_tap_latest": "1067/1067 PASS,zero skipped;tracked non-sensitive LF mirror,read-only Git object alternates/core.longpaths;historical checksums unchanged"
+    "full_node_tap_latest": "1067/1067 PASS,zero skipped;tracked non-sensitive LF mirror,read-only Git object alternates/core.longpaths;historical checksums unchanged",
+    "ci_browser_failure": "Exact ca9e8e1 CI failures were both fixture HTTP status assertions: generic release server lacked Q2-specific verified runner/source/secret configuration. Move both unchanged scenarios to a mandatory dedicated CI gate; no skip or assertion changes.",
+    "ci_correction_browser_current": {
+      "sourceShaAtLaunch": "ca9e8e1cd956b426960c2f633833def21e4bee64",
+      "sourceRevision": "sha256:963ed6c1e63467756f4b0e946856dd9932cd1fbdec00094ea708bdd08dd40f9c",
+      "testRevision": "sha256:06c78894cc9d444ef23fecfebe0cc1ac09408fbb324c299da1da761c168d2de7",
+      "migrations": 87,
+      "database": {
+        "total": 67,
+        "passed": 67,
+        "failed": 0,
+        "skipped": 0,
+        "failedTitles": [],
+        "failedLocations": []
+      },
+      "browser": {
+        "expected": 2,
+        "unexpected": 0,
+        "skipped": 0,
+        "flaky": 0,
+        "diagnostics": [
+          {
+            "status": 200,
+            "outcome": null
+          }
+        ]
+      },
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      }
+    }
   },
-  "next": "Complete ongoing dispatch4 independent review, diagnose actual DB/CI failures without reducing checks; fresh 67 DB + 2 browser and exact-head full CI required"
+  "next": "Additional readonly review requires explicit dispatch cap increase; exact new-head CI must pass before protected merge."
 }
