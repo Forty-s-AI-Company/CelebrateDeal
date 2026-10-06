@@ -32,7 +32,7 @@ function Get-Command {
     Microsoft.PowerShell.Core\Get-Command @PSBoundParameters
 }
 function Invoke-AiTeamProcess {
-    param([string]$FilePath, [string[]]$ArgumentList, [string]$StandardInputText,
+    param([string]$FilePath, [AllowEmptyString()][string[]]$ArgumentList, [string]$StandardInputText,
         [string]$Profile, [string]$Model, [string]$ReasoningEffort,
         [int]$FirstOutputTimeoutSeconds, [int]$IdleTimeoutSeconds, [int]$HardTimeoutSeconds,
         [int]$GracefulShutdownSeconds, [int]$MaxOutputChars, [int]$MaxOutputLines, [switch]$MarkAsChild)
@@ -48,13 +48,14 @@ function Invoke-AiTeamProcess {
     if (-not $MarkAsChild -or '--sandbox' -notin $ArgumentList -or '--mode' -notin $ArgumentList -or 'plan' -notin $ArgumentList) { throw 'missing safety arguments' }
     if ('--dangerously-skip-permissions' -in $ArgumentList) { throw 'permission bypass' }
     $promptIndex = [Array]::IndexOf($ArgumentList, '--print') + 1
-    if ($promptIndex -le 0 -or $ArgumentList[$promptIndex] -notmatch 'AI Team vNext Reviewer Runtime Prompt') { throw 'canonical reviewer prompt was not loaded' }
+    if ($promptIndex -le 0 -or $ArgumentList[$promptIndex] -ne '' -or ($StandardInputText | ConvertFrom-Json).message.content -notmatch 'AI Team vNext Reviewer Runtime Prompt') { throw 'canonical reviewer prompt was not loaded' }
     Add-Content -LiteralPath (Join-Path $PSScriptRoot 'attempts.txt') -Value $Model
     $status='SUCCESS'; $output='{"summary":"No candidate defect in supplied scope","findings":[]}'; $exitCode=0
     if ($scenario -eq 'cli-failure') { $status='PROCESS_CRASHED'; $output=''; $exitCode=1 }
     if ($scenario -eq 'invalid-output') { $output='PASS: looks good' }
     if ($scenario -eq 'major-finding') { $output='{"summary":"Found a race","findings":[{"severity":"MAJOR","file":"demo.ts","area":"12","issue":"race","evidence":"parallel reproduction","impact":"lost update","recommended_fix":"lock","required_test":"concurrent writers","confidence":0.9}]}' }
-    return [pscustomobject]@{status=$status;stdout=$output;stdoutTruncated=$false;exitCode=$exitCode}
+    $stream = @{event='result';result=@{status=$(if ($exitCode -eq 0) {'SUCCESS'} else {'ERROR'});response=$output;error=$null}} | ConvertTo-Json -Depth 4 -Compress
+    return [pscustomobject]@{status=$status;stdout=$stream;stdoutTruncated=$false;exitCode=$exitCode}
 }
 '@
     Add-Content -LiteralPath (Join-Path $fixtureScripts 'Invoke-AiTeamProcess.ps1') -Value $mock
