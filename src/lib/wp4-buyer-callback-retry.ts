@@ -1,8 +1,22 @@
-import { Prisma, type PrismaClient } from "@prisma/client";
-import { PaymentWebhookPayload } from "./payment-webhooks";
+import { Prisma, type PrismaClient, type PaymentTransaction, type WebhookEvent } from "@prisma/client";
+import { PaymentWebhookPayload, type PaymentWebhookPayloadInput } from "./payment-webhooks";
 import { retryWebhookEvent } from "./webhook-retry";
 import { wp4HistoricalBuyerWhere } from "./wp4-buyer-recovery";
 import { WP4_SANDBOX_FIXTURE } from "./wp4-sandbox-fixture";
+
+/** Every supplied provider selector must agree with the server-owned payment. */
+function matchesFixedPayment(payload: PaymentWebhookPayloadInput,
+  event: Pick<WebhookEvent, "eventId" | "vendorId">,
+  payment: Pick<PaymentTransaction, "vendorId" | "orderNumber" | "providerTradeNo" | "grossAmountCents" | "currency">) {
+  return payload.provider === "payuni" && payload.eventId === event.eventId && payload.eventType === "paid"
+    && (event.vendorId === null || event.vendorId === payment.vendorId)
+    && (payload.vendorId === undefined || payload.vendorId === payment.vendorId)
+    && payload.orderNumber === payment.orderNumber
+    && (payload.vendorSlug === undefined || payload.vendorSlug === WP4_SANDBOX_FIXTURE.vendorSlug)
+    && (payload.providerTradeNo === undefined || payment.providerTradeNo === null || payload.providerTradeNo === payment.providerTradeNo)
+    && payload.grossAmountCents === payment.grossAmountCents
+    && (payload.currency === undefined || payload.currency === payment.currency);
+}
 /** Reserve one retry durably before dispatch; a lost response cannot reopen it. */
 export async function retryWp4HistoricalBuyerCallback(db: Pick<PrismaClient, "$transaction">) {
   const reserved = await db.$transaction(async tx => {
@@ -19,13 +33,7 @@ export async function retryWp4HistoricalBuyerCallback(db: Pick<PrismaClient, "$t
     const envelope = event.payload;
     const normalized = envelope && typeof envelope === "object" && !Array.isArray(envelope) ? envelope.normalized : null;
     const parsed = PaymentWebhookPayload.safeParse(normalized);
-    if (!parsed.success || parsed.data.provider !== "payuni" || parsed.data.eventId !== event.eventId || parsed.data.eventType !== "paid"
-      || (event.vendorId !== null && event.vendorId !== payment.vendorId)
-      || (parsed.data.vendorId !== undefined && parsed.data.vendorId !== payment.vendorId) || parsed.data.orderNumber !== payment.orderNumber
-      || (parsed.data.vendorSlug !== undefined && parsed.data.vendorSlug !== WP4_SANDBOX_FIXTURE.vendorSlug)
-      || (parsed.data.providerTradeNo !== undefined && payment.providerTradeNo !== null && parsed.data.providerTradeNo !== payment.providerTradeNo)
-      || parsed.data.grossAmountCents !== payment.grossAmountCents
-      || (parsed.data.currency !== undefined && parsed.data.currency !== payment.currency)) return { status: "RETRY_REJECTED" };
+    if (!parsed.success || !matchesFixedPayment(parsed.data, event, payment)) return { status: "RETRY_REJECTED" };
     if (parsed.data.vendorSlug !== undefined) {
       const vendor = await tx.vendor.findUnique({ where: { id: payment.vendorId }, select: { slug: true } });
       if (!vendor || vendor.slug !== parsed.data.vendorSlug) return { status: "RETRY_REJECTED" };

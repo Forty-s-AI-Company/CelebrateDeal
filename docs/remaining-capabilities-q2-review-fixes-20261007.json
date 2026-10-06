@@ -48,7 +48,7 @@
     "package-lock.json",
     "src/lib/webhook-retry.ts"
   ],
-  "source_revision": "sha256:76d494be501f758cf89474a2bafdac0a00060c3d5f40683a4055496aa4b4567c",
+  "source_revision": "sha256:5d12a239e1253405f4d988dcbccb5d5ca698ad9c8ccf3907c5a8a9b2d8dea74e",
   "test_files": [
     "scripts/g7-email-operations-browser-qa.test.mjs",
     "scripts/prisma-invariant-inventory.test.ts",
@@ -116,13 +116,14 @@
     "refund_migration_reconciliation_and_previous_db_tests": "61/61 PASS before adding real route regression",
     "targeted_unit_latest": "36/36 PASS",
     "typescript": "PASS",
-    "targeted_lint": "PASS",
+    "targeted_lint": "PASS after extracting pure selector validation; complexity threshold unchanged",
     "real_route_regression": "63/63 DB PASS for prior bound candidate 462245e9; exact paid route failure, concurrent at-most-one retry and replay",
     "real_browser": "63/63 DB + 2/2 actual browser PASS, zero skip/flaky, at 97e23d45 with identical product source hash; final test-fixture-only hash refresh pending",
     "sharp_dependency": "Merged verified PR378 candidate; protected delivery pending CI",
     "ci_correction": "Remove unnecessary synthetic credentials from external-host identity unit fixture URLs; keep exact host identity, assertions and secret scan unchanged",
     "affected_unit": "89/89 PASS",
-    "scoped_secret_scan": "0 findings in declared Q2 product/test/doc scope; full repository CI scan remains required"
+    "scoped_secret_scan": "0 findings in declared Q2 product/test/doc scope; full repository CI scan remains required",
+    "tenant_slug_trade_db": "65/65 PASS at ca8d3302 before pure selector helper extraction; exact new hash browser run required"
   },
   "next": "Within ongoing final review dispatch4/4 verify immutable fixed candidate; new 65 DB + 2 browser bound-source verification and full CI. Earlier runner source-change failure is expected and preserved after actual review fixes."
 }
