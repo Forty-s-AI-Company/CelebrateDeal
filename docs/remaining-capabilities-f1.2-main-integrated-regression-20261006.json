@@ -1,0 +1,92 @@
+{
+  "task_id": "f1-course-community",
+  "source_revision": "sha256:e8cb1c588a7104ffc7a8db9f3a20e85d77df8f9a5f7b8b4f0cd886fb67a2ee64",
+  "base": "daa6372a6e0f060e93de2c2e10afa0c9c4d09c73",
+  "fixture_correction": "expanded candidate exact inventory86; historic81 window and rejection untouched",
+  "validation": {
+    "unit": {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:e8cb1c588a7104ffc7a8db9f3a20e85d77df8f9a5f7b8b4f0cd886fb67a2ee64",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 6.516
+    },
+    "lint": {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:e8cb1c588a7104ffc7a8db9f3a20e85d77df8f9a5f7b8b4f0cd886fb67a2ee64",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 15.75
+    },
+    "typecheck": {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:e8cb1c588a7104ffc7a8db9f3a20e85d77df8f9a5f7b8b4f0cd886fb67a2ee64",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 26.984
+    },
+    "strict-index": {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "strict-index",
+      "revision": "sha256:e8cb1c588a7104ffc7a8db9f3a20e85d77df8f9a5f7b8b4f0cd886fb67a2ee64",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 75.031
+    },
+    "contracts": {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "contracts",
+      "revision": "sha256:e8cb1c588a7104ffc7a8db9f3a20e85d77df8f9a5f7b8b4f0cd886fb67a2ee64",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 102.625
+    },
+    "coverage": {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "coverage",
+      "revision": "sha256:e8cb1c588a7104ffc7a8db9f3a20e85d77df8f9a5f7b8b4f0cd886fb67a2ee64",
+      "status": "PASS",
+      "exit_code": 0,
+      "suite_count": 621,
+      "vitest_tests": 4574,
+      "count_source": "completed exec session14696 sanitized terminal observation",
+      "tap_tests": 1067,
+      "skipped": 0,
+      "thresholds": "unchanged",
+      "runner": "full-unit-lf.mjs",
+      "summary_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\full-unit-lf-summary.json"
+    },
+    "browser": {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser",
+      "revision": "sha256:e8cb1c588a7104ffc7a8db9f3a20e85d77df8f9a5f7b8b4f0cd886fb67a2ee64",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 287.375
+    }
+  },
+  "browser": "9 actual PostgreSQL tests and 1 Chromium journey PASS at current exact source; 86 migrations",
+  "migration_count": 86,
+  "independent_review": "same task4/4 exhausted; extra1 authorization pending",
+  "remote_ci_failure": {
+    "head": "8d48beef0928520875fe143c28b8d1c0b608f381",
+    "runs": [
+      37399057468,
+      37399062918
+    ],
+    "step": "Production dependency audit",
+    "advisory": "GHSA-68fv-2mgg-jv7q",
+    "fix_pr": 376
+  },
+  "status": "NOT_DELIVERED"
+}
