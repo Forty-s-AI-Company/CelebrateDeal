@@ -76,7 +76,15 @@ test("Funnel secondary tabs persist settings and enforce the public deadline", a
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();
   await page.getByRole("combobox", { name: "預設報名表", exact: true }).selectOption(fixture.form.id);
   await page.getByRole("combobox", { name: "活動場次", exact: true }).selectOption(fixture.live.id);
+  const draftBefore = await db.landingPage.findUniqueOrThrow({ where: { id: pageId }, select: { revision: true } });
   await page.getByRole("button", { name: "儲存草稿", exact: true }).click();
+  // Confirm this actual save was acknowledged in both the database and UI
+  // before testing navigation. No sleep or relaxed URL assertion is used.
+  await expect.poll(async () => {
+    const saved = await db.landingPage.findUniqueOrThrow({ where: { id: pageId }, select: { revision: true, draftFormId: true, draftLiveId: true } });
+    return { revision: saved.revision, formId: saved.draftFormId, liveId: saved.draftLiveId };
+  }).toEqual({ revision: draftBefore.revision + 1, formId: fixture.form.id, liveId: fixture.live.id });
+  await expect(page.getByRole("button", { name: "儲存草稿", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: /返回 Configuration$/u }).click();
   await expect(page).toHaveURL(new RegExp(`${operationsPath.replaceAll("/", "\\/")}\\?step=`, "u"));
   await page.getByRole("button", { name: "Funnel settings", exact: true }).click();
