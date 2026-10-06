@@ -1,3 +1,5 @@
+import { permitsWp4SyntheticPlan, wp4FinanceUserId } from "@/lib/wp4-runtime-boundary";
+import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 import { Badge, Card, PageHeader } from "@/components/ui";
 import type { BillingPlan } from "@prisma/client";
 import { cookies } from "next/headers";
@@ -18,11 +20,23 @@ type BillingPlansPageProps = {
   searchParams?: Promise<BillingPlansSearchParams>;
 };
 
-function planVisibility(plans: BillingPlan[], vendorId: string) {
+function planVisibility(plans: BillingPlan[], vendorId: string, syntheticPermit = false) {
   const livePreview = process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production";
-  if (!livePreview) return { unavailable: false, plans: plans.filter((plan) => plan.isActive) };
+  if (!livePreview) return { unavailable: false, plans: plans.filter((plan) => plan.id === WP4_SANDBOX_FIXTURE.planId ? syntheticPermit && plan.code === WP4_SANDBOX_FIXTURE.planCode && plan.monthlyPriceCents === 100 : plan.isActive) };
   const matching = plans.filter((plan) => payUniStagingPlanTestAllowed(vendorId, plan));
   return { unavailable: matching.length !== 3, plans: matching.length === 3 ? matching : [] };
+}
+
+function syntheticPlanPermit(owner: boolean, vendorId: string, userId: string | undefined) {
+  return owner && permitsWp4SyntheticPlan(vendorId, userId ?? "", WP4_SANDBOX_FIXTURE.planId);
+}
+function ordinaryPlanQuery(syntheticPermit: boolean) {
+  return { OR: [{ isActive: true, id: { not: WP4_SANDBOX_FIXTURE.planId } }, ...(syntheticPermit ? [{ id: WP4_SANDBOX_FIXTURE.planId }] : [])] };
+}
+
+function planDescription(plan: BillingPlan) {
+  if (plan.id === WP4_SANDBOX_FIXTURE.planId) return "固定 Sandbox 合成驗證方案。";
+  return plan.isActive ? plan.description : "僅供指定測試商家驗證正式金流的短期方案。";
 }
 
 function queryValue(value: string | string[] | undefined) {
@@ -145,7 +159,9 @@ async function loadPendingPlanCheckout(vendorId: string, transactionId: string |
 
 export default async function BillingPlansPage({ searchParams }: BillingPlansPageProps) {
   const queryPromise = searchParams ?? Promise.resolve<BillingPlansSearchParams>({});
-  const { vendor, member } = await requireVendorFinance("/billing/plans");
+  const finance = await requireVendorFinance("/billing/plans");
+  const { vendor, member } = finance;
+  const userId = wp4FinanceUserId(finance);
   const canManageBilling = member.role === "owner";
   const query = await queryPromise;
   const transactionId = queryValue(query.transactionId);
@@ -159,7 +175,7 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
           { isActive: true },
           { isActive: false, code: { in: ["staging-payuni-starter", "staging-payuni-growth", "staging-payuni-team-pro"] } },
         ],
-      } : { isActive: true },
+      } : ordinaryPlanQuery(syntheticPlanPermit(canManageBilling, vendor.id, userId)),
       orderBy: { monthlyPriceCents: "asc" },
     }),
     getDb().vendorSubscription.findFirst({
@@ -173,7 +189,7 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
     unresolvedStagingCheckoutCount(livePreview, canManageBilling, vendor.id),
   ]);
   // Show no purchasable plans until all three database prices are exact.
-  const visible = planVisibility(plans, vendor.id);
+  const visible = planVisibility(plans, vendor.id, syntheticPlanPermit(canManageBilling, vendor.id, userId));
   const testAvailability = livePreview ? payUniStagingPlanTestAvailability(vendor.id, plans) : null;
   const acknowledgedRetry = hasAcknowledgedRetry(canManageBilling, visible, vendor.id);
   const status = queryValue(query.status);
@@ -265,7 +281,7 @@ export default async function BillingPlansPage({ searchParams }: BillingPlansPag
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-slate-950">{plan.name}</h2>
-                <p className="mt-1 text-sm text-slate-500">{plan.isActive ? plan.description : "僅供指定測試商家驗證正式金流的短期方案。"}</p>
+                <p className="mt-1 text-sm text-slate-500">{planDescription(plan)}</p>
               </div>
               <Badge tone={plan.isActive ? "blue" : "gray"}>{plan.isActive ? plan.code : plan.code.replace("staging-payuni-", "")}</Badge>
             </div>

@@ -50,7 +50,7 @@ const jobSecret = "test-fixture-job-secret";
 const sourceSha = "a".repeat(40);
 
 function request(authorization?: string, sha = sourceSha) {
-  return new Request("https://app.example.test/api/admin/ops/payuni/wp4-preflight", {
+  return new Request("https://celebrate-deal-staging.carry-digital-nomad.in.net/api/admin/ops/payuni/wp4-preflight", {
     method: "POST",
     headers: {
       ...(authorization ? { authorization } : {}),
@@ -66,7 +66,7 @@ function requestWithBody(authorization?: string) {
       controller.close();
     },
   });
-  return new Request("https://app.example.test/api/admin/ops/payuni/wp4-preflight", {
+  return new Request("https://celebrate-deal-staging.carry-digital-nomad.in.net/api/admin/ops/payuni/wp4-preflight", {
     method: "POST",
     headers: authorization ? { authorization, ["x-celebratedeal-source-sha"]: sourceSha } : undefined,
     body,
@@ -76,7 +76,7 @@ function requestWithBody(authorization?: string) {
 
 function requestWithEmptyProxyBody() {
   const body = new ReadableStream({ start: (controller) => controller.close() });
-  return new Request("https://app.example.test/api/admin/ops/payuni/wp4-preflight", {
+  return new Request("https://celebrate-deal-staging.carry-digital-nomad.in.net/api/admin/ops/payuni/wp4-preflight", {
     method: "POST",
     headers: {
       authorization: `Bearer ${jobSecret}`,
@@ -89,7 +89,7 @@ function requestWithEmptyProxyBody() {
 }
 
 function requestWithHeaders(headers: Record<string, string>) {
-  return new Request("https://app.example.test/api/admin/ops/payuni/wp4-preflight", {
+  return new Request("https://celebrate-deal-staging.carry-digital-nomad.in.net/api/admin/ops/payuni/wp4-preflight", {
     method: "POST",
     headers: {
       authorization: `Bearer ${jobSecret}`,
@@ -142,6 +142,12 @@ function expectNoReads() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("JOB_SECRET", jobSecret);
+  vi.stubEnv("VERCEL_PROJECT_ID", "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn");
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://celebrate-deal-staging.carry-digital-nomad.in.net");
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ocbugvgojrunvenozsbx.supabase.co");
+  vi.stubEnv("DATABASE_URL", "postgresql://synthetic:synthetic@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
+  vi.stubEnv("DIRECT_URL", "postgresql://synthetic:synthetic@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
+  vi.stubEnv("STAGING_DATABASE_URL", "postgresql://synthetic:synthetic@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
   vi.stubEnv("VERCEL_ENV", "preview");
   vi.stubEnv("PAYUNI_ENV", "sandbox");
   vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true");

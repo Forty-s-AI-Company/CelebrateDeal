@@ -1,3 +1,5 @@
+import { isWp4BoundNonProductionRuntime } from "./wp4-runtime-boundary";
+import { WP4_SANDBOX_FIXTURE } from "./wp4-sandbox-fixture";
 import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -144,13 +146,16 @@ export async function createWp4PreviewMfaVerifiedSession({
   userId: string;
   vendorId: string;
 }) {
-  if (
-    process.env.VERCEL_ENV !== "preview"
-    || process.env.PAYUNI_ENV !== "sandbox"
-    || process.env.WP4_SANDBOX_EXECUTOR_ENABLED !== "true"
-  ) {
+  if (!isWp4BoundNonProductionRuntime() || userId !== WP4_SANDBOX_FIXTURE.userId
+    || vendorId !== WP4_SANDBOX_FIXTURE.vendorId) {
     throw new Error("WP4 preview session creation is disabled");
   }
+  // A runner cannot reactivate a disabled owner or confer another tenant's MFA.
+  const member = await getDb().vendorMember.findFirst({
+    where: { vendorId, userId, role: "owner", status: "active", deactivatedAt: null, user: { status: "active" } },
+    select: { id: true },
+  });
+  if (!member) throw new Error("WP4 preview owner is unavailable");
 
   return createSession({
     userId,

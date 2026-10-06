@@ -32,3 +32,11 @@ F1.1：native curriculum/player/progress/certificate 位於 `codex/remaining-cou
 F2.1 `codex/remaining-affiliate-portal-20261006`：明確 tenant/member 授權、版本 CAS、停用後可撤權、帳本淨額／退款、佣金與授權分頁、商家公開ref連結、超過200名成員搜尋已實作。6項 disposable PostgreSQL 回歸PASS，第三輪獨立 Critical review 無findings（dispatch3/4、observed unknown）；完整 browser 與最新精確source gate執行中，尚未READY／PR／交付。歷次 browser fixture失敗單獨保存，未降低金額或歸因assertion。
 
 F2.1 latest source `sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0`：9 targeted unit、TS/strict-index/lint、1067 Node TAP零skip、85migrations、6DB、1實際browser zero flaky全部PASS；第4/4獨立Critical複審精確25檔及hash一致無findings，canonical READY。精確head CI與protected PR待交付，其餘F2 scope未縮減。證據 `remaining-capabilities-f2.1-local-receipt-20261006.json`。
+
+
+### 2026-10-06：AGY 修復交付與 Q2 接續
+
+| ID | 精確來源／相依 | owner | 驗收與新證據 | 實際狀態／剩餘 |
+| --- | --- | --- | --- | --- |
+| AGY-Claude | 修復 head `cc4070206340200acf3a10cd7ba558bda0dcb4bb`；PR #377 squash `5a25018d87fdfd780286107136968121088a9ac7` | root writer；一名 readonly reviewer，dispatch 2/4 | 兩個 Claude slug 各 40,093 字元實際 wrapper PASS；完整 routing/resilience、UTF8、超時與截斷回歸 PASS；獨立複審 findings=[]；canonical READY；push/PR CI `37407696287`、`37407703413` SUCCESS；accepted/merged tree 均 `bef8cd0de500e2817513006b35af7c210ca09006` | DELIVERED；不代表任何產品批次已交付 |
+| Q2 | `eac0a3430df3ca0beed06a9c63cbd2cb13414fa7`；現行固定非 Production owner/buyer/subscription/ops 契約 | root writer；task dispatch 1/4 | 新增歷史 buyer 精確 source/tenant/checkout、單筆退款、重複事件及跨產品拒絕回歸；補正 recovery HTTP status 與既有 runner 契約；本次 targeted 67/67 PASS；先前 disposable PG 86 migrations、54/54 PASS 保留 | IMPLEMENTED_PARTIAL_VERIFICATION；尚需 buyer/callback 實際 DB、完整 workspace browser、Critical review、canonical acceptance、精確 head CI、PR；外部 sandbox secret/proof 尚缺，不能宣稱真實退款成功 |

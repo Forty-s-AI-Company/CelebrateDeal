@@ -1,3 +1,4 @@
+import { applyPlatformSubscriptionRefundProjection } from "@/lib/platform-subscription-refund";
 import { Prisma, type PaymentTransaction, type WebhookEvent } from "@prisma/client";
 import { z } from "zod";
 import {
@@ -687,6 +688,7 @@ async function reconcilePlatformSubscription(
       create: {
         vendorId: input.vendorId,
         billingPlanId: subscription.planId,
+        entitlementStatus: "active",
         streamMinutesLimit: subscription.plan.includedStreamMinutes,
         storageMinutesLimit: subscription.plan.includedStorageMinutes,
         creditsLimit: subscription.plan.includedCredits,
@@ -694,6 +696,7 @@ async function reconcilePlatformSubscription(
       },
       update: {
         billingPlanId: subscription.planId,
+        entitlementStatus: "active",
         streamMinutesLimit: subscription.plan.includedStreamMinutes,
         storageMinutesLimit: subscription.plan.includedStorageMinutes,
         creditsLimit: subscription.plan.includedCredits,
@@ -715,11 +718,10 @@ async function reconcilePlatformSubscription(
     });
   }
 
-  if (input.eventType === "refunded" && subscription.status === "active") {
-    return db.vendorSubscription.update({
-      where: { id: subscription.id },
-      data: { status: "payment_refunded", endedAt: input.occurredAt },
-    });
+  if (input.eventType === "refunded") {
+    const persisted = await db.paymentTransaction.findFirst({ where: { id: input.transaction.id, vendorId: input.vendorId } });
+    if (!persisted) throw new Error("平台方案退款付款紀錄不存在。");
+    return applyPlatformSubscriptionRefundProjection(db, persisted, input.occurredAt);
   }
 
   return subscription;
@@ -1023,14 +1025,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
           },
         });
 
-    const platformSubscription = await reconcilePlatformSubscription(tx, {
-      vendorId: vendor.id,
-      eventType: payload.eventType,
-      transaction: savedTransaction,
-      trustedMetadata: existingMetadata,
-      currentTransactionExists: Boolean(currentTransaction),
-      occurredAt,
-    });
+
 
     // Product identity is trusted only from the server-created checkout
     // transaction. Provider metadata must never choose another tenant's stock.
@@ -1059,6 +1054,15 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       vendorId: vendor.id,
       transaction: savedTransaction,
       duplicateRefundEvent: invariant.duplicateRefundEvent,
+      occurredAt,
+    });
+
+    const platformSubscription = await reconcilePlatformSubscription(tx, {
+      vendorId: vendor.id,
+      eventType: payload.eventType,
+      transaction: savedTransaction,
+      trustedMetadata: existingMetadata,
+      currentTransactionExists: Boolean(currentTransaction),
       occurredAt,
     });
 

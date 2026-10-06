@@ -1,3 +1,4 @@
+import { authorizeWp4Ops } from "@/lib/wp4-runtime-boundary";
 import { NextResponse } from "next/server";
 import { requireJobSecret } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
@@ -19,6 +20,8 @@ function enabled() {
 }
 
 export async function POST(request: Request) {
+  const authorization = await authorizeWp4Ops(request);
+  if (authorization instanceof Response) return authorization;
   if (!requireJobSecret(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }

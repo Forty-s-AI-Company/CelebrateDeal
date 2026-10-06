@@ -1,3 +1,4 @@
+import { applyPlatformSubscriptionRefundProjection } from "@/lib/platform-subscription-refund";
 import { createHash } from "node:crypto";
 import { Prisma, type PaymentTransaction, type PrismaClient, type RefundRecord } from "@prisma/client";
 import {
@@ -209,6 +210,7 @@ export async function reconcilePayUniRefund(input: {
       transactionOccurredAt: transaction.occurredAt instanceof Date ? transaction.occurredAt : now,
       occurredAt: now,
     });
+    await applyPlatformSubscriptionRefundProjection(tx, updated, now);
     await tx.auditLog.create({
       data: {
         vendorId: transaction.vendorId,

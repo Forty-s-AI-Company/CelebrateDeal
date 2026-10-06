@@ -1,3 +1,4 @@
+import { authorizeWp4Ops } from "@/lib/wp4-runtime-boundary";
 import { NextResponse } from "next/server";
 import { requireJobSecret } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
@@ -13,6 +14,8 @@ function unavailable(status = 404) {
 
 /** A body-free, read-only snapshot for the exact Preview Sandbox fixture. */
 export async function POST(request: Request) {
+  const authorization = await authorizeWp4Ops(request);
+  if (authorization instanceof Response) return authorization;
   if (!requireJobSecret(request)) return unavailable(401);
   if (process.env.VERCEL_ENV !== "preview" || process.env.PAYUNI_ENV !== "sandbox"
     || process.env.WP4_SANDBOX_EXECUTOR_ENABLED !== "true") return unavailable();

@@ -71,7 +71,8 @@ describe("WP4 fixed refund execution", () => {
       row({
         metadata: {
           billingPurpose: "platform_subscription_checkout",
-          planId: WP4_SANDBOX_FIXTURE.planId,
+          billingPlanId: WP4_SANDBOX_FIXTURE.planId,
+          platformSubscriptionId: "synthetic-subscription",
           wp4SourceCommit: sourceCommit,
         },
       }),
