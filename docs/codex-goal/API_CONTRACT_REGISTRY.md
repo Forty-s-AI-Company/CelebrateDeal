@@ -165,5 +165,10 @@
 ### 學員課程預約提醒候選 2026-10-07
 
 - `GET /portal/[vendorSlug]/learn/[courseId]/notifications/reminders`：same-origin/client-header、signed student session、目前課程權益；只列目前 recipient 的 future/scheduled/published linked bookings，21/20 bounded cursor。公開欄位 id/startTime/title/confirmed、nextAfter、CSRF；private/no-store，無聯絡方式、hash、ciphertext或其他租戶資料。
-- `POST` 同路徑：same-origin/client-header/CSRF，strict bookingId/expectedStartTime；tenant/customer 來自 session。Serializable transaction 重查權益、booking revision與 verified opt-in，再 upsert 唯一 personal source，回傳 scheduled/availableAt；404 not_found、409 verification_required。匿名 calendar reservation 不建立提醒證據；取消、改期、unpublish、移除binding、退款或撤回同意，發送前重查並抑制舊提醒。
+- `POST /portal/[vendorSlug]/learn/[courseId]/notifications/reminders`：same-origin/client-header/CSRF，strict bookingId/expectedStartTime；tenant/customer 來自 session。Serializable transaction 重查權益、booking revision與 verified opt-in，再 upsert 唯一 personal source，回傳 scheduled/availableAt；404 not_found、409 verification_required。匿名 calendar reservation 不建立提醒證據；取消、改期、unpublish、移除binding、退款或撤回同意，發送前重查並抑制舊提醒。
 - 候選實作及回歸仍需最新實際 browser、Critical review、canonical acceptance與 exact CI/protected delivery；NOT_READY。
+
+### 本次社群通知整合候選
+
+- `GET /portal/[vendorSlug]/learn/[courseId]/community/data`：signed student、same-origin/client marker；server scope、目前課程權益，bounded feed/thread pagination、qualified cursor；private/no-store、CSRF 公開狀態；同路徑測試。
+- `POST /portal/[vendorSlug]/learn/[courseId]/community/data`：same-origin/client marker/CSRF；strict post/reply/reaction、tenant/customer 由 session 決定；Serializable entitlement 與 request UUID 冪等。回覆與作者限定 encrypted source 同 transaction；衝突 409、撤權/foreign/hidden parent 404。寄送前再次鎖定可見 reply/parent 與目前權益；仍待整合候選 browser/review/acceptance。

@@ -1,3 +1,4 @@
+import { mutateCourseCommunity } from "../src/lib/course-community.ts";
 import fs from "node:fs";
 import path from "node:path";
 import assert from "node:assert/strict";
@@ -17,7 +18,7 @@ import { confirmLearnerConsultationReminder,listLearnerConsultationReminders } f
 import { reserveConsultationBooking } from "../src/app/actions/consultation-actions.ts";
 import { recordLearnerLiveStartedSources } from "../src/lib/learner-live-notifications.ts";
 import { recordLearnerNotificationSourceEvent, materializeLearnerNotificationSourceEvent } from "../src/lib/learner-notification-source-events.ts";
-const sourceFiles = ["src/lib/learner-consultation-reminders.ts","src/lib/learner-notification-job.ts","prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql","src/app/actions/consultation-actions.ts","src/app/actions.ts","src/lib/learner-live-notifications.ts","src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
+const sourceFiles = ["src/lib/course-community.ts","prisma/migrations/20261006070000_course_community/migration.sql","src/lib/learner-consultation-reminders.ts","src/lib/learner-notification-job.ts","prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql","src/app/actions/consultation-actions.ts","src/app/actions.ts","src/lib/learner-live-notifications.ts","src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
  "src/lib/learner-notification-contract.ts", "src/lib/learner-notification-preferences.ts", "src/lib/learner-notification-outbox.ts", "src/lib/learner-notification-dispatch.ts", "src/lib/learner-notification-providers.ts", "src/lib/learner-notification-verification.ts",
  "src/lib/student-course-learning.ts", "src/lib/sensitive-data.ts", "src/lib/commerce-order-pii.ts", "src/lib/commerce-order-fulfillment.ts", "src/lib/commerce-orders.ts", "scripts/learner-notification-disposable-qa.mjs"];
 function sourceSnapshot() {
@@ -35,7 +36,9 @@ async function check(name, run) {
     const code = typeof error?.code === "string" && /^P[0-9]{4}$/.test(error.code) ? error.code : "UNKNOWN";
     const constraint = String(error?.message ?? "").match(/constraint ["']([A-Za-z0-9_]{1,128})["']/)?.[1] ?? null;
     const errorClass = ["PrismaClientValidationError","PrismaClientUnknownRequestError","PrismaClientKnownRequestError","TypeError","ReferenceError","CommerceOrderPiiValidationError","AssertionError"].includes(error?.constructor?.name) ? error.constructor.name : "UNKNOWN";
-    results.push({ name, status: "FAIL", code, constraint, errorClass, fixtureStage }); throw new Error("notification-db-regression-failed");
+    const location=String(error?.stack??"").match(/learner-notification-disposable-qa\.mjs:(\d+):\d+/u)?.[1]??null;
+    const safeValue=value=>typeof value==="boolean" || typeof value==="number" ? value : typeof value==="string" && ["sent","suppressed","not_delivered","indeterminate","queued"].includes(value)?value:null;
+    results.push({ name, status: "FAIL", code, constraint, errorClass, fixtureStage, location, actual:safeValue(error?.actual),expected:safeValue(error?.expected) }); throw new Error("notification-db-regression-failed");
   }
 }
 const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
@@ -416,6 +419,44 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
       const row=await db.learnerNotificationDelivery.findFirstOrThrow({where:{vendorId:vendor.id,eventIdentity:"synthetic_immediate_schedule",preferenceId:preference.id}}),claim=await claimLearnerNotification(db,vendor.id,row.id);assert.ok(claim);let calls=0;
       assert.equal((await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:row.id,claimToken:claim.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent"};}})).status,"suppressed");assert.equal(calls,0);
     });
+    // A second synthetic paid learner replies to the original buyer's thread.
+    const replier={vendorId:vendor.id,customerKeyHash:"r".repeat(43)};
+    const replyOrderId=randomUUID();
+    const replyPii=protectCommerceOrderPii({buyer:{name:"Synthetic replier",email:"reply@invalid.example"},shipping:null},{vendorId:vendor.id,orderId:replyOrderId});
+    await db.commerceOrder.create({data:{id:replyOrderId,vendorId:vendor.id,automationCustomerKeyHash:replier.customerKeyHash,orderNumber:replyOrderId,checkoutIdempotencyKey:randomUUID(),checkoutIdentityHash:replyPii.checkoutIdentityHash,status:"paid",subtotalAmountCents:1000,totalAmountCents:1000,paidAmountCents:1000,buyerEncryptedEnvelope:replyPii.buyerEncrypted,buyerMaskedName:replyPii.buyerNameMasked,buyerMaskedEmail:replyPii.buyerEmailMasked}});
+    const replyItem=await db.commerceOrderItem.create({data:{vendorId:vendor.id,orderId:replyOrderId,productId:product.id,lineIndex:0,productName:product.name,productSlug:product.slug,commerceDomain:"course",fulfillmentType:"course",unitPriceCents:1000,quantity:1,lineTotalCents:1000,nonSensitiveSnapshot:{}}});
+    const replyEntitlement=await db.commerceEntitlement.create({data:{vendorId:vendor.id,orderItemId:replyItem.id}});
+    await db.$transaction(tx=>grantCommerceEntitlement(tx,{vendorId:vendor.id,entitlementId:replyEntitlement.id,expectedRevision:replyEntitlement.revision,actor:{id:"synthetic-discussion-fixture"}}));
+    const discussion=await mutateCourseCommunity(db,identity,product.id,{operation:"post",requestKey:randomUUID(),authorName:"Synthetic buyer",body:"Private discussion text"});assert.ok(discussion);
+    const content={operation:"reply",postId:discussion.id,requestKey:randomUUID(),authorName:"Synthetic replier",body:"Private reply text"};let discussionReply;
+    await check("concurrent real replies share one exact author-scoped source",async()=>{
+      const responses=await Promise.all([1,2].map(()=>mutateCourseCommunity(db,replier,product.id,content)));assert.ok(responses[0]);assert.deepEqual(responses[0],responses[1]);discussionReply=responses[0];
+      assert.equal(await db.courseCommunityReply.count({where:{vendorId:vendor.id,productId:product.id,id:discussionReply.id}}),1);
+      const sources=await db.learnerNotificationSourceEvent.findMany({where:{vendorId:vendor.id,productId:product.id,event:"discussion_reply",eventIdentity:discussionReply.id}});assert.equal(sources.length,1);assert.equal(sources[0].audienceCustomerKeyHash,identity.customerKeyHash);assert.equal(sources[0].payloadEncryptedEnvelope.includes(content.body),false);
+    });
+    await check("self replies do not create sources",async()=>{
+      const response=await mutateCourseCommunity(db,identity,product.id,{...content,requestKey:randomUUID()});assert.ok(response);assert.equal(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,event:"discussion_reply",eventIdentity:response.id}}),0);
+    });
+    await check("foreign tenant cannot reply or emit notifications",async()=>{
+      const before=await db.learnerNotificationSourceEvent.count();assert.equal(await mutateCourseCommunity(db,{...replier,vendorId:foreign.id},product.id,{...content,requestKey:randomUUID()}),null);assert.equal(await db.learnerNotificationSourceEvent.count(),before);
+    });
+    await check("materialized reply sends only original author once",async()=>{
+      const source=await db.learnerNotificationSourceEvent.findFirstOrThrow({where:{vendorId:vendor.id,event:"discussion_reply",eventIdentity:discussionReply.id}});await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id);
+      const deliveries=await db.learnerNotificationDelivery.findMany({where:{vendorId:vendor.id,event:"discussion_reply",eventIdentity:discussionReply.id}});assert.ok(deliveries.length>0);
+      const pending=deliveries.find(row=>row.preferenceId===preference.id);assert.ok(pending);const worker=await claimLearnerNotification(db,vendor.id,pending.id);assert.ok(worker);assert.equal(worker.message.path,`/portal/${vendor.slug}/learn/${product.id}/community/${discussion.id}`);
+      let calls=0;const result=await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:pending.id,claimToken:worker.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent",providerReceipt:"synthetic-discussion"};}});assert.equal(result.status,"sent");assert.equal(calls,1);assert.equal(await claimLearnerNotification(db,vendor.id,pending.id),null);
+    });
+    for(const variant of ["post_hidden","reply_hidden","recipient_changed"]){
+      await check(`queued discussion ${variant} suppresses with zero provider calls`,async()=>{
+        const accepted=await mutateCourseCommunity(db,replier,product.id,{...content,requestKey:randomUUID()});assert.ok(accepted);
+        const source=await db.learnerNotificationSourceEvent.findFirstOrThrow({where:{vendorId:vendor.id,event:"discussion_reply",eventIdentity:accepted.id}});await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id);
+        const pending=await db.learnerNotificationDelivery.findFirstOrThrow({where:{vendorId:vendor.id,event:"discussion_reply",eventIdentity:accepted.id,preferenceId:preference.id}});const worker=await claimLearnerNotification(db,vendor.id,pending.id);assert.ok(worker);
+        if(variant==="reply_hidden")await db.courseCommunityReply.update({where:{vendorId_productId_id:{vendorId:vendor.id,productId:product.id,id:accepted.id}},data:{hiddenAt:new Date()}});
+        else await db.courseCommunityPost.update({where:{vendorId_productId_id:{vendorId:vendor.id,productId:product.id,id:discussion.id}},data:variant==="post_hidden"?{hiddenAt:new Date()}:{customerKeyHash:replier.customerKeyHash}});
+        let calls=0;const result=await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:pending.id,claimToken:worker.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent"};}});assert.equal(result.status,"suppressed");assert.equal(calls,0);
+        await db.courseCommunityPost.update({where:{vendorId_productId_id:{vendorId:vendor.id,productId:product.id,id:discussion.id}},data:{hiddenAt:null,customerKeyHash:identity.customerKeyHash}});
+      });
+    }
     const event = { channel: "sms", event: "lesson_published", eventIdentity: "synthetic_outbox_first", message: { title: "Synthetic lesson", body: "Synthetic only private message", path: "/portal/synthetic/learn/course" } };
     let queued, claim;
     await check("outbox deduplicates concurrent real database event producers", async () => {
@@ -533,9 +574,9 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
   if (sourceSnapshot().revision !== sourceAtStart.revision) throw new Error("notification-source-changed-during-verification");
   } finally { await db.$disconnect(); }
 } });
-const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 63 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
+const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 70 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
 fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 63 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 70 || results.some(test => test.status !== "PASS")) process.exitCode = 1;

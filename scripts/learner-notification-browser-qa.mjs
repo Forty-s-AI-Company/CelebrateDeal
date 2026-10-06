@@ -25,7 +25,7 @@ const migration=await runMigration({afterMigrate:async({databaseUrl,environment,
  const result=JSON.parse(fs.readFileSync(reportFile,"utf8"));receipt.browser={expected:result.stats.expected,unexpected:result.stats.unexpected,skipped:result.stats.skipped,flaky:result.stats.flaky};
  if(child.status!==0)receipt.failureAnnotations=`${child.stdout??""}
 ${child.stderr??""}`.split(/\r?\n/u).filter(line=>/^::error file=tests\/e2e\/learner-notifications\.spec\.ts,line=\d+::playwright /u.test(line)).slice(0,10);
- if(child.status!==0 || receipt.browser.expected!==2 || receipt.browser.unexpected!==0 || receipt.browser.skipped!==0 || receipt.browser.flaky!==0)throw new Error("notification-browser-gate-failed");
+ if(child.status!==0 || receipt.browser.expected!==3 || receipt.browser.unexpected!==0 || receipt.browser.skipped!==0 || receipt.browser.flaky!==0)throw new Error("notification-browser-gate-failed");
  if(snapshot().revision!==source.revision)throw new Error("notification-browser-source-changed");
 }});
 receipt.status=migration.status;receipt.migrationCount=migration.migrationNames?.length;receipt.cleanup=migration.cleanup;

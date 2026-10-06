@@ -107,3 +107,46 @@ test("real manager starts course-linked live, reloads and ends it without republ
   await expect.poll(async()=>(await db.live.findUniqueOrThrow({where:{id:live.id}})).status).toBe("ended");expect(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,productId:product.id,event:"live_started"}})).toBe(1);
  }finally{await db.vendor.delete({where:{id:vendor.id}});if(userId)await db.user.delete({where:{id:userId}});await db.$disconnect();}
 });
+
+
+test("two purchasing learners post and reply; notification opens exact thread and revoked access is refused",async({browser,baseURL})=>{
+ test.setTimeout(120000);
+ const db=new PrismaClient(),suffix=randomUUID();
+ const vendor=await db.vendor.create({data:{name:"Synthetic discussion academy",slug:`notify-discuss-${suffix}`,email:`owner-${suffix}@invalid.example`,passwordHash:"synthetic-login-disabled"}});
+ const authorContext=await browser.newContext(),replyContext=await browser.newContext();
+ try{
+  const product=await db.product.create({data:{vendorId:vendor.id,name:"合成討論通知課程",slug:randomUUID(),priceCents:1000,commerceDomain:"course",fulfillmentType:"course"}});
+  async function purchase(email:string){
+   const orderId=randomUUID(),customerKeyHash=automationCustomerKeyHash(vendor.id,email);
+   const pii=protectCommerceOrderPii({buyer:{name:"Synthetic learner",email},shipping:null},{vendorId:vendor.id,orderId});
+   await db.commerceOrder.create({data:{id:orderId,vendorId:vendor.id,orderNumber:orderId,checkoutIdempotencyKey:randomUUID(),checkoutIdentityHash:pii.checkoutIdentityHash,automationCustomerKeyHash:customerKeyHash,status:"paid",subtotalAmountCents:1000,totalAmountCents:1000,paidAmountCents:1000,buyerEncryptedEnvelope:pii.buyerEncrypted,buyerMaskedName:pii.buyerNameMasked,buyerMaskedEmail:pii.buyerEmailMasked}});
+   const item=await db.commerceOrderItem.create({data:{vendorId:vendor.id,orderId,productId:product.id,lineIndex:0,productName:product.name,productSlug:product.slug,commerceDomain:"course",fulfillmentType:"course",unitPriceCents:1000,quantity:1,lineTotalCents:1000,nonSensitiveSnapshot:{}}});
+   const entitlement=await db.commerceEntitlement.create({data:{vendorId:vendor.id,orderItemId:item.id}});
+   await db.$transaction(tx=>grantCommerceEntitlement(tx,{vendorId:vendor.id,entitlementId:entitlement.id,expectedRevision:entitlement.revision,actor:{id:"synthetic-discussion-browser-fixture"}}));
+   return {orderId,customerKeyHash,token:await createStudentPortalAccessToken(db,{vendorId:vendor.id,email,purpose:"magic_link"})};
+  }
+  const author=await purchase(`author-${suffix}@invalid.example`),replier=await purchase(`reply-${suffix}@invalid.example`);
+  const a=await authorContext.newPage(),b=await replyContext.newPage();
+  for(const [page,learner] of [[a,author],[b,replier]] as const){await page.goto(`${baseURL}/portal/${vendor.slug}/access?token=${encodeURIComponent(learner.token)}`);await expect(page).toHaveURL(new RegExp(`/portal/${vendor.slug}$`));}
+  await a.goto(`${baseURL}/portal/${vendor.slug}/learn/${product.id}`);await a.getByRole("link",{name:"學員討論",exact:true}).click();
+  const post=a.getByRole("form",{name:"發布心得"});await post.getByLabel("顯示名稱").fill("合成原作者");await post.getByLabel("分享學習心得").fill("合成需要討論的課程心得");await post.getByRole("button",{name:"發布心得"}).click();await expect(a.getByText("合成需要討論的課程心得",{exact:true})).toBeVisible();
+  const parent=await db.courseCommunityPost.findFirstOrThrow({where:{vendorId:vendor.id,productId:product.id,customerKeyHash:author.customerKeyHash}});
+  await b.goto(`${baseURL}/portal/${vendor.slug}/learn/${product.id}/community`);await b.getByRole("button",{name:/查看討論/u}).click();
+  const form=b.getByRole("form",{name:"回覆討論"});await form.getByLabel("顯示名稱").fill("合成回覆學員");await form.getByLabel("回覆內容").fill("合成回答內容");await form.getByRole("button",{name:"送出回覆"}).click();await expect(b.getByRole("region",{name:"完整討論"}).getByText("合成回答內容",{exact:true})).toBeVisible();
+  await expect.poll(()=>db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,productId:product.id,event:"discussion_reply"}})).toBe(1);
+  const source=await db.learnerNotificationSourceEvent.findFirstOrThrow({where:{vendorId:vendor.id,productId:product.id,event:"discussion_reply"}});expect(source.audienceCustomerKeyHash).toBe(author.customerKeyHash);expect(source.payloadEncryptedEnvelope).not.toContain("合成回答內容");
+  const link=`${baseURL}/portal/${vendor.slug}/learn/${product.id}/community/${parent.id}`;
+  await a.goto(link);await expect(a.getByRole("region",{name:"完整討論"}).getByText("合成回答內容",{exact:true})).toBeVisible();await a.reload();await expect(a.getByRole("region",{name:"完整討論"})).toBeVisible();
+  expect(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,event:"discussion_reply"}})).toBe(1);
+  // Next.js streamed notFound pages can have HTTP 200. The data boundary must
+  // still return exact 404, while the rendered page must expose no thread.
+  async function expectUnavailable(){
+   await a.goto(link);await expect(a.getByRole("heading",{name:"404",exact:true})).toBeVisible();await expect(a.getByRole("region",{name:"完整討論"})).toHaveCount(0);await expect(a.getByText("合成回答內容",{exact:true})).toHaveCount(0);
+   const response=await a.evaluate(async(path)=>{const result=await fetch(path,{headers:{"x-celebratedeal-client":"web"},cache:"no-store"});return {status:result.status,body:await result.json(),cache:result.headers.get("cache-control")};},`/portal/${vendor.slug}/learn/${product.id}/community/data?postId=${parent.id}`);
+   expect(response).toEqual({status:404,body:{error:"not_found"},cache:"private, no-store"});
+  }
+  await db.courseCommunityPost.update({where:{vendorId_productId_id:{vendorId:vendor.id,productId:product.id,id:parent.id}},data:{hiddenAt:new Date()}});await expectUnavailable();
+  await db.courseCommunityPost.update({where:{vendorId_productId_id:{vendorId:vendor.id,productId:product.id,id:parent.id}},data:{hiddenAt:null}});
+  await db.$transaction(tx=>reconcileCommerceOrderRefund(tx,{vendorId:vendor.id,orderId:author.orderId,providerName:"synthetic",eventIdentity:randomUUID(),amountCents:1000,occurredAt:new Date()}));await expectUnavailable();
+ }finally{await authorContext.close();await replyContext.close();await db.vendor.delete({where:{id:vendor.id}});await db.$disconnect();}
+});

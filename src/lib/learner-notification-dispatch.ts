@@ -26,6 +26,17 @@ async function consultationReminderIsCurrent(tx:Pick<Prisma.TransactionClient,"$
  return active.length===1;
 }
 
+/** Lock the exact visible reply and its original recipient through submission. */
+async function discussionReplyIsCurrent(tx:Pick<Prisma.TransactionClient,"$queryRaw">,scope:z.infer<typeof LearnerNotificationScope>,reply:z.infer<typeof LearnerNotificationMessage>["discussionReply"]) {
+ if(!reply || reply.customerKeyHash!==scope.customerKeyHash)return false;
+ const current=await tx.$queryRaw<Array<{id:string}>>`SELECT r."id" FROM "CourseCommunityReply" r
+  JOIN "CourseCommunityPost" p ON p."vendorId"=r."vendorId" AND p."productId"=r."productId" AND p."id"=r."postId"
+  WHERE r."vendorId"=${scope.vendorId} AND r."productId"=${scope.productId} AND r."id"=${reply.replyId}
+  AND p."id"=${reply.postId} AND p."customerKeyHash"=${scope.customerKeyHash}
+  AND r."customerKeyHash"<>p."customerKeyHash" AND r."hiddenAt" IS NULL AND p."hiddenAt" IS NULL FOR UPDATE OF r,p`;
+ return current.length===1;
+}
+
 /** Lock exact consent, order and entitlement rows through one bounded provider
  * attempt. Refund/opt-out commits cannot overtake authorization and submission.
  * This transaction MUST NOT be automatically retried: HTTP may already have sent. */
@@ -70,6 +81,10 @@ export async function dispatchClaimedLearnerNotification(db:Database,raw:unknown
    }
    if (row.event === "consultation_reminder" && !await consultationReminderIsCurrent(tx,scope,message.consultationBooking,preference.consentedAt)) {
     await tx.learnerNotificationDelivery.update({where:{id:row.id},data:{status:"suppressed",claimTokenHash:null,nextAttemptAt:null,lastErrorCode:"CONSULTATION_BOOKING_UNAVAILABLE"}});
+    return {status:"suppressed"} as const;
+   }
+   if (row.event === "discussion_reply" && !await discussionReplyIsCurrent(tx,scope,message.discussionReply)) {
+    await tx.learnerNotificationDelivery.update({where:{id:row.id},data:{status:"suppressed",claimTokenHash:null,nextAttemptAt:null,lastErrorCode:"DISCUSSION_REPLY_UNAVAILABLE"}});
     return {status:"suppressed"} as const;
    }
    attempted=true;

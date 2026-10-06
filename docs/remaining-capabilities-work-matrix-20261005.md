@@ -123,3 +123,11 @@ F1 通知補記：已接上 configured-only email／Web Push／Twilio SMS／What
 - 發送前持鎖重查exact booking/customer/start/project/course；取消、改期、撤除binding、unpublish及無encrypted確認證據均0provider calls。多次/併發確認只一筆source。
 - CI37531345759/c88b9295有2個typed migration inventory未更新88/89造成unit failure；已補89及canonical inventory文件，保留歷史81 adapter拒絕與全部assertions。
 - 證據 docs/remaining-capabilities-f1-notifications-consultation-reminder-20261007.json；NOT_READY。Discussion實際community介面、非course適用契約、渠道/nativepush完整旅程、Critical review、canonical acceptance、exact CI/protected delivery仍須完成。Community source只核對必要reply契約，未整合或宣稱交付；原worktree的2個untracked receipts保留。
+
+### F1 實際討論回覆通知整合 2026-10-07
+
+- ID f1-learner-notifications；owner root；source community `efee6e262685402b8c6efd13b2fe91091b49c70c`；dispatch0/4。接入 actual learner/manager community UI、API、唯一歷史 community migration 原文，未重新建立等價 migration；原 community 工作與 review limit/待核准狀態不變。
+- 回覆與作者限定 encrypted source 同 Serializable transaction，UUID 重送/併發只一筆 reply/source，self reply不通知、不複製討論文字；通知 exact thread route 登入/權益重驗並可 reload。送出前鎖定原作者/visible parent/reply、退款/consent權益。
+- 90 migrations/70 DB PASS，保留原63並新增7 real service/DB回歸；118 unit/12files、TypeScript、lint PASS。第三條實際雙學員發文→回覆→exact thread/reload→hidden/refund拒絕 browser handle48629仍執行，舊 browser 不支持新source。
+- 前head435dcfbc CI37536141538 FAIL因API registry遺漏完整POST reminders path，已補文件且registry測試PASS；無品質門檻/assertion變更。
+- 證據 docs/remaining-capabilities-f1-notifications-discussion-20261007.json；NOT_READY、NOT_DELIVERED。新 browser、完整非course/channel/nativepush契約、Critical review、canonical acceptance、exactCI/protected交付及其他Goal範圍保持未完成。
