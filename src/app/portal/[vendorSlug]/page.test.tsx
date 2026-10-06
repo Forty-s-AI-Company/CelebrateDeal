@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ requireSession: vi.fn(), dashboard: vi.fn(), getDb: vi.fn() }));
+const mocks = vi.hoisted(() => ({ requireSession: vi.fn(), dashboard: vi.fn(), getDb: vi.fn(), locale: vi.fn() }));
+vi.mock("@/lib/student-portal-locale", () => ({ resolveStudentPortalLocale: mocks.locale }));
 vi.mock("@/lib/student-portal-auth", () => ({ requireStudentPortalSession: mocks.requireSession }));
 vi.mock("@/lib/student-portal", () => ({ getStudentPortalDashboard: mocks.dashboard }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
@@ -13,6 +14,7 @@ import StudentPortalPage from "./page";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.locale.mockResolvedValue("zh-TW");
   mocks.getDb.mockReturnValue({});
   mocks.requireSession.mockResolvedValue({ session: { vendorId: "vendor-1", customerKeyHash: "customer-hash" }, vendor: { id: "vendor-1", slug: "teacher", name: "老師品牌", logoUrl: null, primaryColor: "#2563eb" } });
   mocks.dashboard.mockResolvedValue({
@@ -40,4 +42,21 @@ describe("student portal page", () => {
 
 it("keeps notification management navigation outside current course grants",async()=>{
  mocks.dashboard.mockResolvedValue({maskedEmail:null,courses:[],consultations:[],vouchers:[],orders:[]});const html=renderToStaticMarkup(await StudentPortalPage({params:Promise.resolve({vendorSlug:"teacher"})}));expect(html).toContain('href="/portal/teacher/notifications"');expect(html).toContain("通知設定");
+});
+
+it("English dashboard preserves tenant scope, merchant text and financial values",async()=>{
+ mocks.locale.mockResolvedValue("en");
+ const dashboard=await mocks.dashboard();
+ dashboard.courses[0].title="我的課程";
+ dashboard.consultations[0].event.title="預約提醒";
+ dashboard.orders[0].items[0].name="通知設定";
+ mocks.dashboard.mockResolvedValue(dashboard);
+ const html=renderToStaticMarkup(await StudentPortalPage({params:Promise.resolve({vendorSlug:"teacher"})}));
+ for(const copy of ["My courses","1-to-1 consultations","Notification settings","Orders and invoices"])expect(html).toContain(copy);
+ for(const original of ["老師品牌","我的課程","預約提醒","通知設定","AB12345678","CD-001"])expect(html).toContain(original);
+ expect(html).toContain(new Intl.NumberFormat("en",{style:"currency",currency:"TWD",maximumFractionDigits:0}).format(1200));
+ expect(html).toContain('href="/portal/teacher/notifications"');
+ expect(mocks.requireSession).toHaveBeenCalledWith("teacher");
+ expect(mocks.dashboard).toHaveBeenLastCalledWith(expect.anything(),{vendorId:"vendor-1",customerKeyHash:"customer-hash"});
+ expect(html).not.toContain("customer-hash");
 });

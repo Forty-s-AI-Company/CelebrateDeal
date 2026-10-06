@@ -10,11 +10,12 @@ vi.mock("react",async importOriginal=>({...await importOriginal<typeof import("r
  useRef:(initial:unknown)=>{const index=hooks.refIndex++;if(!hooks.refs[index])hooks.refs[index]={current:initial};return hooks.refs[index];}
 }));
 import { LearnerNotificationSettings } from "./learner-notification-settings";
+import type { StudentPortalLocale } from "@/lib/student-portal-locale";
 function find(node:ReactNode,type:string,text?:string):Record<string,unknown>|undefined{
  if(Array.isArray(node)){for(const child of node){const result=find(child,type,text);if(result)return result;}}
  else if(isValidElement<{children?:ReactNode}>(node)){if(node.type===type && (text===undefined || node.props.children===text))return node.props;return find(node.props.children,type,text);}
 }
-function render(){hooks.stateIndex=0;hooks.refIndex=0;return LearnerNotificationSettings({vendorSlug:"academy",courseId:"course-1"});}
+function render(locale?:StudentPortalLocale){hooks.stateIndex=0;hooks.refIndex=0;return LearnerNotificationSettings({vendorSlug:"academy",courseId:"course-1",locale});}
 const pref=(revision=1,verified=false,enabled=false)=>({channel:"email",enabled,revision,destinationVerifiedAt:verified?"2026-10-07T00:00:00.000Z":null});
 const snapshot=(revision=1,verified=false,enabled=false)=>({preferences:[pref(revision,verified,enabled)],csrfToken:"synthetic-csrf",capabilities:{availableChannels:["email"],pushPublicKey:null}});
 const fetchMock=vi.fn();
@@ -69,4 +70,20 @@ it("native push subscription is enrolled only after explicit permission",async()
  const state={...snapshot(),preferences:[],capabilities:{availableChannels:["push"],pushPublicKey:"a".repeat(87)}};fetchMock.mockResolvedValue(Response.json(state));await load();change("select","push");
  const destination={endpoint:"https://fcm.googleapis.com/fcm/send/synthetic",expirationTime:null,keys:{p256dh:"a".repeat(87),auth:"b".repeat(22)}};const subscribe=vi.fn();const permission=vi.fn().mockResolvedValue("granted");vi.stubGlobal("navigator",{serviceWorker:{getRegistration:vi.fn().mockResolvedValue({pushManager:{getSubscription:vi.fn().mockResolvedValue({toJSON:()=>destination}),subscribe}})}});vi.stubGlobal("window",{PushManager:{},Notification:{}});vi.stubGlobal("Notification",{requestPermission:permission});
  fetchMock.mockReset().mockResolvedValueOnce(Response.json({status:"challenge_queued",challenge:{id:"challenge-1",expiresAt:"2026-10-07T00:15:00.000Z"}},{status:202})).mockResolvedValueOnce(Response.json(state));click("驗證這台裝置");await idle();expect(permission).toHaveBeenCalledTimes(1);expect(subscribe).not.toHaveBeenCalled();expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({channel:"push",destination,expectedRevision:0});
+});
+
+it("English withdrawal keeps the exact consent revision and HTTP identity",async()=>{
+ fetchMock.mockResolvedValueOnce(Response.json(snapshot(7,true,true)));
+ const loadButton=find(render("en"),"button","Load notification settings");
+ expect(loadButton?.disabled).toBe(false);
+ (loadButton!.onClick as ()=>void)();
+ await vi.waitFor(()=>expect(find(render("en"),"button","Reload settings")?.disabled).toBe(false));
+ expect(find(render("en"),"h2","Course notifications")).toBeDefined();
+ fetchMock.mockReset().mockResolvedValueOnce(Response.json({status:"saved",preference:pref(8,true,false)})).mockResolvedValueOnce(Response.json(snapshot(8,true,false)));
+ (find(render("en"),"button","Cancel notifications")!.onClick as ()=>void)();
+ await vi.waitFor(()=>expect(find(render("en"),"button","Reload settings")?.disabled).toBe(false));
+ expect(fetchMock.mock.calls[0][0]).toBe("/portal/academy/learn/course-1/notifications");
+ expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({channel:"email",enabled:false,expectedRevision:7});
+ expect(fetchMock.mock.calls[0][1].headers["x-csrf-token"]).toBe("synthetic-csrf");
+ expect(find(render("en"),"p","Notifications cancelled for this course.")).toBeDefined();
 });

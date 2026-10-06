@@ -111,10 +111,14 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   await expect.poll(async()=>Boolean((await db.courseLessonProgress.findFirst({where:{vendorId:vendor.id,productId:product.id,lessonId:lesson.id,customerKeyHash}}))?.completedAt)).toBe(true);
   await page.reload();await expect(page.getByRole("button",{name:"Marked complete",exact:true})).toBeVisible();
   await expect(page.getByRole("heading",{name:"保留講師原文",exact:true})).toBeVisible();
+  const englishSettings=page.getByRole("region",{name:"Course notifications",exact:true});
+  await englishSettings.getByRole("button",{name:"Load notification settings",exact:true}).click();
+  await expect(englishSettings.getByRole("button",{name:"Cancel notifications",exact:true})).toBeEnabled();
+  await expect(englishSettings.getByRole("region",{name:"Appointment reminders",exact:true})).toBeVisible();
   await page.getByRole("combobox",{name:"Language",exact:true}).selectOption("zh-TW");
   await page.getByRole("button",{name:"Apply",exact:true}).click();
-  // The notification region keeps Chinese copy in both locales. Its presence
-  // cannot establish completion of the locale server-action navigation.
+  // Await the accepted locale and the persisted lesson state before loading
+  // another client region after the server-action navigation.
   await expect(page.getByRole("button",{name:"已標記完成",exact:true})).toBeVisible();
   await expect(page.getByText("學習進度",{exact:true})).toBeVisible();
   const settings=page.getByRole("region",{name:"課程通知"});
@@ -143,6 +147,20 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   await reminders.getByRole("button",{name:"開啟這筆預約提醒"}).click();await expect(reminders.getByRole("status",{name:"預約提醒狀態"})).toContainText("已確認這筆預約");
   const source=await db.learnerNotificationSourceEvent.findFirstOrThrow({where:{vendorId:vendor.id,productId:product.id,event:"consultation_reminder"}});expect(source.audienceCustomerKeyHash).toBe(customerKeyHash);expect(source.availableAt.getTime()).toBe(startTime.getTime()-3600000);expect(source.payloadEncryptedEnvelope).not.toContain(email);
   await page.reload();await settings.getByRole("button",{name:"載入通知設定"}).click();await reminders.getByRole("button",{name:"查看我的預約"}).click();await expect(reminders.getByRole("button",{name:"已確認預約提醒"})).toBeDisabled();expect(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,event:"consultation_reminder"}})).toBe(1);
+  await page.getByRole("combobox",{name:"語言",exact:true}).selectOption("en");
+  await page.getByRole("button",{name:"套用",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Marked complete",exact:true})).toBeVisible();
+  await englishSettings.getByRole("button",{name:"Load notification settings",exact:true}).click();
+  const englishReminders=englishSettings.getByRole("region",{name:"Appointment reminders",exact:true});
+  await englishReminders.getByRole("button",{name:"View my appointments",exact:true}).click();
+  await expect(englishReminders.getByRole("heading",{name:calendar.title,exact:true})).toBeVisible();
+  await expect(englishReminders.getByRole("button",{name:"Appointment reminder confirmed",exact:true})).toBeDisabled();
+  expect(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,event:"consultation_reminder"}})).toBe(1);
+  expect((await db.learnerNotificationPreference.findUniqueOrThrow({where:{id:preference.id}})).revision).toBe(1);
+  await page.getByRole("combobox",{name:"Language",exact:true}).selectOption("zh-TW");
+  await page.getByRole("button",{name:"Apply",exact:true}).click();
+  await expect(page.getByRole("button",{name:"已標記完成",exact:true})).toBeVisible();
+  await settings.getByRole("button",{name:"載入通知設定",exact:true}).click();
   const path=`/portal/${vendor.slug}/learn/${product.id}/notifications`;
   const refused=await page.evaluate(async(path)=>{const response=await fetch(path,{method:"POST",headers:{"content-type":"application/json","x-celebratedeal-client":"web","x-csrf-token":"invalid"},body:JSON.stringify({channel:"email",enabled:false,expectedRevision:1})});return response.status;},path);
   expect(refused).toBe(403);expect((await db.learnerNotificationPreference.findUniqueOrThrow({where:{id:preference.id}})).enabled).toBe(true);
@@ -161,6 +179,13 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   const reenable=await page.evaluate(async(path)=>{const response=await fetch(path,{headers:{"x-celebratedeal-client":"web"},cache:"no-store"});const state=await response.json();return (await fetch(path,{method:"POST",headers:{"content-type":"application/json","x-celebratedeal-client":"web","x-csrf-token":state.csrfToken},body:JSON.stringify({channel:"email",enabled:true,expectedRevision:4})})).status;},path);expect(reenable).toBe(404);
   const foreignStatus=await page.evaluate(async(path)=>(await fetch(path,{headers:{"x-celebratedeal-client":"web"},cache:"no-store"})).status,`/portal/${vendor.slug}/learn/${foreignProduct.id}/notifications`);
   expect(foreignStatus).toBe(404);expect(await db.learnerNotificationPreference.count({where:{vendorId:foreign.id}})).toBe(0);
+  await page.getByRole("combobox",{name:"語言",exact:true}).selectOption("en");
+  await page.getByRole("button",{name:"套用",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Notification settings",exact:true})).toBeVisible();
+  await expect(page.getByRole("heading",{name:product.name,exact:true})).toBeVisible();
+  await englishSettings.getByRole("button",{name:"Load notification settings",exact:true}).click();
+  await expect(englishSettings.getByRole("button",{name:"Enable notifications",exact:true})).toBeDisabled();
+  expect((await db.learnerNotificationPreference.findUniqueOrThrow({where:{id:preference.id}})).revision).toBe(4);
  }finally{await db.vendor.deleteMany({where:{id:{in:[vendor.id,foreign.id]}}});await db.$disconnect();}
 });
 

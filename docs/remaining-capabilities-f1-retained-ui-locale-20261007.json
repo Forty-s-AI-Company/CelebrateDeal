@@ -1,13 +1,89 @@
 {
-  "schemaVersion": "celebratedeal-notification-locale-browser/v1",
+  "schemaVersion": "celebratedeal-retained-learner-ui-locale/v1",
   "task_id": "f1-learner-notifications",
   "goal_id": "remaining-capabilities-20261005",
-  "base_head": "e849dad09f9f5569448915fe45e3b818c9f24a81",
-  "status": "BROWSER_PHASE_PASS_TASK_NOT_READY",
-  "receipt": {
+  "base_head": "f6ec2434fb72c783cff3eb6db90f6dfcc985ef54",
+  "status": "LOCAL_UI_BROWSER_PASS_TASK_NOT_READY",
+  "implemented": [
+    "Learner dashboard: courses, appointments, vouchers, orders and notification navigation",
+    "Existing and refunded notification management",
+    "Course notifications: state, verification, opt-in, withdrawal and error copy",
+    "Appointment reminders: state, confirmation and locale dates",
+    "Real login form localization regression"
+  ],
+  "unchanged_contracts": [
+    "Tenant and authenticated recipient identity",
+    "Purchasing and refund rights",
+    "CSRF and consent CAS",
+    "Exact booking and source deduplication",
+    "Original merchant/customer content",
+    "No browser secret/contact persistence",
+    "No external delivery claims"
+  ],
+  "unit": {
+    "status": "PASS",
+    "passed": 48,
+    "failed": 0,
+    "pending": 0,
+    "files": [
+      {
+        "path": "src/components/course-community.test.tsx",
+        "status": "passed",
+        "count": 2
+      },
+      {
+        "path": "src/components/course-player.test.tsx",
+        "status": "passed",
+        "count": 10
+      },
+      {
+        "path": "src/components/learner-consultation-reminders.test.tsx",
+        "status": "passed",
+        "count": 2
+      },
+      {
+        "path": "src/components/learner-notification-settings.test.tsx",
+        "status": "passed",
+        "count": 13
+      },
+      {
+        "path": "src/components/student-portal-login-form.test.tsx",
+        "status": "passed",
+        "count": 3
+      },
+      {
+        "path": "src/lib/student-portal-locale.test.ts",
+        "status": "passed",
+        "count": 4
+      },
+      {
+        "path": "src/app/actions/student-portal-locale-actions.test.ts",
+        "status": "passed",
+        "count": 3
+      },
+      {
+        "path": "src/app/portal/[vendorSlug]/page.test.tsx",
+        "status": "passed",
+        "count": 3
+      },
+      {
+        "path": "src/app/portal/[vendorSlug]/login/page.test.tsx",
+        "status": "passed",
+        "count": 2
+      },
+      {
+        "path": "src/app/portal/[vendorSlug]/notifications/page.test.tsx",
+        "status": "passed",
+        "count": 6
+      }
+    ]
+  },
+  "typescript": "PASS",
+  "scoped_lint": "PASS",
+  "browser": {
     "schemaVersion": "learner-notification-browser/v1",
     "source": {
-      "revision": "sha256:08ff83598151168843046cc9566b9f89f5673c08cb0b5786c2ae5d8d81de9acd",
+      "revision": "sha256:82e416e95be9220fef0f3127d232440df38953d9b5fa56aee4eab8f2a52f5b1d",
       "files": {
         "next.config.ts": "15ce1082b5567d1dbdc76bfc1f5e5d6f14d8efa4f6e6aaf8352f19f31fd8619c",
         "package-lock.json": "316fe741454b5747c1afc8c09a62ff80a4ed819899d7ea4a51a77eace5f523f0",
@@ -686,15 +762,15 @@
         "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/route.ts": "e9657f8ad6542734fdf07cba39e4e48d2517692f26bd5b31e53e19bbe46b9069",
         "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/verify/route.test.ts": "932eef0ed25cccfc04ef4f6fdb281468ecf67ec132d8a39967ffbac712faf5be",
         "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/verify/route.ts": "5605c5b00448c76bf95483c061dbd083a655013934f4587a4a3f7bee46747dda",
-        "src/app/portal/[vendorSlug]/learn/[courseId]/page.tsx": "e213984e22d0d03a04471467ff28b3e1028da034661ad992259aae16eaf7c0ff",
+        "src/app/portal/[vendorSlug]/learn/[courseId]/page.tsx": "ddf78c89a638d123ec8906ad8025f752776b698a4194561b6ef897b2080ad6c7",
         "src/app/portal/[vendorSlug]/learn/[courseId]/progress/route.test.ts": "af023a164c83e29015541fb05a072500891908afebcf91be4b25ee9c780e9b9f",
         "src/app/portal/[vendorSlug]/learn/[courseId]/progress/route.ts": "89c798456ed62d6f4f47cef46e7895cdd560bdb1d747845c78e5101f1c4b61a0",
         "src/app/portal/[vendorSlug]/login/page.test.tsx": "1049a64b3c3d064f7b98646629b95ea154c36798fa67bf293890c488ec2b10f5",
         "src/app/portal/[vendorSlug]/login/page.tsx": "9b1d55ffb6b02a4f407fc09d05bd994164950e5192d13bdeb7f5c2ac04c54aae",
-        "src/app/portal/[vendorSlug]/notifications/page.test.tsx": "408891eecca002df528f3d1925ad0355cf7585af6ecd0b7be798ef86c7d50a4f",
-        "src/app/portal/[vendorSlug]/notifications/page.tsx": "36735aa84ec01dbde371486377de285b72615c84dcef63a7ebdf88530a4c2658",
-        "src/app/portal/[vendorSlug]/page.test.tsx": "13628af01e788c0ac0725edb2e335d9374545a75a9349100c04884d5f6f1e322",
-        "src/app/portal/[vendorSlug]/page.tsx": "547d1b4ff9290320658bc0743a609eb7fea7da4145c17b50448937b44fceef02",
+        "src/app/portal/[vendorSlug]/notifications/page.test.tsx": "bb736602e9b66b5253aba5b560918f188042abfa3f881db7bef4ba0cec2cc0e5",
+        "src/app/portal/[vendorSlug]/notifications/page.tsx": "1f7fb5d50df3d1627335a3f279d293d900b1e7ba2329a130cb3f7fa22fb53bc4",
+        "src/app/portal/[vendorSlug]/page.test.tsx": "e0c6cdf7bbc2ad3725c2bb9b46dfbecbabfc8ebdc1723c5536e749b5c5d39e81",
+        "src/app/portal/[vendorSlug]/page.tsx": "6c250b38813e0259e02f51c9769f8c49eb4f74c68d66910865cf73c66856fdcb",
         "src/app/portal/[vendorSlug]/vouchers/[voucherId]/use/route.test.ts": "8815ae5eac9c613fc10f2973cffcda3c82469388c3a5f582e4266e21a11a1092",
         "src/app/portal/[vendorSlug]/vouchers/[voucherId]/use/route.ts": "d919ee927f53ac244429bbc032c43ac89539590004d99b8478de8435e28d042e",
         "src/app/portal/layout.tsx": "243477fce99f9ddb155712ec14fb5288a54696ffac53b5cb4eb1e1f9c4059ca9",
@@ -831,9 +907,10 @@
         "src/components/landing-pages/workspace-editor.tsx": "b6c476f37e992ace939f8681d56a30e94ff59a951961c56f36455260b1f4575d",
         "src/components/lead-form.test.tsx": "6ecd6cea56e1cbf3a1d75fcb7767c8ab1e1ba5ff7995e015c52652fd54af9d52",
         "src/components/lead-form.tsx": "782d3d12e49d8405947d795b23b6adc551d992812eed794c8513ce1871592aac",
-        "src/components/learner-consultation-reminders.tsx": "fd151610a062a16bc41cdf848cbeaabb21fe2a879b61e73ac0d8f404128e8384",
-        "src/components/learner-notification-settings.test.tsx": "df8e90b9b35fa89cba7b39c8a73736540786e8f6afcc73d75e03b81b89818b72",
-        "src/components/learner-notification-settings.tsx": "54a41f7e9193e94c0714e5ee8a6787ad00db1d30ee9f7adcd8e80901d761ad35",
+        "src/components/learner-consultation-reminders.test.tsx": "16f234317499cf4ccd7ae4d20558b478365cbd6a3b9ab8799ac439facf2bf56c",
+        "src/components/learner-consultation-reminders.tsx": "8609bb63f83084410333b0c33793f3741c0a967c0ba25bb4f4608e39d9a9e32a",
+        "src/components/learner-notification-settings.test.tsx": "5227f81c1add2351af0101e7697cfb78fc287b7b3d91680ad9f2151a23499491",
+        "src/components/learner-notification-settings.tsx": "def71a268e6bd4cfe95f37d1ccd73a609bebcdf79cb99aa1b260d57acd1b3193",
         "src/components/line-login-button.tsx": "734618c2043f9bc47a185f0bd2898483b4cc8c70643a086d4f961814368644bc",
         "src/components/line-official-account-form.tsx": "84085e3036eb6f4c9b96ee956dac82e24df7372f9f65534731d84c5cfa8ef525",
         "src/components/line-rich-menu-studio.test.tsx": "ad06470920d26df2ac9e87ce0490ff0ac1ff0ef987e69cd1cbfc279cdb09b4df",
@@ -882,6 +959,7 @@
         "src/components/stream-allocation-editor.test.tsx": "e18af347df6af98d98cc7893579fd6f42aa06be3401abd5d01201d37ac6f8f9d",
         "src/components/stream-allocation-editor.tsx": "01a612bedd44379c0c4e9cb24dc9f20d31c8b182e58cef2878082de9302eff31",
         "src/components/student-portal-language-switcher.tsx": "7d5f5778464042a7325e6635b373e15aea8e0a7137e98c1aeaa37636a05f4104",
+        "src/components/student-portal-login-form.test.tsx": "c6fcb1375b3b349c9e60d7a6779b609df85fc826ce85b3df58b6bd5e4b8dc1c1",
         "src/components/student-portal-login-form.tsx": "5784c80b3843f33f16cf2f3355bebb09722811a12f53c9f117fe4be480d786a1",
         "src/components/student-portal-pwa.tsx": "6fa8a637a36e89fc53e559ec591c3b42732382d66029584f4f4f0eb721d07a86",
         "src/components/support-refund-selection.tsx": "35b9fe08bc1037ae25412c71275cfd36b8f82f0714215d7060162bbba1727ba1",
@@ -1423,7 +1501,7 @@
         "src/lib/student-portal-auth.ts": "b7b98ee1bc89dd4b4b8fd9ab37d81662682eed4b830520bbc73961134917babb",
         "src/lib/student-portal-locale.test.ts": "3405d84b96e075888a94f6ef9da2b6c61907ed3ecd827c29b962ef2c676989b8",
         "src/lib/student-portal-locale.ts": "56386f96c2de5798351b5754003d3cd5d6d0bb0e7eb870a6c739a310b87e4286",
-        "src/lib/student-portal-translations.ts": "f1c70e6c819bbe2b79703e91c68b893718be132ca9295e98be9087dca9493316",
+        "src/lib/student-portal-translations.ts": "8b282af93db7c95c704a761489135bb7c7672b100adac8a034494484d8637169",
         "src/lib/student-portal-voucher.ts": "021c022529d59ac91023cf2e8cb9897908d3624bbd23ea7f9e2a3f4c46fe57cd",
         "src/lib/student-portal.test.ts": "c670b5d1837f7939a7b83c7bb4e3f276c76974769aa0fa430bc579d65378c875",
         "src/lib/student-portal.ts": "5bd081f96de1d512429e093525f63c8959d5024d223c5b881e9c3425b8d8668c",
@@ -1495,7 +1573,7 @@
         "src/lib/zoned-date-time.ts": "4f86d387d94c040e0f16752c10c05a6f1f33c0eafd8d7456a4e5e64eca30b656",
         "src/proxy.test.ts": "4e2a855408f8968df11ac46020082b12825433db5cea53b94910433bfba3c0ab",
         "src/proxy.ts": "26dd0d49e0b1a7b25f23348bb07050a51c48fc44d91a50962e8ff16bb1ad850e",
-        "tests/e2e/learner-notifications.spec.ts": "11708069437af302c76073f77850e51b6d3882c925779e008f357bda8ad60113",
+        "tests/e2e/learner-notifications.spec.ts": "d599ba126468afad358c4084ad9dedcf934e0721b33faea06e9300741874160e",
         "tsconfig.json": "ee042c9f071d990d6aceb0c06f26f8b46da48fa4e7b79933a49f7b5a71f8ce5d"
       }
     },
@@ -1521,50 +1599,23 @@
       "rawLogsSaved": false
     },
     "workerDiagnostics": [
-      "::notice::portal-worker attempted=false accepted=false error=none"
+      "::notice::portal-worker attempted=true accepted=true error=none"
     ],
     "migrationCount": 90
   },
   "source_hash_verification": {
-    "files": 1488,
+    "files": 1490,
     "mismatches": 0
   },
-  "local_checks": {
-    "settings_unit_passed": 12,
-    "typescript": "PASS",
-    "browser_test_lint": "PASS",
-    "prior_current_product_scoped_lint": "PASS",
-    "unique_unit_passed": 24,
-    "unit_scope": [
-      "learner-notification-settings:12",
-      "course-player:10",
-      "course-community:2"
-    ]
-  },
-  "ci_correction": {
-    "old_run": 37542190238,
-    "old_head": "e441334c478a33439422c7973055b8d662621478",
-    "old_conclusion": "FAILURE",
-    "guard_inventory": 91,
-    "vendor_manager_inventory": 52,
-    "new_protected_community_page": "EXPLICIT_GUARD_ASSERTED",
-    "browser_channel": "chromium",
-    "fresh_exact_head_ci": "PENDING"
-  },
-  "review": {
-    "dispatches": 3,
-    "limit": 4,
-    "full_task_review": "NOT_COMPLETE"
-  },
+  "independent_full_task_review": "NOT_COMPLETE",
+  "canonical_acceptance": "NOT_READY",
+  "exact_head_ci": "PENDING",
   "remaining": [
-    "Full retained notification/reminder UI localization",
-    "Applicable non-course event/recipient contracts",
-    "Approved nonproduction provider enrollment and delivery proof",
-    "Full independent Critical review",
+    "Applicable non-course notification producers/recipient contract",
+    "Approved nonproduction enroll/verify/provider proofs",
+    "Independent Critical review",
     "Canonical acceptance",
     "Exact-head CI and protected PR delivery"
   ],
-  "actual_external_provider_delivery": false,
-  "production_operations": false,
-  "evidence_count_correction": "Earlier 24-test selection already included the 12 settings tests; a repeated settings run did not add unique cases. The named login form test did not exist then. Latest retained-ui proof separately executes its newly added real login form regression."
+  "strict_index": "PASS"
 }
