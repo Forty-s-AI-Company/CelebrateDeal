@@ -92,7 +92,7 @@
     "src/app/api/admin/ops/payuni/wp4-subscription-reconcile/route.test.ts",
     "src/app/api/admin/ops/payuni/wp4-recovery-routes.test.ts"
   ],
-  "test_revision": "sha256:3e38447e271eb0aab1b945f7cc05f429785d71bcbeda01db24ad1244199c43b1",
+  "test_revision": "sha256:551c2ba761452148937628838825eb8edd4d07a59cb9e15a35042058d0a9ca06",
   "status": "IMPLEMENTED_PENDING_FINAL_VERIFICATION",
   "dispatch_used": 4,
   "dispatch_limit": 4,
@@ -133,7 +133,8 @@
     "affected_unit": "89/89 PASS",
     "scoped_secret_scan": "0 findings in declared Q2 product/test/doc scope; full repository CI scan remains required",
     "tenant_slug_trade_db": "65/65 PASS at ca8d3302 before pure selector helper extraction; exact new hash browser run required",
-    "tenant_dispatch_race": "Both new PostgreSQL race and payment-ID tests passed; full 67-test run has one unrelated settlement failure pending diagnosis, zero skipped"
+    "tenant_dispatch_race": "Both new PostgreSQL race and payment-ID tests passed; full 67-test run has one unrelated settlement failure pending diagnosis, zero skipped",
+    "node_tap_ci_correction": "12/12 affected historical migration TAP tests PASS,zero skipped;full1067 TAP currently running. Exact87 inventory and final migration name checked; product source unchanged."
   },
   "next": "Complete ongoing dispatch4 independent review, diagnose actual DB/CI failures without reducing checks; fresh 67 DB + 2 browser and exact-head full CI required"
 }
