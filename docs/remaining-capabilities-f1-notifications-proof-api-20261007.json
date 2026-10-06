@@ -1,0 +1,172 @@
+{
+  "task_id": "f1-learner-notifications",
+  "status": "IMPLEMENTED_PROOF_API_PHASE_NOT_READY",
+  "source_hashes": {
+    "src/lib/learner-notification-verification.ts": "8704ce67d6429de9e6195c23f175d1439916299a8925ff6bf8aecb5a800403cb",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/verify/route.ts": "5605c5b00448c76bf95483c061dbd083a655013934f4587a4a3f7bee46747dda",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/verify/route.test.ts": "932eef0ed25cccfc04ef4f6fdb281468ecf67ec132d8a39967ffbac712faf5be",
+    "docs/codex-goal/API_CONTRACT_REGISTRY.md": "c2779071012237d48412903b8d3d8f8826f0ce23d9d9467597b5608a6e2e8a2d"
+  },
+  "source_revision": "sha256:6c79fd03b010d8dcc7625589c1ce0b91db0e82096c1f4ff674d7b7843c9afcd3",
+  "unit_tests": {
+    "proof_API": 8,
+    "registry": 1,
+    "failed": 0
+  },
+  "lint": "PASS",
+  "typescript": "PASS",
+  "postgresql_receipt": {
+    "source": {
+      "files": {
+        "package.json": "3348ccdf618d1785b687f24a45b10efaf61dc4cc130f46cd53d5df9d3ad75094",
+        "package-lock.json": "316fe741454b5747c1afc8c09a62ff80a4ed819899d7ea4a51a77eace5f523f0",
+        "prisma/schema.prisma": "abf1645262725ee127f43a8efad727db5725d85832fdc3157dea59e0129bb60f",
+        "prisma/migrations/20261007010000_learner_notifications/migration.sql": "9556eb9165d262a8c17b26a2ca87a06da024d8e95cf3a1167b4e3f1556071515",
+        "src/lib/learner-notification-contract.ts": "b09c722bbed2be39f174129bfebd04575a71e57cdc16c80a8686587f70364c02",
+        "src/lib/learner-notification-preferences.ts": "e498bc8c3864347acc380ed815d37a7f604c508e887a9c341d3f5ba615d2c7b3",
+        "src/lib/learner-notification-outbox.ts": "b97446a5182f75d14e64b18ee52f9535ce478ff06b6aaa48287c63e78a39d8b3",
+        "src/lib/learner-notification-dispatch.ts": "7d8aea99cb268fd0174b2a76f98205e4e70a77af34ca5f234e0a790c0825d9dc",
+        "src/lib/learner-notification-providers.ts": "a3a3eae976a8a35d6f36e2bc7a0d3f10d49fc9f79c7119a3f941a5824de47030",
+        "src/lib/learner-notification-verification.ts": "8704ce67d6429de9e6195c23f175d1439916299a8925ff6bf8aecb5a800403cb",
+        "src/lib/student-course-learning.ts": "78716725dd49fdf08292c0e180875b1953448fa9fc72ee7f63a4a04fd3382d29",
+        "src/lib/sensitive-data.ts": "07c2eb967a8f03f661d98a8193f7153786598ddb6d94b831f51b72c08eac9822",
+        "src/lib/commerce-order-pii.ts": "6761a568619e2830ea51c150a064e3ee60b1e75572533734eb0fe6f7f9b04220",
+        "src/lib/commerce-order-fulfillment.ts": "b5a78f51f0455b96fd63939397677d71acc7869ed8ccdff8df0e73a69c3a8081",
+        "src/lib/commerce-orders.ts": "9765d7d57c7d91e0ffa2a81ef363abad0fb3b1c1addd4cff325f98e1e6a2240f",
+        "scripts/learner-notification-disposable-qa.mjs": "26d9a4821fc44becf9710b9fd2f3b77d339633cd17d90179a45a28bbb10b1607"
+      },
+      "revision": "sha256:7945461c7faaecd157dec362162518d9deeabfd9d2491d16f0dd4b335beb60b0"
+    },
+    "status": "PASS",
+    "migrationCount": 86,
+    "tests": [
+      {
+        "name": "cross-tenant product FK refuses preference",
+        "status": "PASS"
+      },
+      {
+        "name": "cross-tenant delivery/preference FK refuses dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent consent CAS admits one writer",
+        "status": "PASS"
+      },
+      {
+        "name": "event uniqueness survives a consent revision change",
+        "status": "PASS"
+      },
+      {
+        "name": "default-deny RLS hides rows and rejects anonymous-role writes",
+        "status": "PASS"
+      },
+      {
+        "name": "refunded recipient can unsubscribe using authenticated scope",
+        "status": "PASS"
+      },
+      {
+        "name": "service rejects stale consent revision",
+        "status": "PASS"
+      },
+      {
+        "name": "foreign recipient cannot unsubscribe another tenant",
+        "status": "PASS"
+      },
+      {
+        "name": "recipient without current purchase cannot opt in",
+        "status": "PASS"
+      },
+      {
+        "name": "verification rejects exhausted attempts and expired enrollment",
+        "status": "PASS"
+      },
+      {
+        "name": "contact proof refuses foreign recipient and locks after five wrong attempts",
+        "status": "PASS"
+      },
+      {
+        "name": "expired contact proof cannot mark destination verified",
+        "status": "PASS"
+      },
+      {
+        "name": "rotated contact proof consumes once without granting notification consent",
+        "status": "PASS"
+      },
+      {
+        "name": "native push subscription proves device separately from channel consent",
+        "status": "PASS"
+      },
+      {
+        "name": "outbox deduplicates concurrent real database event producers",
+        "status": "PASS"
+      },
+      {
+        "name": "outbox foreign scope cannot queue or claim owning recipient",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent worker claim admits exactly one owner",
+        "status": "PASS"
+      },
+      {
+        "name": "forged or replayed worker completion cannot mark delivery",
+        "status": "PASS"
+      },
+      {
+        "name": "exact claimed dispatch cannot run twice or accept a forged token",
+        "status": "PASS"
+      },
+      {
+        "name": "provider uncertainty is durable and never invokes a second attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "failed database commit after provider acceptance never repeats the external attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "entitlement expiry after claim refuses provider dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "consent withdrawal waits for the bounded authorized provider attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "consent revision change suppresses a queued event",
+        "status": "PASS"
+      },
+      {
+        "name": "real full refund after claim suppresses dispatch and further producer events",
+        "status": "PASS"
+      },
+      {
+        "name": "owned synthetic purchase fixture is created",
+        "status": "PASS"
+      }
+    ],
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "safety": {
+      "loopbackOnly": true,
+      "syntheticOnly": true,
+      "externalOperations": false,
+      "providerCallbacks": "synthetic-only;not actual provider delivery",
+      "rawLogsSaved": false
+    }
+  },
+  "scope_note": "PG verifies contact verification and worker services; route boundaries are mocked unit contracts, browser not executed. No real provider operations.",
+  "review": "NOT_EXECUTED",
+  "canonical_acceptance": "NOT_READY",
+  "remaining": [
+    "durable challenge delivery integration",
+    "all six event producers",
+    "UI and browser",
+    "approved nonproduction provider validation",
+    "Critical review",
+    "canonical acceptance",
+    "exact-head CI/protected delivery"
+  ]
+}

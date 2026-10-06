@@ -13,6 +13,7 @@ const Enrollment = z.discriminatedUnion("channel", [
 ]);
 type Database = CourseLearningStore & Pick<PrismaClient,"$transaction">;
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+export const LearnerContactVerificationInput = z.object({ challengeId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u), token: z.string().regex(/^[A-Za-z0-9_-]{43}$/u) }).strict();
 async function verificationTransaction<T>(db: Database, run: (tx: Prisma.TransactionClient) => Promise<T>) {
  for (let attempt = 0; attempt < 3; attempt++) {
   try { return await db.$transaction(run,{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable }); }
@@ -49,7 +50,7 @@ export async function requestLearnerContactVerification(db: Database, session: S
 /** Exact challenge/session binding, a five-attempt limit and atomic consumption.
  * Destination proof never substitutes for current purchase rights or channel consent. */
 export async function consumeLearnerContactVerification(db: Database, session: StudentPortalScope, productId: string, raw: unknown) {
- const input = z.object({ challengeId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u), token: z.string().regex(/^[A-Za-z0-9_-]{43}$/u) }).strict().parse(raw);
+ const input = LearnerContactVerificationInput.parse(raw);
  const scope = LearnerNotificationScope.parse({ vendorId: session.vendorId, customerKeyHash: session.customerKeyHash, productId });
  return verificationTransaction(db,async tx => {
   if (!await getStudentCourse(tx,session,productId)) return { status: "not_found" } as const;

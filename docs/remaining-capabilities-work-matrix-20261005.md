@@ -55,3 +55,5 @@ F1 通知補記：已接上 configured-only email／Web Push／Twilio SMS／What
 - 驗證：86 migrations、26 PostgreSQL 回歸、19 job/route/registry unit、TypeScript、scoped lint PASS。Provider callback 僅合成測試，沒有實際外部寄送。
 - 證據：docs/remaining-capabilities-f1-notifications-worker-20261007.json，revision sha256:46c5f7fbc1fcf7fc391fd6df50dc58e0f77ac1a9bf246fdeb45b052c06d9d6f0。
 - 狀態：IMPLEMENTED_WORKER_PHASE_NOT_READY；仍缺 durable challenge delivery、全部六種 event producer、UI/browser、核准非 Production provider 驗證、Critical review、canonical acceptance、精確 head CI 與 PR 交付。整體 Goal 保持 IN_PROGRESS。
+
+- F1 notifications proof API checkpoint：POST /notifications/verify 已接上 server session、CSRF、exact challenge/session/course、strict 4KiB body 與安全 response projection；8 API + 1 registry unit、26 PG/86 migrations、lint、TypeScript PASS。證據 remaining-capabilities-f1-notifications-proof-api-20261007.json。狀態 NOT_READY，驗證碼 durable delivery、六事件 producer、UI/browser、外部 provider、review/gate/CI/交付仍未完成。
