@@ -4,6 +4,7 @@ import {
   appendDisputeLedgerEntry,
   assertCommissionLedgerAmount,
   buildCommissionLedgerDeduplicationKey,
+  buildCommissionLedgerDeduplicationKeyV2,
 } from "@/lib/affiliate-commission-accounting";
 
 type Entry = {
@@ -65,6 +66,40 @@ describe("affiliate commission accounting ledger", () => {
     });
     expect(first).toBe(retry);
     expect(first).toMatch(/^commission-ledger:v1\|sha256:/);
+  });
+
+  it("keeps a shared paid/refund event independent for each beneficiary", async () => {
+    const { client, entries } = ledgerFixture();
+    for (const affiliateCommissionId of ["commission-a", "commission-b"]) {
+      await appendCommissionLedgerEntry(client, { ...base, affiliateCommissionId, entryType: "accrual", eventIdentity: "shared-paid", amountCents: 500 });
+      await appendCommissionLedgerEntry(client, { ...base, affiliateCommissionId, entryType: "refund", eventIdentity: "shared-refund", amountCents: -200 });
+    }
+    expect(entries).toHaveLength(4);
+    expect(new Set(entries.map(entry => entry.deduplicationKey)).size).toBe(4);
+    await appendCommissionLedgerEntry(client, { ...base, affiliateCommissionId: "commission-b", entryType: "refund", eventIdentity: "shared-refund", amountCents: -200 });
+    expect(entries).toHaveLength(4);
+    expect(buildCommissionLedgerDeduplicationKeyV2({ affiliateCommissionId: "commission-a", entryType: "accrual", providerName: "Synthetic", eventIdentity: "shared-paid" })).toMatch(/^commission-ledger:v2\|sha256:/);
+  });
+
+  it("reads the same beneficiary's immutable v1 event without rewriting or duplicating it", async () => {
+    const { client, entries } = ledgerFixture();
+    const legacy = { ...base, entryType: "accrual" as const, eventIdentity: "legacy-paid", amountCents: 500 };
+    entries.push({ ...legacy, id: "legacy", disputeCaseId: null, createdAt: base.occurredAt, deduplicationKey: buildCommissionLedgerDeduplicationKey(legacy) });
+    expect((await appendCommissionLedgerEntry(client, legacy)).id).toBe("legacy");
+    expect(entries).toHaveLength(1);
+    await expect(appendCommissionLedgerEntry(client, { ...legacy, amountCents: 501 })).rejects.toThrow("不可變身分");
+    await appendCommissionLedgerEntry(client, { ...legacy, affiliateCommissionId: "commission-b" });
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.deduplicationKey).toMatch(/^commission-ledger:v1\|sha256:/);
+    expect(entries[1]?.affiliateCommissionId).toBe("commission-b");
+  });
+
+  it("rejects an existing v2 entry bound to a different commission before returning it", async () => {
+    const { client, entries } = ledgerFixture();
+    const input = { ...base, entryType: "accrual" as const, eventIdentity: "identity-check", amountCents: 500 };
+    await appendCommissionLedgerEntry(client, input);
+    entries[0]!.affiliateCommissionId = "foreign-commission";
+    await expect(appendCommissionLedgerEntry(client, input)).rejects.toThrow("不可變身分");
   });
 
   it("rejects invalid direction before any write", () => {

@@ -32,6 +32,7 @@ export default async function AffiliatesPage() {
         description="管理推廣碼、來源渠道、點擊與轉換成效。"
         action={
           <div className="flex flex-wrap gap-2">
+            <ButtonLink href="/affiliates/policy" tone="secondary">佣金政策</ButtonLink>
             <ButtonLink href="/affiliates/commissions" tone="secondary"><WalletCards size={16} />分潤報表</ButtonLink>
             <ButtonLink href="/affiliates/new"><Plus size={16} />新增夥伴</ButtonLink>
           </div>

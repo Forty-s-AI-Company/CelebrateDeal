@@ -145,11 +145,13 @@ export default async function AffiliateCommissionsPage({
                   </div>
                   <div className="flex items-center gap-3">
                     <Badge tone={statusTone(payout.status)}>{payout.status}</Badge>
-                    <p className="text-lg font-bold text-slate-950">{formatCurrency(payout.finalAmountCents)}</p>
+                    {payout.heldAmountCents > 0 ? <p role="status">爭議暫扣：{formatCurrency(payout.heldAmountCents)}</p> : null}
+                    <p className="text-lg font-bold text-slate-950">{formatCurrency(Math.max(0, payout.finalAmountCents - payout.heldAmountCents))}</p>
                   </div>
                   {payout.status === "pending"
                     && payout.vendorId === vendor.id
                     && payout.payoutItemId === null
+                    && payout.heldAmountCents === 0
                     && payout.finalAmountCents > 0
                     && payout.finalAmountCents === payout.commissionAmountCents + payout.adjustmentAmountCents ? (
                     <div className="grid gap-2 md:col-span-3 md:grid-cols-[1fr_auto] md:items-end">

@@ -7,7 +7,7 @@ Goal：`remaining-capabilities-20261005`，狀態 **IN_PROGRESS**。承接既有
 | ID | 精確來源索引／缺口 | 相依 | Owner | 驗收條件 | 新證據 | 狀態 |
 | --- | --- | --- | --- | --- | --- | --- |
 | F1 | future-work F1；#210/#211：播放器、進度、證書、社群、多語/PWA/push、SMS/WhatsApp | 現行 portal session、租戶與購買權益 | 主代理，待分批路由 | 每個能力具完整 UI/API、跨租戶/權益回歸、DB 與瀏覽器旅程；provider 實測分開標記 | F1.1 本機 unit、7 PostgreSQL、1 Chromium、Critical review及canonical READY；其餘 F1 待續 | IN_PROGRESS |
-| F1.1 | #210/#211；`b7956d803f8dfebbbfdb3a4faeff497ab4bc140e` 的原生播放器/progress/certificate，依現行契約重建商家單元發布 | manager auth/CSRF、portal session、paid entitlement、前向 migration | 主代理唯一 writer；獨立 Critical reviewer（policy fallback Astra high） | 商家發布→學員權益學習→75秒持久化/reload續播→完課證書→退款撤權；跨租戶/跨課程/併發/CSRF回歸 | 本機 unit/typecheck/lint、84 migration、7 DB、1 Chromium PASS，canonical acceptance READY；`remaining-capabilities-f1.1-local-receipt-20261006.json`；精確 head PR CI 待交付 | LOCAL_ACCEPTED |
+| F1.1 | #210/#211；`b7956d803f8dfebbbfdb3a4faeff497ab4bc140e` 的原生播放器/progress/certificate，依現行契約重建商家單元發布 | manager auth/CSRF、portal session、paid entitlement、前向 migration | 主代理唯一 writer；獨立 Critical reviewer（policy fallback Astra high） | 商家發布→學員權益學習→75秒持久化/reload續播→完課證書→退款撤權；跨租戶/跨課程/併發/CSRF回歸 | 本機 unit/typecheck/lint、84 migration、7 DB、1 Chromium PASS，canonical acceptance READY；`remaining-capabilities-f1.1-local-receipt-20261006.json`；精確head CI雙SUCCESS、#370 squash 728f0e59、tree一致 | DELIVERED |
 | F2 | future-work F2：affiliate、階梯/多層佣金、扣繳/payout export、referral、upsell、tracking/webhooks、私訊/廣播 | 現行收入快照、退款、權限/provider 契約 | root 唯一 writer | 先跨租戶/併發/退款回歸再接 UI；Critical review、精確 head CI | F2.1 已實作並正在驗證；其餘完整範圍保留 | IN_PROGRESS |
 | F3.1 | #211 `b5397dbb45ddc4dc15a3059b7dec90b5a7771487`：editor parent echo、文件替換與 undo/redo lifecycle | 現行 FunnelPageEditor / FunnelStepPagesEditor | 主代理 writer；f3_inspect 唯讀 | parent echo 保留歷史；外部替換顯示新文件；undo/redo 不還原外部舊文件；真實瀏覽器測試 | `remaining-capabilities-f3.1-local-receipt-20261006.json`：14 unit、9 Chromium、lint/typecheck、獨立複審與 canonical READY；push/PR CI PASS，#369 squash `2319c742`，合併 tree 與驗收 head 一致 | DELIVERED |
 | F3.2 | 同來源：popup/template/flow 完整互動、team/video UI 與 guard inventory | F3.1、逐功能核對實際介面 | 主代理，待分批路由 | 完整瀏覽器互動與持久化；必要 disposable QA；舊 selector 只對應已交付 UI | 待產生 | PENDING |
@@ -32,3 +32,11 @@ F1.1：native curriculum/player/progress/certificate 位於 `codex/remaining-cou
 F2.1 `codex/remaining-affiliate-portal-20261006`：明確 tenant/member 授權、版本 CAS、停用後可撤權、帳本淨額／退款、佣金與授權分頁、商家公開ref連結、超過200名成員搜尋已實作。6項 disposable PostgreSQL 回歸PASS，第三輪獨立 Critical review 無findings（dispatch3/4、observed unknown）；完整 browser 與最新精確source gate執行中，尚未READY／PR／交付。歷次 browser fixture失敗單獨保存，未降低金額或歸因assertion。
 
 F2.1 latest source `sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0`：9 targeted unit、TS/strict-index/lint、1067 Node TAP零skip、85migrations、6DB、1實際browser zero flaky全部PASS；第4/4獨立Critical複審精確25檔及hash一致無findings，canonical READY。精確head CI與protected PR待交付，其餘F2 scope未縮減。證據 `remaining-capabilities-f2.1-local-receipt-20261006.json`。
+
+F2.1 #374 已expected-head受保護squash merge `daa6372a6e0f060e93de2c2e10afa0c9c4d09c73`；push/PR quality與Preview全部SUCCESS，accepted/merged tree同為 `4f63c92d6c24e6585484912863704b3ecffd1f43`。交付證據 `remaining-capabilities-f2.1-delivery-20261006.json`。F2階梯/多層等完整剩餘範圍持續實作。
+
+F2.1已交付：#374 expected-head squash merge `daa6372a6e0f060e93de2c2e10afa0c9c4d09c73`，acceptedhead `ff9ea27896689d9983a203832993b22e4d33097b`，tree `4f63c92d6c24e6585484912863704b3ecffd1f43` 一致；精確push/PR CI雙SUCCESS。
+
+| F2.2 | F2剩餘階梯／多層佣金；以F2.1已交付契約為base | immutable收入快照、refund/provider/tenant契約 | root唯一writer、Critical readonlyreview task2/4 | 商家政策UI→exactcheckout→paid tier/counter→全部beneficiary refunds/disputes→portal；併發/冪等/跨租戶/DB/browser/review/canonical/CI | 106targetedunits、86migrations+53DB PASS；browser與獨立Critical review執行中 | IMPLEMENTED_PENDING_VALIDATION |
+
+F2.2 latest source `sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0`：4605 Vitest、1067 TAP零skip、86 migrations、61 DB、1實際browser、lint/TS/strict全部PASS。抽離純payout helper後canonical gate僅因最新獨立review缺證據BLOCKED；同task dispatch4/4已用盡，額外1次核准待回覆，不宣稱READY或交付。收據 `remaining-capabilities-f2.2-current-regression-20261006.json`。
