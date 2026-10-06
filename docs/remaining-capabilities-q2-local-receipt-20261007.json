@@ -1,0 +1,65 @@
+{
+  "batch": "Q2",
+  "task_id": "q2-owner-buyer-subscription-ops",
+  "source": "eac0a3430df3ca0beed06a9c63cbd2cb13414fa7",
+  "status": "LOCAL_ACCEPTED_PENDING_EXACT_HEAD_CI_AND_PROTECTED_PR",
+  "verified_head": "b0362e3aca7624b2312a34535c5a60f19bfd1c52",
+  "source_revision": "sha256:2732308205fbc0573f4dce77f37949461654598486829430fbf627b141ce2b42",
+  "test_revision": "sha256:3e38447e271eb0aab1b945f7cc05f429785d71bcbeda01db24ad1244199c43b1",
+  "migration_count": 87,
+  "postgresql": {
+    "total": 67,
+    "passed": 67,
+    "failed": 0,
+    "skipped": 0,
+    "failedTitles": [],
+    "failedLocations": []
+  },
+  "browser": {
+    "expected": 2,
+    "unexpected": 0,
+    "skipped": 0,
+    "flaky": 0,
+    "diagnostics": [
+      {
+        "status": 200,
+        "outcome": null
+      }
+    ]
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:2732308205fbc0573f4dce77f37949461654598486829430fbf627b141ce2b42"
+  },
+  "independent_review": {
+    "kind": "review",
+    "revision": "sha256:2732308205fbc0573f4dce77f37949461654598486829430fbf627b141ce2b42",
+    "status": "PASS",
+    "independent": true,
+    "source": "native_runner",
+    "role": "critical_review",
+    "model": "gpt-6-astra",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "findings": [],
+    "reviewed_head": "ff09b43b580a08b3c598f29844754ac688488985",
+    "dispatch": 4,
+    "review_report": "findings: []",
+    "test_scope_note": "CI test registration and exact inventory counts updated after product review; unchanged product source revision,146 boundary/inventory tests and67 DB/2 browser freshly passed"
+  },
+  "targeted_unit": {
+    "passed": 146,
+    "failed": 0
+  },
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "external_payment_refund": "NOT_PERFORMED; synthetic signed local callback and accounting only",
+  "historical_failed_run": "67 tests66 PASS/1 settlement failure preserved;latestfull67 PASS;rootcause unconfirmed",
+  "production": "NOT_PERFORMED",
+  "goal": "IN_PROGRESS"
+}
