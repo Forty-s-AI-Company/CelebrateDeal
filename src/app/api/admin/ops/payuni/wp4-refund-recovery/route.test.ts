@@ -16,3 +16,4 @@ describe("fixed historical refund recovery HTTP contract", () => {
   expect(mocks.reconcile).toHaveBeenCalledExactlyOnceWith(mocks.database, WP4_REFUND_RECOVERY_SOURCE);
  });
 });
+
