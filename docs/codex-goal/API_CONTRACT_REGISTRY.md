@@ -161,3 +161,9 @@
 | `POST /portal/[vendorSlug]/learn/[courseId]/notifications/verify` | 同源 client marker、CSRF、學員 session | 嚴格 4KiB JSON proof；session/course scope，禁止 caller tenant | 目前權益、TTL、五次嘗試與 atomic consume；成功保持 opt-in 關閉；只回公開欄位，private no-store；400/404/409/503 | 同路徑 8 unit、verification DB 回歸；browser 待驗證 |
 
 | `POST /portal/[vendorSlug]/learn/[courseId]/notifications/enroll` | 同源 client marker、CSRF、學員 session、server approved executor/provider/tenant | strict 4KiB destination，購買權益與 CAS；60 秒 cooldown | 加密持久化 challenge，202 只回 challenge id/expiry/公開偏好，不回 token/contact；400/404/409/429/503 | 同路徑 unit、disposable PG；browser 待驗證 |
+
+### 學員課程預約提醒候選 2026-10-07
+
+- `GET /portal/[vendorSlug]/learn/[courseId]/notifications/reminders`：same-origin/client-header、signed student session、目前課程權益；只列目前 recipient 的 future/scheduled/published linked bookings，21/20 bounded cursor。公開欄位 id/startTime/title/confirmed、nextAfter、CSRF；private/no-store，無聯絡方式、hash、ciphertext或其他租戶資料。
+- `POST` 同路徑：same-origin/client-header/CSRF，strict bookingId/expectedStartTime；tenant/customer 來自 session。Serializable transaction 重查權益、booking revision與 verified opt-in，再 upsert 唯一 personal source，回傳 scheduled/availableAt；404 not_found、409 verification_required。匿名 calendar reservation 不建立提醒證據；取消、改期、unpublish、移除binding、退款或撤回同意，發送前重查並抑制舊提醒。
+- 候選實作及回歸仍需最新實際 browser、Critical review、canonical acceptance與 exact CI/protected delivery；NOT_READY。

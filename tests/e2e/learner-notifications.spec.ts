@@ -12,6 +12,7 @@ import { protectLearnerNotificationDestination } from "../../src/lib/learner-not
 
 test.use({trace:"off",screenshot:"off",video:"off"});
 test("purchasing learner withdraws real notification consent and reloads; foreign course and CSRF are refused",async({page,baseURL})=>{
+ test.setTimeout(120000);
  const db=new PrismaClient(),suffix=randomUUID();
  const vendor=await db.vendor.create({data:{name:"Synthetic notifications academy",slug:`notification-ui-${suffix}`,email:`owner-${suffix}@invalid.example`,passwordHash:"synthetic-login-disabled"}});
  const foreign=await db.vendor.create({data:{name:"Synthetic foreign academy",slug:`notification-foreign-${suffix}`,email:`foreign-${suffix}@invalid.example`,passwordHash:"synthetic-login-disabled"}});
@@ -35,10 +36,27 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   await expect(settings).toBeVisible();await settings.getByRole("button",{name:"載入通知設定"}).click();
   await expect(settings.getByRole("button",{name:"取消通知"})).toBeEnabled();
   await expect(settings.getByText("通知已開啟",{exact:false})).toBeVisible();
+  const project=await db.salesProject.create({data:{vendorId:vendor.id,name:"Synthetic consultation course",slug:randomUUID(),mode:"consulting",primaryFlow:"consultation",status:"published",publishedAt:new Date()}});
+  await db.salesProjectProduct.create({data:{vendorId:vendor.id,projectId:project.id,productId:product.id}});
+  const calendar=await db.consultationEvent.create({data:{vendorId:vendor.id,projectId:project.id,title:"合成學員課程預約",timezone:"UTC",weeklySchedule:[],intakeFormFields:[],isActive:true}});
+  const startTime=new Date(Date.now()+24*3600000);
+  const booking=await db.consultationBooking.create({data:{vendorId:vendor.id,eventId:calendar.id,customerKeyHash,startTime,endTime:new Date(startTime.getTime()+1800000),clientName:"Synthetic learner",clientEmail:email,clientPhone:"0900000000"}});
+  const another=await db.consultationBooking.create({data:{vendorId:vendor.id,eventId:calendar.id,customerKeyHash:automationCustomerKeyHash(vendor.id,`another-${suffix}@invalid.example`),startTime:new Date(startTime.getTime()+3600000),endTime:new Date(startTime.getTime()+5400000),clientName:"Synthetic other learner",clientEmail:`another-${suffix}@invalid.example`,clientPhone:"0900000000"}});
+  const reminders=settings.getByRole("region",{name:"預約提醒"});await reminders.getByRole("button",{name:"查看我的預約"}).click();await expect(reminders.getByRole("heading",{name:calendar.title})).toBeVisible();
+  const reminderPath=`/portal/${vendor.slug}/learn/${product.id}/notifications/reminders`;
+  const refusedReminder=await page.evaluate(async({path,ownId,foreignId,start,foreignStart})=>{
+    const get=await fetch(path,{headers:{"x-celebratedeal-client":"web"},cache:"no-store"});const snapshot=await get.json() as {bookings:Array<{id:string}>;csrfToken:string};
+    const send=(id:string,csrf:string,extra:Record<string,string>={},expectedStart=start)=>fetch(path,{method:"POST",headers:{"content-type":"application/json","x-celebratedeal-client":"web","x-csrf-token":csrf},body:JSON.stringify({bookingId:id,expectedStartTime:expectedStart,...extra})});
+    return {ownVisible:snapshot.bookings.some(row=>row.id===ownId),foreignVisible:snapshot.bookings.some(row=>row.id===foreignId),csrf:(await send(ownId,"invalid")).status,foreign:(await send(foreignId,snapshot.csrfToken,{},foreignStart)).status,override:(await send(ownId,snapshot.csrfToken,{vendorId:"foreign"})).status};
+  },{path:reminderPath,ownId:booking.id,foreignId:another.id,start:startTime.toISOString(),foreignStart:another.startTime.toISOString()});
+  expect(refusedReminder).toEqual({ownVisible:true,foreignVisible:false,csrf:403,foreign:404,override:400});expect(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,event:"consultation_reminder"}})).toBe(0);
+  await reminders.getByRole("button",{name:"開啟這筆預約提醒"}).click();await expect(reminders.getByRole("status",{name:"預約提醒狀態"})).toContainText("已確認這筆預約");
+  const source=await db.learnerNotificationSourceEvent.findFirstOrThrow({where:{vendorId:vendor.id,productId:product.id,event:"consultation_reminder"}});expect(source.audienceCustomerKeyHash).toBe(customerKeyHash);expect(source.availableAt.getTime()).toBe(startTime.getTime()-3600000);expect(source.payloadEncryptedEnvelope).not.toContain(email);
+  await page.reload();await settings.getByRole("button",{name:"載入通知設定"}).click();await reminders.getByRole("button",{name:"查看我的預約"}).click();await expect(reminders.getByRole("button",{name:"已確認預約提醒"})).toBeDisabled();expect(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,event:"consultation_reminder"}})).toBe(1);
   const path=`/portal/${vendor.slug}/learn/${product.id}/notifications`;
   const refused=await page.evaluate(async(path)=>{const response=await fetch(path,{method:"POST",headers:{"content-type":"application/json","x-celebratedeal-client":"web","x-csrf-token":"invalid"},body:JSON.stringify({channel:"email",enabled:false,expectedRevision:1})});return response.status;},path);
   expect(refused).toBe(403);expect((await db.learnerNotificationPreference.findUniqueOrThrow({where:{id:preference.id}})).enabled).toBe(true);
-  await settings.getByRole("button",{name:"取消通知"}).click();await expect(settings.getByRole("status")).toHaveText("已取消此課程通知。");
+  await settings.getByRole("button",{name:"取消通知"}).click();await expect(settings.getByRole("status",{name:"課程通知狀態"})).toHaveText("已取消此課程通知。");
   const saved=await db.learnerNotificationPreference.findUniqueOrThrow({where:{id:preference.id}});expect(saved.enabled).toBe(false);expect(saved.revision).toBe(2);
   await page.reload();await settings.getByRole("button",{name:"載入通知設定"}).click();await expect(settings.getByText("已驗證，通知尚未開啟",{exact:false})).toBeVisible();
   // No approved external provider exists in this isolated browser process.
@@ -47,7 +65,7 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   await db.$transaction(tx=>reconcileCommerceOrderRefund(tx,{vendorId:vendor.id,orderId,providerName:"synthetic",eventIdentity:randomUUID(),amountCents:1000,occurredAt:new Date()}));
   await page.goto(`/portal/${vendor.slug}`);await page.getByRole("link",{name:"通知設定",exact:true}).click();
   await expect(page.getByRole("heading",{name:product.name})).toBeVisible();await settings.getByRole("button",{name:"載入通知設定"}).click();
-  await expect(settings.getByRole("button",{name:"取消通知"})).toBeEnabled();await settings.getByRole("button",{name:"取消通知"}).click();await expect(settings.getByRole("status")).toHaveText("已取消此課程通知。");
+  await expect(settings.getByRole("button",{name:"取消通知"})).toBeEnabled();await settings.getByRole("button",{name:"取消通知"}).click();await expect(settings.getByRole("status",{name:"課程通知狀態"})).toHaveText("已取消此課程通知。");
   expect((await db.learnerNotificationPreference.findUniqueOrThrow({where:{id:preference.id}})).revision).toBe(4);
   await page.reload();await settings.getByRole("button",{name:"載入通知設定"}).click();await expect(settings.getByRole("button",{name:"開啟通知"})).toBeDisabled();
   const reenable=await page.evaluate(async(path)=>{const response=await fetch(path,{headers:{"x-celebratedeal-client":"web"},cache:"no-store"});const state=await response.json();return (await fetch(path,{method:"POST",headers:{"content-type":"application/json","x-celebratedeal-client":"web","x-csrf-token":state.csrfToken},body:JSON.stringify({channel:"email",enabled:true,expectedRevision:4})})).status;},path);expect(reenable).toBe(404);

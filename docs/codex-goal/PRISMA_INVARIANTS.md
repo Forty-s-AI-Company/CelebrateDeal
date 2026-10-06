@@ -11,7 +11,7 @@
 | 項目 | 結果 |
 |---|---:|
 | Prisma models | 130 |
-| Migration directories | 88 |
+| Migration directories | 89 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -231,3 +231,5 @@ F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_af
 新增前向 `20261007020000_learner_verification_delivery`，驗證碼僅加密保存；歷史 challenge 無可恢復 token，保持 suppressed。新增 status/attempt/claim/payload CHECK 與 due index；129 models、87 migrations。整批仍 NOT_READY。
 
 新增 `LearnerNotificationSourceEvent` 與前向 `20261007030000_learner_notification_source_events`；domain mutation 同 transaction 寫 encrypted source payload，composite tenant/product FK、unique event identity、private default-deny RLS；consumer bounded preference cursor 與 revision CAS。130 models/88 migrations，整批仍 NOT_READY。
+
+新增前向 `20261007040000_learner_notification_source_schedule`：`LearnerNotificationSourceEvent.availableAt` 與 occurredAt/consent cutoff 分離；既有來源 backfill 為 occurredAt，保留歷史時間與 payload，新增 tenant/completed/availableAt/id 索引。130 models/89 migrations；owned disposable PostgreSQL 已驗證實際 forward SQL/backfill、未到期不展開與 immediate default。學員明確確認的 consultation reminder 沿用既有 source outbox，發送前鎖定目前 booking/project/course binding；功能仍 NOT_READY，未宣稱 Production 或真實渠道送達。

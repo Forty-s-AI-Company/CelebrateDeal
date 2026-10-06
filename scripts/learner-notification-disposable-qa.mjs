@@ -13,10 +13,11 @@ import { dispatchClaimedLearnerNotification } from "../src/lib/learner-notificat
 import { claimLearnerVerificationDelivery, dispatchLearnerVerificationDelivery } from "../src/lib/learner-verification-delivery.ts";
 import { saveCourseLesson } from "../src/lib/course-curriculum.ts";
 import { saveStudentLessonProgress } from "../src/lib/student-course-learning.ts";
+import { confirmLearnerConsultationReminder,listLearnerConsultationReminders } from "../src/lib/learner-consultation-reminders.ts";
 import { reserveConsultationBooking } from "../src/app/actions/consultation-actions.ts";
 import { recordLearnerLiveStartedSources } from "../src/lib/learner-live-notifications.ts";
 import { recordLearnerNotificationSourceEvent, materializeLearnerNotificationSourceEvent } from "../src/lib/learner-notification-source-events.ts";
-const sourceFiles = ["src/lib/learner-notification-job.ts","prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql","src/app/actions/consultation-actions.ts","src/app/actions.ts","src/lib/learner-live-notifications.ts","src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
+const sourceFiles = ["src/lib/learner-consultation-reminders.ts","src/lib/learner-notification-job.ts","prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql","src/app/actions/consultation-actions.ts","src/app/actions.ts","src/lib/learner-live-notifications.ts","src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
  "src/lib/learner-notification-contract.ts", "src/lib/learner-notification-preferences.ts", "src/lib/learner-notification-outbox.ts", "src/lib/learner-notification-dispatch.ts", "src/lib/learner-notification-providers.ts", "src/lib/learner-notification-verification.ts",
  "src/lib/student-course-learning.ts", "src/lib/sensitive-data.ts", "src/lib/commerce-order-pii.ts", "src/lib/commerce-order-fulfillment.ts", "src/lib/commerce-orders.ts", "scripts/learner-notification-disposable-qa.mjs"];
 function sourceSnapshot() {
@@ -371,6 +372,50 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
       assert.equal((await materializeLearnerNotificationSourceEvent(db, vendor.id, sources[0].id)).status, "completed");
       assert.equal(await db.learnerNotificationDelivery.count({ where: { vendorId: vendor.id, productId: product.id, event: "payment_success" } }), 2);
     });
+    // Earlier rejection case intentionally unpublished this owned synthetic project.
+    await db.salesProject.update({where:{id:project.id},data:{status:"published",publishedAt:new Date()}});
+    await db.salesProjectProduct.create({data:{vendorId:vendor.id,projectId:project.id,productId:product.id}});
+    const reminderTime=new Date(Date.now()+20*60000);
+    async function reminderBooking(customerKeyHash=identity.customerKeyHash,startTime=reminderTime){const event=await db.consultationEvent.create({data:{vendorId:vendor.id,projectId:project.id,title:"Synthetic verified reminder",durationMinutes:30,timezone:"UTC",weeklySchedule:[],intakeFormFields:[],isActive:true}});return db.consultationBooking.create({data:{vendorId:vendor.id,eventId:event.id,customerKeyHash,status:"scheduled",startTime,endTime:new Date(startTime.getTime()+30*60000),clientName:"Synthetic verified learner",clientEmail:"reminder@invalid.example",clientPhone:"0900000000"}});}
+    const reminder=await reminderBooking();
+    const reminderInput=booking=>({bookingId:booking.id,expectedStartTime:booking.startTime.toISOString()});
+    const reminderKey=booking=>createHash("sha256").update(JSON.stringify([booking.id,product.id,booking.startTime.toISOString()])).digest("hex");
+    async function prepareReminder(booking){assert.equal((await confirmLearnerConsultationReminder(db,identity,product.id,reminderInput(booking))).status,"scheduled");const source=await db.learnerNotificationSourceEvent.findUniqueOrThrow({where:{vendorId_productId_event_eventIdentity:{vendorId:vendor.id,productId:product.id,event:"consultation_reminder",eventIdentity:reminderKey(booking)}}});assert.equal((await materializeLearnerNotificationSourceEvent(db,vendor.id,source.id)).status,"completed");const row=await db.learnerNotificationDelivery.findFirstOrThrow({where:{vendorId:vendor.id,eventIdentity:source.eventIdentity,preferenceId:preference.id}}),claim=await claimLearnerNotification(db,vendor.id,row.id);assert.ok(claim);return {row,claim};}
+    async function suppressedReminder(booking,change){const {row,claim}=await prepareReminder(booking);await change();let calls=0;assert.equal((await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:row.id,claimToken:claim.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent"};}})).status,"suppressed");assert.equal(calls,0);}
+    await check("learner reminder list selects only own linked future bookings and excludes another recipient",async()=>{
+      const other=await reminderBooking("b".repeat(43));const list=await listLearnerConsultationReminders(db,identity,product.id);assert.ok(list);assert.equal(list.bookings.some(row=>row.id===reminder.id),true);assert.equal(list.bookings.some(row=>row.id===other.id),false);assert.equal(JSON.stringify(list).includes("clientEmail"),false);assert.equal(await listLearnerConsultationReminders(db,{...identity,vendorId:foreign.id},product.id),null);
+    });
+    await check("reminder confirmation rejects caller tenant override before inserting a source",async()=>{
+      const before=await db.learnerNotificationSourceEvent.count();await assert.rejects(()=>confirmLearnerConsultationReminder(db,identity,product.id,{...reminderInput(reminder),vendorId:foreign.id}));assert.equal(await db.learnerNotificationSourceEvent.count(),before);
+    });
+    await check("another buyer booking is not a confirmable recipient capability",async()=>{
+      const other=await reminderBooking("b".repeat(43));assert.equal((await confirmLearnerConsultationReminder(db,identity,product.id,reminderInput(other))).status,"not_found");
+    });
+    await check("stale booking start revision cannot create a reminder",async()=>{
+      assert.equal((await confirmLearnerConsultationReminder(db,identity,product.id,{bookingId:reminder.id,expectedStartTime:new Date(reminder.startTime.getTime()+1).toISOString()})).status,"not_found");
+    });
+    await check("verified contact without current notification opt-in cannot confirm a reminder",async()=>{
+      const enabled=await db.learnerNotificationPreference.findMany({where:{...identity,enabled:true},select:{id:true}});await db.learnerNotificationPreference.updateMany({where:{id:{in:enabled.map(row=>row.id)}},data:{enabled:false}});
+      try{assert.equal((await confirmLearnerConsultationReminder(db,identity,product.id,reminderInput(reminder))).status,"verification_required");}finally{await db.learnerNotificationPreference.updateMany({where:{id:{in:enabled.map(row=>row.id)}},data:{enabled:true}});}
+    });
+    await check("concurrent authenticated confirmations persist one exact personal source",async()=>{
+      const responses=await Promise.all([1,2].map(()=>confirmLearnerConsultationReminder(db,identity,product.id,reminderInput(reminder))));assert.equal(responses.every(row=>row.status==="scheduled"),true);assert.equal(responses[0].availableAt,responses[1].availableAt);assert.equal(await db.learnerNotificationSourceEvent.count({where:{vendorId:vendor.id,productId:product.id,event:"consultation_reminder",eventIdentity:reminderKey(reminder),audienceCustomerKeyHash:identity.customerKeyHash}}),1);
+      const list=await listLearnerConsultationReminders(db,identity,product.id);assert.equal(list.bookings.find(row=>row.id===reminder.id).confirmed,true);
+    });
+    await check("confirmed due consultation dispatch makes one bounded authorized provider attempt",async()=>{
+      const {row,claim}=await prepareReminder(reminder);let calls=0;assert.equal((await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:row.id,claimToken:claim.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent",providerReceipt:"synthetic-consultation-receipt"};}})).status,"sent");assert.equal(calls,1);assert.equal(await claimLearnerNotification(db,vendor.id,row.id),null);
+    });
+    await check("cancellation after claim suppresses the exact consultation without provider call",async()=>{
+      const row=await db.learnerNotificationDelivery.findFirstOrThrow({where:{vendorId:vendor.id,eventIdentity:reminderKey(reminder),status:"queued"}}),claim=await claimLearnerNotification(db,vendor.id,row.id);assert.ok(claim);await db.consultationBooking.update({where:{id:reminder.id},data:{status:"cancelled"}});let calls=0;
+      assert.equal((await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:row.id,claimToken:claim.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent"};}})).status,"suppressed");assert.equal(calls,0);
+    });
+    await check("reschedule after claim cannot send the previous booking revision",async()=>{const booking=await reminderBooking();await suppressedReminder(booking,()=>db.consultationBooking.update({where:{id:booking.id},data:{startTime:new Date(booking.startTime.getTime()+60000)}}));});
+    await check("course binding removal after claim suppresses consultation dispatch",async()=>{const booking=await reminderBooking();try{await suppressedReminder(booking,()=>db.salesProjectProduct.deleteMany({where:{vendorId:vendor.id,projectId:project.id,productId:product.id}}));}finally{await db.salesProjectProduct.create({data:{vendorId:vendor.id,projectId:project.id,productId:product.id}});}});
+    await check("unpublished consultation project after claim suppresses dispatch",async()=>{const booking=await reminderBooking();try{await suppressedReminder(booking,()=>db.salesProject.update({where:{id:project.id},data:{status:"draft",publishedAt:null}}));}finally{await db.salesProject.update({where:{id:project.id},data:{status:"published",publishedAt:new Date()}});}});
+    await check("an internal queued reminder without authenticated confirmation is never delivered",async()=>{
+      const row=await db.learnerNotificationDelivery.findFirstOrThrow({where:{vendorId:vendor.id,eventIdentity:"synthetic_immediate_schedule",preferenceId:preference.id}}),claim=await claimLearnerNotification(db,vendor.id,row.id);assert.ok(claim);let calls=0;
+      assert.equal((await dispatchClaimedLearnerNotification(db,{vendorId:vendor.id,id:row.id,claimToken:claim.claimToken},{appOrigin:"https://app.example.test",configuration:{},sender:async()=>{calls++;return {outcome:"sent"};}})).status,"suppressed");assert.equal(calls,0);
+    });
     const event = { channel: "sms", event: "lesson_published", eventIdentity: "synthetic_outbox_first", message: { title: "Synthetic lesson", body: "Synthetic only private message", path: "/portal/synthetic/learn/course" } };
     let queued, claim;
     await check("outbox deduplicates concurrent real database event producers", async () => {
@@ -488,9 +533,9 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
   if (sourceSnapshot().revision !== sourceAtStart.revision) throw new Error("notification-source-changed-during-verification");
   } finally { await db.$disconnect(); }
 } });
-const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 51 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
+const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 63 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
 fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 51 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 63 || results.some(test => test.status !== "PASS")) process.exitCode = 1;

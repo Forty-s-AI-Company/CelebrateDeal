@@ -1,31 +1,40 @@
 {
   "task_id": "f1-learner-notifications",
-  "parent_goal_id": "remaining-capabilities-20261005",
-  "created_at": "2026-10-06T21:04:49.390437+00:00",
-  "source_revision": "sha256:c917d997cc8c9ee9bfb7c536fdf3497e12d306ee0bddcf835e4efd5bab34760a",
-  "source_files": {
-    "prisma/schema.prisma": "b84573bbddbad246b42ef1bb7052b0fd30fd426020b80e23f1f9ca4e78bf888f",
-    "prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql": "d65b53304d8a3e04005de9cf1c39ff407ef4a6c07d4c4c97f46995dfb627d567",
-    "src/lib/learner-notification-source-events.ts": "d32f1366813026bda373294e7559dd041fe72fa747cd08471828ec619c062a13",
-    "src/lib/learner-notification-source-events.test.ts": "3785089975d75e1f741197ac6a4a772f7cf3573b2ddd1ef5b61b53b428ff229e",
-    "src/lib/learner-notification-job.ts": "c8a1b4524b17be390b3689e3a8fba2dacf1cc3826d24ea5be8f60a9b9f0f56e8",
-    "src/lib/learner-notification-job.test.ts": "1c681b856a8ba9b417fdf40d6d1aeb8eaa67cc471983dfdae84ad1484d94a0a3",
-    "scripts/learner-notification-disposable-qa.mjs": "ff7100531d0c3991612cca22124dde33907aa81735197843a7f80a2f4cbf8b3f",
-    "scripts/g7-email-operations-browser-qa.test.mjs": "6d03adb760ea496345a7c69e7e087696fb9b2884a0137ff1f113c4996b5c1f69",
-    "scripts/staging-migration-compat-preflight.test.mjs": "83d437372511b375f88bffcb13d00607a307f0f81596c3940efc7a4e6b2d0409",
-    "scripts/staging-migration-isolated-replay.test.mjs": "e6a219b82843f697e987379848f8547e7c1e715469d7631c1a77ee2e298ea5ed"
-  },
+  "goal_id": "remaining-capabilities-20261005",
+  "created_at": "2026-10-06T21:43:27.530354+00:00",
   "owner": "root",
   "dispatches": 0,
   "max_dispatches": 4,
+  "source_revision": "sha256:ee35c8a83966b6607fa4a6abfc226625e49d403adca446c7ceb660fc892304df",
+  "source_files": {
+    "src/lib/learner-consultation-reminders.ts": "be39de0eb4893e7109aedbef8966b4cbe79d3527689a088cb4d9d1b8e3e05ec9",
+    "src/lib/learner-consultation-reminders.test.ts": "5c28dc1150a28a537f638b8259deee039999ac64973f3270e5e1fc891b77bb70",
+    "src/lib/learner-notification-outbox.ts": "37505045dfe288895a4e837ba83974c68a08183b9a33257216c82cf283f3128d",
+    "src/lib/learner-notification-dispatch.ts": "21de5d952d776e8da4bb528af064f9032a77cb3cd4a46edb918024a5d8081edd",
+    "src/components/learner-consultation-reminders.tsx": "fd151610a062a16bc41cdf848cbeaabb21fe2a879b61e73ac0d8f404128e8384",
+    "src/components/learner-notification-settings.tsx": "7be1601d65933eb09e3c71fb92c29d0f45155ee29999b52665be11453e8ade80",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/reminders/route.ts": "698a0c515647ed4d095159242a264aad37e2fc303e54b1191257527f5b148de7",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/reminders/route.test.ts": "d3c90ee56c5bff12c1ac4c77e848fcca0470067724b8e5c3affd442d091e60e6",
+    "scripts/learner-notification-disposable-qa.mjs": "1e6968fd61b95297a997052dee1cfc8612fd77d711dc45665edef4df848d1ee9",
+    "tests/e2e/learner-notifications.spec.ts": "5e87584aa87470a650eb9041adcbdc4551e6a53eab97be3c4c8ff6f459a89182",
+    "scripts/prisma-invariant-inventory.test.ts": "e0945554fbfb1cada034b30f9074e7e066ab6fa8cfa7674f552d591a8a7923d3",
+    "scripts/staging-payuni-management-migrate.test.ts": "56b7b4b09e0b0af965900aa7a7599a29bfcc99e7f9758377bd9ce85d2ef798ce",
+    "docs/codex-goal/PRISMA_INVARIANTS.md": "417a4148f93b91af7795cd937deee5b57e6f65dabcf925ff5d13b37ed1ed3ad0",
+    "docs/codex-goal/API_CONTRACT_REGISTRY.md": "a99984c9c8e2f2aa1934594001499e07e526a4db22f449fcee7927b625221f7f"
+  },
+  "scope": "Authenticated course-linked consultation confirmation and due reminder lifecycle; all remaining notification scope retained",
   "implementation": [
-    "Separate availableAt from occurredAt; existing sources backfilled to occurredAt via additive migration",
-    "Approved bounded source job filters due events and orders by due timestamp",
-    "Source materialization refuses premature expansion; prior-consent cutoff remains occurredAt"
+    "Actual signed learner/session UI confirms only own exact linked booking revision",
+    "Current rights and verified channel opt-in required; serializable repeated/concurrent confirmation upserts one source",
+    "Occurrence/consent cutoff separated from scheduling one hour before booking",
+    "Encrypted confirmation binds booking/start/customer/confirmed time; final provider attempt locks current booking/event/project/course binding",
+    "Cancelled/rescheduled/unpublished/unlinked/unconfirmed reminders suppress without provider call",
+    "No contact/hash/ciphertext in public response; same-origin,CSRF,private/no-store,bounded21/20 paging"
   ],
   "database": {
     "source": {
       "files": {
+        "src/lib/learner-consultation-reminders.ts": "be39de0eb4893e7109aedbef8966b4cbe79d3527689a088cb4d9d1b8e3e05ec9",
         "src/lib/learner-notification-job.ts": "c8a1b4524b17be390b3689e3a8fba2dacf1cc3826d24ea5be8f60a9b9f0f56e8",
         "prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql": "d65b53304d8a3e04005de9cf1c39ff407ef4a6c07d4c4c97f46995dfb627d567",
         "src/app/actions/consultation-actions.ts": "9e180cda49709058ae5719f04785170172d7c8282998cbeced2bdd7806b1e1fa",
@@ -43,8 +52,8 @@
         "prisma/migrations/20261007010000_learner_notifications/migration.sql": "9556eb9165d262a8c17b26a2ca87a06da024d8e95cf3a1167b4e3f1556071515",
         "src/lib/learner-notification-contract.ts": "b09c722bbed2be39f174129bfebd04575a71e57cdc16c80a8686587f70364c02",
         "src/lib/learner-notification-preferences.ts": "14c5f162ebc305dbe17367c9b5807c10bd7f5f85fae500f64c4c2ca616d25af0",
-        "src/lib/learner-notification-outbox.ts": "e83d285923f56809524f7e1defe0337b43ba2d0fb9e6912ff96a38d4251b478b",
-        "src/lib/learner-notification-dispatch.ts": "a2fc7f8d5f85a7e8ed633745e40d27a636e93176d6b73303c57628e7cca61ba8",
+        "src/lib/learner-notification-outbox.ts": "37505045dfe288895a4e837ba83974c68a08183b9a33257216c82cf283f3128d",
+        "src/lib/learner-notification-dispatch.ts": "21de5d952d776e8da4bb528af064f9032a77cb3cd4a46edb918024a5d8081edd",
         "src/lib/learner-notification-providers.ts": "a3a3eae976a8a35d6f36e2bc7a0d3f10d49fc9f79c7119a3f941a5824de47030",
         "src/lib/learner-notification-verification.ts": "2ea5d1c1e798a12da8513c6f809c09411b0f308d08f72e480f909f5c34f2214d",
         "src/lib/student-course-learning.ts": "3f2d57292b70207a7bb6ec63e8cd4153f595d6565993dc5176ab0315146e4f46",
@@ -52,9 +61,9 @@
         "src/lib/commerce-order-pii.ts": "6761a568619e2830ea51c150a064e3ee60b1e75572533734eb0fe6f7f9b04220",
         "src/lib/commerce-order-fulfillment.ts": "b5a78f51f0455b96fd63939397677d71acc7869ed8ccdff8df0e73a69c3a8081",
         "src/lib/commerce-orders.ts": "7405a79e074f8553bce9a1bb41acabd487fabb00f8443221691be7fe74481aa2",
-        "scripts/learner-notification-disposable-qa.mjs": "ff7100531d0c3991612cca22124dde33907aa81735197843a7f80a2f4cbf8b3f"
+        "scripts/learner-notification-disposable-qa.mjs": "1e6968fd61b95297a997052dee1cfc8612fd77d711dc45665edef4df848d1ee9"
       },
-      "revision": "sha256:fa254abdcb5f6e6ed77afe9aa75dd8c831c696d40466a53aeab7a44e5947233b"
+      "revision": "sha256:7b1bfd6851e7ca7d66a9dab5bbff09aff168438e3f7f11d9aa57fe1010a72aec"
     },
     "status": "PASS",
     "migrationCount": 89,
@@ -216,6 +225,54 @@
         "status": "PASS"
       },
       {
+        "name": "learner reminder list selects only own linked future bookings and excludes another recipient",
+        "status": "PASS"
+      },
+      {
+        "name": "reminder confirmation rejects caller tenant override before inserting a source",
+        "status": "PASS"
+      },
+      {
+        "name": "another buyer booking is not a confirmable recipient capability",
+        "status": "PASS"
+      },
+      {
+        "name": "stale booking start revision cannot create a reminder",
+        "status": "PASS"
+      },
+      {
+        "name": "verified contact without current notification opt-in cannot confirm a reminder",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent authenticated confirmations persist one exact personal source",
+        "status": "PASS"
+      },
+      {
+        "name": "confirmed due consultation dispatch makes one bounded authorized provider attempt",
+        "status": "PASS"
+      },
+      {
+        "name": "cancellation after claim suppresses the exact consultation without provider call",
+        "status": "PASS"
+      },
+      {
+        "name": "reschedule after claim cannot send the previous booking revision",
+        "status": "PASS"
+      },
+      {
+        "name": "course binding removal after claim suppresses consultation dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "unpublished consultation project after claim suppresses dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "an internal queued reminder without authenticated confirmation is never delivered",
+        "status": "PASS"
+      },
+      {
         "name": "outbox deduplicates concurrent real database event producers",
         "status": "PASS"
       },
@@ -276,20 +333,9 @@
       "rawLogsSaved": false
     }
   },
-  "targeted_unit": {
-    "status": "PASS",
-    "tests": 32
-  },
-  "migration_inventory_contracts": {
-    "status": "PASS",
-    "tests": 12,
-    "skipped": 0
-  },
-  "typescript": "PASS",
-  "lint": "PASS",
   "browser": {
     "status": "PASS",
-    "revision": "sha256:91f93345ec45d9090eb9f157f062b0973dd4c5544c908529e76227aefbe79c4b",
+    "revision": "sha256:b1ee8ac7d1ca2a9d72ddd26cac6cab1b2362843439da73725e96a8a26cfaba4d",
     "migrationCount": 89,
     "counts": {
       "expected": 2,
@@ -301,47 +347,44 @@
       "container": "PASS",
       "tempRoot": "PASS"
     },
-    "receipt": ".ai-team/reports/learner-notification-browser-latest.json",
-    "currentSourceHashesVerified": true
+    "current_source_hashes_verified": true
   },
-  "failed_attempts": [
-    {
-      "tests_reached": 32,
-      "cause": "Existing reopened live fixture timestamp was future; use actual current time plus strict newer-session assertion"
-    },
-    {
-      "tests_reached": 40,
-      "cause": "New immediate schedule fixture used payment_success and contaminated canonical payment case; use separate reminder event"
-    }
-  ],
-  "prior_coverage": {
-    "head": "9c389a29822b50b423b87253f486384305595dde",
+  "targeted_unit": {
     "status": "PASS",
-    "vitest": 4662,
-    "node_tap": 1067,
-    "lib_branches_pct": 80.15,
-    "receipt": "docs/remaining-capabilities-f1-notifications-coverage-20261007.json",
-    "claim": "Does not prove new scheduling candidate coverage"
+    "files": 7,
+    "tests": 71
   },
+  "typescript": "PASS",
+  "lint": "PASS",
+  "ci_correction": {
+    "run": 37531345759,
+    "head": "c88b929569abc126743b0ec69132cd3a0d82e5ec",
+    "failure": "Two omitted TypeScript inventory checks and canonical docs still counted88; corrected to exact89",
+    "historical81_adapter": "Unchanged; expanded candidate still rejected",
+    "thresholds": "Unchanged"
+  },
+  "failed_attempts_preserved": [
+    "Duplicate same-event/start fixtures violated existing active slot unique constraint; use distinct owned events",
+    "New synthetic events omitted required intakeFormFields; supplied valid empty schema",
+    "Earlier unpublished-project rejection left project draft; explicitly republished owned synthetic project for subsequent eligible-reminder scenarios"
+  ],
   "acceptance": "NOT_READY",
+  "independent_review": "NOT_STARTED",
   "remaining": [
-    "Actual verified learner confirmation and consultation reminder producer/delivery lifecycle",
-    "Discussion reply and applicable non-course resource contracts",
-    "Approved channel verification and native push journeys",
+    "Discussion reply producer with actual community interface and lifecycle",
+    "Applicable non-course resource and recipient contracts",
+    "Full approved channel enroll/verification and native push browser journeys",
     "Independent Critical review",
     "Canonical acceptance",
-    "Exact-head CI and protected PR delivery"
+    "Latest exact-head CI and protected PR delivery"
   ],
   "safety": {
+    "synthetic_only": true,
     "external_operations": false,
+    "actual_provider_delivery": false,
     "original_dirty_checkout_modified": false,
-    "historical_migrations_changed": false,
+    "historical_checksums_changed": false,
     "assertions_reduced": false,
     "raw_logs_saved": false
-  },
-  "checkpoint_head": "c88b929569abc126743b0ec69132cd3a0d82e5ec",
-  "exact_head_ci": {
-    "run": 37531345759,
-    "status": "IN_PROGRESS"
   }
 }

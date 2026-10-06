@@ -114,3 +114,12 @@ F1 通知補記：已接上 configured-only email／Web Push／Twilio SMS／What
 - 89 migrations、51 PostgreSQL回歸、32 source/job unit、12 migration inventory contracts、TypeScript、lint PASS。兩次fixture失敗及修正保留UUID收據；51案例包含原48及future/no-early-expansion、immediate default、實際forward SQL backfill。最新browser session88775 RUNNING，未重用舊成功證據。
 - 前候選9c389a29完整coverage PASS：4662 Vitest、1067 Node TAP、0skip、lib branches80.15%符合80%原門檻；不支持後續schedule修改。證據 docs/remaining-capabilities-f1-notifications-coverage-20261007.json、docs/remaining-capabilities-f1-notifications-schedule-20261007.json。
 - NOT_READY；verified learner確認及consultation producer、discussion、非course適用契約、完整渠道/nativepush、Criticalreview、canonical acceptance、exactCI/protecteddelivery仍需完成。
+- Schedule候選最新actual browser PASS：89 migrations、2/2 Chromium、0skip/0flaky、cleanupPASS；source sha256:91f93345ec45d9090eb9f157f062b0973dd4c5544c908529e76227aefbe79c4b；所有收據檔案hash與目前來源逐一一致。checkpoint c88b9295／CI37531345759待完成；NOT_READY及完整未完成範圍保持。
+
+### F1 已驗證學員預約提醒 checkpoint 2026-10-07
+
+- ID f1-learner-notifications；owner root；dispatch0/4。實際課程/學員通知介面新增本人預約確認；same-origin/CSRF/signed session、目前購買權益及verified opt-in、booking/start revision/公開project/product binding，同交易upsert唯一personal source。匿名Calendar不提供個人提醒權限。
+- 原51 DB保留並新增12，89 migrations/63 DB PASS；71 targeted unit、TypeScript、lint PASS。Actual2/2 Chromium、0skip/0flaky、cleanupPASS，新增本人確認→reload、正確foreign booking revision/CSRF/caller tenant拒絕；source sha256:b1ee8ac7d1ca2a9d72ddd26cac6cab1b2362843439da73725e96a8a26cfaba4d，hash逐一與目前來源一致。Provider callbacks全為合成，未宣稱真實寄送。
+- 發送前持鎖重查exact booking/customer/start/project/course；取消、改期、撤除binding、unpublish及無encrypted確認證據均0provider calls。多次/併發確認只一筆source。
+- CI37531345759/c88b9295有2個typed migration inventory未更新88/89造成unit failure；已補89及canonical inventory文件，保留歷史81 adapter拒絕與全部assertions。
+- 證據 docs/remaining-capabilities-f1-notifications-consultation-reminder-20261007.json；NOT_READY。Discussion實際community介面、非course適用契約、渠道/nativepush完整旅程、Critical review、canonical acceptance、exact CI/protected delivery仍須完成。Community source只核對必要reply契約，未整合或宣稱交付；原worktree的2個untracked receipts保留。

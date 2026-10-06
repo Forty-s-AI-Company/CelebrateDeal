@@ -10,6 +10,22 @@ type Database = Pick<PrismaClient,"$transaction" | "commerceOrderItem" | "learne
 type Sender = typeof sendLearnerNotificationProvider;
 const Claim = z.object({ vendorId:z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u),id:z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u),claimToken:z.string().regex(/^[A-Za-z0-9_-]{43}$/u) }).strict();
 
+/** Hold the current booking and project/course binding through the provider
+ * attempt; encrypted confirmation identifies the original authenticated buyer. */
+async function consultationReminderIsCurrent(tx:Pick<Prisma.TransactionClient,"$queryRaw">,scope:z.infer<typeof LearnerNotificationScope>,booking:z.infer<typeof LearnerNotificationMessage>["consultationBooking"],consentedAt:Date|null) {
+ if(!booking || booking.customerKeyHash!==scope.customerKeyHash || !consentedAt || new Date(booking.confirmedAt)>new Date() || consentedAt>new Date(booking.confirmedAt))return false;
+ const active=await tx.$queryRaw<Array<{id:string}>>`SELECT b."id" FROM "ConsultationBooking" b
+  JOIN "ConsultationEvent" e ON e."vendorId"=b."vendorId" AND e."id"=b."eventId"
+  JOIN "SalesProject" s ON s."vendorId"=e."vendorId" AND s."id"=e."projectId"
+  JOIN "SalesProjectProduct" p ON p."vendorId"=s."vendorId" AND p."projectId"=s."id"
+  WHERE b."vendorId"=${scope.vendorId} AND b."id"=${booking.id} AND b."customerKeyHash"=${scope.customerKeyHash}
+  AND b."status"='scheduled' AND b."startTime"=${new Date(booking.startTime)}
+  AND b."startTime">clock_timestamp() AND b."startTime"<=clock_timestamp()+INTERVAL '1 hour'
+  AND e."isActive"=true AND s."status"='published' AND s."publishedAt" IS NOT NULL
+  AND p."productId"=${scope.productId} FOR UPDATE OF b,e,s,p`;
+ return active.length===1;
+}
+
 /** Lock exact consent, order and entitlement rows through one bounded provider
  * attempt. Refund/opt-out commits cannot overtake authorization and submission.
  * This transaction MUST NOT be automatically retried: HTTP may already have sent. */
@@ -51,6 +67,10 @@ export async function dispatchClaimedLearnerNotification(db:Database,raw:unknown
       await tx.learnerNotificationDelivery.update({where:{id:row.id},data:{status:"suppressed",claimTokenHash:null,nextAttemptAt:null,lastErrorCode:"LIVE_SESSION_UNAVAILABLE"}});
       return {status:"suppressed"} as const;
     }
+   }
+   if (row.event === "consultation_reminder" && !await consultationReminderIsCurrent(tx,scope,message.consultationBooking,preference.consentedAt)) {
+    await tx.learnerNotificationDelivery.update({where:{id:row.id},data:{status:"suppressed",claimTokenHash:null,nextAttemptAt:null,lastErrorCode:"CONSULTATION_BOOKING_UNAVAILABLE"}});
+    return {status:"suppressed"} as const;
    }
    attempted=true;
    const result:NotificationProviderResult=await (options.sender??sendLearnerNotificationProvider)({channel,destination,message,appOrigin:options.appOrigin,idempotencyKey:row.deduplicationKey},options.configuration);

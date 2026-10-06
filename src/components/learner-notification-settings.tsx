@@ -2,6 +2,7 @@
 
 import { useId,useRef,useState } from "react";
 import { z } from "zod";
+import { LearnerConsultationReminders } from "./learner-consultation-reminders";
 
 const Channel=z.enum(["email","sms","whatsapp","push"]);
 const Preference=z.object({channel:Channel,enabled:z.boolean(),revision:z.number().int().positive(),destinationVerifiedAt:z.string().datetime().nullable()});
@@ -88,6 +89,7 @@ export function LearnerNotificationSettings({vendorSlug,courseId}:{vendorSlug:st
    {challenge && challenge.channel===channel?<div className="space-y-2"><p className="text-sm text-slate-600">驗證碼有效至 {new Date(challenge.expiresAt).toLocaleTimeString("zh-TW")}。驗證碼不會顯示在本頁。</p><label className="block text-sm font-semibold">驗證碼<input className="mt-1 block min-h-11 w-full max-w-md rounded-lg border border-slate-300 px-3" autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={43} value={proof} disabled={busy} onChange={event=>setProof(event.target.value)}/></label><button className={button} type="button" disabled={busy || proof.trim().length!==43} onClick={()=>void action(verify)}>確認驗證碼</button></div>:null}
    <button className={`${button} ml-2`} type="button" disabled={busy || !preference || (!preference.enabled && (!preference.destinationVerifiedAt || !available))} onClick={()=>void action(toggle)}>{preference?.enabled?"取消通知":"開啟通知"}</button>
   </div>:null}
-  <p role="status" aria-live="polite" className="mt-3 text-sm text-slate-700">{busy?"處理中…":notice}</p>
+  {snapshot?<LearnerConsultationReminders vendorSlug={vendorSlug} courseId={courseId} />:null}
+  <p role="status" aria-label="課程通知狀態" aria-live="polite" className="mt-3 text-sm text-slate-700">{busy?"處理中…":notice}</p>
  </section>;
 }

@@ -5,6 +5,7 @@ import { LearnerNotificationChannel, LearnerNotificationEvent, LearnerNotificati
 import { decryptSensitiveValue, encryptSensitiveValue } from "./sensitive-data";
 
 export const LearnerNotificationMessage = z.object({
+ consultationBooking: z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u), startTime: z.string().datetime(), customerKeyHash: z.string().regex(/^[A-Za-z0-9_-]{43}$/u), confirmedAt: z.string().datetime() }).strict().optional(),
  liveSession: z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u), startedAt: z.string().datetime() }).strict().optional(),
  title: z.string().trim().min(1).max(200),
  body: z.string().trim().min(1).max(2000),
