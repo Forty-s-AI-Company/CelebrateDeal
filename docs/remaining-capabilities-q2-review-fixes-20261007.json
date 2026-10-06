@@ -134,7 +134,8 @@
     "scoped_secret_scan": "0 findings in declared Q2 product/test/doc scope; full repository CI scan remains required",
     "tenant_slug_trade_db": "65/65 PASS at ca8d3302 before pure selector helper extraction; exact new hash browser run required",
     "tenant_dispatch_race": "Both new PostgreSQL race and payment-ID tests passed; full 67-test run has one unrelated settlement failure pending diagnosis, zero skipped",
-    "node_tap_ci_correction": "12/12 affected historical migration TAP tests PASS,zero skipped;full1067 TAP currently running. Exact87 inventory and final migration name checked; product source unchanged."
+    "node_tap_ci_correction": "12/12 affected historical migration TAP tests PASS,zero skipped;full1067 TAP currently running. Exact87 inventory and final migration name checked; product source unchanged.",
+    "full_node_tap_latest": "1067/1067 PASS,zero skipped;tracked non-sensitive LF mirror,read-only Git object alternates/core.longpaths;historical checksums unchanged"
   },
   "next": "Complete ongoing dispatch4 independent review, diagnose actual DB/CI failures without reducing checks; fresh 67 DB + 2 browser and exact-head full CI required"
 }

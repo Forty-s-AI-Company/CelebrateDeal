@@ -69,8 +69,26 @@
       "failed": 0,
       "skipped": 0
     },
-    "full_tap": "RUNNING",
+    "full_tap": {
+      "head": "35f4957d096353122ab1bf5e8c4efd56f958419a",
+      "gate": "full_node_tap_lf_mirror",
+      "exit_code": 0,
+      "counts": [
+        "# tests 1067",
+        "# pass 1067",
+        "# fail 0",
+        "# skipped 0"
+      ],
+      "failedTitles": [],
+      "sourceEnvFilesRead": false,
+      "skippedSensitive": 3
+    },
     "current_test_revision": "sha256:551c2ba761452148937628838825eb8edd4d07a59cb9e15a35042058d0a9ca06",
     "db_browser_proof": "Retained at exactb0362e3a testRevision3e38447e;runtime source revisionunchanged. No claim that prior runner tested laterinventorytestbytes."
+  },
+  "mainline_integration": {
+    "master": "f739c7e017d430f05cc10a85728f5335e1bc20be",
+    "tree_equal_to_pre_merge": true,
+    "runtime_source_unchanged": true
   }
 }
