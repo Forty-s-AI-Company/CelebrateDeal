@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { main as migrate } from "./prisma-loopback-disposable-migration-runner.mjs";
 import { learnerNotificationDeliveryKey, protectLearnerNotificationDestination } from "../src/lib/learner-notification-contract.ts";
+import { saveLearnerNotificationConsent } from "../src/lib/learner-notification-preferences.ts";
 const results = [];
 async function check(name, run) {
   try { await run(); results.push({ name, status: "PASS" }); }
@@ -62,6 +63,25 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
       }), error => error.code === "P2010" && error.meta?.code === "42501");
       assert.equal(await db.learnerNotificationPreference.count(), 1);
     });
+    await check("refunded recipient can unsubscribe using authenticated scope", async () => {
+      const result = await saveLearnerNotificationConsent(db, identity, product.id, { channel: "sms", enabled: false, expectedRevision: 2 });
+      assert.equal(result.status, "saved");
+      assert.equal(result.preference.enabled, false);
+      assert.equal(result.preference.revision, 3);
+      assert.equal("destinationEncryptedEnvelope" in result.preference, false);
+    });
+    await check("service rejects stale consent revision", async () => {
+      assert.equal((await saveLearnerNotificationConsent(db, identity, product.id, { channel: "sms", enabled: false, expectedRevision: 2 })).status, "conflict");
+      assert.equal((await db.learnerNotificationPreference.findUniqueOrThrow({ where: { id: preference.id } })).revision, 3);
+    });
+    await check("foreign recipient cannot unsubscribe another tenant", async () => {
+      assert.equal((await saveLearnerNotificationConsent(db, { ...identity, vendorId: foreign.id }, foreignProduct.id, { channel: "sms", enabled: false, expectedRevision: 0 })).status, "not_found");
+      assert.equal(await db.learnerNotificationPreference.count(), 1);
+    });
+    await check("recipient without current purchase cannot opt in", async () => {
+      assert.equal((await saveLearnerNotificationConsent(db, identity, product.id, { channel: "sms", enabled: true, expectedRevision: 3 })).status, "not_found");
+      assert.equal((await db.learnerNotificationPreference.findUniqueOrThrow({ where: { id: preference.id } })).enabled, false);
+    });
     await check("verification rejects exhausted attempts and expired enrollment", async () => {
       const data = { vendorId: vendor.id, productId: product.id, preferenceId: preference.id, consentRevision: 2, tokenHash: "b".repeat(64), destinationEncryptedEnvelope: destination.encryptedEnvelope, destinationKeyHash: destination.destinationKeyHash, expiresAt: new Date(Date.now() + 600000) };
       await assert.rejects(() => db.learnerNotificationVerification.create({ data: { ...data, attemptCount: 6 } }));
@@ -75,4 +95,4 @@ fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 6 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 10 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
