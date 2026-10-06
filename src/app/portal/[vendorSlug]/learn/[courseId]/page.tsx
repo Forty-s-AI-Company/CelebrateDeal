@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { LearnerNotificationSettings } from "@/components/learner-notification-settings";
 import { CoursePlayer } from "@/components/course-player";
 import { getCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
@@ -12,5 +13,5 @@ export default async function StudentCoursePage({ params }: { params: Promise<{ 
   const { session } = await requireStudentPortalSession(vendorSlug);
   const course = await getStudentCourse(getDb(), session, courseId);
   if (!course) notFound();
-  return <main className="min-h-screen bg-slate-100 px-4 py-6 text-slate-950 sm:px-6 sm:py-10"><div className="mx-auto max-w-7xl"><a href={`/portal/${encodeURIComponent(vendorSlug)}`} className="mb-5 inline-flex min-h-11 items-center text-sm font-bold text-blue-700 hover:underline">← 回到學員中心</a><CoursePlayer vendorSlug={vendorSlug} course={course.course} lessons={course.lessons} initialProgress={course.progress} csrfToken={await getCsrfToken()} /></div></main>;
+  return <main className="min-h-screen bg-slate-100 px-4 py-6 text-slate-950 sm:px-6 sm:py-10"><div className="mx-auto max-w-7xl"><a href={`/portal/${encodeURIComponent(vendorSlug)}`} className="mb-5 inline-flex min-h-11 items-center text-sm font-bold text-blue-700 hover:underline">← 回到學員中心</a><CoursePlayer vendorSlug={vendorSlug} course={course.course} lessons={course.lessons} initialProgress={course.progress} csrfToken={await getCsrfToken()} /><LearnerNotificationSettings vendorSlug={vendorSlug} courseId={courseId} /></div></main>;
 }

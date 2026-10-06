@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ boundary: vi.fn(), readJson: vi.fn(), csrf: vi.fn(), token: vi.fn(), session: vi.fn(), list: vi.fn(), save: vi.fn(), db: {} }));
 vi.mock("@/lib/api-security", () => ({ requireSameOriginRequest: mocks.boundary, readJsonBody: mocks.readJson }));
 vi.mock("@/lib/csrf", () => ({ verifyCsrfToken: mocks.csrf, getCsrfToken: mocks.token }));
@@ -10,7 +10,7 @@ const identity = { vendorId: "vendor-1", customerKeyHash: "a".repeat(43) };
 const context = { params: Promise.resolve({ vendorSlug: "teacher", courseId: "course-1" }) };
 const request = () => new Request("https://app.example.test/portal/teacher/learn/course-1/notifications", { method: "POST", headers: { "x-csrf-token": "synthetic" } });
 beforeEach(() => {
- vi.clearAllMocks(); mocks.boundary.mockReturnValue(null); mocks.csrf.mockResolvedValue(true);
+ vi.clearAllMocks(); vi.stubEnv("LEARNER_NOTIFICATIONS_EXECUTOR_ENABLED","false"); mocks.boundary.mockReturnValue(null); mocks.csrf.mockResolvedValue(true);
  mocks.readJson.mockResolvedValue({ channel: "sms", enabled: false, expectedRevision: 1 });
  mocks.session.mockResolvedValue({ session: identity }); mocks.list.mockResolvedValue([]); mocks.token.mockResolvedValue("synthetic-csrf");
  mocks.save.mockResolvedValue({ status: "saved", preference: { channel: "sms", enabled: false, revision: 2, destinationVerifiedAt: null } });
@@ -38,4 +38,9 @@ it.each([["not_found",404],["conflict",409],["verification_required",409]])("pre
 });
 it("does not issue CSRF token without current purchase rights", async () => {
  mocks.list.mockResolvedValue(null); expect((await GET(request(), context)).status).toBe(404); expect(mocks.token).not.toHaveBeenCalled();
+});
+
+afterEach(()=>vi.unstubAllEnvs());
+it("GET exposes only public consent state, CSRF and channel capability metadata",async()=>{
+ const response=await GET(request(),context);expect(response.status).toBe(200);expect(await response.json()).toEqual({preferences:[],csrfToken:"synthetic-csrf",capabilities:{availableChannels:[],pushPublicKey:null}});expect(response.headers.get("cache-control")).toBe("private, no-store");
 });

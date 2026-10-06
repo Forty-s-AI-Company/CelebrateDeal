@@ -1,0 +1,84 @@
+{
+  "task_id": "f1-learner-notifications",
+  "status": "IMPLEMENTED_SETTINGS_UI_PHASE_NOT_READY",
+  "source_revision": "sha256:5db95ea9455a22c75b4bb791d81b64e0659b97e2a910ef1403bab6eb65db9a37",
+  "source_hashes": {
+    "src/components/learner-notification-settings.tsx": "0c7cd7a2e68c91ad2caeb27ad95bc876760455e7f5a80fa1bd7354aad5f2136a",
+    "src/components/learner-notification-settings.test.tsx": "c5ff98f6773aca3fe0c2d0515a3244766ebc55d97755d765e2df5de3875be4f3",
+    "src/lib/learner-notification-capabilities.ts": "fe9e0285b395189ffb70f7426bb57b437cfa46b525e7bc45695a1a454c8b2d31",
+    "src/lib/learner-notification-capabilities.test.ts": "b2a2a8f5fe80bc3e00d4c1ec06e5f9fa3162f89ee87eaa34b8376729889a5928",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/page.tsx": "b874f87a600d407b65d79cd824ea279273b535a3f4b5bfc4c0ae88aed8c3c671",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/route.ts": "e9657f8ad6542734fdf07cba39e4e48d2517692f26bd5b31e53e19bbe46b9069",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/route.test.ts": "5fbe82d69b3d93ceb6eff265b546af9f637e4b9d12f84db5a73066874af19c19",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/notifications/enroll/route.ts": "00ec4005782026ceb3a16c01b1cc926d29b95006d8aa83517eceffc2c70274f6",
+    "tests/e2e/learner-notifications.spec.ts": "0776cbc6aee6c9dd348bac90abc986c191b89125b8b78f8214b01b261ec7a6bc",
+    "playwright.learner-notifications.config.ts": "dc2c1d9eacd2e530fb1b941a6ce5f953425fd1ac7403c8c30061ae6872f185a7",
+    "scripts/learner-notification-browser-qa.mjs": "86f80922bbbb8863364ffb9ea277d6600651548dbc3ed597e8672ab5ef0fd0f4",
+    "scripts/staging-payuni-management-migrate.test.ts": "76ebb8397e543a2374617f7b6b3ee25c863f772bfe6b5c2d7249f673fd13a23b",
+    ".github/workflows/ci.yml": "7e02c7a03fdbfd42f7144d92007a4ca396b90f6a262014d86b482106e65b635e",
+    "docs/codex-goal/API_CONTRACT_REGISTRY.md": "b8766b9fe6ba922ec8a4d5c6b66504e9c75b951c871f4e93a0579378b34ef971"
+  },
+  "unit_tests": {
+    "passed": 46,
+    "failed": 0
+  },
+  "lint": "PASS",
+  "typescript": "PASS_FINAL_REVISION",
+  "browser": {
+    "schemaVersion": "learner-notification-browser/v1",
+    "status": "PASS",
+    "migrationCount": 87,
+    "browser": {
+      "expected": 1,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "safety": {
+      "loopbackOnly": true,
+      "syntheticOnly": true,
+      "actualProviderDelivery": false,
+      "alreadyVerifiedSyntheticFixture": true,
+      "externalOperations": false,
+      "trace": false,
+      "screenshot": false,
+      "rawLogsSaved": false
+    }
+  },
+  "browser_source_revision": "sha256:0ad58e3929a060e5ed08604a6d10fa3f684c51208c95f45677f43a70c821207e",
+  "browser_scope_note": "Actual course page, real session/CSRF/preference API and PostgreSQL withdrawal/reload/foreign-scope rejection; already-verified synthetic fixture, no external provider delivery. Browser code/source files match current candidate. Workflow/inventory tests are separately unit-verified.",
+  "react_checklist": {
+    "component_structure": "PASS",
+    "hooks": "PASS",
+    "accessibility": "labels/region/live status/44px controls",
+    "performance": "explicit lazy load;no background polling",
+    "typescript": "PASS"
+  },
+  "ci_correction": {
+    "failed_run": 37516281028,
+    "failed_head": "946e94f5f0f04f31d1ccf769538735514adb0781",
+    "failed_file": "scripts/staging-payuni-management-migrate.test.ts",
+    "old_count": 85,
+    "current_count": 87,
+    "fix": "Exact current inventory plus explicit new migrations; fixed historical81 adapter rejection unchanged",
+    "local_tests": "4 PASS",
+    "new_exact_head_CI": "PENDING_PUSH",
+    "additional_database_gate": "same existing ci.yml;32 owned PostgreSQL regressions;existing release gate discovers browser spec"
+  },
+  "review": "NOT_EXECUTED",
+  "canonical_acceptance": "NOT_READY",
+  "actual_provider_delivery": "NOT_EXECUTED",
+  "remaining": [
+    "six retained event producers and applicable product/recipient contracts",
+    "full enroll/verification browser journeys with approved nonproduction providers",
+    "PWA integration and native push browser proof",
+    "post-refund durable settings navigation",
+    "independent Critical review",
+    "canonical acceptance",
+    "exact-head CI/protected PR delivery"
+  ]
+}

@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireSameOriginRequest, readJsonBody } from "@/lib/api-security";
 import { verifyCsrfToken } from "@/lib/csrf";
-import { getCanonicalAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
 import { requireStudentPortalSession } from "@/lib/student-portal-auth";
 import { requestLearnerContactVerification, LearnerContactEnrollmentInput } from "@/lib/learner-notification-verification";
-import { readLearnerNotificationProviderConfiguration } from "@/lib/learner-notification-job";
+import { getLearnerNotificationCapabilities } from "@/lib/learner-notification-capabilities";
 
 type Context = { params: Promise<{ vendorSlug: string; courseId: string }> };
 const headers = { "Cache-Control": "private, no-store", Vary: "Cookie" };
@@ -18,10 +17,7 @@ export async function POST(request: Request, { params }: Context) {
  const input=LearnerContactEnrollmentInput.safeParse(await readJsonBody(request,4096));
  if(!input.success)return NextResponse.json({error:"invalid_destination"},{status:400,headers});
  const {vendorSlug,courseId}=await params;const {session}=await requireStudentPortalSession(vendorSlug);
- try{if(new URL(getCanonicalAppUrl()).protocol!=="https:")return NextResponse.json({error:"channel_unavailable"},{status:503,headers});}
- catch{return NextResponse.json({error:"channel_unavailable"},{status:503,headers});}
- const approved=(process.env.LEARNER_NOTIFICATIONS_JOB_VENDOR_IDS??"").split(",").map(value=>value.trim()).filter(Boolean);
- if(process.env.LEARNER_NOTIFICATIONS_EXECUTOR_ENABLED!=="true" || approved.length>25 || approved.some(value=>!/^[A-Za-z0-9_-]{1,128}$/u.test(value)) || !approved.includes(session.vendorId) || !readLearnerNotificationProviderConfiguration()[input.data.channel])
+ if(!getLearnerNotificationCapabilities(session.vendorId).availableChannels.includes(input.data.channel))
   return NextResponse.json({error:"channel_unavailable"},{status:503,headers});
  try{
   const result=await requestLearnerContactVerification(getDb(),session,courseId,input.data);

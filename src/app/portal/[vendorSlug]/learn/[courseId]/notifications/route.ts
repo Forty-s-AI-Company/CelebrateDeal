@@ -4,6 +4,7 @@ import { getCsrfToken, verifyCsrfToken } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { requireStudentPortalSession } from "@/lib/student-portal-auth";
 import { listLearnerNotificationPreferences, saveLearnerNotificationConsent } from "@/lib/learner-notification-preferences";
+import { getLearnerNotificationCapabilities } from "@/lib/learner-notification-capabilities";
 import { LearnerNotificationConsentInput } from "@/lib/learner-notification-contract";
 
 type Context = { params: Promise<{ vendorSlug: string; courseId: string }> };
@@ -17,7 +18,7 @@ export async function GET(request: Request, { params }: Context) {
   const { session } = await requireStudentPortalSession(vendorSlug);
   const preferences = await listLearnerNotificationPreferences(getDb(), session, courseId);
   if (!preferences) return NextResponse.json({ error: "not_found" }, { status: 404, headers });
-  return NextResponse.json({ preferences, csrfToken: await getCsrfToken() }, { headers });
+  return NextResponse.json({ preferences, csrfToken: await getCsrfToken(), capabilities: getLearnerNotificationCapabilities(session.vendorId) }, { headers });
 }
 
 export async function POST(request: Request, { params }: Context) {

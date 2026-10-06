@@ -65,3 +65,11 @@ F1 通知補記：已接上 configured-only email／Web Push／Twilio SMS／What
 - 87 migrations、32 DB、44 targeted unit、12 migration contract、scoped lint、TypeScript PASS；合成 callback，實際渠道/browser 尚未執行。
 - 證據：docs/remaining-capabilities-f1-notifications-durable-proof-20261007.json；revision sha256:984c302d5b8b4baddb9efdd20c0a8239330b923c1558ef25ca5d304859875827。狀態 IMPLEMENTED_DURABLE_PROOF_DELIVERY_PHASE_NOT_READY。all six retained event producers；actual settings UI and browser journeys；approved nonproduction provider injection and validation；independent Critical review；canonical acceptance；exact-head CI/protected PR delivery 尚未完成。
 - Q2 PR379 head 080692a970bcadb312825eda691be63f10d7e093：PR run 37511340335 與 push run 37511330840 SUCCESS；最新修正複審需第 5 次 readonly dispatch 授權，仍未合併/READY。
+
+### F1 通知設定實際 UI checkpoint 2026-10-07
+
+- ID f1-learner-notifications；owner root；dispatch 0/4；原始來源 e1f38be324e349969a657be376aa1602e804c2dd。
+- 課程頁已接入 Email/SMS/WhatsApp/push 登記與驗證、明確 opt-in/opt-out；只在使用者操作時申請 push 權限，沿用既有 PWA registration；無 service worker 時顯示原因。GET/enroll 共用 public capabilities，無背景輪詢或 browser 持久化 contact/token。
+- 最新 46 targeted unit、lint、TypeScript PASS；87 migrations、1/1 Chromium actual session/API/DB withdrawal+reload+CSRF+foreign course refusal，0 skip/flaky、cleanup PASS。已驗證收件 fixture 僅合成資料，未證明真實渠道送達。
+- CI37516281028 在 migration inventory 85/87 不一致失敗；已更新精確87與兩個新 migration presence checks，保留歷史81 adapter拒絕規則。新增同一 CI notification DB gate，現有 release gate 保留並自動執行新browser，沒有新 workflow/skip/exclude。新精確 head CI 待推送。
+- 證據 docs/remaining-capabilities-f1-notifications-settings-ui-20261007.json；revision sha256:5db95ea9455a22c75b4bb791d81b64e0659b97e2a910ef1403bab6eb65db9a37；browser source sha256:0ad58e3929a060e5ed08604a6d10fa3f684c51208c95f45677f43a70c821207e。狀態 NOT_READY。未完成：six retained event producers and applicable product/recipient contracts；full enroll/verification browser journeys with approved nonproduction providers；PWA integration and native push browser proof；post-refund durable settings navigation；independent Critical review；canonical acceptance；exact-head CI/protected PR delivery。整體 Goal IN_PROGRESS。
