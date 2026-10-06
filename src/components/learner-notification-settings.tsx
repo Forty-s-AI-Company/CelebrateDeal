@@ -1,6 +1,6 @@
 "use client";
 
-import { useId,useRef,useState } from "react";
+import { useId,useRef,useState,useSyncExternalStore } from "react";
 import { z } from "zod";
 import { LearnerConsultationReminders } from "./learner-consultation-reminders";
 
@@ -10,10 +10,16 @@ const Snapshot=z.object({preferences:z.array(Preference).max(4),csrfToken:z.stri
 type ChannelName=z.infer<typeof Channel>;
 const labels:Record<ChannelName,string>={email:"Email",sms:"SMS",whatsapp:"WhatsApp",push:"裝置推播"};
 const button="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50";
+const subscribeToHydration=()=>()=>{};
+const clientHydrationSnapshot=()=>true;
+const serverHydrationSnapshot=()=>false;
+/** Keep the pending status copy consistent across channel operations. */
+function notificationStatusText(busy:boolean,notice:string){return busy?"處理中…":notice;}
 
 /** Contacts/proofs live only in this transient form. No localStorage, telemetry
  * or URL parameters. Durable state and consent revisions always come from API. */
 export function LearnerNotificationSettings({vendorSlug,courseId}:{vendorSlug:string;courseId:string}) {
+ const interactive=useSyncExternalStore(subscribeToHydration,clientHydrationSnapshot,serverHydrationSnapshot);
  const headingId=useId();
  const endpoint=`/portal/${encodeURIComponent(vendorSlug)}/learn/${encodeURIComponent(courseId)}/notifications`;
  const [snapshot,setSnapshot]=useState<z.infer<typeof Snapshot>|null>(null);
@@ -32,7 +38,7 @@ export function LearnerNotificationSettings({vendorSlug,courseId}:{vendorSlug:st
   csrf.current=parsed.data.csrfToken;setSnapshot(parsed.data);return parsed.data;
  }
  async function action(run:()=>Promise<void>){
-  if(lock.current)return;lock.current=true;setBusy(true);setNotice("");
+  if(!interactive || lock.current)return;lock.current=true;setBusy(true);setNotice("");
   try{await run();}catch(error){setNotice(error instanceof Error && error.message.startsWith("通知：")?error.message.slice(3):"目前無法完成通知設定，請重新載入後再試。");}
   finally{lock.current=false;setBusy(false);}
  }
@@ -80,7 +86,7 @@ export function LearnerNotificationSettings({vendorSlug,courseId}:{vendorSlug:st
  return <section aria-labelledby={headingId} className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
   <h2 id={headingId} className="text-xl font-bold">課程通知</h2>
   <p className="mt-2 text-sm text-slate-600">自行選擇收件方式，驗證後再開啟通知。可以隨時取消。</p>
-  <button className={`${button} mt-4`} type="button" disabled={busy} onClick={()=>void action(async()=>{await refresh();setNotice("通知設定已載入。");})}>{snapshot?"重新載入設定":"載入通知設定"}</button>
+  <button className={`${button} mt-4`} type="button" disabled={!interactive || busy} onClick={()=>void action(async()=>{await refresh();setNotice("通知設定已載入。");})}>{snapshot?"重新載入設定":"載入通知設定"}</button>
   {snapshot?<div className="mt-4 space-y-4">
    <label className="block text-sm font-semibold">通知渠道<select className="ml-3 min-h-11 rounded-lg border border-slate-300 px-3" value={channel} disabled={busy} onChange={event=>{const next=Channel.safeParse(event.target.value);if(next.success){setChannel(next.data);setContact("");setProof("");setChallenge(null);setNotice("");}}}>{Channel.options.map(value=><option key={value} value={value}>{labels[value]}</option>)}</select></label>
    <p className="text-sm text-slate-600">{preference?.enabled?"通知已開啟":preference?.destinationVerifiedAt?"已驗證，通知尚未開啟":"收件方式尚未驗證"}{!available?"；此渠道目前無法寄送新驗證碼。":""}</p>
@@ -90,6 +96,6 @@ export function LearnerNotificationSettings({vendorSlug,courseId}:{vendorSlug:st
    <button className={`${button} ml-2`} type="button" disabled={busy || !preference || (!preference.enabled && (!preference.destinationVerifiedAt || !available))} onClick={()=>void action(toggle)}>{preference?.enabled?"取消通知":"開啟通知"}</button>
   </div>:null}
   {snapshot?<LearnerConsultationReminders vendorSlug={vendorSlug} courseId={courseId} />:null}
-  <p role="status" aria-label="課程通知狀態" aria-live="polite" className="mt-3 text-sm text-slate-700">{busy?"處理中…":notice}</p>
+  <p role="status" aria-label="課程通知狀態" aria-live="polite" className="mt-3 text-sm text-slate-700">{notificationStatusText(busy,notice)}</p>
  </section>;
 }

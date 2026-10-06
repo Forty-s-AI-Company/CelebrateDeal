@@ -1,10 +1,11 @@
 import { isValidElement,type ReactNode } from "react";
 import { afterEach,beforeEach,expect,it,vi } from "vitest";
-const hooks=vi.hoisted(()=>({states:[] as unknown[],refs:[] as Array<{current:unknown}>,stateIndex:0,refIndex:0}));
+const hooks=vi.hoisted(()=>({states:[] as unknown[],refs:[] as Array<{current:unknown}>,stateIndex:0,refIndex:0,hydrated:true}));
 // Drive the actual handlers with persistent hook slots, following this repo's
 // media-handler test pattern. Browser rendering is verified separately.
 vi.mock("react",async importOriginal=>({...await importOriginal<typeof import("react")>(),
  useId:()=>"synthetic-notification-heading",
+ useSyncExternalStore:()=>hooks.hydrated,
  useState:(initial:unknown)=>{const index=hooks.stateIndex++;if(!(index in hooks.states))hooks.states[index]=initial;return [hooks.states[index],(next:unknown)=>{hooks.states[index]=typeof next==="function"?next(hooks.states[index]):next;}];},
  useRef:(initial:unknown)=>{const index=hooks.refIndex++;if(!hooks.refs[index])hooks.refs[index]={current:initial};return hooks.refs[index];}
 }));
@@ -24,6 +25,11 @@ function change(type:string,value:string){(find(render(),type)!.onChange as (eve
 async function idle(){await vi.waitFor(()=>expect(find(render(),"button","重新載入設定")!.disabled).toBe(false));}
 async function load(){click("載入通知設定");await idle();}
 it("initial render does not send requests or obtain push permission",()=>{render();expect(fetchMock).not.toHaveBeenCalled();});
+it("does not accept a notification action before hydration attaches its handlers",async()=>{
+ hooks.hydrated=false;
+ try{expect(find(render(),"button","載入通知設定")!.disabled).toBe(true);click("載入通知設定");await Promise.resolve();expect(fetchMock).not.toHaveBeenCalled();}
+ finally{hooks.hydrated=true;}
+});
 it("reads only the exact course with the actual same-origin client contract",async()=>{await load();expect(fetchMock).toHaveBeenCalledWith("/portal/academy/learn/course-1/notifications",expect.objectContaining({credentials:"same-origin",cache:"no-store",headers:{"x-celebratedeal-client":"web"}}));expect(find(render(),"button","開啟通知")!.disabled).toBe(true);});
 it("enrollment and proof do not opt in until the learner separately consents",async()=>{
  await load();change("input","synthetic@invalid.example");

@@ -77,7 +77,8 @@ test("actual portal worker receives a synthetic device message and keeps authent
  }
 });
 
-test.use({trace:"off",screenshot:"off",video:"off"});
+// Match the disposable runner's full Chromium for native notification APIs.
+test.use({channel:"chromium",trace:"off",screenshot:"off",video:"off"});
 test("purchasing learner withdraws real notification consent and reloads; foreign course and CSRF are refused",async({page,baseURL})=>{
  test.setTimeout(120000);
  const db=new PrismaClient(),suffix=randomUUID();
@@ -112,8 +113,17 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   await expect(page.getByRole("heading",{name:"保留講師原文",exact:true})).toBeVisible();
   await page.getByRole("combobox",{name:"Language",exact:true}).selectOption("zh-TW");
   await page.getByRole("button",{name:"Apply",exact:true}).click();
+  // The notification region keeps Chinese copy in both locales. Its presence
+  // cannot establish completion of the locale server-action navigation.
+  await expect(page.getByRole("button",{name:"已標記完成",exact:true})).toBeVisible();
+  await expect(page.getByText("學習進度",{exact:true})).toBeVisible();
   const settings=page.getByRole("region",{name:"課程通知"});
-  await expect(settings).toBeVisible();await settings.getByRole("button",{name:"載入通知設定"}).click();
+  await expect(settings).toBeVisible();
+  const [settingsResponse]=await Promise.all([
+   page.waitForResponse(response=>response.request().method()==="GET"&&new URL(response.url()).pathname===`/portal/${vendor.slug}/learn/${product.id}/notifications`),
+   settings.getByRole("button",{name:"載入通知設定"}).click(),
+  ]);
+  expect(settingsResponse.status()).toBe(200);
   await expect(settings.getByRole("button",{name:"取消通知"})).toBeEnabled();
   await expect(settings.getByText("通知已開啟",{exact:false})).toBeVisible();
   const project=await db.salesProject.create({data:{vendorId:vendor.id,name:"Synthetic consultation course",slug:randomUUID(),mode:"consulting",primaryFlow:"consultation",status:"published",publishedAt:new Date()}});

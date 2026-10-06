@@ -46,7 +46,7 @@
     "goal_complete": false,
     "original_dirty_checkout_modified": false
   },
-  "status": "LOCALIZED_LOGIN_PLAYER_DISCUSSION_BROWSER_RUNNING_NOT_READY",
+  "status": "CI_CORRECTIONS_IMPLEMENTED_LATEST_BROWSER_RUNNING_NOT_READY",
   "source_files": {
     "src/app/portal/[vendorSlug]/learn/[courseId]/community/page.tsx": "f21fd882e27d082ce4a81ed0d37304d5245b10ac0d40c6012e34eaa0d3c6007e",
     "tests/e2e/learner-notifications.spec.ts": "174690c828f8128f7b0e3ce0da96fdf243ca3860451493dc020f4acaf8c3da03",
@@ -73,5 +73,66 @@
     "Full retained learner UI localization",
     "Non-course notifications and approved provider proofs",
     "Independent full review, canonical acceptance and protected delivery"
-  ]
+  ],
+  "hydration_browser_before_status_refactor": {
+    "source_revision": "sha256:b39d6c89686250e8158bb2e189692085e174a6bd12bb6ce93e15ae844ae1d9df",
+    "status": "PASS",
+    "migrations": 90,
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "scope": "Before pure status-text extraction and explicit Chromium channel; not latest candidate acceptance",
+    "browser": {
+      "expected": 4,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "hydration_fix": {
+    "status_refactor": "Preserves complexity threshold30; initial attempt31/30 retained as failure",
+    "browser_status": "TERMINAL_FAIL_3_EXPECTED_1_FLAKY",
+    "status": "42_UNIT_TS_LINT_PASS",
+    "pre_hydration_actions": "disabled and refused before handlers attach",
+    "browser_session": 41732
+  },
+  "ci_correction": {
+    "reference": "https://playwright.dev/docs/browsers#chromium-new-headless-mode",
+    "assertions": "Unchanged notification receive assertion, no skips/exclusions or reduced checks",
+    "status": "FAILURE",
+    "browser_change": "Explicit chromium channel matches full Chromium already used by disposable runner",
+    "failed": [
+      "WP88 exact guard inventory",
+      "native PWA notification receive"
+    ],
+    "run": 37542190238,
+    "linux_current_head_ci": "NOT_RUN_YET",
+    "previous_head": "e441334c478a33439422c7973055b8d662621478",
+    "guard_inventory": {
+      "total": 91,
+      "new_page": "src/app/(app)/products/[id]/community/page.tsx",
+      "vendorManager": 52,
+      "source_counts_verified": true
+    }
+  },
+  "locale_navigation_regression": {
+    "previous_source": "sha256:6e9101cfcb28e787a34747a0a4b9a29ca5354ee59f20e58356b543064ddee34a",
+    "previous_browser": {
+      "expected": 3,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 1
+    },
+    "actual_failure_line": 123,
+    "cause_hypothesis": "Chinese notification region exists before locale server-action completes; loading it may race page replacement",
+    "change": "Assert Chinese marked-complete button and progress copy before loading notification settings; all original assertions preserved",
+    "settings_unit_passed": 12,
+    "login_player_discussion_unit_passed": 24,
+    "typescript": "PASS",
+    "browser_test_lint": "PASS",
+    "browser_session": 28934,
+    "browser_status": "RUNNING_NOT_ACCEPTED",
+    "full_scope": "All F1/F2/F3/Q1/Q2/A1/E1 requirements preserved"
+  }
 }
