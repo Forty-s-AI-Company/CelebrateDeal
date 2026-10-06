@@ -23,6 +23,17 @@ export const LearnerNotificationConsentInput = z.object({
 export const LearnerPhoneDestination = z.object({ phone: Phone }).strict();
 export const LearnerEmailDestination = z.object({ email: z.string().trim().toLowerCase().email().max(254) }).strict();
 
+const pushHosts = new Set(["fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com"]);
+/** Browser endpoints cannot select internal services or carry credentials. */
+export const LearnerPushDestination = z.object({
+ expirationTime: z.number().finite().nonnegative().nullable().optional(),
+ endpoint: z.string().max(2048).url().refine(value => {
+  const url = new URL(value);
+  return url.protocol === "https:" && !url.username && !url.password && !url.port && !url.hash && pushHosts.has(url.hostname);
+ }),
+ keys: z.object({ p256dh: z.string().regex(/^[A-Za-z0-9_-]{87}$/u), auth: z.string().regex(/^[A-Za-z0-9_-]{22}$/u) }).strict(),
+}).strict();
+
 function purpose(scope: LearnerNotificationScope, channel: LearnerNotificationChannel) {
   const identity = LearnerNotificationScope.parse(scope);
   return `learner-notification-v1:${JSON.stringify([identity.vendorId, identity.customerKeyHash, identity.productId, LearnerNotificationChannel.parse(channel)])}`;

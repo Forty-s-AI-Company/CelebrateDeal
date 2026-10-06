@@ -1,0 +1,173 @@
+{
+  "status": "IMPLEMENTED_PROVIDER_ADAPTER_PHASE_NOT_READY",
+  "task_id": "f1-learner-notifications",
+  "phase_snapshot_revision": "sha256:5838e441dd8ffdae51d8f5c4c997382ab67f1b5e5b4f3c0d9c0b51f1af7ea0b0",
+  "snapshot_files": [
+    "package.json",
+    "package-lock.json",
+    "src/lib/learner-notification-providers.ts",
+    "src/lib/learner-notification-providers.test.ts",
+    "src/lib/learner-notification-contract.ts",
+    "src/lib/learner-notification-verification.ts",
+    "scripts/learner-notification-disposable-qa.mjs"
+  ],
+  "source_hashes": {
+    "package.json": "3348ccdf618d1785b687f24a45b10efaf61dc4cc130f46cd53d5df9d3ad75094",
+    "package-lock.json": "316fe741454b5747c1afc8c09a62ff80a4ed819899d7ea4a51a77eace5f523f0",
+    "src/lib/learner-notification-providers.ts": "a3a3eae976a8a35d6f36e2bc7a0d3f10d49fc9f79c7119a3f941a5824de47030",
+    "src/lib/learner-notification-providers.test.ts": "00d1deab60cd469c29bc3176cc322a39650b0bd3035f64a4a4794096e4ae8e91",
+    "src/lib/learner-notification-contract.ts": "b09c722bbed2be39f174129bfebd04575a71e57cdc16c80a8686587f70364c02",
+    "src/lib/learner-notification-verification.ts": "82219f81de620d4de1ec80920ebee3deb8a3265b16e0005ba61db7e14133f8d7",
+    "scripts/learner-notification-disposable-qa.mjs": "b1e579eeb2dc47c97b6eb0b1ed563a2a757a71dbb8f75c2c0522dc6d61e3f59a"
+  },
+  "provider_contract_units": {
+    "passed": 24,
+    "failed": 0,
+    "externalOperations": false,
+    "kind": "MOCKED_UNIT_CONTRACT_ONLY"
+  },
+  "existing_contract_and_API_units": 12,
+  "postgresql_receipt": {
+    "source": {
+      "files": {
+        "package.json": "3348ccdf618d1785b687f24a45b10efaf61dc4cc130f46cd53d5df9d3ad75094",
+        "package-lock.json": "316fe741454b5747c1afc8c09a62ff80a4ed819899d7ea4a51a77eace5f523f0",
+        "prisma/schema.prisma": "abf1645262725ee127f43a8efad727db5725d85832fdc3157dea59e0129bb60f",
+        "prisma/migrations/20261007010000_learner_notifications/migration.sql": "9556eb9165d262a8c17b26a2ca87a06da024d8e95cf3a1167b4e3f1556071515",
+        "src/lib/learner-notification-contract.ts": "b09c722bbed2be39f174129bfebd04575a71e57cdc16c80a8686587f70364c02",
+        "src/lib/learner-notification-preferences.ts": "e498bc8c3864347acc380ed815d37a7f604c508e887a9c341d3f5ba615d2c7b3",
+        "src/lib/learner-notification-outbox.ts": "b97446a5182f75d14e64b18ee52f9535ce478ff06b6aaa48287c63e78a39d8b3",
+        "src/lib/learner-notification-verification.ts": "82219f81de620d4de1ec80920ebee3deb8a3265b16e0005ba61db7e14133f8d7",
+        "src/lib/student-course-learning.ts": "78716725dd49fdf08292c0e180875b1953448fa9fc72ee7f63a4a04fd3382d29",
+        "src/lib/sensitive-data.ts": "07c2eb967a8f03f661d98a8193f7153786598ddb6d94b831f51b72c08eac9822",
+        "src/lib/commerce-order-pii.ts": "6761a568619e2830ea51c150a064e3ee60b1e75572533734eb0fe6f7f9b04220",
+        "src/lib/commerce-order-fulfillment.ts": "b5a78f51f0455b96fd63939397677d71acc7869ed8ccdff8df0e73a69c3a8081",
+        "src/lib/commerce-orders.ts": "9765d7d57c7d91e0ffa2a81ef363abad0fb3b1c1addd4cff325f98e1e6a2240f",
+        "scripts/learner-notification-disposable-qa.mjs": "b1e579eeb2dc47c97b6eb0b1ed563a2a757a71dbb8f75c2c0522dc6d61e3f59a"
+      },
+      "revision": "sha256:967ce9091dd028d093f867ad8c3dc9691e1b468fbe9d8cdd755e703d2102ff70"
+    },
+    "status": "PASS",
+    "migrationCount": 86,
+    "tests": [
+      {
+        "name": "cross-tenant product FK refuses preference",
+        "status": "PASS"
+      },
+      {
+        "name": "cross-tenant delivery/preference FK refuses dispatch",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent consent CAS admits one writer",
+        "status": "PASS"
+      },
+      {
+        "name": "event uniqueness survives a consent revision change",
+        "status": "PASS"
+      },
+      {
+        "name": "default-deny RLS hides rows and rejects anonymous-role writes",
+        "status": "PASS"
+      },
+      {
+        "name": "refunded recipient can unsubscribe using authenticated scope",
+        "status": "PASS"
+      },
+      {
+        "name": "service rejects stale consent revision",
+        "status": "PASS"
+      },
+      {
+        "name": "foreign recipient cannot unsubscribe another tenant",
+        "status": "PASS"
+      },
+      {
+        "name": "recipient without current purchase cannot opt in",
+        "status": "PASS"
+      },
+      {
+        "name": "verification rejects exhausted attempts and expired enrollment",
+        "status": "PASS"
+      },
+      {
+        "name": "contact proof refuses foreign recipient and locks after five wrong attempts",
+        "status": "PASS"
+      },
+      {
+        "name": "expired contact proof cannot mark destination verified",
+        "status": "PASS"
+      },
+      {
+        "name": "rotated contact proof consumes once without granting notification consent",
+        "status": "PASS"
+      },
+      {
+        "name": "native push subscription proves device separately from channel consent",
+        "status": "PASS"
+      },
+      {
+        "name": "outbox deduplicates concurrent real database event producers",
+        "status": "PASS"
+      },
+      {
+        "name": "outbox foreign scope cannot queue or claim owning recipient",
+        "status": "PASS"
+      },
+      {
+        "name": "concurrent worker claim admits exactly one owner",
+        "status": "PASS"
+      },
+      {
+        "name": "forged or replayed worker completion cannot mark delivery",
+        "status": "PASS"
+      },
+      {
+        "name": "consent revision change suppresses a queued event",
+        "status": "PASS"
+      },
+      {
+        "name": "real full refund suppresses queued delivery and further producer events",
+        "status": "PASS"
+      },
+      {
+        "name": "owned synthetic purchase fixture is created",
+        "status": "PASS"
+      }
+    ],
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "safety": {
+      "loopbackOnly": true,
+      "syntheticOnly": true,
+      "externalOperations": false,
+      "rawLogsSaved": false
+    }
+  },
+  "database_scope_note": "Database source fence matches all14 declared files;provider adapters are verified only by24 mocked contract tests,not by external delivery. Push device proof uses synthetic internally known token.",
+  "lint": "PASS",
+  "typescript": "PASS_FINAL_REVISION",
+  "production_dependency_audit": {
+    "total": 0
+  },
+  "actual_provider_deliveries": "NOT_EXECUTED",
+  "review": "NOT_EXECUTED",
+  "canonical_acceptance": "NOT_READY",
+  "remaining": [
+    "authorized delivery worker and final rights fence",
+    "durable challenge delivery integration",
+    "event producer integration for all six retained events",
+    "actual UI and browser journeys",
+    "approved nonproduction provider injection and contracts",
+    "independent Critical review",
+    "canonical acceptance",
+    "exact-head CI and protected PR delivery"
+  ],
+  "references": [
+    "https://github.com/web-push-libs/web-push",
+    "https://www.twilio.com/docs/iam/test-credentials",
+    "https://www.postman.com/meta/whatsapp-business-platform/documentation/wlk6lh4/whatsapp-cloud-api"
+  ]
+}

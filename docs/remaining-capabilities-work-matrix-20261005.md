@@ -45,3 +45,5 @@ F2.1 latest source `sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c2
 | Q2 | PR379；`f989dba69361b38d764b46cb1736203109315504` CI 的兩個 Playwright 檔案被 Vitest 誤載 | root；.browser.ts 配置修正正在獨立隔離 runner 驗證；新增 review 超過4/4，等待明確增額核准 | 前一配置87 migrations／67DB／2browser PASS；新配置尚待本次收據／精確 head CI | IN_PROGRESS |
 | F1.2／F2.2／F3.2 | PR373／commission branch／PR372 | 最新候選 review 上限4/4已滿，額外1次仍待核准；不能以其他批次 review 取代 | 已存在測試不代替最新候選 review | REVIEW_AUTHORIZATION_PENDING |
 | F1其餘／F2其餘／F3其餘／Q1／A1／E1 | 原 work matrix 與 future-work 精確來源 | 保留完整功能及相依；Q1精確sandbox注入仍阻塞外部旅程 | 本次補記沒有縮減或轉移範圍；整體 Goal 未完成 | IN_PROGRESS |
+
+F1 通知補記：已接上 configured-only email／Web Push／Twilio SMS／WhatsApp template adapter，24 項 mocked unit 契約 PASS，連同既有 contract/API 共36項測試；最新21項實際PG回歸與86 migrations PASS，source fence一致。此批未執行外部送達，worker/event producer/UI/browser/approved provider驗證/獨立review/gate/CI仍未完成。精確證據 `remaining-capabilities-f1-notifications-providers-20261007.json`；不宣稱 F1 READY。

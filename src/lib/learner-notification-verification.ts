@@ -3,9 +3,10 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { getStudentCourse, type CourseLearningStore } from "./student-course-learning";
 import type { StudentPortalScope } from "./student-portal";
-import { LearnerEmailDestination, LearnerPhoneDestination, LearnerNotificationScope, protectLearnerNotificationDestination } from "./learner-notification-contract";
+import { LearnerEmailDestination, LearnerPhoneDestination, LearnerPushDestination, LearnerNotificationScope, protectLearnerNotificationDestination } from "./learner-notification-contract";
 
 const Enrollment = z.discriminatedUnion("channel", [
+ z.object({ channel: z.literal("push"), destination: LearnerPushDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),
  z.object({ channel: z.literal("email"), destination: LearnerEmailDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),
  z.object({ channel: z.literal("sms"), destination: LearnerPhoneDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),
  z.object({ channel: z.literal("whatsapp"), destination: LearnerPhoneDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),

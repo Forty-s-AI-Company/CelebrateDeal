@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import assert from "node:assert/strict";
-import { createHash, randomUUID } from "node:crypto";
+import { createECDH, createHash, randomBytes, randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { main as migrate } from "./prisma-loopback-disposable-migration-runner.mjs";
 import { learnerNotificationDeliveryKey, protectLearnerNotificationDestination } from "../src/lib/learner-notification-contract.ts";
@@ -152,6 +152,15 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
       assert.equal("destinationEncryptedEnvelope" in verified,false);
       assert.equal((await saveLearnerNotificationConsent(db,identity,product.id,{ channel:"email",enabled:true,expectedRevision:verified.revision })).status,"saved");
     });
+    await check("native push subscription proves device separately from channel consent", async () => {
+      const device = createECDH("prime256v1");device.generateKeys();
+      const destination = { endpoint: "https://fcm.googleapis.com/fcm/send/synthetic-only", expirationTime: null, keys: { p256dh: device.getPublicKey().toString("base64url"),auth:randomBytes(16).toString("base64url") } };
+      const requested = await requestLearnerContactVerification(db,identity,product.id,{ channel:"push",expectedRevision:0,destination });
+      assert.equal(requested.status,"challenge_created");
+      const verified = await consumeLearnerContactVerification(db,identity,product.id,{ challengeId:requested.challenge.id,token:requested.delivery.token });
+      assert.equal(verified.status,"verified");assert.equal(verified.preference.enabled,false);
+      assert.equal((await saveLearnerNotificationConsent(db,identity,product.id,{channel:"push",enabled:true,expectedRevision:verified.preference.revision})).status,"saved");
+    });
     const event = { channel: "sms", event: "lesson_published", eventIdentity: "synthetic_outbox_first", message: { title: "Synthetic lesson", body: "Synthetic only private message", path: "/portal/synthetic/learn/course" } };
     let queued, claim;
     await check("outbox deduplicates concurrent real database event producers", async () => {
@@ -203,4 +212,4 @@ fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 20 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 21 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
