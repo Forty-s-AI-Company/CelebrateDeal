@@ -23,14 +23,13 @@ export default async function StudentNotificationsPage({ params, searchParams }:
     const t = (text: string) => portalText(locale, text);
     const { after, productsAfter } = await searchParams;
     if (productsAfter && !/^[A-Za-z0-9_-]{1,128}$/u.test(productsAfter)) notFound();
+    if (after && !/^[A-Za-z0-9_-]{1,128}$/u.test(after)) notFound();
     // Current purchases are discoverable before the first channel enrollment.
     // Existing refunded preferences remain separately pageable for withdrawal.
     const purchased = await getDb().product.findMany({ where: { vendorId: session.vendorId, ...(productsAfter ? { id: { gt: productsAfter } } : {}), commerceOrderItems: { some: learnerNotificationPurchaseWhere(session) } }, orderBy: { id: "asc" }, take: 21, select: { id: true, name: true } });
     const purchasedVisible = purchased.slice(0, 20);
     const lastProduct = purchasedVisible.at(-1);
     const productsNext = purchased.length > 20 && lastProduct ? `/portal/${encodeURIComponent(vendorSlug)}/notifications?productsAfter=${encodeURIComponent(lastProduct.id)}` : null;
-    if (after && !/^[A-Za-z0-9_-]{1,128}$/u.test(after))
-        notFound();
     const rows = await getDb().learnerNotificationPreference.findMany({ where: { vendorId: session.vendorId, customerKeyHash: session.customerKeyHash, ...(after ? { id: { gt: after } } : {}) }, orderBy: { id: "asc" }, take: 21, select: { id: true, productId: true, product: { select: { name: true } } } });
     const visible = rows.slice(0, 20);
     const products = [...new Map([...purchasedVisible.map(product => [product.id, product] as const), ...visible.map(row => [row.productId, { id: row.productId, name: row.product.name }] as const)]).values()];

@@ -1,3 +1,7 @@
+2026-10-07 通知 CI correction：16b5d5c5 CI37591948632 FAIL，管理頁 mock 未包含新增 product 查詢；保留失敗收據。新管理頁檢查兩種 cursor 都在任何 DB query 之前，保留6既有page tests並新增2個first-purchase／purchase-cursor回歸。40 unit／5實際檔案、TS/lint、90mig／5/5actual browser零skip/flaky/cleanup PASS，source0b4585d9；73DB全部後端source hashes再次比對current相同，不冒用舊UI/browser證據。新checkpoint待push精確head CI；整個通知task NOT_READY，provider、其餘適用資源、full review及gate仍未完成。
+
+2026-10-07 最新交付：F3 team/video #382 expected-head squash `4a4a0461aace0cde651b9a4021e415ef0da5e22a`；accepted head1dd0409c／treebee631dc3f620ea74e02804db2090571bd3bf2ff與合併tree完全一致，PR CI37589645770與push37589618194 SUCCESS、review4/4 []、canonical READY。實際URL影片CRUD/reload／租戶讀寫防護和team owner邊界已交付；Cloudflare upload仍未證明。Q2使用者明確核准原task第五次readonly review，5/5 []；接入新主線4a4後完整89source/test檔案hash不變，87 migrations/67DB/2browser零skip/flaky/cleanup PASS。新checkpoint3d32b0a0已push #379，CI37593169648／37593163815 RUNNING。兩個完整canonical snapshot各58檔（保留64cap，覆蓋全部89既有scope+共同runner/config依賴），gate只有current_full_quality_ci未驗證；非Production合成，未執行真實provider操作。通知16b5d5c5：90mig/73DB/32unit/5browserPASS、最新CI37591948632 RUNNING；尚待provider/fullreview/gate，不READY。
+
 2026-10-07 最新 F1 通知增量：同一 f1-learner-notifications task/root writer，數位商品有效 grant 可發現／讀取／驗證／啟用購買通知；通用付款來源去重，退款後拒絕 opt-in／claim dispatch但仍可取消。最新90 migrations、73 DB（保留原70並新增3）、32 unit/4實際檔案、TS/lint PASS；失敗收據保留。新增第五個 actual digital UI/refund/reload journey；完整 browser session19374 RUNNING，來源固定。尚未完整 provider proof、full review／gate／CI／PR，不宣稱整批 READY。證據 remaining-capabilities-f1-digital-notifications-*.json。
 
 
