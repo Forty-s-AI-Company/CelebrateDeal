@@ -742,6 +742,7 @@ function verifyPayUniSignature(rawBody: string) {
 
 export const payUniPaymentProvider: PaymentProviderAdapter = {
   id: "payuni",
+  checkoutSessionPreparation: "local",
   checkoutReadiness() {
     // Preview + live merchant is reserved exclusively for the consented probe.
     if (process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production") return "unavailable";

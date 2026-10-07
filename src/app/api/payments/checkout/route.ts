@@ -871,7 +871,8 @@ export async function POST(request: Request) {
     checkoutAmountCents,
     ...(orderBumpProduct ? { orderBumpProductId: orderBumpProduct.id, orderBumpPriceCents: orderBumpProduct.priceCents } : {}),
     funnel,
-  }), ...(postPurchaseQuote ? { postPurchaseCredit: { ...postPurchaseQuote } } : {}) };
+  }), ...(postPurchaseQuote ? { postPurchaseCredit: { ...postPurchaseQuote },
+    ...(provider.checkoutSessionPreparation === "local" ? { postPurchaseSessionState: "unissued" } : {}) } : {}) };
 
   const order = orderNumber();
   let transaction;
@@ -980,6 +981,7 @@ export async function POST(request: Request) {
         metadata: {
           ...transactionMetadata,
           checkoutSession: checkoutSessionMetadata(checkoutSession),
+          ...(postPurchaseQuote ? { postPurchaseSessionState: "issued" } : {}),
         } as Prisma.InputJsonObject,
       },
     });
