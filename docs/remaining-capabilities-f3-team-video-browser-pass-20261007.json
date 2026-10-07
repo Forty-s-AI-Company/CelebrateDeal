@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "team-video-disposable/v1",
+  "status": "PASS",
+  "tests": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "startedAt": "2026-10-07T07:38:23.013Z",
+  "finishedAt": "2026-10-07T07:43:14.406Z",
+  "browser": {
+    "expected": 2,
+    "unexpected": 0,
+    "skipped": 0,
+    "flaky": 0
+  },
+  "sourceRevision": "sha256:6bab36a6752668f08b9c0790de058cc0ff2a49027a56c3dddeb5e5231853b16d",
+  "sourceUnchanged": true
+}

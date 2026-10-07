@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "celebratedeal-f3-hydration-regression/v1",
+  "task_id": "editor-advanced-interactions",
+  "goal_id": "remaining-capabilities-20261005",
+  "base_head": "025a863235512396e9be4d13317968479bf3286d",
+  "prior_ci": {
+    "failure_locations": [
+      "tests/e2e/native-course-learning.spec.ts:63",
+      "tests/e2e/native-course-learning.spec.ts:70"
+    ],
+    "status": "FAILURE",
+    "run_id": 37546949376
+  },
+  "source_files": [
+    {
+      "sha256": "658426007d0e25785e1a53e23ac9eaeb2a6e3420d539c488b0d9d33d31ebe4c8",
+      "path": "src/components/course-player.tsx"
+    },
+    {
+      "sha256": "539eae135aa111757ffa2c3c25bbfa16cb25e4bbf443830569e7afb102529c8e",
+      "path": "src/components/course-player.test.tsx"
+    },
+    {
+      "sha256": "f737415f149ef60d1f02ec063ee26b0d857976f24c81785440df74bb45728456",
+      "path": "tests/e2e/native-course-learning.spec.ts"
+    }
+  ],
+  "change": "Disable SSR lesson/complete controls until client hydration; await enabled control before synthetic media events; preserve 75-second progress/resume assertions",
+  "unit": {
+    "file_count": 6,
+    "failed": 0,
+    "passed": 31
+  },
+  "typescript": "PASS",
+  "lint": "PASS",
+  "course_disposable": {
+    "schemaVersion": "course-learning-disposable/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-06T23:58:32.966Z",
+    "finishedAt": "2026-10-07T00:02:23.274Z",
+    "failedTitles": [],
+    "browser": {
+      "expected": 1,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "course_migration_count": 85,
+  "workspace_disposable": {
+    "schemaVersion": "funnel-workspace-disposable/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T00:03:38.042Z",
+    "finishedAt": "2026-10-07T00:07:28.723Z",
+    "browser": {
+      "expected": 1,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "harness": {
+    "failed": 0,
+    "session_id": 80659,
+    "passed": 16,
+    "status": "PASS"
+  },
+  "review": {
+    "dispatches": 4,
+    "max_dispatches": 4,
+    "additional_dispatch_approval": "PENDING"
+  },
+  "acceptance": "NOT_READY",
+  "delivery": "NOT_DELIVERED"
+}

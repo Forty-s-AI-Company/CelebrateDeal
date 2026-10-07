@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { FunnelCommerceProduct } from "@/lib/funnel-commerce";
 import { FunnelPageEditor } from "@/components/landing-pages/funnel-page-editor";
 import { FunnelTemplateGalleryPicker } from "@/components/landing-pages/funnel-template-gallery-picker";
@@ -18,67 +18,109 @@ import {
   switchFunnelStep,
   type FunnelStepPageMutationResult,
   type FunnelStepPages,
-  type FunnelStepPersistenceMutation,
 } from "@/lib/funnel-step-pages";
 
-export function FunnelStepPagesEditor({ state, disabled = false, onChange, onStepMutation, commerceProducts }: { state: FunnelStepPages; disabled?: boolean; onChange: (state: FunnelStepPages) => void; onStepMutation?: (state: FunnelStepPages, mutation: FunnelStepPersistenceMutation) => void; commerceProducts?: FunnelCommerceProduct[] }) {
+/** Equal parent echoes retain history; an external replacement remounts the
+ * editing session before any next event can restore an obsolete snapshot. */
+export function FunnelStepPagesEditor(props: Parameters<typeof FunnelStepPagesEditorSession>[0]) {
+  const [session, setSession] = useState(() => ({ input: props.state, present: props.state, version: 0 }));
+  if (session.input !== props.state) {
+    const echoed = JSON.stringify(session.present) === JSON.stringify(props.state);
+    setSession({ input: props.state, present: props.state, version: session.version + (echoed ? 0 : 1) });
+  }
+  return <FunnelStepPagesEditorSession {...props} key={session.version} onChange={(next) => {
+    if (props.onChange(next) === false) return false;
+    setSession((current) => ({ ...current, present: next }));
+    return true;
+  }} />;
+}
+
+function FunnelStepPagesEditorSession({ state, disabled = false, onChange, commerceProducts }: { state: FunnelStepPages; disabled?: boolean; onChange: (state: FunnelStepPages) => void | boolean; commerceProducts?: FunnelCommerceProduct[] }) {
   const templateGoal: FunnelTemplateGoal = state.flow.goal;
   const templates = listFunnelTemplateGallery(templateGoal);
   const [templateId, setTemplateId] = useState(templates[0]?.id ?? "");
   const [newStepType, setNewStepType] = useState<Exclude<FunnelStepType, "inactive_page">>(state.flow.goal === "sell" ? "sales_page" : state.flow.goal === "audience" ? "opt_in_page" : "info_page");
   const [newStepSource, setNewStepSource] = useState<"blank" | "template">("blank");
   const [flowHistory, setFlowHistory] = useState(createFunnelStepPagesHistory);
+  const historyRef = useRef(flowHistory);
+  const stateRef = useRef(state);
+  const published = useRef(JSON.stringify(state));
+  const publishHistory = (next: ReturnType<typeof createFunnelStepPagesHistory>) => {
+    historyRef.current = next;
+    setFlowHistory(next);
+  };
+  const publishState = (next: FunnelStepPages) => {
+    // A rejected controlled draft must not leak into refs or later mutations.
+    if (onChange(next) === false) { setError("父層未接受這次修改，請重新確認草稿。"); return false; }
+    stateRef.current = next;
+    published.current = JSON.stringify(next);
+    return true;
+  };
+  const [error, setError] = useState<string>();
   const active = getActiveFunnelStepPage(state);
-  const commit = (result: FunnelStepPageMutationResult, record = true, mutation?: FunnelStepPersistenceMutation) => {
-    if (!result.ok) return;
+  const commit = (result: FunnelStepPageMutationResult, record = true) => {
+    if (disabled) return false;
+    if (!result.ok) { setError(result.error); return false; }
+    if (JSON.stringify(result.state) === published.current) return true;
+    const previous = stateRef.current;
+    if (!publishState(result.state)) return false;
+    setError(undefined);
     if (record) {
-      setFlowHistory((history) => recordFunnelStepPages(history, state));
+      publishHistory(recordFunnelStepPages(historyRef.current, previous));
     }
-    if (mutation && onStepMutation) onStepMutation(result.state, mutation);
-    else onChange(result.state);
+    return true;
   };
   const undoFlow = () => {
-    const result = undoFunnelStepPages(flowHistory, state);
+    if (disabled) return;
+    const result = undoFunnelStepPages(historyRef.current, stateRef.current);
     if (!result) return;
-    setFlowHistory(result.history);
-    onChange(result.state);
+    if (publishState(result.state)) { publishHistory(result.history); setError(undefined); }
   };
   const redoFlow = () => {
-    const result = redoFunnelStepPages(flowHistory, state);
+    if (disabled) return;
+    const result = redoFunnelStepPages(historyRef.current, stateRef.current);
     if (!result) return;
-    setFlowHistory(result.history);
-    onChange(result.state);
+    if (publishState(result.state)) { publishHistory(result.history); setError(undefined); }
   };
   if (!active) return <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">Funnel steps 資料無法通過驗證。</p>;
   const editableSteps = state.flow.steps.filter((step) => !step.isSystem);
   const addStep = () => {
-    const ordinal = editableSteps.length + 1;
+    let ordinal = 1;
+    const paths = new Set(stateRef.current.flow.steps.map((step) => step.path));
+    while (paths.has(`step-${ordinal}`)) ordinal += 1;
     const input = { id: `step_${crypto.randomUUID().replace(/-/gu, "").slice(0, 24)}`, name: "新步驟", path: `step-${ordinal}`, type: newStepType, templateSource: newStepSource, ...(newStepSource === "template" && templateId ? { templateId } : {}) } as const;
     const added = addFunnelStepPage(state, input);
-    if (!added.ok) return;
+    if (!added.ok) return commit(added);
     const created = added.state.flow.steps.find((step) => !state.flow.steps.some((old) => old.id === step.id));
-    if (!created || newStepSource !== "template" || !templateId) return commit(added, true, { type: "add", input });
+    if (!created || newStepSource !== "template" || !templateId) return commit(added, true);
     const page = added.state.pages[created.id];
     if (!page) return;
     const replaced = replaceFunnelStepPage(added.state, created.id, instantiateFunnelTemplate(templateId, page.id), templateId);
-    if (replaced.ok) {
-      onStepMutation?.(added.state, { type: "add", input });
-      commit(replaced);
-    }
+    commit(replaced);
   };
   return <div className="grid min-h-0 min-w-0 grid-cols-1 overflow-hidden lg:grid-cols-[18rem_minmax(0,1fr)]">
+    {error ? <p role="alert" className="col-span-full bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
     <aside className="max-h-[48dvh] min-h-0 min-w-0 overflow-auto border-b border-slate-200 bg-slate-50 p-3 lg:max-h-none lg:border-r lg:border-b-0" aria-label="Funnel steps">
       <div className="mb-3"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">Funnel steps</p><h2 className="mt-1 font-bold text-slate-950">{state.flow.name}</h2></div>
       <div className="mb-3 grid grid-cols-2 gap-2"><button type="button" disabled={disabled || flowHistory.past.length === 0} onClick={undoFlow} className="min-h-9 rounded-lg border border-slate-300 bg-white text-xs font-bold disabled:opacity-40">流程 Undo</button><button type="button" disabled={disabled || flowHistory.future.length === 0} onClick={redoFlow} className="min-h-9 rounded-lg border border-slate-300 bg-white text-xs font-bold disabled:opacity-40">流程 Redo</button></div>
       <div className="grid gap-2">{state.flow.steps.map((step, index) => <article key={step.id} className={`rounded-xl border p-2 ${state.activeStepId === step.id ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-white"}`}>
-        <button type="button" onClick={() => commit(switchFunnelStep(state, step.id), false)} className="w-full text-left"><span className="block text-sm font-bold text-slate-800">{step.name}</span><span className="mt-0.5 block font-mono text-[11px] text-slate-500">/{step.path}</span></button>
-        {!step.isSystem ? <div className="mt-2 grid grid-cols-3 gap-1"><button type="button" aria-label={`上移 ${step.name}`} disabled={disabled || index === 0} onClick={() => commit(moveFunnelStepPage(state, step.id, index - 1), true, { type: "move", stepId: step.id, toIndex: index - 1 })} className="rounded border bg-white py-1 text-xs disabled:opacity-40">↑</button><button type="button" aria-label={`下移 ${step.name}`} disabled={disabled || index >= editableSteps.length - 1} onClick={() => commit(moveFunnelStepPage(state, step.id, index + 1), true, { type: "move", stepId: step.id, toIndex: index + 1 })} className="rounded border bg-white py-1 text-xs disabled:opacity-40">↓</button><button type="button" aria-label={`移除 ${step.name}`} disabled={disabled} onClick={() => { if (window.confirm(`確定移除「${step.name}」及其頁面內容？`)) commit(removeFunnelStepPage(state, step.id), true, { type: "remove", stepId: step.id }); }} className="rounded border bg-white py-1 text-xs text-red-700 disabled:opacity-40">×</button></div> : <p className="mt-2 text-[11px] text-slate-500">系統頁，只能預覽</p>}
+        <button type="button" disabled={disabled} onClick={() => commit(switchFunnelStep(stateRef.current, step.id), false)} className="w-full text-left"><span className="block text-sm font-bold text-slate-800">{step.name}</span><span className="mt-0.5 block font-mono text-[11px] text-slate-500">/{step.path}</span></button>
+        {!step.isSystem ? <div className="mt-2 grid grid-cols-3 gap-1"><button type="button" aria-label={`上移 ${step.name}`} disabled={disabled || index === 0} onClick={() => commit(moveFunnelStepPage(state, step.id, index - 1), true)} className="rounded border bg-white py-1 text-xs disabled:opacity-40">↑</button><button type="button" aria-label={`下移 ${step.name}`} disabled={disabled || index >= editableSteps.length - 1} onClick={() => commit(moveFunnelStepPage(state, step.id, index + 1), true)} className="rounded border bg-white py-1 text-xs disabled:opacity-40">↓</button><button type="button" aria-label={`移除 ${step.name}`} disabled={disabled} onClick={() => { if (window.confirm(`確定移除「${step.name}」及其頁面內容？`)) commit(removeFunnelStepPage(state, step.id), true); }} className="rounded border bg-white py-1 text-xs text-red-700 disabled:opacity-40">×</button></div> : <p className="mt-2 text-[11px] text-slate-500">系統頁，只能預覽</p>}
       </article>)}</div>
       <div className="mt-3 grid gap-2 rounded-xl border border-blue-100 bg-blue-50 p-2"><label className="grid gap-1 text-xs font-semibold text-slate-600">新步驟類型<select className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm" value={newStepType} disabled={disabled} onChange={(event) => setNewStepType(event.currentTarget.value as Exclude<FunnelStepType, "inactive_page">)}>{state.flow.goal === "webinar" ? <><option value="webinar_registration_page">Webinar 報名頁</option><option value="webinar_thank_you_page">Webinar 感謝頁</option><option value="webinar_broadcast_page">Webinar 播放頁</option></> : null}<option value="info_page">資訊頁</option><option value="contact_us_page">聯絡我們</option><option value="opt_in_page">名單頁</option><option value="opt_in_thank_you_page">名單感謝頁</option><option value="sales_page">銷售頁</option><option value="order_form">訂單表單</option><option value="upsell">加購頁</option><option value="downsell">降價加購頁</option><option value="thank_you_page">感謝頁</option><option value="inline_form">內嵌表單</option><option value="popup_form">彈出表單</option><option value="link_in_bio">個人簡介連結頁</option></select></label><label className="grid gap-1 text-xs font-semibold text-slate-600">起始內容<select className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm" value={newStepSource} disabled={disabled} onChange={(event) => setNewStepSource(event.currentTarget.value as "blank" | "template")}><option value="blank">空白頁</option><option value="template">套用目前模板</option></select></label><button type="button" disabled={disabled} onClick={addStep} className="min-h-10 w-full rounded-lg border border-blue-200 bg-white text-sm font-bold text-blue-700 disabled:opacity-40">＋ 新增步驟</button></div>
-      {!active.step.isSystem ? <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-600">步驟名稱<input className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm" value={active.step.name} disabled={disabled} onChange={(event) => commit(renameFunnelStepPage(state, active.step.id, event.currentTarget.value), true, { type: "rename", stepId: active.step.id, name: event.currentTarget.value })} /></label> : null}
-      {!active.step.isSystem ? <label className="mt-3 grid gap-1 text-xs font-semibold text-slate-600">URL Path<input aria-label="步驟 URL Path" className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 font-mono text-sm" value={active.step.path} disabled={disabled} onChange={(event) => commit(setFunnelStepPathPage(state, active.step.id, event.currentTarget.value), true, { type: "set_path", stepId: active.step.id, path: event.currentTarget.value })} /></label> : null}
+      {!active.step.isSystem ? <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-600">步驟名稱<input className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm" value={active.step.name} disabled={disabled} onChange={(event) => commit(renameFunnelStepPage(state, active.step.id, event.currentTarget.value), true)} /></label> : null}
+      {!active.step.isSystem ? <label className="mt-3 grid gap-1 text-xs font-semibold text-slate-600">URL Path<input aria-label="步驟 URL Path" className="min-h-9 rounded-lg border border-slate-300 bg-white px-2 font-mono text-sm" value={active.step.path} disabled={disabled} onChange={(event) => commit(setFunnelStepPathPage(state, active.step.id, event.currentTarget.value), true)} /></label> : null}
       {!active.step.isSystem ? <div className="mt-4 border-t border-slate-200 pt-4"><div className="mb-3"><p className="text-xs font-bold uppercase tracking-wider text-blue-700">模板 Gallery</p><h3 className="mt-1 text-sm font-bold text-slate-950">選擇適合這個步驟的起點</h3><p className="mt-1 text-[11px] leading-5 text-slate-500">縮圖與完整預覽都使用正式 renderer；套用後會展開成可獨立編輯節點。</p></div><FunnelTemplateGalleryPicker templates={templates} selectedId={templateId} disabled={disabled} onSelect={setTemplateId} onApply={(id) => { const template = templates.find((item) => item.id === id); if (!template || !window.confirm(`套用「${template.name}」會取代目前步驟內容，確定繼續？`)) return; setTemplateId(id); commit(replaceFunnelStepPage(state, active.step.id, instantiateFunnelTemplate(id, active.page.id), id)); }} /><p className="mt-3 text-[11px] leading-5 text-slate-500">付款元件只消費既有安全結帳能力；需先在訂單步驟綁定商品，未綁定時不會送出付款。</p></div> : null}
     </aside>
-    <div className="min-h-0 overflow-auto"><FunnelPageEditor key={state.activeStepId} document={active.page} commerceProducts={commerceProducts} commerceEnabled={active.step.type === "order_form"} disabled={disabled || !active.editable} onChange={(page) => commit(replaceFunnelStepPage(state, active.step.id, page), false)} /></div>
+    <div className="min-h-0 overflow-auto"><FunnelPageEditor key={active.page.id} document={active.page} commerceProducts={commerceProducts} commerceEnabled={active.step.type === "order_form"} stepIds={state.flow.steps.map((step) => step.id)} disabled={disabled || !active.editable} onChange={(page) => {
+      if (disabled) return false;
+      const result = replaceFunnelStepPage(stateRef.current, active.step.id, page);
+      if (!result.ok) { setError(result.error); return false; }
+      // Page editing is a history barrier: flow snapshots must never restore
+      // canvas content from before a later page edit or popup mutation.
+      if (!commit(result, false)) return false;
+      publishHistory(createFunnelStepPagesHistory());
+      return true;
+    }} /></div>
   </div>;
 }

@@ -18,4 +18,19 @@ describe("Funnel step structured history", () => {
     history = recordFunnelStepPages(undone.history, undone.state);
     expect(history.future).toEqual([]);
   });
+  it("限制多頁快照數量並保留最新可復原版本", () => {
+    const flow = createFunnelFlow({ id: "bounded", name: "流程", goal: "audience", domain: "bounded" })!;
+    const state = createFunnelStepPages(flow)!;
+    let history = createFunnelStepPagesHistory();
+    for (let index = 0; index < 70; index += 1) {
+      state.flow.name = `版本 ${index}`;
+      history = recordFunnelStepPages(history, state);
+    }
+    expect(history.past).toHaveLength(50);
+    expect(history.past[0]?.flow.name).toBe("版本 20");
+    expect(history.past.at(-1)?.flow.name).toBe("版本 69");
+    state.flow.name = "之後的修改";
+    expect(history.past.at(-1)?.flow.name).toBe("版本 69");
+  });
+
 });

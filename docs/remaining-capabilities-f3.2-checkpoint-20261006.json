@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "celebratedeal-f3-workspace-checkpoint/v1",
+  "status": "IMPLEMENTED_PENDING_REVALIDATION",
+  "source_revision": "sha256:85821861b7df09888ebc167c7f630e3fbf0ee3f1e5474179a94275ac50bf9a7f",
+  "snapshot_files": [
+    "playwright.funnel-workspace.config.ts",
+    "scripts/funnel-workspace-disposable-qa.mjs",
+    "tests/e2e/funnel-workspace-persistence.spec.ts",
+    "scripts/prisma-loopback-disposable-migration-runner.mjs",
+    "src/components/landing-pages/funnel-editor-browser-harness.tsx",
+    "src/components/landing-pages/funnel-element-inspector.tsx",
+    "src/components/landing-pages/funnel-page-editor.tsx",
+    "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "src/components/landing-pages/workspace-editor.tsx",
+    "src/lib/funnel-step-pages-history.test.ts",
+    "src/lib/funnel-step-pages-history.ts",
+    "tests/browser-dev/funnel-editor-history.spec.ts"
+  ],
+  "base": "2319c742f1455681ff08b720c193a2faf1545e27",
+  "branch": "codex/editor-advanced-interactions-20261006",
+  "checks_after_latest_fix": {
+    "lint": "PASS: three edited components",
+    "typecheck": "PASS",
+    "unit": "PASS: 8 tests across step history, step pages and inspector"
+  },
+  "prior_browser_evidence": {
+    "revision": "sha256:0cedbc722d4c38e8a4bb0cc90b99efc73ad1fcf9aee5a4e9a5a59f2d6d4053f1",
+    "status": "PASS before review fixes; invalid for final candidate",
+    "disposable": {
+      "schemaVersion": "funnel-workspace-disposable/v1",
+      "status": "PASS",
+      "tests": {
+        "total": 0,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0
+      },
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      },
+      "startedAt": "2026-10-05T20:04:24.899Z",
+      "finishedAt": "2026-10-05T20:07:39.552Z",
+      "browser": {
+        "expected": 1,
+        "unexpected": 0,
+        "skipped": 0,
+        "flaky": 0
+      }
+    }
+  },
+  "review": {
+    "status": "FIXES_PENDING_INDEPENDENT_REVIEW",
+    "requested_model": "gpt-6.1-sol",
+    "requested_effort": "high",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "fallback": "Sonnet AGY CLI failed; canonical route selected native Sol high",
+    "dispatches_used": 2,
+    "limit": 4,
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "issue": "Rejected page edit caused child canvas ghost content",
+        "fix": "Parent can return false before child publishes history; scoped step choices; visible rejection",
+        "status": "IMPLEMENTED_NOT_REVIEWED"
+      },
+      {
+        "severity": "MINOR",
+        "issue": "New path collides after deleting intermediate step",
+        "fix": "Allocate next unused step-N and expose mutation errors",
+        "status": "IMPLEMENTED_NOT_REVIEWED"
+      },
+      {
+        "severity": "MINOR",
+        "issue": "Unused onStepMutation bypasses session acknowledgement",
+        "fix": "Removed unused hook; one workspace draft Save contract",
+        "status": "IMPLEMENTED_NOT_REVIEWED"
+      }
+    ]
+  },
+  "canonical_acceptance": "NOT_READY: final browser revalidation and independent review missing",
+  "pr": "NOT_CREATED",
+  "delivery": "NOT_DELIVERED",
+  "next": [
+    "Add regressions for rejection, deleted-path reuse, valid step action",
+    "Rerun complete harness browser and real workspace disposable PG browser on final revision",
+    "Independent review including new runner/config/E2E and final fixes",
+    "Canonical acceptance, exact head CI and protected PR delivery"
+  ]
+}
