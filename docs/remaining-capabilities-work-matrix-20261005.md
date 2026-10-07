@@ -100,3 +100,7 @@ A1 domain workflow migration: exact source `bf45235f8b10fa1fded2da0a4c079e5b883c
 ### F1.3 current main integration 2026-10-07
 
 Root integrated c72b5089; translated course controls retain hydration barrier. 129 models / 88 migrations; 9 DB, 3 actual browser journeys, 28 unit, 5 inventory Vitest, 12 migration TAP, TypeScript/lint PASS; zero skip/flaky, cleanup PASS. Initial setup syntax failure preserved and corrected without reducing assertions. New proof: `remaining-capabilities-f1.3-main-integrated-browser-20261007.json`. Original f1-portal-localization dispatch4/4; latest source independent review not executed. NOT_READY; exact new-head CI pending, not delivered; community dependency retained.
+
+### F1 locale/PWA authorized review 5/5, 2026-10-08
+
+Human authorized one extra original-task readonly review. Reviewer confirmed a MAJOR installed-start redirect outside SW scope. Root corrected to public /portal/start.html reusing existing page/layout, exact locale-return whitelist and offline link; kept /portal/ SW scope. Actual E2E now follows manifest start_url, checks controller and scope, offline reload 503, public-only caches, preserving existing course/refund/isolation assertions. Six unit tests and lint PASS; complete DB/browser runner active (session83807). Not READY, not delivered.

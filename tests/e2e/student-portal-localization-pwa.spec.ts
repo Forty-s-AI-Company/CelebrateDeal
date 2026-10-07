@@ -59,7 +59,20 @@ test("English mailbox login, course and discussion persist locale; PWA stores on
   await expect.poll(()=>page.evaluate(()=>Boolean(navigator.serviceWorker.controller))).toBe(true);
   const allowed=["/portal/icon-192.png","/portal/icon-512.png","/portal/manifest.webmanifest","/portal/offline.html"];
   const cachePaths=await page.evaluate(async()=>{const cache=await caches.open("celebratedeal-portal-public-v1");return (await cache.keys()).map(request=>new URL(request.url).pathname).sort();});expect(cachePaths).toEqual(allowed);
-  const manifest=await page.request.get("/portal/manifest.webmanifest");expect(await manifest.json()).toMatchObject({start_url:"/portal/",scope:"/portal/",display:"standalone"});
+  const manifest=await page.request.get("/portal/manifest.webmanifest");expect(await manifest.json()).toMatchObject({start_url:"/portal/start.html",scope:"/portal/",display:"standalone"});
+  // Follow the installed entry, not just the manifest string or a course URL.
+  const installedManifest=await manifest.json();
+  await page.goto(installedManifest.start_url);
+  expect(new URL(page.url()).pathname).toBe(installedManifest.start_url);
+  expect(new URL(page.url()).pathname.startsWith(installedManifest.scope)).toBe(true);
+  await expect.poll(()=>page.evaluate(()=>Boolean(navigator.serviceWorker.controller))).toBe(true);
+  await page.context().setOffline(true);
+  const offlineEntry=await page.reload();
+  expect(offlineEntry?.status()).toBe(503);
+  await expect(page.getByRole("heading",{name:"You are offline",exact:true})).toBeVisible();
+  expect(await page.evaluate(async()=>{const cache=await caches.open("celebratedeal-portal-public-v1");return (await cache.keys()).map(request=>new URL(request.url).pathname).sort();})).toEqual(allowed);
+  await page.context().setOffline(false);
+  await page.goto(course);
   const postsBefore=await db.courseCommunityPost.count({where:{vendorId:vendor.id}});
   await page.context().setOffline(true);
   await page.goto(course);

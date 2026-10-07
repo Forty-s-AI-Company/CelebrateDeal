@@ -1,0 +1,88 @@
+{
+  "head": "e6342ad7f6a2cec7cd38e1a4a9707081e26a7cd4",
+  "original_task_dispatch": 5,
+  "authorized_limit": 5,
+  "agent": "/root/community_critical_review",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "status": "CORRECTED_LOCALLY_VALIDATED_PENDING_CURRENT_REVIEW_CI",
+  "findings": [
+    {
+      "severity": "MAJOR",
+      "location": "public/portal/manifest.webmanifest:5",
+      "issue": "Next trailingSlash normalization redirects installed entry outside /portal/ SW scope",
+      "required_test": "Follow manifest.start_url, assert final scope and controller, offline reload 503, public-only cache"
+    }
+  ],
+  "correction": "Dotted public /portal/start.html entry reuses existing page/layout; exact locale-return whitelist; existing SW scope and assertions retained",
+  "validation": {
+    "focused_unit_passed": 6,
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "migrations": 88,
+    "db_passed": 9,
+    "browser_passed": 3,
+    "skipped": 0,
+    "flaky": 0,
+    "cleanup": "PASS",
+    "receipt": {
+      "schemaVersion": "portal-localization-browser/v1",
+      "status": "PASS",
+      "tests": {
+        "total": 9,
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+      },
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      },
+      "startedAt": "2026-10-07T17:49:59.699Z",
+      "finishedAt": "2026-10-07T17:55:31.939Z",
+      "failedTitles": [],
+      "browser": {
+        "expected": 3,
+        "unexpected": 0,
+        "skipped": 0,
+        "flaky": 0
+      }
+    }
+  },
+  "delivery": "NOT_DELIVERED",
+  "source_revision": "sha256:d13ff1838d424cf24c98497c525e1bb723198d86d67e73fb86e520801b3c56e2",
+  "source_files": {
+    "playwright.portal-localization.config.ts": "b250a13a815c728d20fa650bfc0749422b2488b5e357bc128b3abc73156a3ce6",
+    "public/portal/icon-192.png": "a2dd94518ba05e7588476345824bed6498314795b05d6d45ddc9fcba54063ce0",
+    "public/portal/icon-512.png": "23c37b4173263cdcaa4f805c5af8f71a27e14eea618a9c16bc15d4c3af9aa14f",
+    "public/portal/manifest.webmanifest": "8b2322598652078196d8bca0ee59b8ca2aed6e304790d64b6c04c9ce015583af",
+    "public/portal/offline.html": "3f9c60dd1668ab576d7ba79c9a1f979bd02ebe368f0354229e5245817de8cb2e",
+    "public/portal/sw.js": "3548ce8554540de4720e87dfe2275a75361cb1eb0ae8a2edb1a16355cdd7ba2a",
+    "scripts/portal-localization-browser-qa.mjs": "d00e31fc97a16d1e48932703d9a6907a863d42d57e8f8bc1685fa0b40fd420a9",
+    "scripts/student-portal-service-worker.test.ts": "c0312ba8d87caf30831a7885b05d08b00a6fb73be9b71807ab277382a8dbab5f",
+    "src/app/actions/student-portal-actions.test.ts": "7d6c99516b30738fd3455ecee2500545f8308fed2f751232f3f526a090230270",
+    "src/app/actions/student-portal-actions.ts": "9c44852c6fa45b305bcb014b41fb778a765ee2b96b8691ec3222cd4903814b1b",
+    "src/app/actions/student-portal-locale-actions.test.ts": "4e4406f590ffd459e88c601f98db006cc4321c2240b070084685bd8a06791137",
+    "src/app/actions/student-portal-locale-actions.ts": "89e34b336b0adfdf128e34fd58eba0a9213805118664888818834d3ba65bc010",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/community/page.tsx": "f074c74596d6fa5e5bf2850ed03bf7bbd574abbd01573050514c14f3e1d994d2",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/page.tsx": "b728f48bf73546f9e5a8b6cfaf3dcd0983a94c427b515e2a0686830ddf250ac1",
+    "src/app/portal/[vendorSlug]/login/page.test.tsx": "53d23d3f9ed8f62be2c78cce8d92fa6431befdb403d98a835b9fb61928d4f6eb",
+    "src/app/portal/[vendorSlug]/login/page.tsx": "232c9be30eabd41a8667d098aeb83636d1fb49364818645cc029e658ee4d2ba1",
+    "src/app/portal/[vendorSlug]/page.test.tsx": "1aebd3ab39ebb95f5b92c928001d5c5ddac8445ec1fafe9007878dc4c2ec728b",
+    "src/app/portal/[vendorSlug]/page.tsx": "e8bdd79a444f16e36d46345a1e2d6b8ada5cbf0ebc993241cc34042af0223ebf",
+    "src/app/portal/layout.tsx": "f3e586bca2394e90a1bad8d9dc1db0cb479cbfc587b4e607e4b18c21439c7c1c",
+    "src/app/portal/page.tsx": "719028ca6944acb01188fa73089d12750ff47badbdce9df7d28e1daefd3a62e6",
+    "src/app/portal/start.html/page.tsx": "dbd5c290a9c20d3109193af9d4e9aa76e851ebba87f4a3c3a861c7cbdecb47dc",
+    "src/components/course-community.tsx": "27c51948188124cda696f1cd073d70a51042e2d0e9f85d06c301263f0d77472e",
+    "src/components/course-player.tsx": "6cb41f31737a6ff2a59bb6174a630090e1197f663b9dc81bad3ef8f3162c41f3",
+    "src/components/student-portal-language-switcher.tsx": "d7310fb4799ce7fca9e3e39ff9c5d5d48533d9f7db639c2cdd26761b110b2c16",
+    "src/components/student-portal-login-form.tsx": "0870632b3b8b45235941253b75e6d77ca474d07aa4157c3aea72367856d30004",
+    "src/components/student-portal-pwa.tsx": "c2da0c493163eb1c9fc232cc0024598fd75cb638f58c9d487c54e2b5f95053fc",
+    "src/lib/student-portal-locale.test.ts": "603f2826826e70eb557065bb75862fedf585b6bfef616318d0d5fe01be7c207d",
+    "src/lib/student-portal-locale.ts": "1b5d66c39c715594b87eed38384107d8a1a67cfb107ae20cb5ef85c168039ba7",
+    "src/lib/student-portal-translations.ts": "b44881fd915dcc42f583312d26146a76d9765ce25248c36ec76d319d5a7b4d43",
+    "tests/e2e/student-portal-localization-pwa.spec.ts": "361676a095dd36fe353b99674e90111c2a650fd54013ef2c10377fc6e7e68066"
+  },
+  "canonical_acceptance": "NOT_READY_LATEST_CORRECTION_REVIEW_REQUIRED",
+  "finding_disposition": "CONFIRMED_FIXED_BY_ROOT_WITH_ACTUAL_REQUIRED_BROWSER_TEST"
+}

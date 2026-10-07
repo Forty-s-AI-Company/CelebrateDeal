@@ -2,7 +2,7 @@
   "id": "/portal/",
   "name": "CelebrateDeal Learning",
   "short_name": "Learning",
-  "start_url": "/portal/",
+  "start_url": "/portal/start.html",
   "scope": "/portal/",
   "display": "standalone",
   "background_color": "#f1f5f9",
