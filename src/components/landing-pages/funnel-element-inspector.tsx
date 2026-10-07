@@ -19,6 +19,7 @@ type InspectorProps = {
   node: FunnelNode;
   disabled?: boolean;
   popupIds?: readonly string[];
+  stepIds?: readonly string[];
   onCommand: (command: FunnelPageCommand) => void;
 };
 
@@ -63,10 +64,11 @@ function FieldControl({ field, node, scope, disabled, onCommand }: { field: Funn
   </label>;
 }
 
-function ActionFields({ node, popupIds, disabled, onCommand }: { node: FunnelNode; popupIds: readonly string[]; disabled: boolean; onCommand: (command: FunnelPageCommand) => void }) {
+function ActionFields({ node, popupIds, stepIds, disabled, onCommand }: { node: FunnelNode; popupIds: readonly string[]; stepIds?: readonly string[]; disabled: boolean; onCommand: (command: FunnelPageCommand) => void }) {
   const [action, setAction] = useState<FunnelInspectorActionInput>(() => initialAction(node));
   const set = <Key extends keyof FunnelInspectorActionInput>(key: Key, value: FunnelInspectorActionInput[Key]) => setAction((current) => ({ ...current, [key]: value }));
   const apply = () => {
+    if (action.type === "next_step" && stepIds && !stepIds.includes(action.stepId ?? "")) return;
     const command = createFunnelInspectorActionUpdate(node, action);
     if (command) onCommand(command);
   };
@@ -80,14 +82,14 @@ function ActionFields({ node, popupIds, disabled, onCommand }: { node: FunnelNod
     {action.type === "download" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">檔案名稱（選填）<input className={control} disabled={disabled} value={action.fileName ?? ""} onChange={(event) => set("fileName", event.currentTarget.value)} /></label> : null}
     {action.type === "show_popup" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">選擇 Popup<select className={control} disabled={disabled || !popupIds.length} value={action.popupId ?? ""} onChange={(event) => set("popupId", event.currentTarget.value)}><option value="">請選擇</option>{popupIds.map((id) => <option key={id} value={id}>{id}</option>)}</select>{!popupIds.length ? <span className="text-xs font-normal text-amber-700">請先在 Popups 建立一個視窗。</span> : null}</label> : null}
     {action.type === "submit_form" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">表單 ID（選填）<input className={control} disabled={disabled} value={action.formId ?? ""} onChange={(event) => set("formId", event.currentTarget.value)} /></label> : null}
-    {action.type === "next_step" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">下一個步驟 ID<input className={control} disabled={disabled} value={action.stepId ?? ""} onChange={(event) => set("stepId", event.currentTarget.value)} /></label> : null}
+    {action.type === "next_step" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">下一個步驟 ID{stepIds ? <select className={control} disabled={disabled} value={action.stepId ?? ""} onChange={(event) => set("stepId", event.currentTarget.value)}><option value="">請選擇</option>{stepIds.map((id) => <option key={id} value={id}>{id}</option>)}</select> : <input className={control} disabled={disabled} value={action.stepId ?? ""} onChange={(event) => set("stepId", event.currentTarget.value)} />}</label> : null}
     <button type="button" disabled={disabled} className="min-h-10 rounded-lg bg-blue-700 px-3 text-sm font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50" onClick={apply}>套用動作</button>
     <p className="text-xs leading-5 text-slate-500">網址只接受 HTTPS、同源路徑或頁面錨點；不會在編輯器內執行自訂程式碼。</p>
   </div>;
 }
 
 /** Shared inspector UI for every node in a structured Funnel document. */
-export function FunnelElementInspector({ node, disabled = false, popupIds = [], onCommand }: InspectorProps) {
+export function FunnelElementInspector({ node, disabled = false, popupIds = [], stepIds, onCommand }: InspectorProps) {
   const [group, setGroup] = useState<FunnelInspectorGroup>("content");
   const [scope, setScope] = useState<FunnelInspectorScope>("base");
   const definition = getFunnelElementInspectorDefinition(node.type);
@@ -97,6 +99,6 @@ export function FunnelElementInspector({ node, disabled = false, popupIds = [], 
     <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="元件設定分類">{groups.map((item) => <button key={item} type="button" role="tab" aria-selected={group === item} className={`min-h-9 rounded-lg border px-2 text-sm font-semibold ${group === item ? "border-blue-600 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-700"}`} onClick={() => setGroup(item)}>{({ content: "內容", design: "設計", actions: "動作", advanced: "進階" })[item]}</button>)}</div>
     {definition.capabilityNote ? <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900">{definition.capabilityNote}</p> : null}
     {group === "design" || group === "content" ? <label className="grid gap-1 text-sm font-semibold text-slate-700">編輯範圍<select className={control} value={scope} onChange={(event) => setScope(event.currentTarget.value as FunnelInspectorScope)}><option value="base">基礎值</option><option value="desktop">僅桌機覆寫</option><option value="mobile">僅手機覆寫</option></select><span className="text-xs font-normal leading-5 text-slate-500">覆寫會建立在同一份頁面資料上，未覆寫時會沿用基礎值。</span></label> : null}
-    {group === "actions" ? <ActionFields key={node.id} node={node} popupIds={popupIds} disabled={disabled} onCommand={onCommand} /> : fields.length ? <div className="grid gap-3">{fields.map((field) => <FieldControl key={field.id} field={field} node={node} scope={scope} disabled={disabled || Boolean(definition.capabilityNote && field.target === "props")} onCommand={onCommand} />)}</div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">這個分類沒有可調整的設定。</p>}
+    {group === "actions" ? <ActionFields stepIds={stepIds} key={node.id} node={node} popupIds={popupIds} disabled={disabled} onCommand={onCommand} /> : fields.length ? <div className="grid gap-3">{fields.map((field) => <FieldControl key={field.id} field={field} node={node} scope={scope} disabled={disabled || Boolean(definition.capabilityNote && field.target === "props")} onCommand={onCommand} />)}</div> : <p className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">這個分類沒有可調整的設定。</p>}
   </section>;
 }
