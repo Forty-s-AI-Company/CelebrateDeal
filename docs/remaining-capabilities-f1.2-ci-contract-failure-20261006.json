@@ -1,0 +1,9 @@
+{
+  "gate": "full_unit_coverage_lf_mirror",
+  "exit_code": 1,
+  "counts": [],
+  "failedTitles": [],
+  "sourceEnvFilesRead": false,
+  "skippedSensitive": 3,
+  "coverageDiagnostics": []
+}

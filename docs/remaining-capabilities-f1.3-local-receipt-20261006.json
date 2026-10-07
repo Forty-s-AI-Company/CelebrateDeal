@@ -1,0 +1,189 @@
+{
+  "schema": "remaining-capabilities-local-receipt/v1",
+  "batch": "F1.3",
+  "task_id": "f1-portal-localization",
+  "status": "LOCAL_READY_PENDING_DEPENDENCY_INTEGRATION_AND_EXACT_HEAD_CI",
+  "source_revision": "sha256:f53437d3633da1dfe86f7f2ae5b281000c8a66e63ada658cb63574510e45171b",
+  "snapshot_files": [
+    "playwright.portal-localization.config.ts",
+    "public/portal/icon-192.png",
+    "public/portal/icon-512.png",
+    "public/portal/manifest.webmanifest",
+    "public/portal/offline.html",
+    "public/portal/sw.js",
+    "scripts/portal-localization-browser-qa.mjs",
+    "scripts/student-portal-service-worker.test.ts",
+    "src/app/actions/student-portal-actions.test.ts",
+    "src/app/actions/student-portal-actions.ts",
+    "src/app/actions/student-portal-locale-actions.test.ts",
+    "src/app/actions/student-portal-locale-actions.ts",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/community/page.tsx",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/page.tsx",
+    "src/app/portal/[vendorSlug]/login/page.test.tsx",
+    "src/app/portal/[vendorSlug]/login/page.tsx",
+    "src/app/portal/[vendorSlug]/page.test.tsx",
+    "src/app/portal/[vendorSlug]/page.tsx",
+    "src/app/portal/layout.tsx",
+    "src/app/portal/page.tsx",
+    "src/components/course-community.tsx",
+    "src/components/course-player.tsx",
+    "src/components/student-portal-language-switcher.tsx",
+    "src/components/student-portal-login-form.tsx",
+    "src/components/student-portal-pwa.tsx",
+    "src/lib/student-portal-locale.test.ts",
+    "src/lib/student-portal-locale.ts",
+    "src/lib/student-portal-translations.ts",
+    "tests/e2e/student-portal-localization-pwa.spec.ts"
+  ],
+  "base": "c9687b443cfc4e72b23caf42e9351db26cabaa78",
+  "dependencies": [
+    "PR #373 community pending latest independent review authorization",
+    "PR #370 course delivered"
+  ],
+  "features": [
+    "Traditional Chinese/English authenticated learner UI and private magic-link mailbox copy",
+    "Locale persists across reload without selecting tenant/session/entitlement",
+    "PWA manifest/icons/service worker caches only four public assets",
+    "Generic offline document; authenticated pages/API/RSC/media never cached and no offline write queue"
+  ],
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:f53437d3633da1dfe86f7f2ae5b281000c8a66e63ada658cb63574510e45171b",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.5,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\portal-localization-pwa\\CelebrateDeal\\.ai-team\\tmp\\f1-portal-localization\\unit-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:f53437d3633da1dfe86f7f2ae5b281000c8a66e63ada658cb63574510e45171b",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 15.282,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\portal-localization-pwa\\CelebrateDeal\\.ai-team\\tmp\\f1-portal-localization\\typecheck-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "strict_index",
+      "revision": "sha256:f53437d3633da1dfe86f7f2ae5b281000c8a66e63ada658cb63574510e45171b",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 55.563,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\portal-localization-pwa\\CelebrateDeal\\.ai-team\\tmp\\f1-portal-localization\\strict_index-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:f53437d3633da1dfe86f7f2ae5b281000c8a66e63ada658cb63574510e45171b",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 7.563,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\portal-localization-pwa\\CelebrateDeal\\.ai-team\\tmp\\f1-portal-localization\\lint-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "contracts",
+      "revision": "sha256:f53437d3633da1dfe86f7f2ae5b281000c8a66e63ada658cb63574510e45171b",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 83.844,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\portal-localization-pwa\\CelebrateDeal\\.ai-team\\tmp\\f1-portal-localization\\contracts-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser",
+      "revision": "sha256:f53437d3633da1dfe86f7f2ae5b281000c8a66e63ada658cb63574510e45171b",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 237.375,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\portal-localization-pwa\\CelebrateDeal\\.ai-team\\tmp\\f1-portal-localization\\browser-final.json"
+    }
+  ],
+  "counts": {
+    "unit": 17,
+    "node_tap": 1067,
+    "migrations": 85,
+    "database": 9,
+    "browser": 3,
+    "skipped": 0,
+    "flaky": 0
+  },
+  "browser": {
+    "schemaVersion": "portal-localization-browser/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-06T00:08:22.695Z",
+    "finishedAt": "2026-10-06T00:12:19.255Z",
+    "failedTitles": [],
+    "browser": {
+      "expected": 3,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "independent_review": {
+    "kind": "review",
+    "revision": "sha256:f53437d3633da1dfe86f7f2ae5b281000c8a66e63ada658cb63574510e45171b",
+    "status": "PASS",
+    "independent": true,
+    "source": "desktop_native",
+    "role": "critical_review",
+    "model": "gpt-6-astra",
+    "resolved_effort": "high",
+    "dispatch": 3,
+    "dispatch_limit": 4,
+    "findings": [],
+    "reviewer_task": "/root/portal_localization_critical_review",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "summary": "Independent exact snapshot review completed; prior MAJOR corrected with exact origin/path/error assertions; no findings.",
+    "model_semantics": "resolved_review_plan_not_observed",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\portal-localization-pwa\\CelebrateDeal\\.ai-team\\tmp\\f1-portal-localization\\review-final.json"
+  },
+  "canonical_acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:f53437d3633da1dfe86f7f2ae5b281000c8a66e63ada658cb63574510e45171b"
+  },
+  "dispatches": 3,
+  "dispatch_limit": 4,
+  "review_fallback": [
+    {
+      "model": "opus",
+      "reason": "unavailable"
+    }
+  ],
+  "writer": "root",
+  "max_readonly_helpers": 1,
+  "depth_limit": 1,
+  "observed": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "ci_contract": "Existing CI listens to every push/PR; Vitest discovers new unit files and default Playwright release gate discovers the new E2E. No duplicate workflow.",
+  "delivery": "NOT_DELIVERED",
+  "external_provider_email_or_push": "NOT_EXECUTED",
+  "remaining_f1": "Push/notifications/SMS/WhatsApp remain required, not deferred.",
+  "created_at": "2026-10-06T00:12:53.056685+00:00"
+}

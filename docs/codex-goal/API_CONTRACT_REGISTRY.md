@@ -159,6 +159,13 @@
 | Route／method | Caller 與安全邊界 | Input／resource boundary | Side effect 與 response | 目前證據 |
 |---|---|---|---|---|
 | `POST /api/affiliates/[affiliateId]/remuneration/[snapshotId]/export` | 同源表單、session／MFA、目前商家管理員、兩項功能權益與 CSRF | 4096-byte body；精確租戶、affiliate、snapshot、簽署、政策／profile revision 與 ledger proof | 私人 CSV attachment；private／CDN no-store；冪等不可變匯出 audit；不執行付款；401／403／404／409 fail closed | 同路徑 6 unit；29 disposable PG；實際 workspace browser 與跨租戶／重試證据 |
+
+## 原生課程社群（2026-10-06）
+
+| Route／method | Caller 與安全邊界 | Input／資源契約 | Side effect／replay | Response／證據 |
+|---|---|---|---|---|
+| `GET /portal/[vendorSlug]/learn/[courseId]/community/data` | 有效學員 session、同站 client marker、購買權益 | 有界貼文／回覆 cursor，綁定 vendor、course、customer | 唯讀，退款後拒絕，cursor 不可跨租戶／課程 | private no-store；同路徑 unit、隔離 DB、實際 browser |
+| `POST /portal/[vendorSlug]/learn/[courseId]/community/data` | 同站、CSRF、有效學員 session、購買權益 | strict action union、24 KiB body、合成 UUID operation identity | Serializable 再驗權益；post/reply 重試冪等，reaction desired state；不含外部渠道 | 泛化拒絕、private no-store；同路徑 unit、9 DB 回歸、實際 browser |
 本輪 Q2 固定非 Production recovery 契約：
 
 - `POST /api/admin/ops/payuni/wp4-buyer-callback-retry`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。

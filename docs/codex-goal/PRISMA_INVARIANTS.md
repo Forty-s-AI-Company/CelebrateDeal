@@ -4,6 +4,7 @@
 
 基準 revision：`4ed3b463`
 
+> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 86，該歷史收據不代表新 migration、Staging 或 Production 已套用。
 > 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 87，該歷史收據不代表新 migration、Staging 或 Production 已套用。
 
 ## Inventory 基準
@@ -12,6 +13,9 @@
 |---|---:|
 | Prisma models | 137 |
 | Migration directories | 93 |
+
+| Prisma models | 129 |
+| Migration directories | 88 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -222,6 +226,10 @@
 
 新增 `CourseLesson` 與 `CourseLessonProgress`；前向 migration `20261006040000_native_course_learning`。三欄位 lesson 外鍵同時約束 tenant、course、lesson，進度具非負上限約束。此候選的 disposable PostgreSQL 證據尚待執行，不沿用上方歷史收據。
 
+課程社群候選新增 `CourseCommunityPost`、`CourseCommunityReply`、`CourseCommunityReaction` 與前向 migration `20261006070000_course_community`。課程／租戶 composite FK、無 public policy 的 RLS、文字長度限制及 learner-qualified 唯一鍵；85 migrations 與 7 項 disposable PostgreSQL 回歸已通過。此結果不代表 staging／Production 或瀏覽器完成驗收。
+
+本次 F1.2 最終候選：85 migration、9 PostgreSQL 邊界回歸、1 manager/learner Chromium 長討論旅程、8 unit、TS/lint及1067 Node TAP零skip PASS；Critical複審無findings、canonical READY。精確head CI及受保護合併待完成。
+
 F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。
 
 
@@ -246,8 +254,20 @@ F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_af
 - `20261007070000_affiliate_remuneration_export_audit`：forward-only；驗證扣繳資料、不可變快照、匯出 audit、政策 revision 或付款金額／快照複合 FK。
 - `20261007080000_merchant_affiliate_payout_policy`：forward-only；驗證扣繳資料、不可變快照、匯出 audit、政策 revision 或付款金額／快照複合 FK。
 - `20261007090000_affiliate_paid_remuneration_binding`：forward-only；驗證扣繳資料、不可變快照、匯出 audit、政策 revision 或付款金額／快照複合 FK。
+
+F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。
+
+F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。
+
+本次社群／夥伴入口整合候選有129models與86migrations；新整合驗證尚未完成，舊收據不代表本次PASS。
 Q2 本輪前向新增 `20261006140000_subscription_refund_entitlement_state`；既有126models不變，VendorUsageLimit新增active/revoked權限狀態。初次86 migration完整套用及51 PostgreSQL回歸PASS；之後擴充native退款backfill至byo訂閱快照，需重新驗證新revision。歷史migration/checksum保持原樣。
 
 Q2 新增 forward migration `20261007002000_reconcile_legacy_subscription_refund_state`：以既有完整 processed refund ledger 修復 native subscription 權益；保留較新 active subscription 與 usage counters，既有 migration checksum 不變。87 migrations disposable PostgreSQL 完整套用通過；latest-head DB/browser 收據仍待完成。
 
 Current full integrated inventory: 
+
+Current integrated inventory: 
+
+## Current withholding + community + PWA integration 20261008
+
+Current candidate: 140 Prisma models and 94 forward migrations; all historical SQL/checksum evidence retained. Exact protected-page inventory: 94 pages, 55 vendorManager, all other guard families unchanged. No assertion/coverage exclusion or test removal.
