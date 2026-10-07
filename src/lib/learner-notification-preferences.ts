@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { getStudentCourse, type CourseLearningStore } from "./student-course-learning";
+import type { CourseLearningStore } from "./student-course-learning";
+import { hasLearnerNotificationPurchase } from "./learner-notification-access";
 import type { StudentPortalScope } from "./student-portal";
 import { LearnerNotificationConsentInput, LearnerNotificationScope } from "./learner-notification-contract";
 
@@ -12,7 +13,7 @@ export async function listLearnerNotificationPreferences(db: NotificationPrefere
   const preferences = await db.learnerNotificationPreference.findMany({ where: scope, select: publicFields, orderBy: { channel: "asc" }, take: 4 });
   // Refunded/expired purchasers may read only their existing consent rows so
   // withdrawal stays usable. This never grants course content or a new opt-in.
-  if (preferences.length === 0 && !await getStudentCourse(db, session, productId)) return null;
+  if (preferences.length === 0 && !await hasLearnerNotificationPurchase(db, session, productId)) return null;
   return preferences;
 }
 
@@ -24,12 +25,12 @@ export async function saveLearnerNotificationConsent(db: NotificationPreferenceD
   const persist = () => db.$transaction(async tx => {
     const identity = { ...scope, channel: input.channel };
     const existing = await tx.learnerNotificationPreference.findFirst({ where: identity });
-    if (input.enabled && !await getStudentCourse(tx, session, productId)) return { status: "not_found" } as const;
+    if (input.enabled && !await hasLearnerNotificationPurchase(tx, session, productId)) return { status: "not_found" } as const;
     if (!existing) {
       if (input.expectedRevision !== 0) return { status: "conflict" } as const;
       if (input.enabled) return { status: "verification_required" } as const;
       // No new rows for revoked/foreign products, while existing opt-outs remain writable.
-      if (!await getStudentCourse(tx, session, productId)) return { status: "not_found" } as const;
+      if (!await hasLearnerNotificationPurchase(tx, session, productId)) return { status: "not_found" } as const;
       const preference = await tx.learnerNotificationPreference.create({ data: identity, select: publicFields });
       return { status: "saved", preference } as const;
     }

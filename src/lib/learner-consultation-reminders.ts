@@ -4,7 +4,7 @@ import { z } from "zod";
 import { LearnerNotificationScope } from "./learner-notification-contract";
 import type { NotificationPreferenceDatabase } from "./learner-notification-preferences";
 import { recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
-import { getStudentCourse } from "./student-course-learning";
+import { hasLearnerNotificationPurchase } from "./learner-notification-access";
 import type { StudentPortalScope } from "./student-portal";
 
 type Database = NotificationPreferenceDatabase & Pick<PrismaClient, "consultationBooking" | "learnerNotificationSourceEvent">;
@@ -17,7 +17,7 @@ const identity = (bookingId: string, productId: string, startTime: Date) => crea
 export async function listLearnerConsultationReminders(db: Database, session: StudentPortalScope, productId: string, after?: string) {
   const scope = LearnerNotificationScope.parse({ vendorId: session.vendorId, customerKeyHash: session.customerKeyHash, productId });
   if (after) identifier.parse(after);
-  if (!await getStudentCourse(db, session, productId)) return null;
+  if (!await hasLearnerNotificationPurchase(db, session, productId)) return null;
   const rows = await db.consultationBooking.findMany({
     where: { vendorId: scope.vendorId, customerKeyHash: scope.customerKeyHash, status: "scheduled", startTime: { gt: new Date() }, ...(after ? { id: { gt: after } } : {}),
       event: { is: { vendorId: scope.vendorId, isActive: true, salesProject: { is: { vendorId: scope.vendorId, status: "published", publishedAt: { not: null }, products: { some: { vendorId: scope.vendorId, productId } } } } } } },
@@ -35,7 +35,7 @@ export async function confirmLearnerConsultationReminder(db: Database, session: 
   const scope = LearnerNotificationScope.parse({ vendorId: session.vendorId, customerKeyHash: session.customerKeyHash, productId });
   const input = LearnerConsultationReminderInput.parse(raw);
   const persist = () => db.$transaction(async tx => {
-    if (!await getStudentCourse(tx, session, productId)) return { status: "not_found" } as const;
+    if (!await hasLearnerNotificationPurchase(tx, session, productId)) return { status: "not_found" } as const;
     const now = new Date();
     const booking = await tx.consultationBooking.findFirst({
       where: { vendorId: scope.vendorId, customerKeyHash: scope.customerKeyHash, id: input.bookingId, status: "scheduled", startTime: { equals: new Date(input.expectedStartTime), gt: now },

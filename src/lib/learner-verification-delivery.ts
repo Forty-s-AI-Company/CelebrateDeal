@@ -38,7 +38,7 @@ export async function dispatchLearnerVerificationDelivery(db:Database,raw:unknow
    const rights=await tx.$queryRaw<Array<{id:string}>>`SELECT e."id" FROM "CommerceOrderItem" i
     JOIN "CommerceOrder" o ON o."vendorId"=i."vendorId" AND o."id"=i."orderId"
     JOIN "CommerceEntitlement" e ON e."vendorId"=i."vendorId" AND e."orderItemId"=i."id"
-    WHERE i."vendorId"=${row.vendorId} AND i."productId"=${row.productId} AND i."fulfillmentType"='course'
+    WHERE i."vendorId"=${row.vendorId} AND i."productId"=${row.productId}
     AND o."automationCustomerKeyHash"=${pref.customerKeyHash} AND o."status" IN ('paid','partially_refunded')
     AND e."status"='granted' AND e."revokedAt" IS NULL AND (e."expiresAt" IS NULL OR e."expiresAt">clock_timestamp())
     ORDER BY e."id" LIMIT 1 FOR UPDATE OF o,e`;
@@ -55,7 +55,7 @@ export async function dispatchLearnerVerificationDelivery(db:Database,raw:unknow
    // Proof stays in the body/push payload. No URL query, recipient identifier or token in logs.
    attempted=true;
    const result=await (options.sender??sendLearnerNotificationProvider)({channel,destination,appOrigin:options.appOrigin,idempotencyKey:hash(JSON.stringify([row.vendorId,row.id,"contact-proof-v1"])),
-    message:{title:"驗證通知收件方式",body:`請回到原本的課程通知設定，輸入驗證碼：${token}。15 分鐘內有效；驗證後仍需自行開啟通知。`,path:`/portal/${encodeURIComponent(vendor.slug)}/learn/${encodeURIComponent(row.productId)}`}},options.configuration);
+    message:{title:"驗證通知收件方式",body:`請回到原本的通知設定，輸入驗證碼：${token}。15 分鐘內有效；驗證後仍需自行開啟通知。`,path:`/portal/${encodeURIComponent(vendor.slug)}/notifications`}},options.configuration);
    if(!["sent","not_delivered","indeterminate"].includes(result.outcome) || (result.providerReceipt?.length??0)>4096)throw new Error("Invalid provider outcome.");
    receipt=result.providerReceipt;
    const status=result.outcome==="sent"?"sent":result.outcome==="not_delivered"?"failed":"indeterminate";

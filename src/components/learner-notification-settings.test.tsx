@@ -78,12 +78,12 @@ it("English withdrawal keeps the exact consent revision and HTTP identity",async
  expect(loadButton?.disabled).toBe(false);
  (loadButton!.onClick as ()=>void)();
  await vi.waitFor(()=>expect(find(render("en"),"button","Reload settings")?.disabled).toBe(false));
- expect(find(render("en"),"h2","Course notifications")).toBeDefined();
+ expect(find(render("en"),"h2","Purchase notifications")).toBeDefined();
  fetchMock.mockReset().mockResolvedValueOnce(Response.json({status:"saved",preference:pref(8,true,false)})).mockResolvedValueOnce(Response.json(snapshot(8,true,false)));
  (find(render("en"),"button","Cancel notifications")!.onClick as ()=>void)();
  await vi.waitFor(()=>expect(find(render("en"),"button","Reload settings")?.disabled).toBe(false));
  expect(fetchMock.mock.calls[0][0]).toBe("/portal/academy/learn/course-1/notifications");
  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({channel:"email",enabled:false,expectedRevision:7});
  expect(fetchMock.mock.calls[0][1].headers["x-csrf-token"]).toBe("synthetic-csrf");
- expect(find(render("en"),"p","Notifications cancelled for this course.")).toBeDefined();
+ expect(find(render("en"),"p","Notifications cancelled for this product.")).toBeDefined();
 });

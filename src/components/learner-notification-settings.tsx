@@ -130,10 +130,10 @@ export function LearnerNotificationSettings({ vendorSlug, courseId, locale }: {
         if (!parsed.success || parsed.data.preference.channel !== channel || parsed.data.preference.enabled === preference.enabled)
             throw new Error("通知：收到的同意狀態不完整，請重新載入。");
         await refresh();
-        setNotice(parsed.data.preference.enabled ? t("已開啟此課程通知。") : t("已取消此課程通知。"));
+        setNotice(parsed.data.preference.enabled ? t("已開啟此商品通知。") : t("已取消此商品通知。"));
     }
     return <section aria-labelledby={headingId} className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
-  <h2 id={headingId} className="text-xl font-bold">{t("課程通知")}</h2>
+  <h2 id={headingId} className="text-xl font-bold">{t("購買通知")}</h2>
   <p className="mt-2 text-sm text-slate-600">{t("自行選擇收件方式，驗證後再開啟通知。可以隨時取消。")}</p>
   <button className={`${button} mt-4`} type="button" disabled={!interactive || busy} onClick={() => void action(async () => { await refresh(); setNotice(t("通知設定已載入。")); })}>{snapshot ? t("重新載入設定") : t("載入通知設定")}</button>
   {snapshot ? <div className="mt-4 space-y-4">
@@ -151,6 +151,6 @@ export function LearnerNotificationSettings({ vendorSlug, courseId, locale }: {
    <button className={`${button} ml-2`} type="button" disabled={busy || !preference || (!preference.enabled && (!preference.destinationVerifiedAt || !available))} onClick={() => void action(toggle)}>{preference?.enabled ? t("取消通知") : t("開啟通知")}</button>
   </div> : null}
   {snapshot ? <LearnerConsultationReminders locale={locale} vendorSlug={vendorSlug} courseId={courseId}/> : null}
-  <p role="status" aria-label={t("課程通知狀態")} aria-live="polite" className="mt-3 text-sm text-slate-700">{t(notificationStatusText(busy, notice))}</p>
+  <p role="status" aria-label={t("購買通知狀態")} aria-live="polite" className="mt-3 text-sm text-slate-700">{t(notificationStatusText(busy, notice))}</p>
  </section>;
 }

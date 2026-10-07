@@ -79,6 +79,50 @@ test("actual portal worker receives a synthetic device message and keeps authent
 
 // Match the disposable runner's full Chromium for native notification APIs.
 test.use({channel:"chromium",trace:"off",screenshot:"off",video:"off"});
+test("digital purchaser discovers notifications before enrollment and can withdraw after refund", async ({ page, baseURL }) => {
+ test.setTimeout(120000);
+ const db = new PrismaClient(), suffix = randomUUID();
+ const vendor = await db.vendor.create({ data: { name: "Synthetic digital notifications", slug: `digital-notify-${suffix}`, email: `owner-${suffix}@invalid.example`, passwordHash: "synthetic-login-disabled" } });
+ try {
+  const product = await db.product.create({ data: { vendorId: vendor.id, name: "數位商品通知", slug: randomUUID(), priceCents: 1000, commerceDomain: "merchant", fulfillmentType: "digital" } });
+  const email = `digital-${suffix}@invalid.example`, customerKeyHash = automationCustomerKeyHash(vendor.id, email), orderId = randomUUID();
+  const pii = protectCommerceOrderPii({ buyer: { name: "Synthetic digital buyer", email }, shipping: null }, { vendorId: vendor.id, orderId });
+  await db.commerceOrder.create({ data: { id: orderId, vendorId: vendor.id, orderNumber: orderId, checkoutIdempotencyKey: randomUUID(), checkoutIdentityHash: pii.checkoutIdentityHash, automationCustomerKeyHash: customerKeyHash, status: "paid", subtotalAmountCents: 1000, totalAmountCents: 1000, paidAmountCents: 1000, buyerEncryptedEnvelope: pii.buyerEncrypted, buyerMaskedName: pii.buyerNameMasked, buyerMaskedEmail: pii.buyerEmailMasked } });
+  const item = await db.commerceOrderItem.create({ data: { vendorId: vendor.id, orderId, productId: product.id, lineIndex: 0, productName: product.name, productSlug: product.slug, commerceDomain: "merchant", fulfillmentType: "digital", unitPriceCents: 1000, quantity: 1, lineTotalCents: 1000, nonSensitiveSnapshot: {} } });
+  const grant = await db.commerceEntitlement.create({ data: { vendorId: vendor.id, orderItemId: item.id } });
+  await db.$transaction(tx => grantCommerceEntitlement(tx, { vendorId: vendor.id, entitlementId: grant.id, expectedRevision: grant.revision, actor: { id: "synthetic-digital-browser" } }));
+  const token = await createStudentPortalAccessToken(db, { vendorId: vendor.id, email, purpose: "magic_link" });
+  await page.goto(`${baseURL}/portal/${vendor.slug}/access?token=${encodeURIComponent(token)}`);
+  await expect(page).toHaveURL(new RegExp(`/portal/${vendor.slug}$`));
+  await page.getByRole("link", { name: "通知設定", exact: true }).click();
+  await expect(page.getByRole("heading", { name: product.name, exact: true })).toBeVisible();
+  const settings = page.getByRole("region", { name: "購買通知", exact: true });
+  await settings.getByRole("button", { name: "載入通知設定", exact: true }).click();
+  await expect(settings.getByText("收件方式尚未驗證", { exact: false })).toBeVisible();
+  expect(await db.learnerNotificationPreference.count({ where: { vendorId: vendor.id, productId: product.id } })).toBe(0);
+  // Synthetic verified contact isolates actual consent HTTP persistence from
+  // external provider enrollment, which this runner never claims to prove.
+  const destination = protectLearnerNotificationDestination({ vendorId: vendor.id, productId: product.id, customerKeyHash }, "email", { email });
+  const preference = await db.learnerNotificationPreference.create({ data: { vendorId: vendor.id, productId: product.id, customerKeyHash, channel: "email", enabled: true, consentedAt: new Date(), destinationVerifiedAt: new Date(), destinationEncryptedEnvelope: destination.encryptedEnvelope, destinationKeyHash: destination.destinationKeyHash } });
+  await db.$transaction(tx => reconcileCommerceOrderRefund(tx, { vendorId: vendor.id, orderId, providerName: "synthetic", eventIdentity: randomUUID(), amountCents: 1000, occurredAt: new Date() }));
+  await page.reload();
+  await expect(page.getByRole("heading", { name: product.name, exact: true })).toBeVisible();
+  await settings.getByRole("button", { name: "載入通知設定", exact: true }).click();
+  await settings.getByRole("button", { name: "取消通知", exact: true }).click();
+  await expect(settings.getByRole("status", { name: "購買通知狀態", exact: true })).toHaveText("已取消此商品通知。");
+  expect((await db.learnerNotificationPreference.findUniqueOrThrow({ where: { id: preference.id } })).enabled).toBe(false);
+  await page.reload();
+  await settings.getByRole("button", { name: "載入通知設定", exact: true }).click();
+  await expect(settings.getByText("已驗證，通知尚未開啟", { exact: false })).toBeVisible();
+  const endpoint = `/portal/${vendor.slug}/learn/${product.id}/notifications`;
+  const denied = await page.evaluate(async path => {
+   const state = await (await fetch(path, { headers: { "x-celebratedeal-client": "web" }, cache: "no-store" })).json();
+   return (await fetch(path, { method: "POST", headers: { "content-type": "application/json", "x-celebratedeal-client": "web", "x-csrf-token": state.csrfToken }, body: JSON.stringify({ channel: "email", enabled: true, expectedRevision: 2 }) })).status;
+  }, endpoint);
+  expect(denied).toBe(404);
+  expect((await db.learnerNotificationPreference.findUniqueOrThrow({ where: { id: preference.id } })).revision).toBe(2);
+ } finally { await db.vendor.deleteMany({ where: { id: vendor.id } }); await db.$disconnect(); }
+});
 test("purchasing learner withdraws real notification consent and reloads; foreign course and CSRF are refused",async({page,baseURL})=>{
  test.setTimeout(120000);
  const db=new PrismaClient(),suffix=randomUUID();
@@ -111,7 +155,7 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   await expect.poll(async()=>Boolean((await db.courseLessonProgress.findFirst({where:{vendorId:vendor.id,productId:product.id,lessonId:lesson.id,customerKeyHash}}))?.completedAt)).toBe(true);
   await page.reload();await expect(page.getByRole("button",{name:"Marked complete",exact:true})).toBeVisible();
   await expect(page.getByRole("heading",{name:"保留講師原文",exact:true})).toBeVisible();
-  const englishSettings=page.getByRole("region",{name:"Course notifications",exact:true});
+  const englishSettings=page.getByRole("region",{name:"Purchase notifications",exact:true});
   await englishSettings.getByRole("button",{name:"Load notification settings",exact:true}).click();
   await expect(englishSettings.getByRole("button",{name:"Cancel notifications",exact:true})).toBeEnabled();
   await expect(englishSettings.getByRole("region",{name:"Appointment reminders",exact:true})).toBeVisible();
@@ -121,7 +165,7 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   // another client region after the server-action navigation.
   await expect(page.getByRole("button",{name:"已標記完成",exact:true})).toBeVisible();
   await expect(page.getByText("學習進度",{exact:true})).toBeVisible();
-  const settings=page.getByRole("region",{name:"課程通知"});
+  const settings=page.getByRole("region",{name:"購買通知"});
   await expect(settings).toBeVisible();
   const [settingsResponse]=await Promise.all([
    page.waitForResponse(response=>response.request().method()==="GET"&&new URL(response.url()).pathname===`/portal/${vendor.slug}/learn/${product.id}/notifications`),
@@ -164,7 +208,7 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   const path=`/portal/${vendor.slug}/learn/${product.id}/notifications`;
   const refused=await page.evaluate(async(path)=>{const response=await fetch(path,{method:"POST",headers:{"content-type":"application/json","x-celebratedeal-client":"web","x-csrf-token":"invalid"},body:JSON.stringify({channel:"email",enabled:false,expectedRevision:1})});return response.status;},path);
   expect(refused).toBe(403);expect((await db.learnerNotificationPreference.findUniqueOrThrow({where:{id:preference.id}})).enabled).toBe(true);
-  await settings.getByRole("button",{name:"取消通知"}).click();await expect(settings.getByRole("status",{name:"課程通知狀態"})).toHaveText("已取消此課程通知。");
+  await settings.getByRole("button",{name:"取消通知"}).click();await expect(settings.getByRole("status",{name:"購買通知狀態"})).toHaveText("已取消此商品通知。");
   const saved=await db.learnerNotificationPreference.findUniqueOrThrow({where:{id:preference.id}});expect(saved.enabled).toBe(false);expect(saved.revision).toBe(2);
   await page.reload();await settings.getByRole("button",{name:"載入通知設定"}).click();await expect(settings.getByText("已驗證，通知尚未開啟",{exact:false})).toBeVisible();
   // No approved external provider exists in this isolated browser process.
@@ -173,7 +217,7 @@ test("purchasing learner withdraws real notification consent and reloads; foreig
   await db.$transaction(tx=>reconcileCommerceOrderRefund(tx,{vendorId:vendor.id,orderId,providerName:"synthetic",eventIdentity:randomUUID(),amountCents:1000,occurredAt:new Date()}));
   await page.goto(`/portal/${vendor.slug}`);await page.getByRole("link",{name:"通知設定",exact:true}).click();
   await expect(page.getByRole("heading",{name:product.name})).toBeVisible();await settings.getByRole("button",{name:"載入通知設定"}).click();
-  await expect(settings.getByRole("button",{name:"取消通知"})).toBeEnabled();await settings.getByRole("button",{name:"取消通知"}).click();await expect(settings.getByRole("status",{name:"課程通知狀態"})).toHaveText("已取消此課程通知。");
+  await expect(settings.getByRole("button",{name:"取消通知"})).toBeEnabled();await settings.getByRole("button",{name:"取消通知"}).click();await expect(settings.getByRole("status",{name:"購買通知狀態"})).toHaveText("已取消此商品通知。");
   expect((await db.learnerNotificationPreference.findUniqueOrThrow({where:{id:preference.id}})).revision).toBe(4);
   await page.reload();await settings.getByRole("button",{name:"載入通知設定"}).click();await expect(settings.getByRole("button",{name:"開啟通知"})).toBeDisabled();
   const reenable=await page.evaluate(async(path)=>{const response=await fetch(path,{headers:{"x-celebratedeal-client":"web"},cache:"no-store"});const state=await response.json();return (await fetch(path,{method:"POST",headers:{"content-type":"application/json","x-celebratedeal-client":"web","x-csrf-token":state.csrfToken},body:JSON.stringify({channel:"email",enabled:true,expectedRevision:4})})).status;},path);expect(reenable).toBe(404);

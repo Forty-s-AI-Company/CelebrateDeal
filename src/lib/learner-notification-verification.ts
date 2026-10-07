@@ -1,7 +1,8 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { getStudentCourse, type CourseLearningStore } from "./student-course-learning";
+import type { CourseLearningStore } from "./student-course-learning";
+import { hasLearnerNotificationPurchase } from "./learner-notification-access";
 import { encryptSensitiveValue } from "./sensitive-data";
 import type { StudentPortalScope } from "./student-portal";
 import { LearnerEmailDestination, LearnerPhoneDestination, LearnerPushDestination, LearnerNotificationScope, protectLearnerNotificationDestination } from "./learner-notification-contract";
@@ -33,7 +34,7 @@ export async function requestLearnerContactVerification(db: Database, session: S
  const input = LearnerContactEnrollmentInput.parse(raw), token = randomBytes(32).toString("base64url");
  const destination = protectLearnerNotificationDestination(scope,input.channel,input.destination);
  return verificationTransaction(db,async tx => {
-  if (!await getStudentCourse(tx,session,productId)) return { status: "not_found" } as const;
+  if (!await hasLearnerNotificationPurchase(tx,session,productId)) return { status: "not_found" } as const;
   const identity = { ...scope, channel: input.channel };
   const existing = await tx.learnerNotificationPreference.findFirst({ where: identity });
   if ((existing?.revision ?? 0) !== input.expectedRevision) return { status: "conflict" } as const;
@@ -57,7 +58,7 @@ export async function consumeLearnerContactVerification(db: Database, session: S
  const input = LearnerContactVerificationInput.parse(raw);
  const scope = LearnerNotificationScope.parse({ vendorId: session.vendorId, customerKeyHash: session.customerKeyHash, productId });
  return verificationTransaction(db,async tx => {
-  if (!await getStudentCourse(tx,session,productId)) return { status: "not_found" } as const;
+  if (!await hasLearnerNotificationPurchase(tx,session,productId)) return { status: "not_found" } as const;
   const challenge = await tx.learnerNotificationVerification.findFirst({ where: { id: input.challengeId, vendorId: scope.vendorId, productId,
    consumedAt: null, attemptCount: { lt: 5 }, expiresAt: { gt: new Date() }, preference: { is: { ...scope } } } });
   if (!challenge) return { status: "invalid_challenge" } as const;

@@ -1,0 +1,60 @@
+{
+  "task_id": "f1-learner-notifications",
+  "status": "LOCAL_DIGITAL_RESOURCE_PASS_FULL_TASK_NOT_READY",
+  "created_at": "2026-10-07T08:04:26.360455+00:00",
+  "owner": "root",
+  "source_files": {
+    "src/lib/learner-notification-access.ts": "c0989b44eeda410553d7b701d2decb11d1bc535d794e03687d43a23509e0384a",
+    "src/lib/learner-notification-access.test.ts": "1fd0a69c36ba06d8193da7755f931106854df682c2f72f494941af9e18ee514d",
+    "src/lib/learner-notification-preferences.ts": "ebdc277d637b21efe3ff153a9d53da59294f27397319fbf55e561e6e5729235a",
+    "src/lib/learner-notification-verification.ts": "954e697f6ba00cb5df3c8626df68b117ce6627c911cdfdcd1929ca2ffa1e82d4",
+    "src/lib/learner-verification-delivery.ts": "3b385d72e540e68c08ef71fae159d0d094e68c4aa5b5154179919e7a4e5c62cc",
+    "src/lib/learner-payment-notifications.ts": "0641311bb4783d6ca73f98afa8e4738fbbbf6f9b29a6dffdac100c016e7090f8",
+    "src/lib/learner-consultation-reminders.ts": "3e101cbf22ecc28a1d9d9622b5ef02b1623e56e54903d7ba0a8b3d5918d1c55c",
+    "src/lib/learner-consultation-reminders.test.ts": "f3f0bf4857bbf7c1c5c64acca2755e81825172935c890cd5ced457d12452ba10",
+    "src/app/portal/[vendorSlug]/notifications/page.tsx": "e3eb7e2333a42f20ea0a39d203e96c398fb5d7ba8622647e6b37a4109d8c3faa",
+    "src/components/learner-notification-settings.tsx": "7c93a2e51e517dfab5b9006ddb35487da6e4b7fc51329ae02781310c1e211438",
+    "src/components/learner-notification-settings.test.tsx": "c6734d70d67e24b05d35227ba124c46a41ad1e92bfc4a8364a248789646a772d",
+    "src/lib/student-portal-translations.ts": "740bc2bda3209f351ddc5e006e2684fe2cde3be37194221ae6246995ff06fc39",
+    "tests/e2e/learner-notifications.spec.ts": "a0b330da280b0dfa317f5a85dfa4c5e11e5331bf55dc31804e97bb5e147aed72",
+    "scripts/learner-notification-disposable-qa.mjs": "f9c1c31351e3b41a577af14c9ac7539ee20cfc13f47fd985710ddc7d0c23c820",
+    "scripts/learner-notification-browser-qa.mjs": "dcfbf84288f71522ec1ad6a4f5577af9eaf0173c94eb75532dde741ad475c596"
+  },
+  "database": {
+    "receipt": "docs/remaining-capabilities-f1-digital-notifications-db-pass-20261007.json",
+    "source_revision": "sha256:d256897bc91b35359a79cb10f896e3ab2dc0d8f046cb1241e29e9f8c6465ae4b",
+    "migrations": 90,
+    "passed": 73
+  },
+  "unit": {
+    "status": "PASS",
+    "passed": 32,
+    "files": 4,
+    "tool_chunk": "50d2b7",
+    "prior_failure_session": 15517,
+    "prior_failure_receipt": "docs/remaining-capabilities-f1-digital-notifications-unit-failure-20261007.json"
+  },
+  "typescript": {
+    "session": 8873,
+    "status": "PASS"
+  },
+  "browser": {
+    "status": "PASS",
+    "passed": 5,
+    "source_revision": "sha256:b7aa8c7df5a5e9d8b84098e726bf2e81d1ec40a6fa0d07a94144e6afe82fcf0c",
+    "receipt": "docs/remaining-capabilities-f1-digital-notifications-browser-pass-20261007.json",
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    }
+  },
+  "acceptance": "NOT_READY",
+  "delivered": false,
+  "remaining": [
+    "Approved nonproduction provider enrollment and actual send proof",
+    "Other applicable non-course resource contracts",
+    "Full independent Critical review",
+    "Canonical acceptance",
+    "Exact-head CI and protected PR"
+  ]
+}

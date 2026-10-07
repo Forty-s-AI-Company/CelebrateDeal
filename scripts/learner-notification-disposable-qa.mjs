@@ -18,7 +18,8 @@ import { confirmLearnerConsultationReminder,listLearnerConsultationReminders } f
 import { reserveConsultationBooking } from "../src/app/actions/consultation-actions.ts";
 import { recordLearnerLiveStartedSources } from "../src/lib/learner-live-notifications.ts";
 import { recordLearnerNotificationSourceEvent, materializeLearnerNotificationSourceEvent } from "../src/lib/learner-notification-source-events.ts";
-const sourceFiles = ["src/lib/course-community.ts","prisma/migrations/20261006070000_course_community/migration.sql","src/lib/learner-consultation-reminders.ts","src/lib/learner-notification-job.ts","prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql","src/app/actions/consultation-actions.ts","src/app/actions.ts","src/lib/learner-live-notifications.ts","src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
+import { recordLearnerPaymentNotificationSources } from "../src/lib/learner-payment-notifications.ts";
+const sourceFiles = ["src/lib/learner-notification-access.ts","src/lib/course-community.ts","prisma/migrations/20261006070000_course_community/migration.sql","src/lib/learner-consultation-reminders.ts","src/lib/learner-notification-job.ts","prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql","src/app/actions/consultation-actions.ts","src/app/actions.ts","src/lib/learner-live-notifications.ts","src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
  "src/lib/learner-notification-contract.ts", "src/lib/learner-notification-preferences.ts", "src/lib/learner-notification-outbox.ts", "src/lib/learner-notification-dispatch.ts", "src/lib/learner-notification-providers.ts", "src/lib/learner-notification-verification.ts",
  "src/lib/student-course-learning.ts", "src/lib/sensitive-data.ts", "src/lib/commerce-order-pii.ts", "src/lib/commerce-order-fulfillment.ts", "src/lib/commerce-orders.ts", "scripts/learner-notification-disposable-qa.mjs"];
 function sourceSnapshot() {
@@ -135,6 +136,44 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
     fixtureStage = "enable_preference";
     // Verified synthetic destination is a fixture, never evidence of a provider delivery or contact verification.
     await db.learnerNotificationPreference.update({ where: { id: preference.id }, data: { enabled: true, consentedAt: new Date(), destinationVerifiedAt: new Date() } });
+    await check("non-course paid grant discovers settings and enforces tenant and buyer scope", async () => {
+      const digital = await db.product.create({ data: { vendorId: vendor.id, name: "Synthetic digital resource", slug: `digital-${suffix}`, priceCents: 1000, commerceDomain: "merchant", fulfillmentType: "digital" } });
+      const digitalOrderId = randomUUID();
+      const digitalPii = protectCommerceOrderPii({ buyer: { name: "Synthetic digital buyer", email: "digital@invalid.example" }, shipping: null }, { vendorId: vendor.id, orderId: digitalOrderId });
+      await db.commerceOrder.create({ data: { id: digitalOrderId, vendorId: vendor.id, automationCustomerKeyHash: identity.customerKeyHash, orderNumber: digitalOrderId, checkoutIdempotencyKey: randomUUID(), checkoutIdentityHash: digitalPii.checkoutIdentityHash, status: "paid", subtotalAmountCents: 1000, totalAmountCents: 1000, paidAmountCents: 1000, buyerEncryptedEnvelope: digitalPii.buyerEncrypted, buyerMaskedName: digitalPii.buyerNameMasked, buyerMaskedEmail: digitalPii.buyerEmailMasked } });
+      const digitalItem = await db.commerceOrderItem.create({ data: { vendorId: vendor.id, orderId: digitalOrderId, productId: digital.id, lineIndex: 0, productName: digital.name, productSlug: digital.slug, commerceDomain: "merchant", fulfillmentType: "digital", unitPriceCents: 1000, quantity: 1, lineTotalCents: 1000, nonSensitiveSnapshot: {} } });
+      const grant = await db.commerceEntitlement.create({ data: { vendorId: vendor.id, orderItemId: digitalItem.id } });
+      await db.$transaction(tx => grantCommerceEntitlement(tx, { vendorId: vendor.id, entitlementId: grant.id, expectedRevision: grant.revision, actor: { id: "synthetic-digital-fixture" } }));
+      assert.deepEqual(await listLearnerNotificationPreferences(db, identity, digital.id), []);
+      assert.equal(await listLearnerNotificationPreferences(db, { ...identity, vendorId: foreign.id }, digital.id), null);
+      assert.equal(await listLearnerNotificationPreferences(db, { ...identity, customerKeyHash: "z".repeat(43) }, digital.id), null);
+      await check("non-course proof verifies without granting consent and exact purchase payment source is durable", async () => {
+        const proof = await requestLearnerContactVerification(db, identity, digital.id, { channel: "email", expectedRevision: 0, destination: { email: "digital-proof@invalid.example" } });
+        assert.equal(proof.status, "challenge_created");
+        const claim = await claimLearnerVerificationDelivery(db, { vendorId: vendor.id, id: proof.challenge.id }); assert.ok(claim);
+        let attempts = 0;
+        assert.equal((await dispatchLearnerVerificationDelivery(db, claim, { appOrigin: "https://app.example.test", configuration: {}, sender: async () => { attempts++; return { outcome: "sent" }; } })).status, "sent");
+        assert.equal(attempts, 1); // Synthetic adapter contract only; no external provider proof.
+        const verified = await consumeLearnerContactVerification(db, identity, digital.id, { challengeId: proof.challenge.id, token: proof.delivery.token });
+        assert.equal(verified.status, "verified"); assert.equal(verified.preference.enabled, false);
+        assert.equal((await saveLearnerNotificationConsent(db, identity, digital.id, { channel: "email", enabled: true, expectedRevision: verified.preference.revision })).status, "saved");
+        await db.$transaction(tx => recordLearnerPaymentNotificationSources(tx, { vendorId: vendor.id, orderId: digitalOrderId, customerKeyHash: identity.customerKeyHash, occurredAt: new Date() }));
+        await db.$transaction(tx => recordLearnerPaymentNotificationSources(tx, { vendorId: vendor.id, orderId: digitalOrderId, customerKeyHash: identity.customerKeyHash, occurredAt: new Date() }));
+        assert.equal(await db.learnerNotificationSourceEvent.count({ where: { vendorId: vendor.id, productId: digital.id, event: "payment_success", audienceCustomerKeyHash: identity.customerKeyHash } }), 1);
+      });
+      await check("non-course refund revokes opt-in and queued delivery while keeping withdrawal", async () => {
+        const pending = await enqueueLearnerNotification(db, { ...identity, productId: digital.id }, { channel: "email", event: "payment_success", eventIdentity: "synthetic_digital_refund", message: { title: "Synthetic payment", body: "Synthetic digital resource", path: "/portal/synthetic/notifications" } }); assert.ok(pending);
+        const claim = await claimLearnerNotification(db, vendor.id, pending.id); assert.ok(claim);
+        await db.$transaction(tx => reconcileCommerceOrderRefund(tx, { vendorId: vendor.id, orderId: digitalOrderId, providerName: "synthetic", eventIdentity: randomUUID(), amountCents: 1000, occurredAt: new Date() }));
+        let attempts = 0;
+        assert.equal((await dispatchClaimedLearnerNotification(db, { vendorId: vendor.id, id: pending.id, claimToken: claim.claimToken }, { appOrigin: "https://app.example.test", configuration: {}, sender: async () => { attempts++; return { outcome: "sent" }; } })).status, "suppressed"); assert.equal(attempts, 0);
+        const rows = await listLearnerNotificationPreferences(db, identity, digital.id); assert.ok(rows); const email = rows.find(row => row.channel === "email"); assert.ok(email);
+        assert.equal((await saveLearnerNotificationConsent(db, identity, digital.id, { channel: "email", enabled: true, expectedRevision: email.revision })).status, "not_found");
+        assert.equal((await saveLearnerNotificationConsent(db, identity, digital.id, { channel: "email", enabled: false, expectedRevision: email.revision })).status, "saved");
+      });
+    });
+    // Keep the independent course cooldown regression separate from the new digital proof.
+    await db.learnerNotificationVerification.updateMany({ where: { vendorId: vendor.id }, data: { createdAt: new Date(Date.now() - 61000) } });
     await check("contact proof refuses foreign recipient and locks after five wrong attempts", async () => {
       await db.learnerNotificationVerification.updateMany({where:{vendorId:vendor.id,productId:product.id},data:{createdAt:new Date(Date.now()-61000)}});
       const requested = await requestLearnerContactVerification(db,identity,product.id,{ channel: "email", expectedRevision: 0, destination: { email: "verified@invalid.example" } });
@@ -190,7 +229,7 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
     await check("cross-tenant and concurrent proof claims admit exactly one owner",async()=>{
       const q=await newProof();assert.equal(await claimLearnerVerificationDelivery(db,{vendorId:foreign.id,id:q.challenge.id}),null);
       const outcomes=await Promise.all([1,2].map(()=>claimLearnerVerificationDelivery(db,{vendorId:vendor.id,id:q.challenge.id})));assert.equal(outcomes.filter(Boolean).length,1);
-      let calls=0;const sender=async input=>{calls++;assert.equal(input.destination.email,"durable@invalid.example");assert.ok(input.message.body.includes(q.delivery.token));assert.equal(input.message.path.includes(q.delivery.token),false);assert.equal(input.message.path,`/portal/${encodeURIComponent(vendor.slug)}/learn/${encodeURIComponent(product.id)}`);return {outcome:"sent",providerReceipt:"synthetic-proof-acceptance"};};
+      let calls=0;const sender=async input=>{calls++;assert.equal(input.destination.email,"durable@invalid.example");assert.ok(input.message.body.includes(q.delivery.token));assert.equal(input.message.path.includes(q.delivery.token),false);assert.equal(input.message.path,`/portal/${encodeURIComponent(vendor.slug)}/notifications`);return {outcome:"sent",providerReceipt:"synthetic-proof-acceptance"};};
       assert.equal((await dispatchLearnerVerificationDelivery(db,{...outcomes.find(Boolean),claimToken:"x".repeat(43)},{appOrigin:"https://app.example.test",configuration:{},sender})).status,"not_claimed");
       const sent=await Promise.all([1,2].map(()=>dispatchLearnerVerificationDelivery(db,outcomes.find(Boolean),{appOrigin:"https://app.example.test",configuration:{},sender})));assert.equal(calls,1);assert.equal(sent.filter(r=>r.status==="sent").length,1);
       const row=await db.learnerNotificationVerification.findUniqueOrThrow({where:{id:q.challenge.id}});assert.equal(row.deliveryTokenEncryptedEnvelope,null);assert.ok(row.deliveredAt);assert.equal(row.deliveryReceiptEncryptedEnvelope.includes("synthetic-proof-acceptance"),false);
@@ -574,9 +613,9 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
   if (sourceSnapshot().revision !== sourceAtStart.revision) throw new Error("notification-source-changed-during-verification");
   } finally { await db.$disconnect(); }
 } });
-const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 70 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
+const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 73 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
 fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 70 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 73 || results.some(test => test.status !== "PASS")) process.exitCode = 1;

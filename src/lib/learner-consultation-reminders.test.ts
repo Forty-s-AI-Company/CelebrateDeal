@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { decryptSensitiveValue } from "./sensitive-data";
-import { getStudentCourse } from "./student-course-learning";
+import { hasLearnerNotificationPurchase } from "./learner-notification-access";
 import { confirmLearnerConsultationReminder, listLearnerConsultationReminders } from "./learner-consultation-reminders";
-vi.mock("./student-course-learning", () => ({ getStudentCourse: vi.fn() }));
+vi.mock("./learner-notification-access", () => ({ hasLearnerNotificationPurchase: vi.fn() }));
 const scope = { vendorId: "vendor-1", customerKeyHash: "a".repeat(43) };
 const now = new Date("2026-10-08T06:00:00.000Z");
 const booking = { id: "booking-1", startTime: new Date("2026-10-08T08:00:00.000Z"), event: { title: "Synthetic appointment" } };
@@ -17,14 +17,14 @@ function fixture() {
 }
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(now); vi.stubEnv("CSRF_SECRET", "synthetic-consultation-reminder-encryption-key-32-bytes");
-  vi.mocked(getStudentCourse).mockReset(); vi.mocked(getStudentCourse).mockResolvedValue({} as never);
+  vi.mocked(hasLearnerNotificationPurchase).mockReset(); vi.mocked(hasLearnerNotificationPurchase).mockResolvedValue(true);
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 it("invalid booking identity/contact override never opens a transaction", async () => {
   const f = fixture(); await expect(confirmLearnerConsultationReminder(f.db as never, scope, "course-1", { ...input, customerKeyHash: "b".repeat(43) })).rejects.toThrow(); expect(f.db.$transaction).not.toHaveBeenCalled();
 });
 it("revoked course rights refuse confirmation before reading private bookings", async () => {
-  const f = fixture(); vi.mocked(getStudentCourse).mockResolvedValue(null); expect(await confirmLearnerConsultationReminder(f.db as never, scope, "course-1", input)).toEqual({ status: "not_found" }); expect(f.tx.consultationBooking.findFirst).not.toHaveBeenCalled();
+  const f = fixture(); vi.mocked(hasLearnerNotificationPurchase).mockResolvedValue(false); expect(await confirmLearnerConsultationReminder(f.db as never, scope, "course-1", input)).toEqual({ status: "not_found" }); expect(f.tx.consultationBooking.findFirst).not.toHaveBeenCalled();
 });
 it("missing or stale own booking refuses source creation", async () => {
   const f = fixture(); f.tx.consultationBooking.findFirst.mockResolvedValueOnce(null as never); expect((await confirmLearnerConsultationReminder(f.db as never, scope, "course-1", input)).status).toBe("not_found"); expect(f.tx.learnerNotificationSourceEvent.upsert).not.toHaveBeenCalled();
@@ -54,7 +54,7 @@ it("unrelated errors do not replay confirmation", async () => {
   const f = fixture(); f.db.$transaction.mockRejectedValueOnce(new Error("synthetic persistence fault")); await expect(confirmLearnerConsultationReminder(f.db as never, scope, "course-1", input)).rejects.toThrow(); expect(f.db.$transaction).toHaveBeenCalledTimes(1);
 });
 it("unowned course list never reads private appointments", async () => {
-  const f = fixture(); vi.mocked(getStudentCourse).mockResolvedValue(null); expect(await listLearnerConsultationReminders(f.db as never, scope, "course-1")).toBeNull(); expect(f.tx.consultationBooking.findMany).not.toHaveBeenCalled();
+  const f = fixture(); vi.mocked(hasLearnerNotificationPurchase).mockResolvedValue(false); expect(await listLearnerConsultationReminders(f.db as never, scope, "course-1")).toBeNull(); expect(f.tx.consultationBooking.findMany).not.toHaveBeenCalled();
 });
 it("rejects traversal cursors before reading appointments", async () => {
   const f = fixture(); await expect(listLearnerConsultationReminders(f.db as never, scope, "course-1", "../foreign")).rejects.toThrow(); expect(f.tx.consultationBooking.findMany).not.toHaveBeenCalled();
