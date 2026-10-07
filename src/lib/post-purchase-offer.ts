@@ -15,6 +15,7 @@ export function formatPostPurchaseAmount(amountCents: number, currencyCode: stri
   return new Intl.NumberFormat("zh-TW", {
     style: "currency",
     currency: currencyCode,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(amountCents / 100);
 }

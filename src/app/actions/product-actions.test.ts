@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   projectFindFirst: vi.fn(),
   projectProductCreate: vi.fn(),
   productFindFirst: vi.fn(),
+  productFindMany: vi.fn(),
   productCreate: vi.fn(),
   productUpdateMany: vi.fn(),
   imageAssetFindFirst: vi.fn(),
@@ -28,7 +29,7 @@ vi.mock("@/lib/db", () => ({
     const delegates = {
       salesProject: { findFirst: mocks.projectFindFirst },
       salesProjectProduct: { create: mocks.projectProductCreate },
-    product: { findFirst: mocks.productFindFirst, create: mocks.productCreate, updateMany: mocks.productUpdateMany },
+    product: { findFirst: mocks.productFindFirst, findMany: mocks.productFindMany, create: mocks.productCreate, updateMany: mocks.productUpdateMany },
     imageAsset: { findFirst: mocks.imageAssetFindFirst },
     teamMembership: { findFirst: mocks.teamMembershipFindFirst },
       vendorDeliveryUrlAllowlist: { upsert: mocks.deliveryAllowlistUpsert },
@@ -59,6 +60,7 @@ beforeEach(() => {
   mocks.assertServerActionSecurity.mockResolvedValue(undefined);
   mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
   mocks.productFindFirst.mockResolvedValue(null);
+  mocks.productFindMany.mockResolvedValue([{ id: "upgrade", priceCents: 2400, currency: "TWD" }]);
   mocks.productCreate.mockResolvedValue({ id: "product-new" });
   mocks.productUpdateMany.mockResolvedValue({ count: 1 });
   mocks.teamMembershipFindFirst.mockResolvedValue({ id: "membership-owner" });
@@ -70,6 +72,26 @@ beforeEach(() => {
 });
 
 describe("upsertProductAction", () => {
+  it("persists validated upgrade settings in the tenant product transaction", async () => {
+    await expect(upsertProductAction(initialProductActionState, validProduct({
+      upsellProductId: "upgrade", downsellProductId: "", upsellDiscount: "1.50",
+    }))).rejects.toThrow("redirect:/products?updated=created");
+    expect(mocks.productCreate).toHaveBeenCalledWith({ data: expect.objectContaining({
+      vendorId: "vendor-1", upsellProductId: "upgrade", downsellProductId: null, upsellDiscountCents: 150,
+    }) });
+    expect(mocks.productFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ vendorId: "vendor-1", id: { in: ["upgrade"] } }),
+    }));
+  });
+  it("rejects a cross-tenant upgrade without creating a product or losing the draft", async () => {
+    mocks.productFindMany.mockResolvedValue([]);
+    const result = await upsertProductAction(initialProductActionState, validProduct({
+      upsellProductId: "foreign", downsellProductId: "", upsellDiscount: "0",
+    }));
+    expect(result.error).toBe("invalid_product");
+    expect(result.draft?.upsellProductId).toBe("foreign");
+    expect(mocks.productCreate).not.toHaveBeenCalled();
+  });
   it("creates the tenant-validated project link in the product transaction", async () => {
     mocks.projectFindFirst.mockResolvedValue({ id: "project-1" });
     await expect(upsertProductAction(initialProductActionState, validProduct({ projectId: "project-1" }))).rejects.toThrow("redirect:/products?updated=created");

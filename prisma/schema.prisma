@@ -1658,6 +1658,8 @@ model CommerceOrder {
   buyerSupportOrderGrants   BuyerSupportOrderGrant[]
   deliverySnapshots         CommerceOrderItemDeliverySnapshot[]
   electronicInvoice         ElectronicInvoice?
+  postPurchaseCreditIssued  PostPurchaseCredit? @relation("PostPurchaseCreditSource")
+  postPurchaseCreditReceived PostPurchaseCredit? @relation("PostPurchaseCreditTarget")
 
   @@unique([vendorId, id])
   @@unique([vendorId, orderNumber])
@@ -1958,12 +1960,41 @@ model BuyerSupportOrderGrant {
   order        CommerceOrder      @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Restrict)
   casesCreated SupportCase[]      @relation("SupportCaseCreatedByBuyer")
   events       SupportCaseEvent[] @relation("SupportCaseEventBuyerActor")
+  postPurchaseCredits PostPurchaseCredit[]
 
   @@unique([vendorId, orderId])
   @@unique([vendorId, id])
   @@unique([vendorId, orderId, id])
   @@index([vendorId, orderId])
   @@index([expiresAt, revokedAt])
+}
+
+/// A single immutable upgrade credit per original paid order. Its own target
+/// order retains the real provider amount; original paid money is never copied.
+model PostPurchaseCredit {
+  id                  String   @id @default(cuid())
+  vendorId            String
+  sourceOrderId       String
+  targetOrderId       String
+  buyerGrantId        String
+  sourceProductId     String
+  targetProductId     String
+  kind                String
+  currency            String
+  creditAmountCents   Int
+  offerDiscountCents  Int
+  targetPriceCents    Int
+  checkoutAmountCents Int
+  createdAt           DateTime @default(now())
+  invalidatedAt       DateTime?
+
+  sourceOrder CommerceOrder @relation("PostPurchaseCreditSource", fields: [vendorId, sourceOrderId], references: [vendorId, id], onDelete: Restrict)
+  targetOrder CommerceOrder @relation("PostPurchaseCreditTarget", fields: [vendorId, targetOrderId], references: [vendorId, id], onDelete: Restrict)
+  buyerGrant BuyerSupportOrderGrant @relation(fields: [vendorId, sourceOrderId, buyerGrantId], references: [vendorId, orderId, id], onDelete: Restrict)
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, sourceOrderId])
+  @@unique([vendorId, targetOrderId])
 }
 
 /// Merchant-to-finance refund request. It never represents a provider refund;

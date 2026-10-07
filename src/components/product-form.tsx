@@ -1,5 +1,5 @@
 import type { Product } from "@prisma/client";
-import { ProductFormClient, type CourseMembershipOption, type ProductFormProduct } from "@/components/product-form-client";
+import { ProductFormClient, type CourseMembershipOption, type ProductFormProduct, type PostPurchaseProductOption } from "@/components/product-form-client";
 import { Card } from "@/components/ui";
 import { getCsrfToken } from "@/lib/csrf";
 import { revealProductDeliveryConfig } from "@/lib/product-delivery";
@@ -21,11 +21,13 @@ export async function ProductForm({
   product,
   projectId,
   memberships = [],
+  offerProducts = [],
   error,
 }: {
   product?: ProductWithDeliveryConfig;
   projectId?: string | null;
   memberships?: CourseMembershipOption[];
+  offerProducts?: PostPurchaseProductOption[];
   error?: string;
 }) {
   const csrfToken = await getCsrfToken();
@@ -39,6 +41,9 @@ export async function ProductForm({
     : { destinationUrl: null, instructions: null };
   const serializedProduct: ProductFormProduct | undefined = product ? {
     id: product.id,
+    upsellProductId: product.upsellProductId,
+    downsellProductId: product.downsellProductId,
+    upsellDiscountCents: product.upsellDiscountCents ?? 0,
     revision: product.revision,
     name: product.name,
     slug: product.slug,
@@ -70,6 +75,7 @@ export async function ProductForm({
         csrfToken={csrfToken}
         product={serializedProduct}
         memberships={memberships}
+        offerProducts={offerProducts}
         nativeAction="/api/products/upsert"
         initialError={error as Parameters<typeof ProductFormClient>[0]["initialError"]}
       />

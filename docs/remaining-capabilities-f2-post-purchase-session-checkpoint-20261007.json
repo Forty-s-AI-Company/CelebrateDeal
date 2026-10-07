@@ -1,0 +1,58 @@
+{
+  "stage": "IMPLEMENTED_CHECKPOINT_NOT_READY",
+  "parent_goal_id": "CELEBRATEDEAL-M2-M7",
+  "base_head": "f739c7e017d430f05cc10a85728f5335e1bc20be",
+  "browser_runner_changed_after_success": true,
+  "browser_product_source_unchanged": true,
+  "task_id": "f2-post-purchase-commerce",
+  "pull_request": null,
+  "external_payment_refund": "NOT_PERFORMED",
+  "max_depth": 1,
+  "exact_sources": [
+    "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+    "60132971f60dbad83aae48ffa6f15d3f57682c6e"
+  ],
+  "branch": "codex/post-purchase-commerce-20261007",
+  "original_dirty_checkout": "UNTOUCHED",
+  "canonical_acceptance": "NOT_READY",
+  "goal_id": "remaining-capabilities-20261005",
+  "max_readonly_helpers": 1,
+  "review": {
+    "status": "CORRECTIONS_REQUIRE_INDEPENDENT_REVIEW",
+    "observed_effort": "unknown",
+    "dispatches": 2,
+    "observed_model": "unknown",
+    "remaining_major": "Failed or expired target payments retain single-use credit but cannot safely resume their immutable order.",
+    "max_dispatches": 4
+  },
+  "browser_source": "sha256:837415c7a143396cfdd249e32396d86b874029bac4d0346ad8c752b8b1fb0774",
+  "tests": {
+    "db": 26,
+    "node_tap": 1067,
+    "typescript": "PASS",
+    "skipped": 0,
+    "flaky": 0,
+    "scoped_lint": "PASS_ZERO_WARNINGS",
+    "migrations": 86,
+    "browser": 1,
+    "unit": 169
+  },
+  "db_unit_source": "sha256:d56ce493cad48e8e5cade03194d527dc76c720e5c0f9491b9716da8c31b06c58",
+  "node_tap": {
+    "gate": "full_node_tap_lf_mirror",
+    "git_head": "f739c7e017d430f05cc10a85728f5335e1bc20be",
+    "source_revision": "sha256:8c92fe8ff9f5fc74f743b71bfdc23f7ee8a522ad839e2076fba94a5ced6b38a1",
+    "source_files": 3709,
+    "exit_code": 0,
+    "counts": [
+      "# tests 1067",
+      "# pass 1067",
+      "# fail 0",
+      "# skipped 0"
+    ],
+    "sourceEnvFilesRead": false,
+    "skippedSensitive": 3
+  },
+  "writer": "root",
+  "delivered": false
+}

@@ -1,0 +1,33 @@
+{
+  "independent": true,
+  "observed_effort": "unknown",
+  "manifest_sha256": "183b56b2290068a3500dd73509fbcdd122ddc1e533212dd1011c6616507e1500",
+  "requested_effort": "high",
+  "task_id": "f2-post-purchase-commerce",
+  "findings": [
+    {
+      "path": "src/lib/post-purchase-credit.ts",
+      "issue": "Failed or expired target payments retain source credit but cannot resume their immutable order.",
+      "line": 71,
+      "severity": "MAJOR"
+    },
+    {
+      "path": "tests/e2e/post-purchase-commerce.spec.ts",
+      "issue": "Browser must confirm signed admission offer before second submit creates checkout.",
+      "line": 81,
+      "severity": "MAJOR"
+    },
+    {
+      "path": "src/app/(app)/products/[id]/edit/page.tsx",
+      "issue": "Bounded available options omit configured disabled or beyond-limit targets and can clear unrelated saved policy.",
+      "line": 27,
+      "severity": "MINOR"
+    }
+  ],
+  "acceptance": "NOT_READY",
+  "max_dispatches": 4,
+  "source_unchanged": true,
+  "observed_model": "unknown",
+  "requested_model": "gpt-6-astra",
+  "dispatch": 2
+}

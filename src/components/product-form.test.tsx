@@ -41,6 +41,16 @@ function product(fulfillmentTypeConfirmed: boolean): Product {
 }
 
 describe("ProductForm fulfillment classification", () => {
+  it("retains configured offer selections and exact discount through server-to-client serialization", async () => {
+    const configured = { ...product(true), upsellProductId: "upgrade", downsellProductId: "alternative", upsellDiscountCents: 1234 };
+    const html = renderToStaticMarkup(await ProductForm({ product: configured, offerProducts: [
+      { id: "upgrade", name: "升級（目前無法加購）", priceCents: 3000, currency: "TWD" },
+      { id: "alternative", name: "備選", priceCents: 2500, currency: "TWD" },
+    ] }));
+    expect(html).toContain('value="upgrade" selected=""');
+    expect(html).toContain('value="alternative" selected=""');
+    expect(html).toMatch(/name="upsellDiscount"[^>]*value="12\.34"/u);
+  });
   it("warns that a historical product remains unsellable until its delivery type is confirmed", async () => {
     const html = renderToStaticMarkup(await ProductForm({ product: product(false) }));
 

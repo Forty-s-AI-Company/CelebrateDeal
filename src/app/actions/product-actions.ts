@@ -1,6 +1,7 @@
 import { MAX_PRODUCT_NAME_LENGTH } from "@/lib/product-name-contract";
 import { resolveSalesProjectBinding, SalesProjectBindingError } from "@/lib/sales-project-binding";
 import { randomUUID } from "node:crypto";
+import { assertPostPurchaseProductPolicy, parsePostPurchaseProductPolicy, PostPurchaseProductPolicyError } from "@/lib/post-purchase-product-policy";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { CourseCommerceDomain } from "@/lib/course-commission";
@@ -77,6 +78,9 @@ function draftFrom(formData: FormData): ProductFormDraft {
     checkoutUrl: boundedDraftText(formData, "checkoutUrl", 2_048),
     isActive: formData.get("isActive") === "on",
     customCheckoutFields,
+    upsellProductId: boundedDraftText(formData, "upsellProductId", 160),
+    downsellProductId: boundedDraftText(formData, "downsellProductId", 160),
+    upsellDiscount: boundedDraftText(formData, "upsellDiscount", 32),
   };
 }
 
@@ -257,6 +261,12 @@ async function loadProductDependencies(db: ProductDb, vendorId: string, request:
         where: { id: request.id, vendorId },
         select: {
           id: true,
+          vendorId: true,
+          currency: true,
+          priceCents: true,
+          upsellProductId: true,
+          downsellProductId: true,
+          upsellDiscountCents: true,
           courseContentOwnerMembershipId: true,
           coursePromoterShareBps: true,
           commerceDomain: true,
@@ -412,6 +422,12 @@ export async function mutateProduct(
   const request = parseProductRequest(previousState, formData);
   if (!request.success) return { ok: false, state: request.state };
   const db = getDb();
+  let postPurchasePolicy;
+  try { postPurchasePolicy = parsePostPurchaseProductPolicy(formData); }
+  catch (error) {
+    if (error instanceof PostPurchaseProductPolicyError) return { ok: false, state: productFailure(previousState, formData, "invalid_product") };
+    throw error;
+  }
   const dependencies = await loadProductDependencies(db, vendorId, request);
   if (!dependencies.success) return { ok: false, state: productFailure(previousState, formData, dependencies.error) };
   const { existingProduct, imageAsset } = dependencies;
@@ -424,6 +440,7 @@ export async function mutateProduct(
   const productId = request.id ?? randomUUID();
   const data = {
     ...request.productInput,
+    ...postPurchasePolicy,
     id: productId,
     vendorId,
     imageUrl: imageAsset?.publicUrl ?? request.productInput.imageUrl,
@@ -442,6 +459,8 @@ export async function mutateProduct(
       // Binding is create-only; never move an existing product via a forged field.
       if (request.id && formData.get("projectId")) throw new SalesProjectBindingError();
       const projectId = await resolveSalesProjectBinding(tx, vendorId, formData.get("projectId"));
+      if (postPurchasePolicy) await assertPostPurchaseProductPolicy(tx, { vendorId, productId,
+        currency: request.productInput.currency, priceCents: request.productInput.priceCents, policy: postPurchasePolicy, existing: existingProduct });
       const productError = await persistProduct(tx, vendorId, request, data);
       if (productError) return productError;
       if (projectId) {
@@ -458,7 +477,9 @@ export async function mutateProduct(
       return null;
     });
   } catch (error) {
-    if (error instanceof SalesProjectBindingError) {
+    if (error instanceof PostPurchaseProductPolicyError) {
+      persistenceError = "invalid_product";
+    } else if (error instanceof SalesProjectBindingError) {
       persistenceError = "not_found";
     } else if (error instanceof ProductDeliveryConflictError || hasPrismaErrorCode(error, "P2002")) {
       persistenceError = request.id ? "conflict" : "duplicate_slug";

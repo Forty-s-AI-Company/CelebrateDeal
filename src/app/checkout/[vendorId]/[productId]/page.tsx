@@ -1,22 +1,41 @@
 import { notFound, redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { PostPurchaseUnavailableError, resolvePostPurchaseCreditQuote } from "@/lib/post-purchase-credit";
 import { CommerceCheckoutEntry } from "@/components/commerce-checkout-entry";
 import type { CommerceCheckoutFulfillmentType } from "@/lib/commerce-checkout";
 import { safeParseCustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 import { getDb } from "@/lib/db";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
 
+function checkoutIntent(query?: { resume?: string; flashSale?: string; postPurchaseToken?: string }) {
+  const flashSaleRunId = query?.flashSale;
+  const postPurchaseToken = query?.postPurchaseToken;
+  if (postPurchaseToken !== undefined && (typeof postPurchaseToken !== "string" || postPurchaseToken.length > 2100
+    || !/^ppu1\.[A-Za-z0-9_-]{1,2048}\.[A-Za-z0-9_-]{43}$/u.test(postPurchaseToken))) notFound();
+  if (postPurchaseToken && flashSaleRunId) notFound();
+  if (flashSaleRunId !== undefined && (typeof flashSaleRunId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/u.test(flashSaleRunId))) notFound();
+  return { resume: query?.resume === "1", flashSaleRunId, postPurchaseToken };
+}
+
+async function buyerUpgradeQuote(vendorId: string, productId: string, token?: string) {
+  if (!token) return null;
+  try { return await resolvePostPurchaseCreditQuote(getDb(), await cookies(), { vendorId, productId, token }); }
+  catch (error) {
+    if (error instanceof PostPurchaseUnavailableError) return false;
+    throw error;
+  }
+}
+
 export default async function CommerceCheckoutPage({
   params,
   searchParams,
 }: {
   params: Promise<{ vendorId: string; productId: string }>;
-  searchParams?: Promise<{ resume?: string; flashSale?: string }>;
+  searchParams?: Promise<{ resume?: string; flashSale?: string; postPurchaseToken?: string }>;
 }) {
   const { vendorId, productId } = await params;
   const query = await searchParams;
-  const resume = query?.resume === "1";
-  const flashSaleRunId = query?.flashSale;
-  if (flashSaleRunId !== undefined && !/^[A-Za-z0-9_-]{1,128}$/u.test(flashSaleRunId)) notFound();
+  const { resume, flashSaleRunId, postPurchaseToken } = checkoutIntent(query);
   const product = await getDb().product.findFirst({
     where: { id: productId, vendorId },
     select: {
@@ -38,6 +57,7 @@ export default async function CommerceCheckoutPage({
     },
   });
   if (!product) notFound();
+  if (postPurchaseToken && product.checkoutUrl) notFound();
   if (flashSaleRunId && product.checkoutUrl) notFound();
   if (product.checkoutUrl && product.isActive && !resume) {
     const externalCheckoutUrl = parseSafeExternalHttpUrl(product.checkoutUrl);
@@ -54,12 +74,19 @@ export default async function CommerceCheckoutPage({
     && !product.checkoutUrl
     && deliveryReady;
   const customCheckoutFields = safeParseCustomCheckoutFields(product.customCheckoutFields);
+  const postPurchaseQuote = await buyerUpgradeQuote(vendorId, productId, postPurchaseToken);
+  if (postPurchaseQuote === false) {
+      // A consumed/expired locator may still have this browser's own pending
+      // checkout. Let the existing recovery entry load its immutable terms.
+      return <main className="mx-auto max-w-xl px-4 py-12"><h1 className="mb-5 text-2xl font-black text-slate-950">查看加購訂單</h1><CommerceCheckoutEntry /></main>;
+  }
   const currentCheckout = canRenderNewCheckout && customCheckoutFields.success ? {
     vendorId: product.vendorId,
     ...(flashSaleRunId ? { flashSaleRunId } : {}),
+    ...(postPurchaseToken ? { postPurchaseToken } : {}),
     productId: product.id,
     productName: product.name,
-    priceCents: product.priceCents,
+    priceCents: postPurchaseQuote?.checkoutAmountCents ?? product.priceCents,
     currency: product.currency,
     fulfillmentType,
     customCheckoutFields: customCheckoutFields.data,

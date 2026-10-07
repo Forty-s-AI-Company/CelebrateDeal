@@ -18,7 +18,10 @@ export default async function NewProductPage({ searchParams }: { searchParams?: 
   return (
     <>
       <PageHeader title="新增商品" description="建立商品卡、定價與實體／數位／服務／課程交付方式。" />
-      <ProductForm projectId={projectId} error={error} memberships={memberships.map((membership) => ({ id: membership.id, teamName: membership.team.name, memberName: membership.vendorMember.user.name }))} />
+      <ProductForm projectId={projectId} error={error} offerProducts={await getDb().product.findMany({
+        where: { vendorId: vendor.id, isActive: true, fulfillmentTypeConfirmed: true, checkoutUrl: null },
+        select: { id: true, name: true, priceCents: true, currency: true }, orderBy: { name: "asc" }, take: 200,
+      })} memberships={memberships.map((membership) => ({ id: membership.id, teamName: membership.team.name, memberName: membership.vendorMember.user.name }))} />
     </>
   );
 }

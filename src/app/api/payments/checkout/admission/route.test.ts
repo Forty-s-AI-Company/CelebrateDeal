@@ -6,8 +6,18 @@ const db = {
 };
 vi.mock("@/lib/db", () => ({ getDb: () => db }));
 vi.mock("@/lib/rate-limit", () => ({ checkRateLimit: vi.fn(async () => null) }));
+const postPurchase = vi.hoisted(() => ({ quote: vi.fn(), replay: vi.fn() }));
+vi.mock("@/lib/post-purchase-credit", async importOriginal => {
+  const original = await importOriginal<typeof import("@/lib/post-purchase-credit")>();
+  return { ...original, resolvePostPurchaseCreditQuote: postPurchase.quote, assertPostPurchaseCreditReplay: postPurchase.replay };
+});
 
 import { POST } from "@/app/api/payments/checkout/admission/route";
+import { postPurchaseCreditQuoteHash, PostPurchaseUnavailableError } from "@/lib/post-purchase-credit";
+const quote = { vendorId: "vendor-1", sourceOrderId: "source-order", buyerGrantId: "source-grant",
+  sourceProductId: "source-product", targetProductId: "product-1", kind: "upsell" as const, currency: "TWD",
+  creditAmountCents: 700, offerDiscountCents: 100, targetPriceCents: 1200, checkoutAmountCents: 400 };
+const upgradeToken = `ppu1.synthetic.${"b".repeat(43)}`;
 import {
   CHECKOUT_ADMISSION_COOKIE,
   verifyCheckoutAdmission,
@@ -28,6 +38,8 @@ function request(body: Record<string, unknown> = {}, cookie?: string, origin: st
 
 beforeEach(() => {
   vi.clearAllMocks();
+  postPurchase.quote.mockResolvedValue(quote);
+  postPurchase.replay.mockResolvedValue(quote);
   vi.stubEnv("CSRF_SECRET", "checkout-admission-route-test-secret-longer-than-32-bytes");
   db.product.findFirst.mockResolvedValue({ id: "product-1", vendorId: "vendor-1", revision: 9 });
   db.paymentTransaction.findUnique.mockResolvedValue(null);
@@ -36,6 +48,29 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("POST /api/payments/checkout/admission", () => {
+  it("signs the current buyer-authorized upgrade quote rather than catalogue full price", async () => {
+    const sessionToken = "q".repeat(43);
+    const response = await POST(request({ postPurchaseToken: upgradeToken }, `${CHECKOUT_ADMISSION_COOKIE}=${sessionToken}`));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.offer).toEqual({ priceCents: 400, currency: "TWD", hash: postPurchaseCreditQuoteHash(quote) });
+    expect(verifyCheckoutAdmission({ admissionToken: body.admissionToken, sessionToken })).toMatchObject({
+      vendorId: "vendor-1", productId: "product-1", productRevision: 9, offerHash: postPurchaseCreditQuoteHash(quote),
+    });
+  });
+  it("does not issue admission for a revoked or refunded source", async () => {
+    postPurchase.quote.mockRejectedValueOnce(new PostPurchaseUnavailableError());
+    const response = await POST(request({ postPurchaseToken: upgradeToken }));
+    expect(response.status).toBe(409);
+    expect(response.cookies.get(CHECKOUT_ADMISSION_COOKIE)).toBeUndefined();
+    expect(db.product.findFirst).not.toHaveBeenCalled();
+  });
+  it("rejects combining an upgrade with explicit flash-sale intent", async () => {
+    const response = await POST(request({ postPurchaseToken: upgradeToken, flashSaleRunId: "sale-run" }));
+    expect(response.status).toBe(409);
+    expect(postPurchase.quote).not.toHaveBeenCalled();
+    expect(response.cookies.get(CHECKOUT_ADMISSION_COOKIE)).toBeUndefined();
+  });
   it("rejects a sale intent with no claim instead of issuing a full-price admission", async () => {
     const response = await POST(request({ flashSaleRunId: "sale-run" }));
     expect(response.status).toBe(409);
@@ -131,7 +166,7 @@ describe("POST /api/payments/checkout/admission", () => {
           checkoutIdempotencyKey: idempotencyKey,
         },
       },
-      select: { status: true, metadata: true },
+      select: { status: true, metadata: true, primaryCommerceOrder: { select: { id: true } } },
     });
     expect(db.product.findFirst).toHaveBeenCalledWith({
       where: { id: "product-1", vendorId: "vendor-1" },

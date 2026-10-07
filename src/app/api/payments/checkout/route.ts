@@ -24,6 +24,8 @@ import {
   type CommerceOrderPii,
 } from "@/lib/commerce-order-pii";
 import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
+import { assertPostPurchaseCreditReplay, consumePostPurchaseCredit, postPurchaseCreditQuoteHash, postPurchaseRequestCookies,
+  PostPurchaseUnavailableError, resolvePostPurchaseCreditQuote } from "@/lib/post-purchase-credit";
 import {
   CommerceCustomCheckoutValidationError,
   createCustomCheckoutIdentityHash,
@@ -631,6 +633,17 @@ async function existingCheckoutResponse({
   const primaryItem = order?.items.find((item) => item.lineIndex === 0);
   const bumpItem = order?.items.find((item) => item.lineIndex === 1);
   const bumpId = typeof metadata.orderBumpProductId === "string" ? metadata.orderBumpProductId : null;
+  try {
+    if (metadata.postPurchaseCredit) {
+      if (!order) throw new PostPurchaseUnavailableError();
+      await assertPostPurchaseCreditReplay(getDb(), postPurchaseRequestCookies(request), { vendorId: data.vendorId,
+        productId: data.productId, targetOrderId: order.id, token: data.postPurchaseToken });
+    } else if (data.postPurchaseToken) throw new PostPurchaseUnavailableError();
+  } catch (error) {
+    if (error instanceof PostPurchaseUnavailableError) return NextResponse.json({ error: "Post purchase unavailable", code: "POST_PURCHASE_UNAVAILABLE" },
+      { status: 409, headers: { "Cache-Control": "private, no-store" } });
+    throw error;
+  }
   if (
     transaction.vendorId !== data.vendorId
     || transaction.checkoutIdempotencyKey !== data.idempotencyKey
@@ -732,6 +745,20 @@ export async function POST(request: Request) {
     include: existingCheckoutInclude,
   });
   if (existing) return await existingCheckoutResponse({ request, transaction: existing, data: parsed.data });
+  const buyerCookies = postPurchaseRequestCookies(request);
+  let postPurchaseQuote: Awaited<ReturnType<typeof resolvePostPurchaseCreditQuote>> | undefined;
+  if (parsed.data.postPurchaseToken) {
+    try {
+      if (parsed.data.orderBump || parsed.data.funnel) throw new PostPurchaseUnavailableError();
+      postPurchaseQuote = await resolvePostPurchaseCreditQuote(db, buyerCookies, { token: parsed.data.postPurchaseToken,
+        vendorId: parsed.data.vendorId, productId: parsed.data.productId });
+      if (admission.offerHash !== postPurchaseCreditQuoteHash(postPurchaseQuote)) throw new PostPurchaseUnavailableError();
+    } catch (error) {
+      if (error instanceof PostPurchaseUnavailableError) return NextResponse.json({ error: "Post purchase unavailable", code: "POST_PURCHASE_UNAVAILABLE" },
+        { status: 409, headers: { "Cache-Control": "private, no-store" } });
+      throw error;
+    }
+  }
   const funnelResult = await resolveFunnelCheckoutRequest(db, parsed.data, existing);
   if (!funnelResult.ok) return funnelResult.response;
   const funnel = funnelResult.funnel;
@@ -803,7 +830,7 @@ export async function POST(request: Request) {
   const formSubmissionId = attributedRegistration?.id;
   const projectId = funnel?.projectId ?? attributedRegistration?.live?.projectId ?? undefined;
   const saleBearer = flashSaleBearerFromRequest(request);
-  const saleQuote = await resolveFlashSaleQuote(db, saleBearer, parsed.data).then((quote) => {
+  const saleQuote = postPurchaseQuote ? null : await resolveFlashSaleQuote(db, saleBearer, parsed.data).then((quote) => {
     assertFlashSaleAdmission(admission.offerHash, quote);
     return quote;
   }).catch((error: unknown) => {
@@ -817,7 +844,7 @@ export async function POST(request: Request) {
   // or payment-provider metadata.
   const referralCode = affiliateAttribution?.referralCode;
   const coursePolicySnapshot = coursePolicySnapshotFromProduct(product);
-  const voucherClaim = saleQuote ? null : await eligibleCheckoutVoucherClaim(request, {
+  const voucherClaim = saleQuote || postPurchaseQuote ? null : await eligibleCheckoutVoucherClaim(request, {
     vendorId: parsed.data.vendorId,
     productId: product.id,
     priceCents: product.priceCents,
@@ -828,9 +855,10 @@ export async function POST(request: Request) {
   });
   if (voucherClaim instanceof Response) return voucherClaim;
   // 快閃價與優惠券不疊加；實際金額只使用已簽署且重新驗證的報價。
-  const discountAmountCents = saleQuote ? saleQuote.priceCents - saleQuote.salePriceCents : voucherClaim?.discountAmountCents ?? 0;
+  const discountAmountCents = postPurchaseQuote ? postPurchaseQuote.creditAmountCents + postPurchaseQuote.offerDiscountCents
+    : saleQuote ? saleQuote.priceCents - saleQuote.salePriceCents : voucherClaim?.discountAmountCents ?? 0;
   const checkoutAmountCents = product.priceCents + (orderBumpProduct?.priceCents ?? 0) - discountAmountCents;
-  const transactionMetadata = checkoutTransactionMetadata({
+  const transactionMetadata = { ...checkoutTransactionMetadata({
     productId: parsed.data.productId,
     productName: product.name,
     coursePolicySnapshot,
@@ -843,7 +871,7 @@ export async function POST(request: Request) {
     checkoutAmountCents,
     ...(orderBumpProduct ? { orderBumpProductId: orderBumpProduct.id, orderBumpPriceCents: orderBumpProduct.priceCents } : {}),
     funnel,
-  });
+  }), ...(postPurchaseQuote ? { postPurchaseCredit: { ...postPurchaseQuote } } : {}) };
 
   const order = orderNumber();
   let transaction;
@@ -890,6 +918,10 @@ export async function POST(request: Request) {
           now: new Date(),
         });
         if (saleQuote && saleBearer) await consumeFlashSaleQuote(tx, saleBearer, saleQuote, commerceOrder.id, new Date(), reservedRevisions.find((item) => item.productId === product.id));
+        if (postPurchaseQuote && parsed.data.postPurchaseToken) await consumePostPurchaseCredit(tx, buyerCookies, {
+          token: parsed.data.postPurchaseToken, quote: postPurchaseQuote, targetOrderId: commerceOrder.id,
+          reserved: reservedRevisions.find(item => item.productId === product.id),
+        });
         commerceOrderId = commerceOrder.id;
       },
     });
@@ -913,6 +945,8 @@ export async function POST(request: Request) {
     if (error instanceof FlashSaleUnavailableError) {
       return NextResponse.json({ error: "Flash sale changed or unavailable", code: "FLASH_SALE_UNAVAILABLE" }, { status: 409 });
     }
+    if (error instanceof PostPurchaseUnavailableError) return NextResponse.json({ error: "Post purchase unavailable", code: "POST_PURCHASE_UNAVAILABLE" },
+      { status: 409, headers: { "Cache-Control": "private, no-store" } });
     return NextResponse.json({ error: "Unable to start checkout" }, { status: 502 });
   }
   let checkoutSession: CheckoutSessionResult;

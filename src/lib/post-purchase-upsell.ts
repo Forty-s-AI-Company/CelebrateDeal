@@ -43,9 +43,12 @@ export function resolvePostPurchaseOffer(input: {
   source: PostPurchaseUpsellProduct;
   candidates: readonly PostPurchaseUpsellProduct[];
   kind: "upsell" | "downsell";
+  /** Set only after the server has verified this exact settled source order. */
+  sourceOwned?: boolean;
 }): PostPurchaseOffer | null {
   const source = PostPurchaseUpsellProductSchema.safeParse(input.source);
-  if (!source.success || !isAvailable(source.data)) return null;
+  if (!source.success || !source.data.isActive || !source.data.fulfillmentTypeConfirmed
+    || (!input.sourceOwned && source.data.inventory <= 0)) return null;
   const targetId = input.kind === "upsell" ? source.data.upsellProductId : source.data.downsellProductId;
   if (!targetId) return null;
   const target = input.candidates
