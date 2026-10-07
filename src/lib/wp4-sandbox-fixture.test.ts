@@ -63,7 +63,7 @@ describe("ensureWp4SandboxFixture", () => {
     }));
   });
 
-  it("reuses and repairs only rows whose complete synthetic identity matches", async () => {
+  it("reuses exact fixtures without resetting payment, inventory or membership state", async () => {
     const { db, transactionDb } = fixtureDb({
       vendor: {
         findFirst: vi.fn().mockResolvedValue({
@@ -77,18 +77,18 @@ describe("ensureWp4SandboxFixture", () => {
         findFirst: vi.fn().mockResolvedValue({
           id: WP4_SANDBOX_FIXTURE.userId,
           email: WP4_SANDBOX_FIXTURE.userEmail,
-          name: "WP4 Synthetic Sandbox Owner",
+          name: "WP4 Synthetic Sandbox Owner", status: "active",
         }),
         create: vi.fn(),
         update: vi.fn(),
       },
-      vendorMember: { findUnique: vi.fn().mockResolvedValue({ id: "synthetic-member" }), create: vi.fn(), update: vi.fn() },
+      vendorMember: { findUnique: vi.fn().mockResolvedValue({ id: "synthetic-member", role: "owner", status: "active", deactivatedAt: null }), create: vi.fn(), update: vi.fn() },
       product: {
         findFirst: vi.fn().mockResolvedValue({
           id: WP4_SANDBOX_FIXTURE.productId,
           vendorId: WP4_SANDBOX_FIXTURE.vendorId,
           slug: WP4_SANDBOX_FIXTURE.productSlug,
-          name: "WP4 Synthetic Sandbox Product",
+          name: "WP4 Synthetic Sandbox Product", priceCents: 100, currency: "TWD", commerceDomain: "merchant", fulfillmentType: "physical", fulfillmentTypeConfirmed: true, inventory: 17,
         }),
         create: vi.fn(),
         update: vi.fn(),
@@ -97,7 +97,7 @@ describe("ensureWp4SandboxFixture", () => {
         findFirst: vi.fn().mockResolvedValue({
           id: WP4_SANDBOX_FIXTURE.planId,
           code: WP4_SANDBOX_FIXTURE.planCode,
-          name: "WP4 Synthetic Sandbox Plan",
+          name: "WP4 Synthetic Sandbox Plan", monthlyPriceCents: 100,
         }),
         create: vi.fn(),
         update: vi.fn(),
@@ -107,7 +107,7 @@ describe("ensureWp4SandboxFixture", () => {
           id: WP4_SANDBOX_FIXTURE.invoiceId,
           vendorId: WP4_SANDBOX_FIXTURE.vendorId,
           invoiceNumber: WP4_SANDBOX_FIXTURE.invoiceNumber,
-          monthKey: "2099-12",
+          monthKey: "2099-12", monthlyFeeCents: 100, subtotalCents: 100, totalCents: 100, status: "paid", paidAt: new Date("2026-10-06T00:00:00Z"),
         }),
         create: vi.fn(),
         update: vi.fn(),
@@ -115,11 +115,11 @@ describe("ensureWp4SandboxFixture", () => {
     });
 
     await expect(ensureWp4SandboxFixture(db)).resolves.toEqual({ createdCount: 0, reusedCount: 6 });
-    expect(transactionDb.user.update).toHaveBeenCalledOnce();
-    expect(transactionDb.vendorMember.update).toHaveBeenCalledOnce();
-    expect(transactionDb.product.update).toHaveBeenCalledOnce();
-    expect(transactionDb.billingPlan.update).toHaveBeenCalledOnce();
-    expect(transactionDb.invoice.update).toHaveBeenCalledOnce();
+    expect(transactionDb.user.update).not.toHaveBeenCalled();
+    expect(transactionDb.vendorMember.update).not.toHaveBeenCalled();
+    expect(transactionDb.product.update).not.toHaveBeenCalled();
+    expect(transactionDb.billingPlan.update).toHaveBeenCalledWith({ where: { id: WP4_SANDBOX_FIXTURE.planId }, data: { isActive: false } });
+    expect(transactionDb.invoice.update).not.toHaveBeenCalled();
   });
 
   it("fails closed before writes when a deterministic identity collides", async () => {

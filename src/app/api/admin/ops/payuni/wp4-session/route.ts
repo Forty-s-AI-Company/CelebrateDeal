@@ -1,3 +1,4 @@
+import { authorizeWp4Ops } from "@/lib/wp4-runtime-boundary";
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { requireJobSecret, unauthorizedJson } from "@/lib/api-security";
@@ -30,6 +31,8 @@ function unavailableConfigurationResponse() {
  * This handler deliberately accepts no body: both identities are deployment-owned.
  */
 export async function POST(request: Request) {
+  const authorization = await authorizeWp4Ops(request);
+  if (authorization instanceof Response) return authorization;
   // Keep this first: unauthorized callers must not consume a body or touch the DB.
   if (!requireJobSecret(request)) {
     return unauthorizedJson();
@@ -98,6 +101,8 @@ export async function POST(request: Request) {
 
 /** Revoke only the fixed synthetic owner session created for this Preview run. */
 export async function DELETE(request: Request) {
+  const authorization = await authorizeWp4Ops(request);
+  if (authorization instanceof Response) return authorization;
   if (!requireJobSecret(request)) return unauthorizedJson();
   if (process.env.VERCEL_ENV !== "preview"
     || process.env.PAYUNI_ENV !== "sandbox"

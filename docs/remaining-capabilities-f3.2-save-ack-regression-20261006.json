@@ -1,0 +1,110 @@
+{
+  "status": "LOCAL_CHECKS_PASS_INDEPENDENT_REVIEW_PENDING",
+  "source_revision": "sha256:4ab03f406e08074b502f1f0d78bcced36bfece46cb5f0ecad96c2c5eac81baef",
+  "snapshot_files": [
+    "playwright.funnel-workspace.config.ts",
+    "scripts/funnel-workspace-disposable-qa.mjs",
+    "scripts/prisma-loopback-disposable-migration-runner.mjs",
+    "src/components/landing-pages/funnel-editor-browser-harness.tsx",
+    "src/components/landing-pages/funnel-element-inspector.tsx",
+    "src/components/landing-pages/funnel-page-editor.tsx",
+    "src/components/landing-pages/funnel-step-pages-editor.tsx",
+    "src/components/landing-pages/workspace-editor.tsx",
+    "src/lib/funnel-step-pages-history.test.ts",
+    "src/lib/funnel-step-pages-history.ts",
+    "tests/browser-dev/funnel-editor-history.spec.ts",
+    "tests/e2e/funnel-operations.spec.ts",
+    "tests/e2e/funnel-workspace-persistence.spec.ts",
+    "tests/e2e/webinar-funnel-flow.spec.ts"
+  ],
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:4ab03f406e08074b502f1f0d78bcced36bfece46cb5f0ecad96c2c5eac81baef"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:4ab03f406e08074b502f1f0d78bcced36bfece46cb5f0ecad96c2c5eac81baef",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 3.375,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal\\.ai-team\\tmp\\editor-advanced\\unit-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:4ab03f406e08074b502f1f0d78bcced36bfece46cb5f0ecad96c2c5eac81baef",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 14.532,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal\\.ai-team\\tmp\\editor-advanced\\typecheck-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "strict_index",
+      "revision": "sha256:4ab03f406e08074b502f1f0d78bcced36bfece46cb5f0ecad96c2c5eac81baef",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 31.344,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal\\.ai-team\\tmp\\editor-advanced\\strict_index-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:4ab03f406e08074b502f1f0d78bcced36bfece46cb5f0ecad96c2c5eac81baef",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 8.375,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal\\.ai-team\\tmp\\editor-advanced\\lint-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "harness",
+      "revision": "sha256:4ab03f406e08074b502f1f0d78bcced36bfece46cb5f0ecad96c2c5eac81baef",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 105.75,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal\\.ai-team\\tmp\\editor-advanced\\harness-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser",
+      "revision": "sha256:4ab03f406e08074b502f1f0d78bcced36bfece46cb5f0ecad96c2c5eac81baef",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 183.235,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal\\.ai-team\\tmp\\editor-advanced\\browser-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "release_browser",
+      "revision": "sha256:4ab03f406e08074b502f1f0d78bcced36bfece46cb5f0ecad96c2c5eac81baef",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 211.39,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal\\.ai-team\\tmp\\editor-advanced\\release_browser-final.json"
+    }
+  ],
+  "review_status": "HISTORICAL_REVIEW_PRESERVED_NEW_SOURCE_NOT_REVIEWED",
+  "dispatches": 4,
+  "dispatch_limit": 4,
+  "required_next": "same-task dispatch extension pending user response, integrate current master and verify exact candidate CI",
+  "remote_push_run": {
+    "id": 37391042097,
+    "status": "FAILURE"
+  },
+  "remote_pr_run": {
+    "id": 37391047180,
+    "status": "SUCCESS"
+  },
+  "production": "NOT_PERFORMED"
+}

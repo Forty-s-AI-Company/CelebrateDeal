@@ -155,3 +155,36 @@ $sensitive = $sensitiveOutput | ConvertFrom-Json
 Assert-AiTeam ($sensitive.status -eq 'BLOCKED_SENSITIVE_INPUT') 'sensitive prompt started a process'
 
 Write-Output 'AI_TEAM_RESILIENCE_TESTS=PASS'
+
+Assert-AiTeam ((Quote-AiTeamProcessArgument '') -eq '""') 'empty print argument was dropped on legacy runtimes'
+$utf8Input = Invoke-AiTeamProcess -FilePath $pwsh.Source `
+    -ArgumentList (New-AiTeamCommandArgs '$b=[Console]::OpenStandardInput(); $bytes=New-Object byte[] 3; [void]$b.Read($bytes,0,3); [Console]::Out.Write([BitConverter]::ToString($bytes))') `
+    -StandardInputText '{"event":"user"}' -Profile synthetic -Model synthetic -ReasoningEffort none `
+    -FirstOutputTimeoutSeconds 5 -IdleTimeoutSeconds 5 -HardTimeoutSeconds 10
+Assert-AiTeam ($utf8Input.status -eq 'SUCCESS' -and $utf8Input.stdout -eq '7B-22-65') 'stdin JSON contains a UTF-8 BOM'
+# Large Unicode scopes must use stdin rather than Windows command-line arguments.
+$largeScope = ('審查範圍' * 11000) + 'END_MARKER'
+$largeInput = Invoke-AiTeamProcess -FilePath $pwsh.Source `
+    -ArgumentList (New-AiTeamCommandArgs '[Console]::InputEncoding=[Text.UTF8Encoding]::new($false); $s=[Console]::In.ReadToEnd(); [Console]::Out.Write($s.Length.ToString()+":"+$s.Substring($s.Length-10))') `
+    -StandardInputText $largeScope -Profile synthetic -Model synthetic -ReasoningEffort none `
+    -FirstOutputTimeoutSeconds 10 -IdleTimeoutSeconds 10 -HardTimeoutSeconds 20
+Assert-AiTeam ($largeInput.status -eq 'SUCCESS' -and $largeInput.stdout -eq ($largeScope.Length.ToString()+':END_MARKER')) 'large Unicode stdin was lost'
+$validResult = @{event='result';result=@{status='SUCCESS';response='{"summary":"verified","findings":[]}'}} | ConvertTo-Json -Depth 4 -Compress
+Assert-AiTeam ((Get-AiTeamAgyReviewOutput $validResult) -eq '{"summary":"verified","findings":[]}') 'terminal response was not extracted'
+foreach ($badStream in @(($validResult+"`n"+$validResult), '{"event":"result","result":{"status":"ERROR","response":"{}"}}', '{"event":"init"}', '{broken')) {
+    $rejected = $false
+    try { Get-AiTeamAgyReviewOutput $badStream > $null } catch { $rejected = $true }
+    Assert-AiTeam $rejected 'invalid or duplicate terminal result was accepted'
+}
+$blockedInput = Invoke-AiTeamProcess -FilePath $pwsh.Source `
+    -ArgumentList (New-AiTeamCommandArgs 'Write-Output "started"; Start-Sleep -Seconds 30') `
+    -StandardInputText ('x' * 200000) -Profile synthetic -Model synthetic -ReasoningEffort none `
+    -FirstOutputTimeoutSeconds 5 -IdleTimeoutSeconds 5 -HardTimeoutSeconds 10 -GracefulShutdownSeconds 1
+Assert-AiTeam ($blockedInput.status -eq 'IDLE_TIMEOUT' -and $blockedInput.wasKilled) 'blocked stdin bypassed timeout cleanup'
+Write-Output 'AGY stdin and terminal-response regressions passed'
+$discardedTerminal = Invoke-AiTeamProcess -FilePath $pwsh.Source `
+    -ArgumentList (New-AiTeamCommandArgs 'Write-Output ''{"event":"result","result":{"status":"SUCCESS","response":"{}"}}''; 1..10 | ForEach-Object { Write-Output ''{"event":"progress"}'' }; Write-Output ''{"event":"result","result":{"status":"SUCCESS","response":"{}"}}''') `
+    -Profile synthetic -Model synthetic -ReasoningEffort none -MaxOutputLines 10 `
+    -FirstOutputTimeoutSeconds 5 -IdleTimeoutSeconds 5 -HardTimeoutSeconds 10
+Assert-AiTeam ($discardedTerminal.status -eq 'SUCCESS' -and $discardedTerminal.stdoutTruncated) 'discarded terminal event was concealed by the line limit'
+Write-Output 'AGY line-limit truncation regression passed'
