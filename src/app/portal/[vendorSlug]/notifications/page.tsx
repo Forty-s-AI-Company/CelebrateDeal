@@ -26,7 +26,7 @@ export default async function StudentNotificationsPage({ params, searchParams }:
     if (after && !/^[A-Za-z0-9_-]{1,128}$/u.test(after)) notFound();
     // Current purchases are discoverable before the first channel enrollment.
     // Existing refunded preferences remain separately pageable for withdrawal.
-    const purchased = await getDb().product.findMany({ where: { vendorId: session.vendorId, ...(productsAfter ? { id: { gt: productsAfter } } : {}), commerceOrderItems: { some: learnerNotificationPurchaseWhere(session) } }, orderBy: { id: "asc" }, take: 21, select: { id: true, name: true } });
+    const purchased = await getDb().product.findMany({ where: { vendorId: session.vendorId, ...(productsAfter ? { id: { gt: productsAfter } } : {}), commerceOrderItems: { some: learnerNotificationPurchaseWhere(session, getDb()) } }, orderBy: { id: "asc" }, take: 21, select: { id: true, name: true } });
     const purchasedVisible = purchased.slice(0, 20);
     const lastProduct = purchasedVisible.at(-1);
     const productsNext = purchased.length > 20 && lastProduct ? `/portal/${encodeURIComponent(vendorSlug)}/notifications?productsAfter=${encodeURIComponent(lastProduct.id)}` : null;

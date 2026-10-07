@@ -4,7 +4,7 @@ import { hasLearnerNotificationPurchase } from "./learner-notification-access";
 import type { StudentPortalScope } from "./student-portal";
 import { LearnerNotificationConsentInput, LearnerNotificationScope } from "./learner-notification-contract";
 
-export type NotificationPreferenceDatabase = CourseLearningStore & Pick<PrismaClient, "$transaction" | "learnerNotificationPreference">;
+export type NotificationPreferenceDatabase = CourseLearningStore & Pick<PrismaClient, "$transaction" | "commerceOrder" | "learnerNotificationPreference">;
 const publicFields = { channel: true, enabled: true, revision: true, destinationVerifiedAt: true } as const;
 
 /** Return consent state only; encrypted contacts and private indexes never reach the browser. */

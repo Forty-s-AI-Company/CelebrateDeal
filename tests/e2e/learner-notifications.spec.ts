@@ -79,18 +79,22 @@ test("actual portal worker receives a synthetic device message and keeps authent
 
 // Match the disposable runner's full Chromium for native notification APIs.
 test.use({channel:"chromium",trace:"off",screenshot:"off",video:"off"});
-test("digital purchaser discovers notifications before enrollment and can withdraw after refund", async ({ page, baseURL }) => {
+for (const fulfillmentType of ["digital", "physical", "service"] as const) {
+test(`${fulfillmentType} purchaser discovers notifications before enrollment and can withdraw after refund`, async ({ page, baseURL }) => {
  test.setTimeout(120000);
  const db = new PrismaClient(), suffix = randomUUID();
  const vendor = await db.vendor.create({ data: { name: "Synthetic digital notifications", slug: `digital-notify-${suffix}`, email: `owner-${suffix}@invalid.example`, passwordHash: "synthetic-login-disabled" } });
  try {
-  const product = await db.product.create({ data: { vendorId: vendor.id, name: "數位商品通知", slug: randomUUID(), priceCents: 1000, commerceDomain: "merchant", fulfillmentType: "digital" } });
+  const product = await db.product.create({ data: { vendorId: vendor.id, name: "數位商品通知", slug: randomUUID(), priceCents: 1000, commerceDomain: "merchant", fulfillmentType } });
   const email = `digital-${suffix}@invalid.example`, customerKeyHash = automationCustomerKeyHash(vendor.id, email), orderId = randomUUID();
   const pii = protectCommerceOrderPii({ buyer: { name: "Synthetic digital buyer", email }, shipping: null }, { vendorId: vendor.id, orderId });
   await db.commerceOrder.create({ data: { id: orderId, vendorId: vendor.id, orderNumber: orderId, checkoutIdempotencyKey: randomUUID(), checkoutIdentityHash: pii.checkoutIdentityHash, automationCustomerKeyHash: customerKeyHash, status: "paid", subtotalAmountCents: 1000, totalAmountCents: 1000, paidAmountCents: 1000, buyerEncryptedEnvelope: pii.buyerEncrypted, buyerMaskedName: pii.buyerNameMasked, buyerMaskedEmail: pii.buyerEmailMasked } });
-  const item = await db.commerceOrderItem.create({ data: { vendorId: vendor.id, orderId, productId: product.id, lineIndex: 0, productName: product.name, productSlug: product.slug, commerceDomain: "merchant", fulfillmentType: "digital", unitPriceCents: 1000, quantity: 1, lineTotalCents: 1000, nonSensitiveSnapshot: {} } });
+  const item = await db.commerceOrderItem.create({ data: { vendorId: vendor.id, orderId, productId: product.id, lineIndex: 0, productName: product.name, productSlug: product.slug, commerceDomain: "merchant", fulfillmentType, unitPriceCents: 1000, quantity: 1, lineTotalCents: 1000, nonSensitiveSnapshot: {} } });
+  if (fulfillmentType === "digital") {
   const grant = await db.commerceEntitlement.create({ data: { vendorId: vendor.id, orderItemId: item.id } });
   await db.$transaction(tx => grantCommerceEntitlement(tx, { vendorId: vendor.id, entitlementId: grant.id, expectedRevision: grant.revision, actor: { id: "synthetic-digital-browser" } }));
+  }
+  expect(await db.commerceEntitlement.count({where:{orderItemId:item.id}})).toBe(fulfillmentType === "digital" ? 1 : 0);
   const token = await createStudentPortalAccessToken(db, { vendorId: vendor.id, email, purpose: "magic_link" });
   await page.goto(`${baseURL}/portal/${vendor.slug}/access?token=${encodeURIComponent(token)}`);
   await expect(page).toHaveURL(new RegExp(`/portal/${vendor.slug}$`));
@@ -123,6 +127,8 @@ test("digital purchaser discovers notifications before enrollment and can withdr
   expect((await db.learnerNotificationPreference.findUniqueOrThrow({ where: { id: preference.id } })).revision).toBe(2);
  } finally { await db.vendor.deleteMany({ where: { id: vendor.id } }); await db.$disconnect(); }
 });
+}
+
 test("purchasing learner withdraws real notification consent and reloads; foreign course and CSRF are refused",async({page,baseURL})=>{
  test.setTimeout(120000);
  const db=new PrismaClient(),suffix=randomUUID();

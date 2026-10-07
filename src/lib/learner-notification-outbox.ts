@@ -1,3 +1,4 @@
+import { hasLearnerNotificationPurchase } from "./learner-notification-access";
 import { createHash, randomBytes } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
@@ -5,6 +6,7 @@ import { LearnerNotificationChannel, LearnerNotificationEvent, LearnerNotificati
 import { decryptSensitiveValue, encryptSensitiveValue } from "./sensitive-data";
 
 export const LearnerNotificationMessage = z.object({
+ paymentOrder: z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u) }).strict().optional(),
  discussionReply: z.object({ postId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u), replyId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u), customerKeyHash: z.string().regex(/^[A-Za-z0-9_-]{43}$/u) }).strict().optional(),
  consultationBooking: z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u), startTime: z.string().datetime(), customerKeyHash: z.string().regex(/^[A-Za-z0-9_-]{43}$/u), confirmedAt: z.string().datetime() }).strict().optional(),
  liveSession: z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u), startedAt: z.string().datetime() }).strict().optional(),
@@ -13,18 +15,14 @@ export const LearnerNotificationMessage = z.object({
  // Product links never carry session tokens, contact details or a foreign origin.
  path: z.string().max(512).regex(/^\/(?!\/)[A-Za-z0-9_/%.-]+$/u),
 }).strict();
-type Store = Pick<Prisma.TransactionClient, "commerceOrderItem" | "learnerNotificationPreference" | "learnerNotificationDelivery">;
+type Store = Pick<Prisma.TransactionClient, "commerceOrderItem" | "commerceOrder" | "learnerNotificationPreference" | "learnerNotificationDelivery">;
 type Database = Store & Pick<PrismaClient, "$transaction">;
 const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 const payloadPurpose = (vendorId: string, key: string) => `learner-notification-payload-v1:${JSON.stringify([vendorId,key])}`;
 
 /** Every supported event keeps a live vendor/customer/product purchase boundary. */
 async function hasRights(tx: Store, scope: Scope) {
- return !!await tx.commerceOrderItem.findFirst({ where: {
-  vendorId: scope.vendorId, productId: scope.productId,
-  entitlement: { is: { status: "granted", revokedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } },
-  order: { is: { vendorId: scope.vendorId, automationCustomerKeyHash: scope.customerKeyHash, status: { in: ["paid", "partially_refunded"] } } },
- }, select: { id: true } });
+ return hasLearnerNotificationPurchase(tx, scope, scope.productId);
 }
 async function serializable<T>(db: Database, run: (tx: Prisma.TransactionClient) => Promise<T>) {
  for (let attempt = 0; attempt < 3; attempt++) {

@@ -1,3 +1,4 @@
+import { lockLearnerNotificationPurchase } from "./learner-notification-access";
 import { createHash, randomBytes } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
@@ -35,14 +36,8 @@ export async function dispatchLearnerVerificationDelivery(db:Database,raw:unknow
    if(rows.length!==1)return {status:"not_claimed"} as const;
    const row=await tx.learnerNotificationVerification.findFirstOrThrow({where});
    const pref=await tx.learnerNotificationPreference.findFirstOrThrow({where:{vendorId:row.vendorId,productId:row.productId,id:row.preferenceId}});
-   const rights=await tx.$queryRaw<Array<{id:string}>>`SELECT e."id" FROM "CommerceOrderItem" i
-    JOIN "CommerceOrder" o ON o."vendorId"=i."vendorId" AND o."id"=i."orderId"
-    JOIN "CommerceEntitlement" e ON e."vendorId"=i."vendorId" AND e."orderItemId"=i."id"
-    WHERE i."vendorId"=${row.vendorId} AND i."productId"=${row.productId}
-    AND o."automationCustomerKeyHash"=${pref.customerKeyHash} AND o."status" IN ('paid','partially_refunded')
-    AND e."status"='granted' AND e."revokedAt" IS NULL AND (e."expiresAt" IS NULL OR e."expiresAt">clock_timestamp())
-    ORDER BY e."id" LIMIT 1 FOR UPDATE OF o,e`;
-   if(!rights.length || row.consumedAt || row.expiresAt.getTime()<=Date.now() || pref.revision!==row.consentRevision || !row.deliveryTokenEncryptedEnvelope){
+   const rights=await lockLearnerNotificationPurchase(tx, {vendorId:row.vendorId,productId:row.productId,customerKeyHash:pref.customerKeyHash});
+   if(!rights || row.consumedAt || row.expiresAt.getTime()<=Date.now() || pref.revision!==row.consentRevision || !row.deliveryTokenEncryptedEnvelope){
     await tx.learnerNotificationVerification.update({where:{id:row.id},data:{deliveryStatus:"suppressed",deliveryClaimTokenHash:null,deliveryTokenEncryptedEnvelope:null}});
     return {status:"suppressed"} as const;
    }

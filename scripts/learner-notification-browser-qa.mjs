@@ -31,7 +31,7 @@ const migration=await runMigration({afterMigrate:async({databaseUrl,environment,
  receipt.workerDiagnostics=workerLines.filter(line=>/^::notice::portal-worker attempted=(true|false) accepted=(true|false) error=(none|TypeError|SecurityError|InvalidStateError|AbortError|other)$/u.test(line)).slice(0,2);
  if(child.status!==0)receipt.failureAnnotations=`${child.stdout??""}
 ${child.stderr??""}`.split(/\r?\n/u).filter(line=>/^::error file=tests\/e2e\/learner-notifications\.spec\.ts,line=\d+::playwright /u.test(line)).slice(0,10);
- if(child.status!==0 || receipt.browser.expected!==5 || receipt.browser.unexpected!==0 || receipt.browser.skipped!==0 || receipt.browser.flaky!==0)throw new Error("notification-browser-gate-failed");
+ if(child.status!==0 || receipt.browser.expected!==7 || receipt.browser.unexpected!==0 || receipt.browser.skipped!==0 || receipt.browser.flaky!==0)throw new Error("notification-browser-gate-failed");
  if(snapshot().revision!==source.revision)throw new Error("notification-browser-source-changed");
 }});
 receipt.status=migration.status;receipt.migrationCount=migration.migrationNames?.length;receipt.cleanup=migration.cleanup;

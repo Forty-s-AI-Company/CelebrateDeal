@@ -1,3 +1,4 @@
+import { lockLearnerPaymentNotificationOrder, lockLearnerNotificationPurchase } from "./learner-notification-access";
 import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
@@ -6,9 +7,16 @@ import { LearnerNotificationMessage, finishLearnerNotification } from "./learner
 import { decryptSensitiveValue, encryptSensitiveValue } from "./sensitive-data";
 import { sendLearnerNotificationProvider, type NotificationProviderConfiguration, type NotificationProviderResult } from "./learner-notification-providers";
 
-type Database = Pick<PrismaClient,"$transaction" | "commerceOrderItem" | "learnerNotificationPreference" | "learnerNotificationDelivery">;
+type Database = Pick<PrismaClient,"$transaction" | "commerceOrderItem" | "commerceOrder" | "learnerNotificationPreference" | "learnerNotificationDelivery">;
 type Sender = typeof sendLearnerNotificationProvider;
 const Claim = z.object({ vendorId:z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u),id:z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u),claimToken:z.string().regex(/^[A-Za-z0-9_-]{43}$/u) }).strict();
+
+/** Legacy payment payloads without an exact order are deliberately ineligible. */
+async function paymentSourceIsCurrent(tx: Pick<Prisma.TransactionClient, "$queryRaw">,
+ scope: z.infer<typeof LearnerNotificationScope>, event: string, message: z.infer<typeof LearnerNotificationMessage>) {
+ if (event !== "payment_success") return true;
+ return lockLearnerPaymentNotificationOrder(tx, scope, message.paymentOrder?.id);
+}
 
 /** Hold the current booking and project/course binding through the provider
  * attempt; encrypted confirmation identifies the original authenticated buyer. */
@@ -53,20 +61,16 @@ export async function dispatchClaimedLearnerNotification(db:Database,raw:unknown
    const row=await tx.learnerNotificationDelivery.findFirstOrThrow({where:{vendorId:input.vendorId,id:input.id}});
    const preference=await tx.learnerNotificationPreference.findFirstOrThrow({where:{vendorId:input.vendorId,productId:row.productId,id:row.preferenceId}});
    const scope=LearnerNotificationScope.parse({vendorId:input.vendorId,productId:row.productId,customerKeyHash:preference.customerKeyHash});
-   const rights=await tx.$queryRaw<Array<{id:string}>>`SELECT e."id" FROM "CommerceOrderItem" i
-    JOIN "CommerceOrder" o ON o."vendorId"=i."vendorId" AND o."id"=i."orderId"
-    JOIN "CommerceEntitlement" e ON e."vendorId"=i."vendorId" AND e."orderItemId"=i."id"
-    WHERE i."vendorId"=${scope.vendorId} AND i."productId"=${scope.productId} AND o."automationCustomerKeyHash"=${scope.customerKeyHash}
-    AND o."status" IN ('paid','partially_refunded') AND e."status"='granted' AND e."revokedAt" IS NULL
-    AND (e."expiresAt" IS NULL OR e."expiresAt">clock_timestamp()) ORDER BY e."id" LIMIT 1 FOR UPDATE OF o,e`;
-   const permitted=rights.length>0 && preference.enabled && preference.revision===row.consentRevision && preference.destinationVerifiedAt && preference.destinationEncryptedEnvelope && preference.destinationKeyHash && !row.dispatchedAt;
+   const message=LearnerNotificationMessage.parse(JSON.parse(decryptSensitiveValue(row.payloadEncryptedEnvelope,`learner-notification-payload-v1:${JSON.stringify([input.vendorId,row.deduplicationKey])}`)));
+   const paymentCurrent = await paymentSourceIsCurrent(tx, scope, row.event, message);
+   const rights=await lockLearnerNotificationPurchase(tx, scope);
+   const permitted=paymentCurrent && rights && preference.enabled && preference.revision===row.consentRevision && preference.destinationVerifiedAt && preference.destinationEncryptedEnvelope && preference.destinationKeyHash && !row.dispatchedAt;
    if(!permitted){
     await tx.learnerNotificationDelivery.update({where:{id:row.id},data:{status:"suppressed",claimTokenHash:null,nextAttemptAt:null,lastErrorCode:"AUTHORIZATION_REVOKED"}});
     return {status:"suppressed"} as const;
    }
    const channel=LearnerNotificationChannel.parse(preference.channel);
    const destination=revealLearnerNotificationDestination(scope,channel,preference.destinationEncryptedEnvelope!);
-   const message=LearnerNotificationMessage.parse(JSON.parse(decryptSensitiveValue(row.payloadEncryptedEnvelope,`learner-notification-payload-v1:${JSON.stringify([input.vendorId,row.deduplicationKey])}`)));
    if (row.event === "live_started") {
     const session = message.liveSession;
     const active = session ? await tx.$queryRaw<Array<{id:string}>>`SELECT l."id" FROM "Live" l

@@ -13,7 +13,7 @@ export const LearnerContactEnrollmentInput = z.discriminatedUnion("channel", [
  z.object({ channel: z.literal("sms"), destination: LearnerPhoneDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),
  z.object({ channel: z.literal("whatsapp"), destination: LearnerPhoneDestination, expectedRevision: z.number().int().safe().nonnegative() }).strict(),
 ]);
-type Database = CourseLearningStore & Pick<PrismaClient,"$transaction">;
+type Database = CourseLearningStore & Pick<PrismaClient,"$transaction" | "commerceOrder">;
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 export const LearnerContactVerificationInput = z.object({ challengeId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/u), token: z.string().regex(/^[A-Za-z0-9_-]{43}$/u) }).strict();
 async function verificationTransaction<T>(db: Database, run: (tx: Prisma.TransactionClient) => Promise<T>) {

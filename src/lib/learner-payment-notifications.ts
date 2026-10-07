@@ -2,13 +2,18 @@ import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
 
-type Store = Pick<Prisma.TransactionClient, "vendor" | "commerceOrderItem" | "learnerNotificationSourceEvent">;
+type Store = Pick<Prisma.TransactionClient, "vendor" | "commerceOrder" | "commerceOrderItem" | "learnerNotificationSourceEvent">;
 /** Called only after the exact canonical order transitions to paid, in the same
  * transaction. Legacy orders without a recipient identity cannot address a learner. */
 export async function recordLearnerPaymentNotificationSources(tx: Store, input: {
   vendorId: string; orderId: string; customerKeyHash: string | null; occurredAt: Date;
 }) {
   if (input.customerKeyHash === null) return;
+  const order = await tx.commerceOrder.findFirst({ where: {
+    id: input.orderId, vendorId: input.vendorId, automationCustomerKeyHash: input.customerKeyHash,
+    status: "paid", refundedAmountCents: 0,
+  }, select: { paidAmountCents: true, totalAmountCents: true } });
+  if (!order || order.paidAmountCents !== order.totalAmountCents) return;
   const items = await tx.commerceOrderItem.findMany({
     where: { vendorId: input.vendorId, orderId: input.orderId },
     select: { productId: true, productName: true },
@@ -22,7 +27,7 @@ export async function recordLearnerPaymentNotificationSources(tx: Store, input: 
       vendorId: input.vendorId, productId: item.productId, event: "payment_success",
       eventIdentity: createHash("sha256").update(JSON.stringify([input.orderId, item.productId])).digest("hex"),
       audienceCustomerKeyHash: input.customerKeyHash, occurredAt: input.occurredAt,
-      message: { title: "付款已完成", body: item.productName, path: `/portal/${encodeURIComponent(vendor.slug)}/notifications` },
+      message: { paymentOrder: { id: input.orderId }, title: "付款已完成", body: item.productName, path: `/portal/${encodeURIComponent(vendor.slug)}/notifications` },
     });
   }
 }

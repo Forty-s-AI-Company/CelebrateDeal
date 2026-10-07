@@ -9,7 +9,7 @@ vi.mock("@/components/learner-notification-settings",()=>({LearnerNotificationSe
 import Page from "./page";
 const session={vendorId:"vendor-1",customerKeyHash:"a".repeat(43)};
 const context=(after?:string,productsAfter?:string)=>({params:Promise.resolve({vendorSlug:"academy"}),searchParams:Promise.resolve({after,productsAfter})});
-beforeEach(()=>{vi.clearAllMocks();mocks.locale.mockResolvedValue("zh-TW");mocks.session.mockResolvedValue({session});mocks.getDb.mockReturnValue({learnerNotificationPreference:{findMany:mocks.find},product:{findMany:mocks.products}});mocks.products.mockResolvedValue([]);mocks.find.mockResolvedValue([{id:"pref-1",productId:"product-1",product:{name:"已退款課程"}},{id:"pref-2",productId:"product-1",product:{name:"已退款課程"}}]);});
+beforeEach(()=>{vi.clearAllMocks();mocks.locale.mockResolvedValue("zh-TW");mocks.session.mockResolvedValue({session});mocks.getDb.mockReturnValue({commerceOrder:{fields:{totalAmountCents:"synthetic-total-column"}},learnerNotificationPreference:{findMany:mocks.find},product:{findMany:mocks.products}});mocks.products.mockResolvedValue([]);mocks.find.mockResolvedValue([{id:"pref-1",productId:"product-1",product:{name:"已退款課程"}},{id:"pref-2",productId:"product-1",product:{name:"已退款課程"}}]);});
 it("lists only server-scoped existing preferences and deduplicates product cards",async()=>{
  const html=renderToStaticMarkup(await Page(context()));expect(mocks.session).toHaveBeenCalledWith("academy");expect(mocks.find).toHaveBeenCalledWith({where:session,orderBy:{id:"asc"},take:21,select:{id:true,productId:true,product:{select:{name:true}}}});
  expect(html.match(/data-settings-product="product-1"/gu)).toHaveLength(1);expect(html).toContain("已退款課程");expect(html).not.toContain(session.customerKeyHash);expect(html).not.toContain("pref-1");
@@ -33,7 +33,7 @@ it("English notification management passes locale without translating merchant t
 it("purchased digital resources are discoverable before any registered preference",async()=>{
  mocks.find.mockResolvedValue([]);mocks.products.mockResolvedValue([{id:"digital-1",name:"數位商品原文"}]);
  const html=renderToStaticMarkup(await Page(context()));expect(html).toContain('data-settings-product="digital-1"');expect(html).toContain("數位商品原文");expect(html).not.toContain("目前沒有已登記的通知設定");
- expect(mocks.products).toHaveBeenCalledWith(expect.objectContaining({where:{vendorId:session.vendorId,commerceOrderItems:{some:expect.objectContaining({vendorId:session.vendorId,order:{is:{vendorId:session.vendorId,automationCustomerKeyHash:session.customerKeyHash,status:{in:["paid","partially_refunded"]}}},entitlement:{is:expect.objectContaining({vendorId:session.vendorId,status:"granted",revokedAt:null})}})}},take:21,orderBy:{id:"asc"}}));
+ expect(mocks.products).toHaveBeenCalledWith(expect.objectContaining({where:{vendorId:session.vendorId,commerceOrderItems:{some:expect.objectContaining({vendorId:session.vendorId,order:{is:{vendorId:session.vendorId,automationCustomerKeyHash:session.customerKeyHash,status:{in:["paid","partially_refunded"]}}},OR:expect.arrayContaining([expect.objectContaining({entitlement:{is:expect.objectContaining({vendorId:session.vendorId,status:"granted",revokedAt:null})}})])})}},take:21,orderBy:{id:"asc"}}));
 });
 it("purchase cursor is bounded and invalid purchase cursor never queries either store",async()=>{
  await expect(Page(context(undefined,"foreign/id"))).rejects.toThrow("NOT_FOUND");expect(mocks.products).not.toHaveBeenCalled();expect(mocks.find).not.toHaveBeenCalled();

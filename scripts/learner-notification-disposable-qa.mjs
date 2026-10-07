@@ -162,7 +162,7 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
         assert.equal(await db.learnerNotificationSourceEvent.count({ where: { vendorId: vendor.id, productId: digital.id, event: "payment_success", audienceCustomerKeyHash: identity.customerKeyHash } }), 1);
       });
       await check("non-course refund revokes opt-in and queued delivery while keeping withdrawal", async () => {
-        const pending = await enqueueLearnerNotification(db, { ...identity, productId: digital.id }, { channel: "email", event: "payment_success", eventIdentity: "synthetic_digital_refund", message: { title: "Synthetic payment", body: "Synthetic digital resource", path: "/portal/synthetic/notifications" } }); assert.ok(pending);
+        const pending = await enqueueLearnerNotification(db, { ...identity, productId: digital.id }, { channel: "email", event: "payment_success", eventIdentity: "synthetic_digital_refund", message: { paymentOrder: { id: digitalOrderId }, title: "Synthetic payment", body: "Synthetic digital resource", path: "/portal/synthetic/notifications" } }); assert.ok(pending);
         const claim = await claimLearnerNotification(db, vendor.id, pending.id); assert.ok(claim);
         await db.$transaction(tx => reconcileCommerceOrderRefund(tx, { vendorId: vendor.id, orderId: digitalOrderId, providerName: "synthetic", eventIdentity: randomUUID(), amountCents: 1000, occurredAt: new Date() }));
         let attempts = 0;
@@ -172,6 +172,58 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
         assert.equal((await saveLearnerNotificationConsent(db, identity, digital.id, { channel: "email", enabled: false, expectedRevision: email.revision })).status, "saved");
       });
     });
+    await check("a second paid purchase cannot authorize an old refunded payment notification", async () => {
+      const secondOrderId = randomUUID();
+      const secondPii = protectCommerceOrderPii({ buyer: { name: "Synthetic repeat buyer", email: "repeat@invalid.example" }, shipping: null }, { vendorId: vendor.id, orderId: secondOrderId });
+      await db.commerceOrder.create({ data: { id: secondOrderId, vendorId: vendor.id, automationCustomerKeyHash: identity.customerKeyHash, orderNumber: secondOrderId,
+        checkoutIdempotencyKey: randomUUID(), checkoutIdentityHash: secondPii.checkoutIdentityHash, status: "paid", subtotalAmountCents: 1000, totalAmountCents: 1000, paidAmountCents: 1000,
+        buyerEncryptedEnvelope: secondPii.buyerEncrypted, buyerMaskedName: secondPii.buyerNameMasked, buyerMaskedEmail: secondPii.buyerEmailMasked } });
+      const secondItem = await db.commerceOrderItem.create({ data: { vendorId: vendor.id, orderId: secondOrderId, productId: product.id, lineIndex: 0, productName: product.name, productSlug: product.slug,
+        commerceDomain: "course", fulfillmentType: "course", unitPriceCents: 1000, quantity: 1, lineTotalCents: 1000, nonSensitiveSnapshot: {} } });
+      const secondGrant = await db.commerceEntitlement.create({ data: { vendorId: vendor.id, orderItemId: secondItem.id } });
+      await db.$transaction(tx => grantCommerceEntitlement(tx, { vendorId: vendor.id, entitlementId: secondGrant.id, expectedRevision: secondGrant.revision, actor: { id: "synthetic-repeat-fixture" } }));
+      const pending = await enqueueLearnerNotification(db, identity, { channel: "sms", event: "payment_success", eventIdentity: "synthetic_repeat_refund", message: { paymentOrder: { id: secondOrderId }, title: "Synthetic payment", body: "Synthetic repeat order", path: "/portal/synthetic/notifications" } }); assert.ok(pending);
+      const claimed = await claimLearnerNotification(db, vendor.id, pending.id); assert.ok(claimed);
+      await db.$transaction(tx => reconcileCommerceOrderRefund(tx, { vendorId: vendor.id, orderId: secondOrderId, providerName: "synthetic", eventIdentity: randomUUID(), amountCents: 1000, occurredAt: new Date() }));
+      assert.ok(await db.commerceEntitlement.findFirst({ where: { id: entitlement.id, status: "granted" } }));
+      let attempts = 0;
+      const result = await dispatchClaimedLearnerNotification(db, { vendorId: vendor.id, id: pending.id, claimToken: claimed.claimToken }, { appOrigin: "https://app.example.test", configuration: {}, sender: async () => { attempts++; return { outcome: "sent" }; } });
+      assert.equal(result.status, "suppressed"); assert.equal(attempts, 0);
+      assert.equal((await db.learnerNotificationDelivery.findUniqueOrThrow({ where: { id: pending.id } })).status, "suppressed");
+    });
+    for (const fulfillmentType of ["physical", "service"]) {
+      const resourceIdentity = { vendorId: vendor.id, customerKeyHash: randomBytes(32).toString("base64url") };
+      await check(`${fulfillmentType} purchase without entitlement admits only its owning buyer`, async () => {
+        const resource = await db.product.create({ data: { vendorId: vendor.id, name: `Synthetic ${fulfillmentType} resource`, slug: randomUUID(), priceCents: 1000, commerceDomain: "merchant", fulfillmentType } });
+        const resourceOrderId = randomUUID();
+        const pii = protectCommerceOrderPii({ buyer: { name: "Synthetic resource buyer", email: `${fulfillmentType}@invalid.example` }, shipping: null }, { vendorId: vendor.id, orderId: resourceOrderId });
+        await db.commerceOrder.create({ data: { id: resourceOrderId, vendorId: vendor.id, automationCustomerKeyHash: resourceIdentity.customerKeyHash, orderNumber: resourceOrderId, checkoutIdempotencyKey: randomUUID(), checkoutIdentityHash: pii.checkoutIdentityHash, status: "paid", subtotalAmountCents: 1000, totalAmountCents: 1000, paidAmountCents: 1000, buyerEncryptedEnvelope: pii.buyerEncrypted, buyerMaskedName: pii.buyerNameMasked, buyerMaskedEmail: pii.buyerEmailMasked } });
+        const item = await db.commerceOrderItem.create({ data: { vendorId: vendor.id, orderId: resourceOrderId, productId: resource.id, lineIndex: 0, productName: resource.name, productSlug: resource.slug, commerceDomain: "merchant", fulfillmentType, unitPriceCents: 1000, quantity: 1, lineTotalCents: 1000, nonSensitiveSnapshot: {} } });
+        assert.equal(await db.commerceEntitlement.count({ where: { orderItemId: item.id } }), 0);
+        assert.deepEqual(await listLearnerNotificationPreferences(db, resourceIdentity, resource.id), []);
+        assert.equal(await listLearnerNotificationPreferences(db, { ...resourceIdentity, vendorId: foreign.id }, resource.id), null);
+        assert.equal(await listLearnerNotificationPreferences(db, { ...resourceIdentity, customerKeyHash: "z".repeat(43) }, resource.id), null);
+        let enabled;
+        await check(`${fulfillmentType} explicit contact proof does not automatically grant consent`, async () => {
+          const proof = await requestLearnerContactVerification(db, resourceIdentity, resource.id, { channel: "email", expectedRevision: 0, destination: { email: `${fulfillmentType}-proof@invalid.example` } }); assert.equal(proof.status, "challenge_created");
+          const claimed = await claimLearnerVerificationDelivery(db, { vendorId: vendor.id, id: proof.challenge.id }); assert.ok(claimed);
+          let attempts = 0;
+          assert.equal((await dispatchLearnerVerificationDelivery(db, claimed, { appOrigin: "https://app.example.test", configuration: {}, sender: async () => { attempts++; return { outcome: "sent" }; } })).status, "sent"); assert.equal(attempts, 1);
+          const verified = await consumeLearnerContactVerification(db, resourceIdentity, resource.id, { challengeId: proof.challenge.id, token: proof.delivery.token }); assert.equal(verified.status, "verified"); assert.equal(verified.preference.enabled, false);
+          enabled = await saveLearnerNotificationConsent(db, resourceIdentity, resource.id, { channel: "email", enabled: true, expectedRevision: verified.preference.revision }); assert.equal(enabled.status, "saved");
+        });
+        await check(`${fulfillmentType} partial refund suppresses a claimed payment and preserves withdrawal`, async () => {
+          const pending = await enqueueLearnerNotification(db, { ...resourceIdentity, productId: resource.id }, { channel: "email", event: "payment_success", eventIdentity: `synthetic_${fulfillmentType}_refund`, message: { paymentOrder: { id: resourceOrderId }, title: "Synthetic payment", body: "Synthetic non-grant purchase", path: "/portal/synthetic/notifications" } }); assert.ok(pending);
+          const claimed = await claimLearnerNotification(db, vendor.id, pending.id); assert.ok(claimed);
+          await db.$transaction(tx => reconcileCommerceOrderRefund(tx, { vendorId: vendor.id, orderId: resourceOrderId, providerName: "synthetic", eventIdentity: randomUUID(), amountCents: 100, occurredAt: new Date() }));
+          let attempts = 0;
+          assert.equal((await dispatchClaimedLearnerNotification(db, { vendorId: vendor.id, id: pending.id, claimToken: claimed.claimToken }, { appOrigin: "https://app.example.test", configuration: {}, sender: async () => { attempts++; return { outcome: "sent" }; } })).status, "suppressed"); assert.equal(attempts, 0);
+          assert.equal((await saveLearnerNotificationConsent(db, resourceIdentity, resource.id, { channel: "email", enabled: true, expectedRevision: enabled.preference.revision })).status, "not_found");
+          assert.equal((await saveLearnerNotificationConsent(db, resourceIdentity, resource.id, { channel: "email", enabled: false, expectedRevision: enabled.preference.revision })).status, "saved");
+          assert.equal(await db.commerceEntitlement.count({ where: { orderItemId: item.id } }), 0);
+        });
+      });
+    }
     // Keep the independent course cooldown regression separate from the new digital proof.
     await db.learnerNotificationVerification.updateMany({ where: { vendorId: vendor.id }, data: { createdAt: new Date(Date.now() - 61000) } });
     await check("contact proof refuses foreign recipient and locks after five wrong attempts", async () => {
@@ -412,7 +464,7 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
       assert.equal(sources.length, 1); assert.equal(sources[0].audienceCustomerKeyHash, identity.customerKeyHash);
       assert.equal(await db.learnerNotificationSourceEvent.count({ where: { vendorId: foreign.id, event: "payment_success" } }), 0);
       assert.equal((await materializeLearnerNotificationSourceEvent(db, vendor.id, sources[0].id)).status, "completed");
-      assert.equal(await db.learnerNotificationDelivery.count({ where: { vendorId: vendor.id, productId: product.id, event: "payment_success" } }), 2);
+      assert.equal(await db.learnerNotificationDelivery.count({ where: { vendorId: vendor.id, productId: product.id, event: "payment_success", eventIdentity: sources[0].eventIdentity } }), 2);
     });
     // Earlier rejection case intentionally unpublished this owned synthetic project.
     await db.salesProject.update({where:{id:project.id},data:{status:"published",publishedAt:new Date()}});
@@ -613,9 +665,9 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
   if (sourceSnapshot().revision !== sourceAtStart.revision) throw new Error("notification-source-changed-during-verification");
   } finally { await db.$disconnect(); }
 } });
-const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 73 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
+const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 80 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
 fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 73 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 80 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
