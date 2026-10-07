@@ -17,6 +17,10 @@ sourceFiles.push("src/components/live-private-conversation-panel.tsx", "src/comp
   "src/components/live-playback.test.tsx", "tests/e2e/wp88-direct-url-guard-matrix.spec.ts");
 sourceFiles.push("scripts/live-private-loopback-ingress.mjs", "playwright.live-private-commerce.config.ts", "playwright.config.ts",
   "tests/e2e/live-private-commerce-journey.spec.ts", "tests/e2e/live-purchase-broadcast-journey.spec.ts");
+sourceFiles.push("scripts/private-inbox-diagnostic.ts", "scripts/private-inbox-diagnostic.test.ts",
+  "scripts/playwright-ci-reporter.ts", "scripts/playwright-ci-reporter.test.ts",
+  "src/app/actions/auth-security-actions.ts", "src/lib/auth-rate-limits.ts", "src/lib/rate-limit.ts", "src/lib/app-url.ts");
+sourceFiles.push("src/lib/live-chat-request-security.test.ts");
 const snapshot = () => Object.fromEntries(sourceFiles.map(file => [file, createHash("sha256").update(fs.readFileSync(file)).digest("hex")]));
 const original = snapshot();
 let tests;
@@ -62,21 +66,27 @@ try {
               DATABASE_URL: databaseUrl, DIRECT_URL: databaseUrl, PRIVATE_COMMERCE_BROWSER_MIRROR: mirror,
               PRIVATE_COMMERCE_BROWSER_REPORT: reportPath, PLAYWRIGHT_EXECUTABLE_PATH: executable,
               E2E_PORT: "31044", E2E_BASE_URL: "http://127.0.0.1:31044", NEXT_PUBLIC_APP_URL: "http://127.0.0.1:31044",
-              E2E_TEST_MODE: "true", E2E_RATE_LIMIT_PROVIDER: "cloudflare_waf" } });
+              E2E_TEST_MODE: "true", E2E_RATE_LIMIT_PROVIDER: process.argv.includes("--memory-rate-limit") ? "memory" : "cloudflare_waf" } });
           child.once("error", reject);
           child.once("close", resolve);
         });
         if (!fs.existsSync(reportPath)) throw new Error("browser-receipt-missing");
         const result = JSON.parse(fs.readFileSync(reportPath, "utf8"));
         browser = { expected: result.stats.expected, unexpected: result.stats.unexpected,
-          skipped: result.stats.skipped, flaky: result.stats.flaky, ingress: "synthetic-loopback-not-cloudflare-validation" };
+          skipped: result.stats.skipped, flaky: result.stats.flaky, ingress: "synthetic-loopback-not-cloudflare-validation",
+          rateLimitProvider: process.argv.includes("--memory-rate-limit") ? "memory" : "cloudflare_waf" };
         const locations = [];
+        const inboxDiagnostics = new Set();
         const visit = suite => {
           for (const spec of suite.specs ?? []) {
             if ((spec.tests ?? []).some(test => test.status !== "expected")) locations.push({
               file: path.basename(spec.file ?? "unknown"), line: spec.line ?? null });
             for (const test of spec.tests ?? []) for (const attempt of test.results ?? []) {
               for (const error of [...(attempt.errors ?? []), ...(attempt.error ? [attempt.error] : [])]) {
+                // Closed vocabulary only; never retain raw browser errors or URLs.
+                const firstLine = typeof error.message === "string" ? error.message.split("\n", 1)[0] : "";
+                const match = /^(?:Error: )?PRIVATE_INBOX:N(0|[1-5][0-9]{2}):A(0|[1-5][0-9]{2}):P([01]):M([01])$/u.exec(firstLine);
+                if (match) inboxDiagnostics.add(`PRIVATE_INBOX:N${match[1]}:A${match[2]}:P${match[3]}:M${match[4]}`);
                 if (error.location?.file && /(?:live-private-commerce-journey|live-purchase-broadcast-journey|wp88-direct-url-guard-matrix)\.spec\.ts$/u.test(error.location.file)) {
                   locations.push({ file: path.basename(error.location.file), line: error.location.line ?? null, kind: "assertion_location" });
                 }
@@ -89,6 +99,7 @@ try {
         };
         for (const suite of result.suites ?? []) visit(suite);
         browser.failureLocations = locations;
+        browser.inboxDiagnostics = [...inboxDiagnostics];
         if (exitCode !== 0 || browser.expected !== 3 || browser.unexpected || browser.skipped || browser.flaky) throw new Error("browser-gate-failed");
       } finally { await stopIngress(); }
     }

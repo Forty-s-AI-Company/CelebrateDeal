@@ -32,3 +32,20 @@ F1.1：native curriculum/player/progress/certificate 位於 `codex/remaining-cou
 F2.1 `codex/remaining-affiliate-portal-20261006`：明確 tenant/member 授權、版本 CAS、停用後可撤權、帳本淨額／退款、佣金與授權分頁、商家公開ref連結、超過200名成員搜尋已實作。6項 disposable PostgreSQL 回歸PASS，第三輪獨立 Critical review 無findings（dispatch3/4、observed unknown）；完整 browser 與最新精確source gate執行中，尚未READY／PR／交付。歷次 browser fixture失敗單獨保存，未降低金額或歸因assertion。
 
 F2.1 latest source `sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0`：9 targeted unit、TS/strict-index/lint、1067 Node TAP零skip、85migrations、6DB、1實際browser zero flaky全部PASS；第4/4獨立Critical複審精確25檔及hash一致無findings，canonical READY。精確head CI與protected PR待交付，其餘F2 scope未縮減。證據 `remaining-capabilities-f2.1-local-receipt-20261006.json`。
+
+### 2026-10-07 F2 private #381 現行 CI 失敗診斷
+
+- ID：f2-live-private-chat-purchase-broadcast；base head 716c8253467a2b7b69c7bbc92d650ded6e18a4ae；PR #381 未交付；owner root 唯一 writer。
+- 精確 CI 37569742620 line58 與新 runner line64 的實際 assertion 是講師頁面的「合成觀眾甲」button；先前判讀成登入失敗錯誤，現在已更正。實際登入 assertion 通過。
+- 三份 memory-mode 新失敗收據保留：86 migrations、25 DB PASS、2 browser PASS、1 instructor inbox FAIL，零 skip/flaky，cleanup PASS；不宣稱成功。
+- 登入-only 診斷已移出候選程式，保留於自有 ignored tmp。新增真正 inbox 診斷只輸出 navigation/API HTTP status、頁面與精確合成訊息存在的 boolean，不輸出帳號、識別、URL、Cookie、body 或 raw error。
+- 16 項 privacy/reporter unit 與 scoped lint PASS；原斷言、權限與 rate limit 不變；來源 fingerprint 擴及實際 auth、rate limiter、reporter/config。
+- 新隔離完整 runner session 18782 RUNNING；不能使用先前 cloudflare_waf 隔離成功代替 full CI 的 memory 條件。尚未修正根因、尚未新獨立審查，canonical 現行候選非 READY。Goal ACTIVE。
+
+- 2026-10-07 最新 session 18782 FAIL 收據保留於 docs/remaining-capabilities-private-inbox-memory-diagnosis-20261007.json，closed diagnostic PRIVATE_INBOX:N200:A403:P1:M0；實際登入已成功，第一則 viewer private message 未落地。
+- 根因契約：production-mode memory → liveChatIpTrustConfig none → private POST 缺 trusted IP 被拒絕。原 getByText 未證明 POST/DB persistence。修正明確 loopback E2E + owned ingress proof 契約，memory limiter 不變；一般 Production、公網 URL、缺/錯 proof 仍拒絕。
+- 完整 CI 此 private journey 也啟動自有 loopback ingress，其他 journeys 不改路由。加强 real viewer/instructor POST201、message list、精確 DB1、講師 browser GET200→撤權403；原跨租戶、重送、內容替換、真實回應遺失、身分切換與驗證撤銷 assertions 保留。
+- 最新 62 targeted tests/7 files、TypeScript、scoped lint PASS；新增安全回歸涵蓋旗標/公網/不一致 loopback、缺 proof、錯 proof、畸形 IP 與原有 Cloudflare/development 契約。
+- 新完整 memory/disposable runner session 56354 RUNNING，尚未新 head commit/CI 或獨立複審。原 task dispatch 4/4，未擅自增派。NOT_READY 未交付，Goal ACTIVE。
+
+- 上述 session 56354 終態 PASS：86 migrations、25 DB、3 actual browser、memory limiter，zero skip/flaky、cleanup PASS。source sha256:0d1da01e323e67810d3f27ab92e58fcf737f88a475e8473d9761d5c209479c55；實際 viewer/instructor POST201、精確訊息落地、rendered list、講師 browser GET200→撤權403 與原剩餘 assertions 全部通過。新證據 docs/remaining-capabilities-private-memory-browser-pass-20261007.json。現行主線 a10728f4147ce84ad6d33524ed0e412660602283 尚待整合，不以舊 CI 宣稱新修正交付；最後獨立審查未執行，原 task 4/4 cap 保留。

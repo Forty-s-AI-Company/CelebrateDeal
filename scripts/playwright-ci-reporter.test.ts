@@ -26,6 +26,17 @@ function testCase(input: {
 }
 
 describe("SanitizedPlaywrightCiReporter", () => {
+  it("reports a closed inbox diagnostic and discards appended worker diagnostics", () => {
+    let output = "";
+    const reporter = new SanitizedPlaywrightCiReporter((value: string) => { output += value; });
+    const current = testCase({ id: "private-inbox", outcome: "unexpected", statuses: ["failed"] });
+    Object.assign(current.results[0]!, { errors: [{ message: "Error: PRIVATE_INBOX:N200:A403:P1:M1\n\nFailed worker ran secret-token-must-not-appear\n::error::private", cause: { message: "secret-token-must-not-appear" } }] });
+    reporter.onTestEnd(current as never);
+    reporter.onEnd({ status: "failed" } as never);
+    expect(output).toContain("class=private_inbox navigation_http=200 api_http=403 private_page=1 message_persisted=1");
+    expect(output).not.toContain("secret-token-must-not-appear");
+    expect(output).not.toContain("::error::private");
+  });
   it("formats only fixed axe rule IDs and never forwards nodes or arbitrary IDs", () => {
     const violations = [
       { id: "document-title", nodes: [{ html: "secret-token-must-not-appear", target: ["#private-customer"] }] },

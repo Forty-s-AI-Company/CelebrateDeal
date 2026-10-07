@@ -1,4 +1,5 @@
 import type { ClientIpTrustConfig } from "./request-client-ip";
+import { isExplicitLocalE2eRuntime } from "./app-url";
 
 export function liveChatIpTrustConfig(env: NodeJS.ProcessEnv = process.env): ClientIpTrustConfig {
   // Local development must use the runtime-provided address only. A local
@@ -7,7 +8,12 @@ export function liveChatIpTrustConfig(env: NodeJS.ProcessEnv = process.env): Cli
     return { trustMode: "runtime", deploymentSource: "node" };
   }
 
-  if (env.RATE_LIMIT_PROVIDER === "cloudflare_waf") {
+  // An owned loopback ingress may exercise the same proof contract while the
+  // limiter remains memory-backed. A flag or forwarded header alone never
+  // authorizes it, and public production URLs cannot enter this QA branch.
+  const ownedLocalIngress = env.E2E_LIVE_CHAT_TRUSTED_INGRESS === "true"
+    && env.RATE_LIMIT_PROVIDER === "memory" && isExplicitLocalE2eRuntime(env);
+  if (env.RATE_LIMIT_PROVIDER === "cloudflare_waf" || ownedLocalIngress) {
     return {
       trustMode: "cloudflare",
       deploymentSource: "cloudflare",
