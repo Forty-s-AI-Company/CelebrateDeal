@@ -1,0 +1,49 @@
+{
+  "task_id": "q2-owner-buyer-subscription-ops",
+  "status": "DELIVERED",
+  "pr": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/379",
+  "accepted_head": "3d32b0a029bedb83912b29e38f54a6c59b38b47b",
+  "merge_commit": "a10728f4147ce84ad6d33524ed0e412660602283",
+  "merged_at": "2026-10-07T08:56:27Z",
+  "accepted_tree": "7c40ca931b3d5d076edbbfc010aee141b0e7fd7d",
+  "merged_tree": "7c40ca931b3d5d076edbbfc010aee141b0e7fd7d",
+  "tree_equal": true,
+  "ci_runs": [
+    37593169648,
+    37593163815
+  ],
+  "ci_conclusion": "SUCCESS",
+  "migrations": 87,
+  "database_tests": 67,
+  "browser_tests": 2,
+  "review_dispatch": 5,
+  "explicit_authorized_limit": 5,
+  "findings": [],
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "canonical_acceptance": {
+    "task_id": "q2-owner-buyer-subscription-ops",
+    "head": "3d32b0a029bedb83912b29e38f54a6c59b38b47b",
+    "status": "READY",
+    "parts": [
+      {
+        "inventory": "source_files",
+        "files": 58,
+        "status": "READY",
+        "blockers": [],
+        "revision": "sha256:aa9a673a9223e9c49514695220d2a7cef9f6981d1a88f5c4addd996eca0baa1d"
+      },
+      {
+        "inventory": "test_files",
+        "files": 58,
+        "status": "READY",
+        "blockers": [],
+        "revision": "sha256:0574672de0637f4c15554b649755fe8eb781360f54db6fac185848a466d6465f"
+      }
+    ],
+    "full_scope_preserved": true,
+    "dispatch": 5,
+    "authorized_limit": 5
+  },
+  "production_operation": false
+}
