@@ -41,3 +41,15 @@ F2.1 `codex/remaining-affiliate-portal-20261006`：明確 tenant/member 授權�
 F2.1 latest source `sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0`：9 targeted unit、TS/strict-index/lint、1067 Node TAP零skip、85migrations、6DB、1實際browser zero flaky全部PASS；第4/4獨立Critical複審精確25檔及hash一致無findings，canonical READY。精確head CI與protected PR待交付，其餘F2 scope未縮減。證據 `remaining-capabilities-f2.1-local-receipt-20261006.json`。
 
 本次整合 `origin/master` `daa6372a6e0f060e93de2c2e10afa0c9c4d09c73`：F2.1 #374 已受保護 squash merge，accepted/merged tree `4f63c92d6c24e6585484912863704b3ecffd1f43` 一致。F3.2 Save acknowledgement 最新source `4ab03f...` 本機全部回歸通過、medium canonical READY；最新獨立review受同task dispatch4/4限制仍待授權。整合後驗證與CI待執行，未交付。
+
+### 2026-10-07 F2 post-purchase 第 3 次獨立審查與來源證據修正
+
+- ID：f2-post-purchase-commerce；精確候選 base head：e110d25ea46cf7667be94f336a90c1bd7d08e3e1；owner：root 唯一 writer。
+- 第 3/4 次 Critical 唯讀審查：49 檔前後 hash 一致；resolved Astra high，observed model/effort unknown。原 task 的 BLOCKED_SENSITIVE_INPUT 只記 task-local cli_failure，未宣稱 Claude 模型不可用。
+- 最新 findings：docs/remaining-capabilities-f2-post-purchase-review-3-20261007.json。MAJOR issued PayUni failed/expired 原單恢復仍缺權威 provider observation/recovery 契約；不可用 demo/mock、not-found、換交易或釋放 source credit 替代。
+- MINOR 已實作待完整驗證：保留原 files、unit 與全部 migration 清單，新增實際 edit/new merchant entry、product-action-state、reporter 與 mirror 建置設定；使用同一明確來源清單做前後 fingerprint 與 receipt。
+- 新增 4 項 meaningful fingerprint 回歸 PASS：edit/page.tsx 與 next.config.ts 修改會改 hash 並拒絕 source-changed；宣告排序/重複穩定；敏感或越界路徑拒絕。scoped lint PASS。
+- 新完整 disposable PG/browser runner session 49757 RUNNING；尚未取得終態，舊成功不能支持這份新 receipt。獨立複審剩餘 1/4 次。
+- 驗收：付款/order/credit identity、金額、權益、退款、CAS/CSRF、tenant、併發/冪等及 issued provider recovery 全部必要範圍保留。canonical NOT_READY，未建立 PR、未交付，Goal ACTIVE。
+
+- 上述 session 49757 終態 PASS：86 migrations、48 DB、177 unit、1 actual browser，零 skip/flaky、cleanup PASS；新 source sha256:2559270d48cdf6f42ce9b06cc64d0213e9e20392d679208c3d12be8ad42e3773。另 4 fingerprint tests PASS。證據 docs/remaining-capabilities-f2-post-purchase-source-complete-browser-20261007.json；MAJOR 外部 PayUni 恢復仍 OPEN，NOT_READY 未交付。

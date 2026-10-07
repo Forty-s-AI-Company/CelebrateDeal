@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { chromium } from "@playwright/test";
 import { main, listCanonicalMigrations } from "./prisma-loopback-disposable-migration-runner.mjs";
+import { captureSourceFingerprint, assertSourceFingerprintStable } from "./qa-source-fingerprint.mjs";
 
 const unitFiles = ["src/lib/post-purchase-upsell.test.ts", "src/lib/post-purchase-product-policy.test.ts",
   "src/app/api/checkout/upsell/route.test.ts", "src/app/api/payments/checkout/admission/route.test.ts",
@@ -31,7 +32,14 @@ const files = ["prisma/schema.prisma", "prisma.playwright.config.ts",
   "scripts/prisma-loopback-disposable-migration-runner.mjs", "scripts/local-database-safety.ts",
   "playwright.config.ts", "playwright.post-purchase-commerce.config.ts", "tests/e2e/post-purchase-commerce.spec.ts", ...unitFiles,
   ...listCanonicalMigrations().map(name => `prisma/migrations/${name}/migration.sql`)];
-const snapshot = () => Object.fromEntries(files.map(file => [file, createHash("sha256").update(fs.readFileSync(file)).digest("hex")]));
+// Keep every original source and migration; include the actual merchant entry
+// pages, reporter and the settings copied into the production-mode mirror.
+files.push("src/app/(app)/products/[id]/edit/page.tsx", "src/app/(app)/products/new/page.tsx",
+  "src/lib/product-action-state.ts", "scripts/playwright-ci-reporter.ts", "scripts/playwright-ci-reporter.test.ts",
+  "scripts/qa-source-fingerprint.mjs", "scripts/qa-source-fingerprint.test.mjs",
+  "package.json", "package-lock.json", "tsconfig.json", "next.config.ts", "postcss.config.mjs",
+  "sentry.server.config.ts", "sentry.edge.config.ts");
+const snapshot = () => captureSourceFingerprint(process.cwd(), files);
 const before = snapshot();
 let tests; let unit; let browser;
 const migration = await main({ afterMigrate: async ({ databaseUrl, environment, tempRoot }) => {
@@ -114,7 +122,7 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
     for (const suite of report.suites ?? []) visit(suite);
     if (outcome.status !== 0 || browser.expected !== 1 || browser.unexpected || browser.skipped || browser.flaky) throw new Error("browser-gate-failed");
   }
-  if (JSON.stringify(snapshot()) !== JSON.stringify(before)) throw new Error("source-changed");
+  assertSourceFingerprintStable(before, snapshot());
 } });
 const receipt = { taskId: "f2-post-purchase-commerce", status: migration.status, tests, unit, browser,
   migrations: migration.migrationNames.length, failure: migration.failure, cleanup: migration.cleanup,

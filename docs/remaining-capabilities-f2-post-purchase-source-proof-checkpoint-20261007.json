@@ -1,0 +1,41 @@
+{
+  "task_id": "f2-post-purchase-commerce",
+  "parent_goal_id": "CELEBRATEDEAL-M2-M7",
+  "base_head": "e110d25ea46cf7667be94f336a90c1bd7d08e3e1",
+  "status": "IMPLEMENTED_CHECKPOINT_NOT_READY",
+  "owner": "root",
+  "review": {
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "max_dispatches": 4,
+    "resolved_effort": "high",
+    "resolved_model": "gpt-6-astra",
+    "receipt": "docs/remaining-capabilities-f2-post-purchase-review-3-20261007.json",
+    "dispatch": 3,
+    "independent": true
+  },
+  "dispositions": {
+    "incomplete_source_fingerprint_minor": "IMPLEMENTED_AND_LOCALLY_VERIFIED; latest correction not independently re-reviewed",
+    "issued_payuni_recovery_major": "OPEN; authoritative original-transaction recovery contract and actual non-Production provider proof still required"
+  },
+  "tests": {
+    "skipped": 0,
+    "db": 48,
+    "scoped_lint": "PASS",
+    "browser": 1,
+    "flaky": 0,
+    "failed": 0,
+    "cleanup": "PASS",
+    "source_fingerprint_regressions": 4,
+    "migrations": 86,
+    "unit": 177
+  },
+  "source_revision": "sha256:2559270d48cdf6f42ce9b06cc64d0213e9e20392d679208c3d12be8ad42e3773",
+  "evidence": "docs/remaining-capabilities-f2-post-purchase-source-complete-browser-20261007.json",
+  "all_previous_source_tests_and_migrations_retained": true,
+  "canonical_acceptance": "NOT_READY",
+  "pull_request": null,
+  "delivered": false,
+  "overall_goal": "ACTIVE",
+  "external_operations": false
+}

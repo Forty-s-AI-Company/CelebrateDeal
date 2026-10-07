@@ -1,0 +1,42 @@
+{
+  "task_id": "f2-post-purchase-commerce",
+  "dispatch": 3,
+  "independent": true,
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "findings": [
+    {
+      "severity": "MAJOR",
+      "file": "src/lib/post-purchase-checkout-recovery.ts",
+      "line": 51,
+      "issue": "已送出的 PayUni 加購交易失敗或逾期後，仍無法恢復原訂單。",
+      "evidence": "第 51–53 行對 postPurchaseSessionState=issued 且 readiness=ready 的交易一律拒絕；PayUni 在設定有效時回傳 ready。post-purchase-credit.ts:71–73 保留唯一 sourceOrderId 綁定，故新 checkout 也無法再次使用額度。付款結果頁仍提供「恢復原加購訂單」入口，但此情境會得到 409。payment-providers/types.ts:129–135 的 queryPayment 僅能表達 paid／partially_refunded／refunded；現有 Sandbox 未知交易查詢也明確不提供付款重試授權。",
+      "impact": "一般 PayUni 刷卡失敗或 checkout 逾期即可讓買家的加購額度持續鎖在無法完成的訂單。新增未送出準備恢復與 demo session 恢復尚未完成原本的外部付款恢復範圍，不能據此驗收 READY。",
+      "recommended_fix": "保留目前對未知付款狀態的拒絕。新增獨立、可驗證的 provider checkout observation／recovery 契約，核對原 provider、商店、orderNumber、交易識別、幣別與金額，區分已付款、仍可能付款、無法判定，以及 provider 明確允許沿用原交易恢復的狀態。僅在取得可恢復的權威證據後，用 CAS 與 serializable transaction 重新鎖定原庫存，恢復同一筆 payment/order/credit；已付款則走 canonical reconciliation，未知狀態持續阻擋並提供明確處理狀態。不得把 not-found 或一般 failed 解讀為永久不會付款，也不得更換交易或釋放額度來繞過。",
+      "required_test": "加入 issued PayUni failed／expired 的成功恢復與拒絕案例，涵蓋延遲 paid callback、查詢 timeout／未知／not-found、跨商店或金額不符、原單退款、庫存不足、雙重恢復及 callback 競態。驗證 payment/order/credit 識別與金額不變、庫存只扣一次、沒有替代交易；provider 行為須另有真實非 Production 證據，不能以 mock 或 demo 通過宣稱實際 PayUni 恢復成功。",
+      "confidence": "high"
+    },
+    {
+      "severity": "MINOR",
+      "file": "scripts/post-purchase-commerce-disposable-qa.mjs",
+      "line": 23,
+      "issue": "測試 receipt 的來源雜湊沒有涵蓋本次實際驗證的商家頁面與部分執行設定。",
+      "evidence": "第 15–33 行 files 清單包含 ProductForm，卻缺少瀏覽器實際開啟的 src/app/(app)/products/[id]/edit/page.tsx，以及新增商品頁、product-action-state.ts、playwright-ci-reporter.ts。第 69–70 行複製到測試 mirror 的 package.json、tsconfig.json、next.config.ts 等建置設定也未納入。第 117 行 source-changed 檢查與第 121 行 sourceRevision 僅覆蓋這份不完整清單。",
+      "impact": "修改已停用選項的查詢頁面或上述設定，不會改變 receipt 的 sourceRevision，也不會觸發來源變動檢查。因此該 receipt 無法單獨證明商家設定修正與測試執行設定對應到受審版本。",
+      "recommended_fix": "建立單一明確的測試來源清單，至少涵蓋本次受審且參與執行的來源、商家頁面、runner、reporter 與建置設定；從同一份清單產生測試前後雜湊及 receipt。保留現有 migration 雜湊與禁止讀取 .env 的限制。",
+      "required_test": "以合成暫存來源验证：修改 edit/page.tsx 或必要建置設定時，來源 revision 必須改變，測試期間變動必須被來源穩定性檢查拒絕。",
+      "confidence": "high"
+    }
+  ],
+  "read_only_confirmation": {
+    "manifest_sha256": "135075ec5db105d30a0ec8ff65863174288f37b27a91f7b165647161cb2983df",
+    "source_revision": "sha256:c20bf47b7f8ce7f76719353eaa87bcfdad42e436ee4ecd10812de1d3578a1510",
+    "file_count": 49,
+    "initial_hashes_match": true,
+    "final_hashes_match": true,
+    "source_unchanged": true,
+    "files_written": 0,
+    "tests_executed": 0,
+    "external_attempts": 0
+  }
+}
