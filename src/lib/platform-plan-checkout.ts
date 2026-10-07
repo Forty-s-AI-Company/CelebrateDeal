@@ -1,3 +1,4 @@
+import { wp4PlanSelectionAllowed, wp4FinanceUserId, wp4PlanScopeAllowed } from "./wp4-runtime-boundary";
 import { Prisma, type BillingPlan, type PaymentTransaction } from "@prisma/client";
 import { cookies } from "next/headers";
 import { auditSnapshot, requestAuditMeta } from "@/lib/audit";
@@ -266,7 +267,9 @@ async function failPlatformPlanCheckout(input: { transactionId: string; subscrip
  */
 export async function createPlatformPlanCheckout(formData: FormData): Promise<PlatformPlanCheckoutResult> {
   await assertServerActionSecurity(formData);
-  const { vendor, member } = await requireVendorOwnerFinance("/billing/plans");
+  const finance = await requireVendorOwnerFinance("/billing/plans");
+  const { vendor, member } = finance;
+  const userId = wp4FinanceUserId(finance);
   const planId = formText(formData, "planId");
 
   if (!planId || planId.length > 64) {
@@ -297,10 +300,12 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
         // Client fields other than planId never influence the transaction.
         const plan = await tx.billingPlan.findFirst({ where: { id: planId } });
         if (!plan) return { outcome: "unavailable" as const };
+        const syntheticPermit = wp4PlanSelectionAllowed(plan, vendor.id, userId);
+        if (!wp4PlanScopeAllowed(plan.id, syntheticPermit)) return { outcome: "unavailable" as const };
         const stagingLivePlan = isStagingLivePlan(provider.id, vendor.id, plan);
         const stagingRetry = stagingLivePlan ? payUniStagingPlanRetryPermit(vendor.id, plan) : null;
         // Test plans stay inactive so older Preview deployments cannot sell them.
-        if (!plan.isActive && !stagingLivePlan) return { outcome: "unavailable" as const };
+        if (![plan.isActive, stagingLivePlan, syntheticPermit].some(Boolean)) return { outcome: "unavailable" as const };
 
         let retryContext: Awaited<ReturnType<typeof stagingRetryContext>> = null;
         if (process.env.VERCEL_ENV === "preview" && process.env.PAYUNI_ENV === "production") {
@@ -387,6 +392,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
             create: {
               vendorId: vendor.id,
               billingPlanId: plan.id,
+              entitlementStatus: "active",
               streamMinutesLimit: plan.includedStreamMinutes,
               storageMinutesLimit: plan.includedStorageMinutes,
               creditsLimit: plan.includedCredits,
@@ -394,6 +400,7 @@ export async function createPlatformPlanCheckout(formData: FormData): Promise<Pl
             },
             update: {
               billingPlanId: plan.id,
+              entitlementStatus: "active",
               streamMinutesLimit: plan.includedStreamMinutes,
               storageMinutesLimit: plan.includedStorageMinutes,
               creditsLimit: plan.includedCredits,

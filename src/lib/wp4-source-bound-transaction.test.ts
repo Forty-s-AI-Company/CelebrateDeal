@@ -7,6 +7,11 @@ const sourceSha = "a".repeat(40);
 afterEach(() => vi.unstubAllEnvs());
 
 function enablePreviewSandbox() {
+  vi.stubEnv("VERCEL_PROJECT_ID", "");
+  vi.stubEnv("WP4_DISPOSABLE_RUNNER_MARKER", "verified-loopback");
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://127.0.0.1:3000");
+  vi.stubEnv("DATABASE_URL", "postgresql://synthetic:synthetic@127.0.0.1:5433/celebratedeal_test");
+  vi.stubEnv("DIRECT_URL", "postgresql://synthetic:synthetic@127.0.0.1:5433/celebratedeal_test");
   vi.stubEnv("VERCEL_ENV", "preview");
   vi.stubEnv("PAYUNI_ENV", "sandbox");
   vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true");

@@ -4,14 +4,14 @@
 
 基準 revision：`4ed3b463`
 
-> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 86，該歷史收據不代表新 migration、Staging 或 Production 已套用。
+> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 88，該歷史收據不代表新 migration、Staging 或 Production 已套用。
 
 ## Inventory 基準
 
 | 項目 | 結果 |
 |---|---:|
 | Prisma models | 127 |
-| Migration directories | 86 |
+| Migration directories | 88 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -227,3 +227,7 @@ F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_af
 ## 2026-10-07 post-purchase credit candidate
 
 `PostPurchaseCredit` / `20261007120000_post_purchase_credit` adds a unique tenant-qualified source order credit and target order binding, composite buyer-grant FK, integer amount balance, immutable snapshot trigger and private default-deny RLS. Source refund invalidates the credit and revokes pending/granted upgraded digital access; late paid truth still persists without restoring revoked access. Disposable PostgreSQL 16 applied all 86 migrations and passed 22 regressions with zero skips and cleanup. These current receipts do not claim API/UI, independent review, external provider or delivery completion.
+
+Q2 本輪前向新增 `20261006140000_subscription_refund_entitlement_state`；既有126models不變，VendorUsageLimit新增active/revoked權限狀態。初次86 migration完整套用及51 PostgreSQL回歸PASS；之後擴充native退款backfill至byo訂閱快照，需重新驗證新revision。歷史migration/checksum保持原樣。
+
+Q2 新增 forward migration `20261007002000_reconcile_legacy_subscription_refund_state`：以既有完整 processed refund ledger 修復 native subscription 權益；保留較新 active subscription 與 usage counters，既有 migration checksum 不變。87 migrations disposable PostgreSQL 完整套用通過；latest-head DB/browser 收據仍待完成。

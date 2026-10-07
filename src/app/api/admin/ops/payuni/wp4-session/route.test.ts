@@ -25,7 +25,7 @@ const jobSecret = "test-fixture-job-secret";
 const sourceSha = "a".repeat(40);
 
 function request(authorization?: string, sha = sourceSha) {
-  return new Request("https://app.example.test/api/admin/ops/payuni/wp4-session", {
+  return new Request("https://celebrate-deal-staging.carry-digital-nomad.in.net/api/admin/ops/payuni/wp4-session", {
     method: "POST",
     headers: {
       ...(authorization ? { authorization } : {}),
@@ -38,7 +38,7 @@ function requestWithBodySpy(authorization?: string) {
   const body = new ReadableStream({ start: (controller) => controller.close() });
   const cancel = vi.spyOn(body, "cancel");
   return {
-    request: new Request("https://app.example.test/api/admin/ops/payuni/wp4-session", {
+    request: new Request("https://celebrate-deal-staging.carry-digital-nomad.in.net/api/admin/ops/payuni/wp4-session", {
       method: "POST",
       headers: authorization ? { authorization } : undefined,
       body,
@@ -53,6 +53,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("JOB_SECRET", jobSecret);
   vi.stubEnv("NODE_ENV", "production");
+  vi.stubEnv("VERCEL_PROJECT_ID", "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn");
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://celebrate-deal-staging.carry-digital-nomad.in.net");
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ocbugvgojrunvenozsbx.supabase.co");
+  vi.stubEnv("DATABASE_URL", "postgresql://db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
+  vi.stubEnv("DIRECT_URL", "postgresql://db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
+  vi.stubEnv("STAGING_DATABASE_URL", "postgresql://db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
   vi.stubEnv("VERCEL_ENV", "preview");
   vi.stubEnv("PAYUNI_ENV", "sandbox");
   vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true");
@@ -66,7 +72,7 @@ beforeEach(() => {
 
 describe("DELETE /api/admin/ops/payuni/wp4-session", () => {
   function deleteRequest(authorization?: string, sha = sourceSha) {
-    return new Request("https://app.example.test/api/admin/ops/payuni/wp4-session", {
+    return new Request("https://celebrate-deal-staging.carry-digital-nomad.in.net/api/admin/ops/payuni/wp4-session", {
       method: "DELETE",
       headers: { ...(authorization ? { authorization } : {}), "x-celebratedeal-source-sha": sha },
     });
@@ -137,7 +143,7 @@ describe("POST /api/admin/ops/payuni/wp4-session", () => {
   it("accepts a zero-byte proxy stream but rejects caller content before DB access", async () => {
     const body = new ReadableStream({ start: (controller) => controller.close() });
     const zeroByteRequest = new Request(
-      "https://app.example.test/api/admin/ops/payuni/wp4-session",
+      "https://celebrate-deal-staging.carry-digital-nomad.in.net/api/admin/ops/payuni/wp4-session",
       {
         method: "POST",
         headers: {
@@ -151,12 +157,12 @@ describe("POST /api/admin/ops/payuni/wp4-session", () => {
 
     const zeroByteResponse = await POST(zeroByteRequest);
     expect(zeroByteResponse.status).toBe(204);
-    expect(mocks.findMembership).toHaveBeenCalledOnce();
+    expect(mocks.findMembership).toHaveBeenCalledTimes(2);
 
     mocks.findMembership.mockClear();
     mocks.createSession.mockClear();
     const contentRequest = new Request(
-      "https://app.example.test/api/admin/ops/payuni/wp4-session",
+      "https://celebrate-deal-staging.carry-digital-nomad.in.net/api/admin/ops/payuni/wp4-session",
       {
         method: "POST",
         headers: {

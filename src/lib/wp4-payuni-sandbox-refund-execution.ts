@@ -57,6 +57,7 @@ export async function executeNextWp4PayUniSandboxRefund(
   db: RefundExecutionDb,
   sourceCommit: string,
   now = new Date(),
+  fixedPurpose?: Wp4PayUniPurpose,
 ): Promise<Wp4PayUniSandboxRefundExecutionResult> {
   const rows = await db.paymentTransaction.findMany({
     where: {
@@ -77,7 +78,7 @@ export async function executeNextWp4PayUniSandboxRefund(
     },
   }) as Candidate[];
 
-  for (const purpose of PURPOSES) {
+  for (const purpose of fixedPurpose ? [fixedPurpose] : PURPOSES) {
     const candidates = rows.filter((row) => matchesPurpose(row, sourceCommit, purpose));
     if (candidates.length > 1) {
       return { status: "CANDIDATE_AMBIGUOUS", purpose, phase: null, providerWriteAttempted: false };

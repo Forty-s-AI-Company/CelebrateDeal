@@ -1,3 +1,4 @@
+import { isWp4BoundNonProductionRuntime } from "./wp4-runtime-boundary";
 import { WP4_SANDBOX_FIXTURE } from "@/lib/wp4-sandbox-fixture";
 import { resolveWp4ExpectedSourceSha } from "@/lib/wp4-preview-runtime";
 import type { Wp4PayUniPurpose } from "@/lib/wp4-payuni-sandbox-reconciliation";
@@ -20,11 +21,7 @@ export function wp4SourceBoundTransactionMetadata(
   purpose: Wp4PayUniPurpose,
   identity: FixtureIdentity,
 ) {
-  if (
-    process.env.VERCEL_ENV !== "preview"
-    || process.env.PAYUNI_ENV !== "sandbox"
-    || process.env.WP4_SANDBOX_EXECUTOR_ENABLED !== "true"
-  ) return null;
+  if (!isWp4BoundNonProductionRuntime()) return null;
 
   const expected = PURPOSE_IDENTITIES[purpose];
   const expectedSourceSha = resolveWp4ExpectedSourceSha();
