@@ -62,12 +62,15 @@ test("manager publishes a lesson; a purchasing learner saves, resumes, completes
     });
     await expect.poll(async () => (await db.courseLessonProgress.findFirst({ where: { vendorId: vendor.id } }))?.watchedSeconds).toBe(75);
     await learner.reload();
-    await learner.locator("video").evaluate((element) => {
+    // A production page may expose its SSR video before React hydrates its
+    // media handler. Drive metadata inside the existing bounded poll so the
+    // exact persisted resume assertion starts observing the installed handler.
+    await expect.poll(() => learner.locator("video").evaluate((element) => {
       Object.defineProperty(element, "duration", { configurable: true, value: 100 });
       Object.defineProperty(element, "currentTime", { configurable: true, writable: true, value: 0 });
       element.dispatchEvent(new Event("loadedmetadata"));
-    });
-    await expect.poll(() => learner.locator("video").evaluate((element) => (element as HTMLVideoElement).currentTime)).toBe(75);
+      return (element as HTMLVideoElement).currentTime;
+    })).toBe(75);
     await learner.getByRole("button", { name: "標記完成", exact: true }).click();
     await expect(learner.getByText("100% 完成")).toBeVisible();
     await learner.reload();
