@@ -370,6 +370,55 @@ model VideoArchiveState {
   @@index([vendorId, previousStatus])
 }
 
+/// A community belongs to a specific purchased course. Compound keys keep
+/// replies/reactions from referencing another tenant or course at the DB layer.
+model CourseCommunityPost {
+  id              String   @default(cuid())
+  vendorId        String
+  productId       String
+  customerKeyHash String
+  authorName      String
+  revision        Int @default(0)
+  body            String
+  createdAt       DateTime @default(now())
+  hiddenAt        DateTime?
+  isPinned        Boolean @default(false)
+  isAnnouncement  Boolean @default(false)
+  product         Product @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  replies         CourseCommunityReply[]
+  reactions       CourseCommunityReaction[]
+
+  @@id([vendorId, productId, id])
+  @@index([vendorId, productId, hiddenAt, createdAt, id])
+}
+
+model CourseCommunityReply {
+  id              String   @default(cuid())
+  vendorId        String
+  productId       String
+  postId          String
+  customerKeyHash String
+  authorName      String
+  body            String
+  createdAt       DateTime @default(now())
+  hiddenAt        DateTime?
+  post            CourseCommunityPost @relation(fields: [vendorId, productId, postId], references: [vendorId, productId, id], onDelete: Cascade)
+
+  @@id([vendorId, productId, id])
+  @@index([vendorId, productId, postId, createdAt, id])
+}
+
+model CourseCommunityReaction {
+  vendorId        String
+  productId       String
+  postId          String
+  customerKeyHash String
+  createdAt       DateTime @default(now())
+  post            CourseCommunityPost @relation(fields: [vendorId, productId, postId], references: [vendorId, productId, id], onDelete: Cascade)
+
+  @@id([vendorId, productId, postId, customerKeyHash])
+}
+
 model Product {
   id                             String                  @id @default(cuid())
   vendorId                       String
@@ -425,6 +474,7 @@ model Product {
   @@index([vendorId, downsellProductId])
   @@index([imageAssetId])
   courseLessons CourseLesson[]
+  communityPosts CourseCommunityPost[]
   courseLessonProgress CourseLessonProgress[]
 
 }

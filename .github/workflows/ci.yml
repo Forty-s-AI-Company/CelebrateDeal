@@ -89,6 +89,11 @@ jobs:
         env:
           COURSE_LEARNING_DISPOSABLE: verified-loopback
 
+      - name: Course community database boundaries
+        run: npx vitest run --config vitest.course-community-db.config.ts
+        env:
+          COURSE_LEARNING_DISPOSABLE: verified-loopback
+
       - name: PayUni deployment environment binding contract
         run: npx vitest run src/lib/env.test.ts
 
