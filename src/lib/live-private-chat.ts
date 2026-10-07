@@ -22,6 +22,17 @@ function signature(payload: string, scope: Scope, kind = "message") {
   const purpose = `live-private-chat-cursor:${JSON.stringify([kind, scope.vendorId, scope.liveId, scope.submissionId])}`;
   return createHmac("sha256", deriveSensitiveDataKey(purpose)).update(payload).digest("base64url");
 }
+// This identity binding grants no access. Fresh authorization still runs before
+// every comparison, so a cookie change cannot redirect an earlier draft/retry.
+function conversationBinding(scope: Scope, actor?: { memberId: string; sessionId: string }) {
+  return createHmac("sha256", deriveSensitiveDataKey("live-private-chat-conversation-binding:v1"))
+    .update(JSON.stringify([scope.vendorId, scope.liveId, scope.submissionId, actor?.memberId ?? null, actor?.sessionId ?? null]))
+    .digest("base64url");
+}
+function requireConversationBinding(supplied: string, scope: Scope, actor?: { memberId: string; sessionId: string }) {
+  const expected = Buffer.from(conversationBinding(scope, actor)), actual = Buffer.from(supplied);
+  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) throw new LiveChatError("access_denied");
+}
 function encodeCursor(row: { createdAt: Date; id: string }, scope: Scope, kind = "message") {
   const payload = Buffer.from(JSON.stringify([row.createdAt.toISOString(), row.id])).toString("base64url");
   return `${payload}.${signature(payload, scope, kind)}`;
@@ -54,20 +65,22 @@ export async function listPrivateViewerChat(db: Database, input: { vendorId: str
     });
     const page = rows.slice(0, 50);
     const boundary = page.at(-1);
-    return { messages: page.map(row => dto(row, scope)).reverse(), nextCursor: rows.length > 50 && boundary ? encodeCursor(boundary, scope) : null };
+    return { messages: page.map(row => dto(row, scope)).reverse(), nextCursor: rows.length > 50 && boundary ? encodeCursor(boundary, scope) : null,
+      conversationBinding: conversationBinding(scope) };
   }, { isolationLevel: "RepeatableRead" });
 }
 
 /** All retries re-read authorization inside the transaction before looking up
  * an existing UUID. Revoked identity cannot retrieve even a previous retry. */
-export async function createPrivateViewerChat(db: Database, input: { vendorId: string; liveId: string; clientMessageId: string; body: string } & Proof) {
-  const post = PrivateViewerChatPost.parse({ vendorId: input.vendorId, liveId: input.liveId, clientMessageId: input.clientMessageId, body: input.body });
+export async function createPrivateViewerChat(db: Database, input: { vendorId: string; liveId: string; clientMessageId: string; body: string; conversationBinding: string } & Proof) {
+  const post = PrivateViewerChatPost.parse({ vendorId: input.vendorId, liveId: input.liveId, clientMessageId: input.clientMessageId, body: input.body, conversationBinding: input.conversationBinding });
   const body = normalizePrivateChatBody(post.body);
   if (!normalizeClientIp(input.ipAddress)) throw new LiveChatError("access_denied");
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await db.$transaction(async (tx: Prisma.TransactionClient) => {
         const scope = await resolveVerifiedPrivateChatViewer(tx, { ...input, body });
+        requireConversationBinding(post.conversationBinding, scope);
         const id = privateChatMessageId({ vendorId: scope.vendorId, liveId: scope.liveId, submissionId: scope.submissionId,
           source: "viewer", actorId: scope.submissionId, clientMessageId: post.clientMessageId });
         const existing = await tx.livePrivateChatMessage.findUnique({ where: { id } });
@@ -159,17 +172,19 @@ export async function listPrivateInstructorChat(db: Database, input: Instructor 
     }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 51 });
     const page = rows.slice(0, 50);
     const boundary = page.at(-1);
-    return { messages: page.map(row => dto(row, scope)).reverse(), nextCursor: rows.length > 50 && boundary ? encodeCursor(boundary, scope) : null };
+    return { messages: page.map(row => dto(row, scope)).reverse(), nextCursor: rows.length > 50 && boundary ? encodeCursor(boundary, scope) : null,
+      conversationBinding: conversationBinding(scope, input) };
   }, { isolationLevel: "RepeatableRead" });
 }
 
-export async function createPrivateInstructorChat(db: Database, input: Instructor & { submissionId: string; body: string; clientMessageId: string }) {
-  const post = PrivateViewerChatPost.parse({ vendorId: input.vendorId, liveId: input.liveId, body: input.body, clientMessageId: input.clientMessageId });
+export async function createPrivateInstructorChat(db: Database, input: Instructor & { submissionId: string; body: string; clientMessageId: string; conversationBinding: string }) {
+  const post = PrivateViewerChatPost.parse({ vendorId: input.vendorId, liveId: input.liveId, body: input.body, clientMessageId: input.clientMessageId, conversationBinding: input.conversationBinding });
   const body = normalizePrivateChatBody(post.body);
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await db.$transaction(async tx => {
         const scope = await instructorConversation(tx, input, true);
+        requireConversationBinding(post.conversationBinding, scope, input);
         const id = privateChatMessageId({ ...scope, source: "instructor", actorId: input.memberId, clientMessageId: post.clientMessageId });
         const existing = await tx.livePrivateChatMessage.findUnique({ where: { id } });
         if (existing) {

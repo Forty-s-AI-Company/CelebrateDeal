@@ -13,17 +13,17 @@ function request(method = "GET", body?: object, query = "vendorId=tenant-a&liveI
     headers: { origin: "https://app.example.test", "x-celebratedeal-client": "web", "content-type": "application/json" },
     ...(body ? { body: JSON.stringify(body) } : {}) });
 }
-const body = { vendorId: "tenant-a", liveId: "live-a", clientMessageId: "123e4567-e89b-12d3-a456-426614174000", body: "合成問題", csrfToken: "synthetic-token" };
+const body = { conversationBinding: "b".repeat(43), vendorId: "tenant-a", liveId: "live-a", clientMessageId: "123e4567-e89b-12d3-a456-426614174000", body: "合成問題", csrfToken: "synthetic-token" };
 beforeEach(() => {
   vi.clearAllMocks(); mocks.getDb.mockReturnValue({}); mocks.ip.mockReturnValue("203.0.113.5"); mocks.rate.mockResolvedValue(null);
   mocks.csrf.mockResolvedValue(true); mocks.token.mockResolvedValue("synthetic-token");
-  mocks.list.mockResolvedValue({ messages: [], nextCursor: null }); mocks.create.mockResolvedValue({ message, created: true });
+  mocks.list.mockResolvedValue({ messages: [], nextCursor: null, conversationBinding: "b".repeat(43) }); mocks.create.mockResolvedValue({ message, created: true });
 });
 it("mints a CSRF token only after private conversation authorization", async () => {
   mocks.list.mockRejectedValueOnce(new LiveChatError("access_denied"));
   const denied = await GET(request()); expect(denied.status).toBe(403); expect(mocks.token).not.toHaveBeenCalled();
   const allowed = await GET(request()); expect(allowed.status).toBe(200);
-  expect(await allowed.json()).toEqual({ messages: [], nextCursor: null, csrfToken: "synthetic-token" });
+  expect(await allowed.json()).toEqual({ messages: [], nextCursor: null, conversationBinding: "b".repeat(43), csrfToken: "synthetic-token" });
   expect(allowed.headers.get("cache-control")).toBe("private, no-store");
 });
 it("rejects missing or forged CSRF before any private write", async () => {

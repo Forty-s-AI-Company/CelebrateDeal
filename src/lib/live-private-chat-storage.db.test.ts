@@ -37,7 +37,7 @@ async function fixture() {
   const input = { vendorId: vendor.id, liveId: live.id, admissionToken,
     chatSessionToken: createFormSubmissionChatSessionToken({ submissionId: submission.id, now }),
     ipAddress: "203.0.113.5", now, clientMessageId: identity.clientMessageId, body: "合成私人問題" };
-  return { vendor, member, session, live, submission, scope, data, input };
+  const viewerBinding = (await listPrivateViewerChat(db, input)).conversationBinding; const instructorBinding = (await listPrivateInstructorChat(db, { vendorId: vendor.id, liveId: live.id, userId: user.id, memberId: member.id, sessionId: session.id, submissionId: submission.id })).conversationBinding; return { vendor, member, session, live, submission, scope, data, input: { ...input, conversationBinding: viewerBinding }, instructorBinding };
 }
 
 it("persists only encrypted body in an independent private table", async () => {
@@ -94,6 +94,29 @@ it("reconciles concurrent retries to one message and rejects altered bodies", as
   expect(await db.livePrivateChatMessage.count({ where: { liveId: f.live.id } })).toBe(1);
   await expect(createPrivateViewerChat(db, { ...f.input, body: "另一個問題" })).rejects.toMatchObject({ code: "idempotency_conflict" });
 });
+it("rejects an earlier viewer binding before UUID retry after the same-live identity changes", async () => {
+  const f = await fixture(); await createPrivateViewerChat(db, f.input);
+  const second = await db.formSubmission.create({ data: { formId: f.submission.formId, liveId: f.live.id,
+    name: "切換後合成觀眾", email: `${randomUUID()}@example.test`, verificationStatus: "VERIFIED" } });
+  const switched = { ...f.input, chatSessionToken: createFormSubmissionChatSessionToken({ submissionId: second.id, now: f.input.now }) };
+  const current = await listPrivateViewerChat(db, switched);
+  expect(current.conversationBinding).not.toBe(f.input.conversationBinding);
+  expect(current.messages).toEqual([]);
+  await expect(createPrivateViewerChat(db, switched)).rejects.toMatchObject({ code: "access_denied" });
+  expect(await db.livePrivateChatMessage.count({ where: { liveId: f.live.id } })).toBe(1);
+  expect(await db.livePrivateChatMessage.count({ where: { formSubmissionId: second.id } })).toBe(0);
+});
+it("rejects a previous instructor actor binding even when the new actor has current manager rights", async () => {
+  const f = await fixture(), other = await fixture();
+  const member = await db.vendorMember.create({ data: { vendorId: f.vendor.id, userId: other.member.userId, role: "owner" } });
+  await db.userSession.update({ where: { id: other.session.id }, data: { vendorId: f.vendor.id } });
+  const switched = { vendorId: f.vendor.id, liveId: f.live.id, userId: other.member.userId, memberId: member.id,
+    sessionId: other.session.id, submissionId: f.submission.id, conversationBinding: f.instructorBinding,
+    body: "原講師草稿", clientMessageId: randomUUID() };
+  expect((await listPrivateInstructorChat(db, switched)).conversationBinding).not.toBe(f.instructorBinding);
+  await expect(createPrivateInstructorChat(db, switched)).rejects.toMatchObject({ code: "access_denied" });
+  expect(await db.livePrivateChatMessage.count({ where: { liveId: f.live.id } })).toBe(0);
+});
 it("rechecks current verification and moderation before an idempotent retry", async () => {
   const f = await fixture(); await createPrivateViewerChat(db, f.input);
   await db.formSubmission.update({ where: { id: f.submission.id }, data: { verificationStatus: "UNVERIFIED" } });
@@ -122,7 +145,7 @@ it("paginates all private messages and rejects a cursor in another conversation"
 
 it("delivers instructor replies only to the selected verified conversation", async () => {
   const f = await fixture(); const viewer = await createPrivateViewerChat(db, f.input);
-  const instructor = { vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id };
+  const instructor = { conversationBinding: f.instructorBinding, vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id };
   expect(await listPrivateInstructorConversations(db, instructor)).toEqual({ conversations: [{ submissionId: f.submission.id, displayName: f.submission.name }], nextCursor: null });
   const reply = await createPrivateInstructorChat(db, { ...instructor, body: "合成講師回覆", clientMessageId: randomUUID() });
   expect(reply.created).toBe(true); expect(reply.message.source).toBe("instructor");
@@ -132,7 +155,7 @@ it("delivers instructor replies only to the selected verified conversation", asy
 });
 it("rejects foreign instructors and immediately revoked role before reads and retries", async () => {
   const f = await fixture(), foreign = await fixture();
-  const input = { vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };
+  const input = { conversationBinding: f.instructorBinding, vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };
   await createPrivateInstructorChat(db, input);
   await expect(listPrivateInstructorChat(db, { ...input, userId: foreign.member.userId, memberId: foreign.member.id })).rejects.toMatchObject({ code: "access_denied" });
   await db.vendorMember.update({ where: { id: f.member.id }, data: { role: "member" } });
@@ -143,21 +166,21 @@ it("rejects foreign instructors and immediately revoked role before reads and re
 });
 it("keeps aggregate project scope read-only for instructor replies", async () => {
   const f = await fixture(); await createPrivateViewerChat(db, f.input);
-  const input = { vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };
+  const input = { conversationBinding: f.instructorBinding, vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };
   await db.userOnboardingPreference.create({ data: { vendorId: f.vendor.id, userId: f.member.userId } });
   expect((await listPrivateInstructorChat(db, input)).messages).toHaveLength(1);
   await expect(createPrivateInstructorChat(db, input)).rejects.toMatchObject({ code: "access_denied" });
 });
 it("rejects a different live conversation even under the same authorized manager", async () => {
   const f = await fixture(), other = await fixture();
-  const input = { vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: other.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };
+  const input = { conversationBinding: f.instructorBinding, vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: other.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };
   await expect(createPrivateInstructorChat(db, input)).rejects.toMatchObject({ code: "access_denied" });
   await expect(listPrivateInstructorChat(db, input)).rejects.toMatchObject({ code: "access_denied" });
 });
 
 it("rechecks session revocation and newly enrolled MFA inside the reply transaction", async () => {
   const f = await fixture();
-  const input = { vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };
+  const input = { conversationBinding: f.instructorBinding, vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };
   await db.userMfaFactor.create({ data: { userId: f.member.userId, secretEncrypted: encryptMfaSecret("JBSWY3DPEHPK3PXP") } });
   await expect(createPrivateInstructorChat(db, input)).rejects.toMatchObject({ code: "access_denied" });
   await db.userSession.update({ where: { id: f.session.id }, data: { mfaVerifiedAt: new Date() } });
@@ -171,7 +194,7 @@ it("rechecks the selected project before a manager can read or reply", async () 
   const f = await fixture();
   const project = await db.salesProject.create({ data: { vendorId: f.vendor.id, name: "合成專案", slug: `project-${randomUUID()}`, mode: "live_course", primaryFlow: "live" } });
   await db.userOnboardingPreference.create({ data: { vendorId: f.vendor.id, userId: f.member.userId, selectedProjectId: project.id } });
-  const input = { vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };
+  const input = { conversationBinding: f.instructorBinding, vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };
   await expect(listPrivateInstructorChat(db, input)).rejects.toMatchObject({ code: "access_denied" });
   await expect(createPrivateInstructorChat(db, input)).rejects.toMatchObject({ code: "access_denied" });
   await db.live.update({ where: { id: f.live.id }, data: { projectId: project.id } });
@@ -182,7 +205,7 @@ it("preserves the canonical default workspace for a legacy unselected session", 
   const f = await fixture(), other = await fixture();
   await db.userSession.update({ where: { id: f.session.id }, data: { vendorId: null } });
   const extraMember = await db.vendorMember.create({ data: { vendorId: other.vendor.id, userId: f.member.userId, role: "owner" } });
-  const input = { vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };
+  const input = { conversationBinding: f.instructorBinding, vendorId: f.vendor.id, liveId: f.live.id, userId: f.member.userId, memberId: f.member.id, sessionId: f.session.id, submissionId: f.submission.id, body: "合成講師回覆", clientMessageId: randomUUID() };
   expect((await createPrivateInstructorChat(db, input)).created).toBe(true);
   await expect(listPrivateInstructorChat(db, { ...input, vendorId: other.vendor.id, liveId: other.live.id, memberId: extraMember.id, submissionId: other.submission.id })).rejects.toMatchObject({ code: "access_denied" });
 });

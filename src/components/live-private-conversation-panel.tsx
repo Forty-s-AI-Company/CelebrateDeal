@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { PrivateChatMessage, PrivateChatResponse, type PrivateChatMessageDto } from "@/lib/live-private-chat-contract";
 
 type Props = { liveId: string } & ({ mode: "viewer"; vendorId: string } | { mode: "instructor"; submissionId: string });
-type View = { identity: string; messages: PrivateChatMessageDto[]; nextCursor: string | null; csrfToken: string };
+type View = { identity: string; messages: PrivateChatMessageDto[]; nextCursor: string | null; csrfToken: string; conversationBinding: string };
 const clientHeaders = { "X-CelebrateDeal-Client": "web", "Content-Type": "application/json" };
 
 /** Scope changes remount the whole conversation, including draft and retry ID.
@@ -32,6 +32,7 @@ function PrivateConversation(props: Props) {
   const retry = useRef<{ body: string; clientMessageId: string } | null>(null);
   const mounted = useRef(false);
   const writeLock = useRef(false);
+  const conversationIdentity = useRef<string | null>(null);
   const visible = view?.identity === url ? view : null;
 
   useEffect(() => {
@@ -56,7 +57,13 @@ function PrivateConversation(props: Props) {
         }
         const parsed = PrivateChatResponse.safeParse(await response.json());
         if (!parsed.success) throw new Error("invalid-private-chat-response");
-        if (!disposed && sequence === revision.current) { setView({ identity: url, ...parsed.data }); setError(null); }
+        if (!disposed && sequence === revision.current) {
+          if (conversationIdentity.current && conversationIdentity.current !== parsed.data.conversationBinding) {
+            setDraft(""); retry.current = null; setCursor(null);
+          }
+          conversationIdentity.current = parsed.data.conversationBinding;
+          setView({ identity: url, ...parsed.data }); setError(null);
+        }
       } catch {
         if (!disposed && sequence === revision.current) { setView(null); setError("暫時無法讀取私訊，請稍後再試。"); }
       } finally { window.clearTimeout(timeout); loading = false; }
@@ -78,12 +85,15 @@ function PrivateConversation(props: Props) {
     const controller = new AbortController(); writeRequest.current = controller;
     const timeout = window.setTimeout(() => controller.abort(), 8_000);
     try {
-      const payload = { liveId: props.liveId, ...retry.current, csrfToken: visible.csrfToken,
+      const payload = { liveId: props.liveId, ...retry.current, csrfToken: visible.csrfToken, conversationBinding: visible.conversationBinding,
         ...(props.mode === "viewer" ? { vendorId: props.vendorId } : { submissionId: props.submissionId }) };
       const response = await fetch(endpoint, { method: "POST", headers: clientHeaders, credentials: "same-origin", cache: "no-store", body: JSON.stringify(payload), signal: controller.signal });
       if (!mounted.current) return;
       if (!response.ok) {
-        if (response.status === 403) setView(null);
+        if (response.status === 403) {
+          setView(null); setDraft(""); retry.current = null; conversationIdentity.current = null;
+          setCursor(null); setRefresh(value => value + 1);
+        }
         setError(response.status === 403 ? "此對話暫時無法傳送，請重新確認權限。" : "訊息未確認送達，請重試。");
         return;
       }

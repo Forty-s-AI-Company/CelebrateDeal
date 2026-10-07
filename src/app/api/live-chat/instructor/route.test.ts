@@ -12,7 +12,7 @@ function request(method = "GET", body?: object, query = "liveId=live-a") {
     headers: { origin: "https://app.example.test", "x-celebratedeal-client": "web", "content-type": "application/json", "x-forwarded-for": "198.51.100.42" },
     ...(body ? { body: JSON.stringify(body) } : {}) });
 }
-const body = { liveId: "live-a", submissionId: "viewer-a", body: "合成講師回覆", clientMessageId: "123e4567-e89b-12d3-a456-426614174000", csrfToken: "synthetic-token" };
+const body = { conversationBinding: "b".repeat(43), liveId: "live-a", submissionId: "viewer-a", body: "合成講師回覆", clientMessageId: "123e4567-e89b-12d3-a456-426614174000", csrfToken: "synthetic-token" };
 beforeEach(() => {
   vi.clearAllMocks(); mocks.auth.mockResolvedValue(actor); mocks.db.mockReturnValue({}); mocks.rate.mockResolvedValue(null);
   mocks.csrf.mockResolvedValue(true); mocks.token.mockResolvedValue("synthetic-token");
