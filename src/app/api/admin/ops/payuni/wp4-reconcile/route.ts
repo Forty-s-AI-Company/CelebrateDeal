@@ -1,3 +1,4 @@
+import { authorizeWp4Ops } from "@/lib/wp4-runtime-boundary";
 import { NextResponse } from "next/server";
 import { requireJobSecret } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
@@ -36,6 +37,8 @@ function previewSandboxExecutorEnabled() {
  * The caller supplies no transaction, amount, provider URL, or other operation.
  */
 export async function POST(request: Request) {
+  const authorization = await authorizeWp4Ops(request);
+  if (authorization instanceof Response) return authorization;
   // Reject unauthenticated callers before consuming a body or accessing the DB.
   if (!requireJobSecret(request)) {
     return NextResponse.json(

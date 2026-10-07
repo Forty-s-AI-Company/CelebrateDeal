@@ -56,21 +56,20 @@ test("manager publishes a lesson; a purchasing learner saves, resumes, completes
     expect(await db.courseLessonProgress.count({ where: { vendorId: vendor.id } })).toBe(0);
     // A synthetic media clock exercises the real player handlers and backend;
     // it does not represent decoding or delivery by the external video provider.
+    await expect(learner.getByRole("button", { name: "標記完成", exact: true })).toBeEnabled();
     await learner.locator("video").evaluate((element) => {
       Object.defineProperty(element, "currentTime", { configurable: true, writable: true, value: 75 });
       element.dispatchEvent(new Event("timeupdate"));
     });
     await expect.poll(async () => (await db.courseLessonProgress.findFirst({ where: { vendorId: vendor.id } }))?.watchedSeconds).toBe(75);
     await learner.reload();
-    // A production page may expose its SSR video before React hydrates its
-    // media handler. Drive metadata inside the existing bounded poll so the
-    // exact persisted resume assertion starts observing the installed handler.
-    await expect.poll(() => learner.locator("video").evaluate((element) => {
+    await expect(learner.getByRole("button", { name: "標記完成", exact: true })).toBeEnabled();
+    await learner.locator("video").evaluate((element) => {
       Object.defineProperty(element, "duration", { configurable: true, value: 100 });
       Object.defineProperty(element, "currentTime", { configurable: true, writable: true, value: 0 });
       element.dispatchEvent(new Event("loadedmetadata"));
-      return (element as HTMLVideoElement).currentTime;
-    })).toBe(75);
+    });
+    await expect.poll(() => learner.locator("video").evaluate((element) => (element as HTMLVideoElement).currentTime)).toBe(75);
     await learner.getByRole("button", { name: "標記完成", exact: true }).click();
     await expect(learner.getByText("100% 完成")).toBeVisible();
     await learner.reload();

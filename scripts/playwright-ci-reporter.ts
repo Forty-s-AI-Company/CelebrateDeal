@@ -3,7 +3,9 @@ import type { FullResult, Reporter, TestCase, TestResult, TestStep } from "@play
 
 const allowedTestPath = /^tests\/e2e\/[A-Za-z0-9_.()[\]/-]+\.spec\.(?:[cm]?[jt]sx?)$/u;
 // Keep shared guard assertion locations without exposing arbitrary helper paths or errors.
-const allowedHelperPaths = new Set(["tests/e2e/helpers/direct-url-guard.ts"]);
+const allowedHelperPaths = new Set(["tests/e2e/helpers/direct-url-guard.ts",
+  "tests/subscription-recovery/native-subscription-recovery.browser.ts",
+  "tests/subscription-recovery/native-buyer-recovery.browser.ts"]);
 const fixedStatuses = new Set(["failed", "timedout", "flaky"]);
 // Fixed WCAG rule IDs from the installed axe inventory. New/unknown rules are
 // reported as "unknown"; selectors, HTML and arbitrary error text stay private.

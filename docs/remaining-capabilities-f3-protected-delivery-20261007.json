@@ -1,0 +1,264 @@
+{
+  "schemaVersion": "celebratedeal-f3-protected-delivery/v1",
+  "task_id": "editor-advanced-interactions",
+  "goal_id": "remaining-capabilities-20261005",
+  "status": "DELIVERED",
+  "pr": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/372",
+  "accepted_head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+  "squash_commit": "c95f5869a09e863fef92cd57f853bc2504144809",
+  "merged_at": "2026-10-07T06:57:08Z",
+  "accepted_tree": "31bbd6426f8813bd1231adf9262fcc7768e76060",
+  "merged_tree": "31bbd6426f8813bd1231adf9262fcc7768e76060",
+  "tree_comparison": "EXACT_MATCH",
+  "mainline_before": "f739c7e017d430f05cc10a85728f5335e1bc20be",
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf"
+  },
+  "review": {
+    "kind": "review",
+    "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf",
+    "status": "PASS",
+    "independent": true,
+    "source": "desktop_native",
+    "role": "senior_review",
+    "model": "gpt-6.1-sol",
+    "requested_effort": "high",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "dispatches": 5,
+    "original_dispatch_limit": 4,
+    "authorized_dispatch_limit": 5,
+    "user_authorization": "同意多一次審查",
+    "reviewed_head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+    "reviewed_base": "f739c7e017d430f05cc10a85728f5335e1bc20be",
+    "findings": [],
+    "scope": "All changed product, test, runner and config files; actual Workspace parent/editor route/server action/service; unchanged hashes verified",
+    "agent": "/root/f3_authorized_final_review",
+    "provider_terminal": true
+  },
+  "validation": {
+    "execution": {
+      "kind": "execution",
+      "source": "desktop_native",
+      "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf",
+      "status": "COMPLETED",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "provenance": {
+        "head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+        "ci_run": 37550502233,
+        "workspace_browser": "2026-10-07T00:07:28.723Z"
+      },
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\f3-final-review\\execution.json"
+    },
+    "checks": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "lint",
+        "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf",
+        "status": "PASS",
+        "exit_code": 0,
+        "provenance": {
+          "ci_run": 37550502233,
+          "head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+          "step": "Lint"
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\f3-final-review\\lint.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "typescript",
+        "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf",
+        "status": "PASS",
+        "exit_code": 0,
+        "provenance": {
+          "ci_run": 37550502233,
+          "head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+          "step": "Typecheck"
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\f3-final-review\\typescript.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "strict_index",
+        "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf",
+        "status": "PASS",
+        "exit_code": 0,
+        "provenance": {
+          "ci_run": 37550502233,
+          "head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+          "step": "Strict production index access"
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\f3-final-review\\strict_index.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "unit_coverage",
+        "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf",
+        "status": "PASS",
+        "exit_code": 0,
+        "provenance": {
+          "ci_run": 37550502233,
+          "head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+          "step": "Unit tests and coverage thresholds"
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\f3-final-review\\unit_coverage.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "node_tap",
+        "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf",
+        "status": "PASS",
+        "exit_code": 0,
+        "provenance": {
+          "ci_run": 37550502233,
+          "head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+          "step": "Node TAP contract tests"
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\f3-final-review\\node_tap.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "database",
+        "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf",
+        "status": "PASS",
+        "exit_code": 0,
+        "provenance": {
+          "ci_run": 37550502233,
+          "head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+          "step": "PostgreSQL concurrency tests"
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\f3-final-review\\database.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "harness_browser",
+        "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf",
+        "status": "PASS",
+        "exit_code": 0,
+        "provenance": {
+          "ci_run": 37550502233,
+          "head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+          "step": "Funnel development harness browser gate"
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\f3-final-review\\harness_browser.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "release_browser",
+        "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf",
+        "status": "PASS",
+        "exit_code": 0,
+        "provenance": {
+          "ci_run": 37550502233,
+          "head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+          "step": "Release browser gates"
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\f3-final-review\\release_browser.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "router_resilience",
+        "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf",
+        "status": "PASS",
+        "exit_code": 0,
+        "provenance": {
+          "ci_run": 37550502233,
+          "head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+          "step": "AI Team router and resilience tests"
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\f3-final-review\\router_resilience.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "actual_workspace_browser",
+        "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf",
+        "status": "PASS",
+        "exit_code": 0,
+        "provenance": {
+          "receipt": "docs/remaining-capabilities-f3-hydration-regression-20261007.json",
+          "finished_at": "2026-10-07T00:07:28.723Z",
+          "unchanged_product_test_runner_files_verified": [
+            "playwright.funnel-workspace.config.ts",
+            "scripts/funnel-workspace-disposable-qa.mjs",
+            "scripts/prisma-loopback-disposable-migration-runner.mjs",
+            "src/components/course-player.test.tsx",
+            "src/components/course-player.tsx",
+            "src/components/landing-pages/funnel-editor-browser-harness.tsx",
+            "src/components/landing-pages/funnel-element-inspector.tsx",
+            "src/components/landing-pages/funnel-page-editor.tsx",
+            "src/components/landing-pages/funnel-step-pages-editor.tsx",
+            "src/components/landing-pages/workspace-editor.tsx",
+            "src/lib/funnel-step-pages-history.test.ts",
+            "src/lib/funnel-step-pages-history.ts",
+            "tests/browser-dev/funnel-editor-history.spec.ts",
+            "tests/e2e/funnel-operations.spec.ts",
+            "tests/e2e/funnel-workspace-persistence.spec.ts",
+            "tests/e2e/native-course-learning.spec.ts",
+            "tests/e2e/webinar-funnel-flow.spec.ts"
+          ]
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\f3-final-review\\actual_workspace_browser.json"
+      }
+    ],
+    "findings": [],
+    "review": {
+      "kind": "review",
+      "revision": "sha256:352a6ef11b66840a517ede472c3874b8e2d4b912db087cfe20a4daf45c15dcdf",
+      "status": "PASS",
+      "independent": true,
+      "source": "desktop_native",
+      "role": "senior_review",
+      "model": "gpt-6.1-sol",
+      "requested_effort": "high",
+      "observed_model": "unknown",
+      "observed_effort": "unknown",
+      "dispatches": 5,
+      "original_dispatch_limit": 4,
+      "authorized_dispatch_limit": 5,
+      "user_authorization": "同意多一次審查",
+      "reviewed_head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+      "reviewed_base": "f739c7e017d430f05cc10a85728f5335e1bc20be",
+      "findings": [],
+      "scope": "All changed product, test, runner and config files; actual Workspace parent/editor route/server action/service; unchanged hashes verified",
+      "agent": "/root/f3_authorized_final_review",
+      "provider_terminal": true,
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\f3-final-review\\review.json"
+    }
+  },
+  "ci": {
+    "run": 37550502233,
+    "head": "f24993f8d68a018f0273a0930cc5b573f526d109",
+    "status": "SUCCESS",
+    "branch_protection": true,
+    "enforce_admins": true,
+    "required_check": "quality",
+    "strict": true,
+    "expected_head_squash": true
+  },
+  "tests": {
+    "unit": 31,
+    "harness_chromium": 16,
+    "migrations": 85,
+    "postgresql": 7,
+    "course_browser": 1,
+    "workspace_browser": 1,
+    "skipped": 0,
+    "flaky": 0
+  },
+  "production_operations": false,
+  "overall_goal": "ACTIVE",
+  "remaining_scope": "F1/F2/F3 team-video/Q1/Q2/A1/E1 retained"
+}

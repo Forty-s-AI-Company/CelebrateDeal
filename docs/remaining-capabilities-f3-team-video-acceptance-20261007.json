@@ -1,0 +1,123 @@
+{
+  "task_id": "remaining-team-video-delivery",
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:35a0439b134b363d1dfe9ce9791d9300cf0a223d03cab79165be8fee6a14d367"
+  },
+  "source_revision": "sha256:6bab36a6752668f08b9c0790de058cc0ff2a49027a56c3dddeb5e5231853b16d",
+  "review": {
+    "kind": "review",
+    "revision": "sha256:35a0439b134b363d1dfe9ce9791d9300cf0a223d03cab79165be8fee6a14d367",
+    "status": "PASS",
+    "independent": true,
+    "source": "desktop_native",
+    "role": "critical_review",
+    "model": "gpt-6-astra",
+    "requested_effort": "high",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "dispatches": 4,
+    "dispatch_limit": 4,
+    "agent": "/root/team_video_critical_fallback",
+    "raw_report": [],
+    "reviewed_files": [
+      "tests/e2e/team-video-persistence-isolation.spec.ts",
+      "scripts/team-video-disposable-qa.mjs",
+      "playwright.team-video.config.ts",
+      "scripts/team-video-source-snapshot.mjs",
+      "scripts/team-video-source-snapshot.test.mjs"
+    ],
+    "source_revision": "sha256:6bab36a6752668f08b9c0790de058cc0ff2a49027a56c3dddeb5e5231853b16d",
+    "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\team-video-final\\review.json"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:35a0439b134b363d1dfe9ce9791d9300cf0a223d03cab79165be8fee6a14d367",
+      "status": "PASS",
+      "exit_code": 0,
+      "provenance": {
+        "session": 91024,
+        "exit_code": 0
+      },
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\team-video-final\\lint.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typescript",
+      "revision": "sha256:35a0439b134b363d1dfe9ce9791d9300cf0a223d03cab79165be8fee6a14d367",
+      "status": "PASS",
+      "exit_code": 0,
+      "provenance": {
+        "session": 21926,
+        "exit_code": 0
+      },
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\team-video-final\\typescript.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "strict_index",
+      "revision": "sha256:35a0439b134b363d1dfe9ce9791d9300cf0a223d03cab79165be8fee6a14d367",
+      "status": "PASS",
+      "exit_code": 0,
+      "provenance": {
+        "session": 40961,
+        "exit_code": 0
+      },
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\team-video-final\\strict_index.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "source_binding_unit",
+      "revision": "sha256:35a0439b134b363d1dfe9ce9791d9300cf0a223d03cab79165be8fee6a14d367",
+      "status": "PASS",
+      "exit_code": 0,
+      "provenance": {
+        "session": 91024,
+        "passed": 2
+      },
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\team-video-final\\source_binding_unit.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "disposable_browser",
+      "revision": "sha256:35a0439b134b363d1dfe9ce9791d9300cf0a223d03cab79165be8fee6a14d367",
+      "status": "PASS",
+      "exit_code": 0,
+      "provenance": {
+        "receipt": "docs/remaining-capabilities-f3-team-video-browser-pass-20261007.json",
+        "schemaVersion": "team-video-disposable/v1",
+        "status": "PASS",
+        "tests": {
+          "total": 2,
+          "passed": 2,
+          "failed": 0,
+          "skipped": 0
+        },
+        "cleanup": {
+          "container": "PASS",
+          "tempRoot": "PASS"
+        },
+        "startedAt": "2026-10-07T07:38:23.013Z",
+        "finishedAt": "2026-10-07T07:43:14.406Z",
+        "browser": {
+          "expected": 2,
+          "unexpected": 0,
+          "skipped": 0,
+          "flaky": 0
+        },
+        "sourceRevision": "sha256:6bab36a6752668f08b9c0790de058cc0ff2a49027a56c3dddeb5e5231853b16d",
+        "sourceUnchanged": true
+      },
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-editor-delivery\\CelebrateDeal\\.ai-team\\tmp\\team-video-final\\disposable_browser.json"
+    }
+  ],
+  "scope": "Actual URL video CRUD/reload and tenant read/write denial; existing team direct URL owner boundary. No Cloudflare upload or Production proof."
+}
