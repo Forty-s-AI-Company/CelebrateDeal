@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { main } from "./prisma-loopback-disposable-migration-runner.mjs";
 
-const sourceFiles = ["src/lib/live-purchase-broadcasts.ts", "src/lib/live-purchase-broadcasts.test.ts", "src/lib/live-purchase-broadcasts.db.test.ts", "src/app/api/live-purchase-broadcasts/route.ts", "src/app/api/live-purchase-broadcasts/route.test.ts", "vitest.live-private-commerce-db.config.ts", "scripts/live-private-commerce-disposable-qa.mjs", "scripts/prisma-loopback-disposable-migration-runner.mjs", "prisma.playwright.config.ts"];
+const sourceFiles = ["prisma/schema.prisma", "prisma/migrations/20261007110000_live_private_chat_messages/migration.sql", "src/lib/live-private-chat-storage.ts", "src/lib/live-private-chat-storage.db.test.ts", "src/lib/live-chat.ts", "src/components/live-playback.tsx", "src/components/live-purchase-broadcast-panel.tsx", "src/lib/live-purchase-broadcast-contract.ts", "src/lib/live-purchase-broadcasts.ts", "src/lib/live-purchase-broadcasts.test.ts", "src/lib/live-purchase-broadcasts.db.test.ts", "src/app/api/live-purchase-broadcasts/route.ts", "src/app/api/live-purchase-broadcasts/route.test.ts", "vitest.live-private-commerce-db.config.ts", "scripts/live-private-commerce-disposable-qa.mjs", "scripts/prisma-loopback-disposable-migration-runner.mjs", "prisma.playwright.config.ts"];
 const snapshot = () => Object.fromEntries(sourceFiles.map(file => [file, createHash("sha256").update(fs.readFileSync(file)).digest("hex")]));
 const original = snapshot();
 let tests;
@@ -22,7 +22,7 @@ try {
       locations: [...new Set((test.failureMessages ?? []).join("\n").match(/(?:live-purchase-broadcasts|commerce-orders)\.(?:db\.test\.)?ts:\d+:\d+/gu) ?? [])] })));
     fs.mkdirSync(".ai-team/reports", { recursive: true });
     fs.writeFileSync(".ai-team/reports/live-private-commerce-failures.json", JSON.stringify({ tests, failures }));
-    if (result.status !== 0 || !value.success || tests.total !== 6 || tests.skipped) throw new Error("db-tests-failed");
+    if (result.status !== 0 || !value.success || tests.total !== 12 || tests.skipped) throw new Error("db-tests-failed");
     if (JSON.stringify(snapshot()) !== JSON.stringify(original)) throw new Error("source-changed");
   } });
   const receipt = { taskId: "f2-live-private-chat-purchase-broadcast", status: migration.status, tests, migrations: migration.migrationNames.length,
