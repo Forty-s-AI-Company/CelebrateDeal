@@ -38,7 +38,6 @@
   "migrations": 91,
   "historical_payment_adapter_migrations": 81,
   "remaining": [
-    "latest-source disposable DB/browser verification",
     "latest-source independent review and acceptance",
     "exact-head CI"
   ],
@@ -64,5 +63,17 @@
   ],
   "acceptance": "LATEST_CANDIDATE_NOT_YET_ACCEPTED",
   "review_dispatches": 4,
-  "review_dispatch_limit": 4
+  "review_dispatch_limit": 4,
+  "latest_source_browser": {
+    "status": "PASS",
+    "revision": "sha256:5f8cbc2c96ce3bcaec5f55760f969d047efda666d27f9f6e74ef6f80849b25ac",
+    "migrations": 91,
+    "pg_passed": 29,
+    "browser_expected": 1,
+    "unexpected": 0,
+    "skipped": 0,
+    "flaky": 0,
+    "source_unchanged": true,
+    "cleanup": "PASS"
+  }
 }
