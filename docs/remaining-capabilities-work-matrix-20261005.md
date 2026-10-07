@@ -88,3 +88,6 @@ Q2 latest exact candidate `b0362e3a`：87 migrations、67/67 DB、2/2 browser、
 - 驗收：付款/order/credit identity、金額、權益、退款、CAS/CSRF、tenant、併發/冪等及 issued provider recovery 全部必要範圍保留。canonical NOT_READY，未建立 PR、未交付，Goal ACTIVE。
 
 - 上述 session 49757 終態 PASS：86 migrations、48 DB、177 unit、1 actual browser，零 skip/flaky、cleanup PASS；新 source sha256:2559270d48cdf6f42ce9b06cc64d0213e9e20392d679208c3d12be8ad42e3773。另 4 fingerprint tests PASS。證據 docs/remaining-capabilities-f2-post-purchase-source-complete-browser-20261007.json；MAJOR 外部 PayUni 恢復仍 OPEN，NOT_READY 未交付。
+
+
+F2 post-purchase main integration `7e547a998c0091d5cd9c6cb38a0cb9cec55fbe88` includes main `a10728f4147ce84ad6d33524ed0e412660602283`: 127 models / 88 migrations, fresh 48 DB + 177 unit + 1 browser PASS; supplemental 135 callback/subscription/auth tests PASS on fresh 88-migration DB; TS/lint PASS. Pre-integration e003 CI 37606402273 SUCCESS does not prove merged candidate. New receipt: `remaining-capabilities-f2-post-purchase-main-integrated-browser-20261007.json`. Original task review3/4; issued external PayUni recovery MAJOR OPEN. NOT READY / NOT DELIVERED; full scope retained.
