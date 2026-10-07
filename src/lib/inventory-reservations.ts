@@ -313,6 +313,45 @@ async function releaseReservation(
   return true;
 }
 
+/**
+ * Reacquire the original snapshot inside the caller's serializable recovery
+ * transaction. This does not authorize payment retry: the caller must verify
+ * the buyer, credit and provider state before changing the original payment.
+ * Throwing after any stock write rolls back the entire recovery transaction.
+ */
+export async function reacquireReleasedCheckoutInventory(
+  tx: Prisma.TransactionClient,
+  input: { vendorId: string; transactionId: string; productId: string; now?: Date },
+) {
+  const now = input.now ?? new Date();
+  const reservation = await tx.inventoryReservation.findUnique({
+    where: { paymentTransactionId: input.transactionId },
+  });
+  if (!reservation || reservation.vendorId !== input.vendorId || reservation.productId !== input.productId) {
+    throw new InventoryReservationInputError();
+  }
+  const items = orderedReservationItems(snapshotReservationItems(reservation));
+  if (reservation.status === "reserved" && reservation.expiresAt > now) return false;
+  if (reservation.status !== "released" || !["provider_checkout_failed", "checkout_metadata_failed", "payment_failed", "expired"].includes(reservation.releaseReason ?? "")) {
+    throw new InventoryReservationInputError();
+  }
+  for (const item of items) {
+    const reserved = await tx.product.updateMany({
+      where: { id: item.productId, vendorId: input.vendorId, isActive: true,
+        fulfillmentTypeConfirmed: true, inventory: { gte: item.quantity } },
+      data: { inventory: { decrement: item.quantity }, revision: { increment: 1 } },
+    });
+    if (reserved.count !== 1) throw new InventoryUnavailableError();
+  }
+  const changed = await tx.inventoryReservation.updateMany({
+    where: { id: reservation.id, vendorId: input.vendorId, status: "released", releaseReason: reservation.releaseReason },
+    data: { status: "reserved", expiresAt: new Date(now.getTime() + INVENTORY_RESERVATION_TTL_MS),
+      releasedAt: null, releaseReason: null, committedAt: null },
+  });
+  if (changed.count !== 1) throw new InventoryReservationInputError();
+  return true;
+}
+
 export async function failPendingCheckoutAndReleaseInventory({
   vendorId,
   transactionId,
