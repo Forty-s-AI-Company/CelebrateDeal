@@ -1,3 +1,4 @@
+vi.mock("@/lib/student-portal-locale",()=>({resolveStudentPortalLocale:async()=>"zh-TW"}));
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

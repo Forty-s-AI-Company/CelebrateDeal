@@ -4,6 +4,7 @@
 
 基準 revision：`4ed3b463`
 
+> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 86，該歷史收據不代表新 migration、Staging 或 Production 已套用。
 > 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 87，該歷史收據不代表新 migration、Staging 或 Production 已套用。
 
 ## Inventory 基準
@@ -225,6 +226,11 @@
 課程社群候選新增 `CourseCommunityPost`、`CourseCommunityReply`、`CourseCommunityReaction` 與前向 migration `20261006070000_course_community`。課程／租戶 composite FK、無 public policy 的 RLS、文字長度限制及 learner-qualified 唯一鍵；85 migrations 與 7 項 disposable PostgreSQL 回歸已通過。此結果不代表 staging／Production 或瀏覽器完成驗收。
 
 本次 F1.2 最終候選：85 migration、9 PostgreSQL 邊界回歸、1 manager/learner Chromium 長討論旅程、8 unit、TS/lint及1067 Node TAP零skip PASS；Critical複審無findings、canonical READY。精確head CI及受保護合併待完成。
+
+F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。
+
+F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。
+
 F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。
 
 本次社群／夥伴入口整合候選有129models與86migrations；新整合驗證尚未完成，舊收據不代表本次PASS。
