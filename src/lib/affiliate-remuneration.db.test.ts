@@ -5,6 +5,7 @@ import { createBankAccountKeyring } from "./bank-account";
 import { AffiliatePayeeConflict, approveAffiliatePayeeProfile, submitAffiliatePayeeProfile } from "./affiliate-payee-profile";
 import { createAffiliateRemunerationQuote, exportAffiliateRemunerationQuote, signAffiliateRemunerationQuote } from "./affiliate-remuneration-quotes";
 import { appendCommissionLedgerEntry } from "./affiliate-commission-accounting";
+import { MerchantAffiliatePayoutPolicyConflict, setMerchantAffiliatePayoutPolicy } from "./merchant-affiliate-payout-policy";
 const db = getDb();
 const keyring = createBankAccountKeyring({ activeKeyId: "synthetic", keys: { synthetic: Buffer.alloc(32, 4).toString("base64url") } });
 const submission = { expectedRevision: 0, bank: { accountName: "Synthetic", bankCode: "999", accountNumber: "123456789" }, taxIdentity: "SYNTHETIC123", recipientType: "resident_individual", nhiTreatment: "subject_execution_business" };
@@ -25,6 +26,7 @@ async function fixture() {
 async function payableFixture() {
   const f = await fixture(), actor = await grant(f), manager = await grant(f, "owner");
   const scope = { vendorId: f.vendor.id, affiliateId: f.affiliate.id };
+  await setMerchantAffiliatePayoutPolicy(db, manager, f.vendor.id, { expectedRevision: 0, bankFeeCents: 1500, enabled: true });
   await submitAffiliatePayeeProfile(db, actor, scope, submission, keyring);
   await approveAffiliatePayeeProfile(db, manager, scope, 1);
   const commission = await db.affiliateCommission.create({ data: { ...scope, monthKey: "2026-10", status: "locked", deduplicationKey: randomUUID(), orderAmountCents: 30_000_000, commissionBaseAmountCents: 30_000_000, commissionRateBps: 1000, commissionAmountCents: 3_000_000 } });
@@ -195,5 +197,35 @@ describe("affiliate remuneration private database contracts", () => {
     await exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring);
     await expect(db.affiliateRemunerationExport.update({ where: { snapshotId: quote!.id }, data: { exportedByUserId: "substitution" } })).rejects.toThrow();
     await expect(db.affiliateRemunerationExport.delete({ where: { snapshotId: quote!.id } })).rejects.toThrow();
+  });
+  it("policy changes require current manager membership and exact CAS", async () => {
+    const f = await payableFixture(), other = await fixture(), foreign = await grant(other, "owner");
+    const change = { expectedRevision: 1, bankFeeCents: 1600, enabled: true };
+    expect(await setMerchantAffiliatePayoutPolicy(db, f.actor, f.vendor.id, change)).toBeNull();
+    expect(await setMerchantAffiliatePayoutPolicy(db, foreign, f.vendor.id, change)).toBeNull();
+    await expect(setMerchantAffiliatePayoutPolicy(db, f.manager, f.vendor.id, { ...change, expectedRevision: 0 })).rejects.toBeInstanceOf(MerchantAffiliatePayoutPolicyConflict);
+    expect(await setMerchantAffiliatePayoutPolicy(db, f.manager, f.vendor.id, change)).toMatchObject({ revision: 2, bankFeeCents: 1600 });
+    expect(await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1500 })).toBeNull();
+    expect(await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1600 })).toMatchObject({ bankFeeCents: 1600 });
+  });
+  it("missing or disabled policy blocks quotes and old exported revision replay", async () => {
+    const f = await payableFixture();
+    const quote = await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1500 });
+    await signAffiliateRemunerationQuote(db, f.actor, f.scope, quote!.id, quote!.revision);
+    await exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring);
+    await setMerchantAffiliatePayoutPolicy(db, f.manager, f.vendor.id, { expectedRevision: 1, bankFeeCents: 1500, enabled: false });
+    expect(await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1500 })).toBeNull();
+    expect(await exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring)).toBeNull();
+    await setMerchantAffiliatePayoutPolicy(db, f.manager, f.vendor.id, { expectedRevision: 2, bankFeeCents: 1500, enabled: true });
+    expect(await exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring)).toBeNull();
+    await db.merchantAffiliatePayoutPolicy.delete({ where: { vendorId: f.vendor.id } });
+    expect(await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1500 })).toBeNull();
+  });
+  it("concurrent first policy creation cannot silently overwrite a manager's fee", async () => {
+    const f = await fixture(), manager = await grant(f, "owner");
+    const result = await Promise.allSettled(Array.from({ length: 4 }, () => setMerchantAffiliatePayoutPolicy(db, manager, f.vendor.id, { expectedRevision: 0, bankFeeCents: 1500, enabled: true })));
+    expect(result.filter(item => item.status === "fulfilled")).toHaveLength(1);
+    for (const item of result) if (item.status === "rejected") expect(item.reason instanceof MerchantAffiliatePayoutPolicyConflict || ["P2002", "P2034"].includes(item.reason.code)).toBe(true);
+    expect(await db.merchantAffiliatePayoutPolicy.count({ where: { vendorId: f.vendor.id } })).toBe(1);
   });
 });

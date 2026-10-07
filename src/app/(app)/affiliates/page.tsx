@@ -33,6 +33,7 @@ export default async function AffiliatesPage() {
         action={
           <div className="flex flex-wrap gap-2">
             <ButtonLink href="/affiliates/policy" tone="secondary">佣金政策</ButtonLink>
+            {vendor.enabledFeatureModules.includes("tax_remuneration") ? <ButtonLink href="/affiliates/payout-policy" tone="secondary">提領費用</ButtonLink> : null}
             <ButtonLink href="/affiliates/commissions" tone="secondary"><WalletCards size={16} />分潤報表</ButtonLink>
             <ButtonLink href="/affiliates/new"><Plus size={16} />新增夥伴</ButtonLink>
           </div>

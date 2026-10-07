@@ -116,6 +116,7 @@ model Vendor {
   affiliateCommissions             AffiliateCommission[]
   affiliateCommissionLedgerEntries AffiliateCommissionLedgerEntry[]
   affiliatePayouts                 AffiliatePayout[]
+  affiliatePayoutPolicy           MerchantAffiliatePayoutPolicy?
   courseCommissionAllocations      CourseCommissionAllocation[]
   courseCommissionLedgerEntries    CourseCommissionLedgerEntry[]
   coursePayouts                    CoursePayout[]
@@ -2489,6 +2490,7 @@ model AffiliateRemunerationSnapshot {
   profileRevision Int
   ruleVersion String
   ledgerDigest String?
+  payoutPolicyRevision Int?
   grossAmountCents Int
   withholdingTaxCents Int
   nhiSupplementaryTaxCents Int
@@ -2524,6 +2526,19 @@ model AffiliateRemunerationExport {
   snapshot AffiliateRemunerationSnapshot @relation(fields: [vendorId, affiliateId, snapshotId], references: [vendorId, affiliateId, id], onDelete: Restrict)
   @@unique([vendorId, affiliateId, snapshotId])
   @@index([vendorId, createdAt])
+}
+
+/// Explicit merchant-selected fee; missing/disabled configuration blocks
+/// quotes and exports, with no guessed fee fallback.
+model MerchantAffiliatePayoutPolicy {
+  vendorId String @id
+  revision Int @default(0)
+  bankFeeCents Int
+  enabled Boolean @default(false)
+  updatedByUserId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
 }
 
 /// Merchant-owned course revenue-share snapshot. This is deliberately separate

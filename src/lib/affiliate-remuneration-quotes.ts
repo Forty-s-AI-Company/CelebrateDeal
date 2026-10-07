@@ -13,6 +13,8 @@ const publicQuote = { id: true, revision: true, profileRevision: true, ruleVersi
 async function current(tx: Prisma.TransactionClient, actor: { userId: string }, scope: AffiliateBankScope, payoutId: string) {
   const access = await tx.affiliatePortalAccess.findFirst({ where: { ...scope, active: true, affiliate: { isActive: true }, member: { userId: actor.userId, status: "active", user: { status: "active" } } }, select: { revision: true } });
   if (!access) return null;
+  const payoutPolicy = await tx.merchantAffiliatePayoutPolicy.findUnique({ where: { vendorId: scope.vendorId } });
+  if (!payoutPolicy?.enabled) return null;
   const payout = await tx.affiliatePayout.findFirst({ where: { ...scope, id: payoutId, status: "pending", payoutItemId: null } });
   const profile = await tx.affiliatePayeeProfile.findUnique({ where: { vendorId_affiliateId: scope } });
   if (!payout || !profile || profile.approvedRevision !== profile.revision || !profile.approvedAt) return null;
@@ -25,7 +27,7 @@ async function current(tx: Prisma.TransactionClient, actor: { userId: string }, 
   // dispute events; sum alone would miss a changed accounting lifecycle.
   const ledger = await tx.affiliateCommissionLedgerEntry.aggregate({ where: { vendorId: scope.vendorId, commission: { affiliateId: scope.affiliateId, monthKey: payout.monthKey } }, _count: { _all: true }, _sum: { amountCents: true }, _max: { createdAt: true } });
   const ledgerDigest = createHash("sha256").update(JSON.stringify([payout.id, ledger._count._all, ledger._sum.amountCents, ledger._max.createdAt?.toISOString(), fresh.commissionAmountCents, fresh.adjustmentAmountCents, fresh.heldAmountCents])).digest("hex");
-  return { payout: fresh, profile, ledgerDigest };
+  return { payout: fresh, profile, ledgerDigest, payoutPolicy };
 }
 
 /** Fee policy is supplied by the trusted merchant service, never raw form
@@ -35,15 +37,15 @@ export async function createAffiliateRemunerationQuote(db: Database, actor: { us
   z.number().int().min(0).max(2_147_483_647).parse(policy.bankFeeCents);
   return db.$transaction(async tx => {
     const state = await current(tx, actor, scope, payoutId);
-    if (!state) return null;
-    const { profile, payout, ledgerDigest } = state;
+    if (!state || state.payoutPolicy.bankFeeCents !== policy.bankFeeCents) return null;
+    const { profile, payout, ledgerDigest, payoutPolicy } = state;
     const quote = calculateAffiliateRemuneration({ grossAmountCents: payout.finalAmountCents, bankFeeCents: policy.bankFeeCents, recipientType: profile.recipientType, nhiTreatment: profile.nhiTreatment, exemptionReference: profile.exemptionReference ?? undefined, invoiceReference: profile.invoiceReference ?? undefined });
     const previous = await tx.affiliateRemunerationSnapshot.findFirst({ where: { ...scope, payoutId }, orderBy: { revision: "desc" } });
-    if (previous && ["quoted", "signed"].includes(previous.status) && previous.profileRevision === profile.revision && previous.ledgerDigest === ledgerDigest && previous.bankFeeCents === quote.bankFeeCents && previous.ruleVersion === quote.ruleVersion && previous.grossAmountCents === quote.grossAmountCents) {
+    if (previous && ["quoted", "signed"].includes(previous.status) && previous.payoutPolicyRevision === payoutPolicy.revision && previous.profileRevision === profile.revision && previous.ledgerDigest === ledgerDigest && previous.bankFeeCents === quote.bankFeeCents && previous.ruleVersion === quote.ruleVersion && previous.grossAmountCents === quote.grossAmountCents) {
       return tx.affiliateRemunerationSnapshot.findUnique({ where: { id: previous.id }, select: publicQuote });
     }
     await tx.affiliateRemunerationSnapshot.updateMany({ where: { ...scope, payoutId, status: { in: ["quoted", "signed"] } }, data: { status: "invalidated", invalidatedAt: new Date() } });
-    return tx.affiliateRemunerationSnapshot.create({ data: { ...scope, payoutId, revision: (previous?.revision ?? -1) + 1, profileRevision: profile.revision, ledgerDigest, ...quote, bankEncrypted: profile.bankEncrypted, taxIdentityEncrypted: profile.taxIdentityEncrypted, recipientType: profile.recipientType, nhiTreatment: profile.nhiTreatment, exemptionReference: profile.exemptionReference, invoiceReference: profile.invoiceReference }, select: publicQuote });
+    return tx.affiliateRemunerationSnapshot.create({ data: { ...scope, payoutId, revision: (previous?.revision ?? -1) + 1, profileRevision: profile.revision, payoutPolicyRevision: payoutPolicy.revision, ledgerDigest, ...quote, bankEncrypted: profile.bankEncrypted, taxIdentityEncrypted: profile.taxIdentityEncrypted, recipientType: profile.recipientType, nhiTreatment: profile.nhiTreatment, exemptionReference: profile.exemptionReference, invoiceReference: profile.invoiceReference }, select: publicQuote });
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
@@ -56,7 +58,7 @@ export async function signAffiliateRemunerationQuote(db: Database, actor: { user
     const state = await current(tx, actor, scope, snapshot.payoutId);
     // Do not reveal or invalidate another user's quote on denied access.
     if (!state) return null;
-    if (snapshot.ledgerDigest !== state.ledgerDigest || snapshot.profileRevision !== state.profile.revision || snapshot.grossAmountCents !== state.payout.finalAmountCents) {
+    if (snapshot.ledgerDigest !== state.ledgerDigest || snapshot.profileRevision !== state.profile.revision || snapshot.grossAmountCents !== state.payout.finalAmountCents || snapshot.payoutPolicyRevision !== state.payoutPolicy.revision || snapshot.bankFeeCents !== state.payoutPolicy.bankFeeCents) {
       await tx.affiliateRemunerationSnapshot.updateMany({ where: { id: snapshot.id, ...scope, status: { in: ["quoted", "signed"] } }, data: { status: "invalidated", invalidatedAt: new Date() } });
       return { status: "stale" as const };
     }
@@ -81,7 +83,7 @@ export async function exportAffiliateRemunerationQuote(db: Database, actor: { us
     const snapshot = await tx.affiliateRemunerationSnapshot.findFirst({ where: { ...scope, id: snapshotId, status: { in: ["signed", "exported"] } } });
     if (!snapshot?.signedByUserId) return null;
     const state = await current(tx, { userId: snapshot.signedByUserId }, scope, snapshot.payoutId);
-    if (!state || snapshot.ledgerDigest !== state.ledgerDigest || snapshot.profileRevision !== state.profile.revision || snapshot.bankFeeCents !== policy.bankFeeCents || snapshot.bankEncrypted !== state.profile.bankEncrypted || snapshot.taxIdentityEncrypted !== state.profile.taxIdentityEncrypted) return null;
+    if (!state || snapshot.ledgerDigest !== state.ledgerDigest || snapshot.profileRevision !== state.profile.revision || snapshot.payoutPolicyRevision !== state.payoutPolicy.revision || snapshot.bankFeeCents !== state.payoutPolicy.bankFeeCents || snapshot.bankFeeCents !== policy.bankFeeCents || snapshot.bankEncrypted !== state.profile.bankEncrypted || snapshot.taxIdentityEncrypted !== state.profile.taxIdentityEncrypted) return null;
     const quote = calculateAffiliateRemuneration({ grossAmountCents: state.payout.finalAmountCents, bankFeeCents: policy.bankFeeCents, recipientType: state.profile.recipientType, nhiTreatment: state.profile.nhiTreatment, exemptionReference: state.profile.exemptionReference ?? undefined, invoiceReference: state.profile.invoiceReference ?? undefined });
     if (Object.entries(quote).some(([field, value]) => snapshot[field as keyof typeof snapshot] !== value)) return null;
     const keyring = injectedKeyring ?? loadRuntimeBankAccountKeyring();
