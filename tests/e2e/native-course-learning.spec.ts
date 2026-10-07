@@ -56,12 +56,14 @@ test("manager publishes a lesson; a purchasing learner saves, resumes, completes
     expect(await db.courseLessonProgress.count({ where: { vendorId: vendor.id } })).toBe(0);
     // A synthetic media clock exercises the real player handlers and backend;
     // it does not represent decoding or delivery by the external video provider.
+    await expect(learner.getByRole("button", { name: "標記完成", exact: true })).toBeEnabled();
     await learner.locator("video").evaluate((element) => {
       Object.defineProperty(element, "currentTime", { configurable: true, writable: true, value: 75 });
       element.dispatchEvent(new Event("timeupdate"));
     });
     await expect.poll(async () => (await db.courseLessonProgress.findFirst({ where: { vendorId: vendor.id } }))?.watchedSeconds).toBe(75);
     await learner.reload();
+    await expect(learner.getByRole("button", { name: "標記完成", exact: true })).toBeEnabled();
     await learner.locator("video").evaluate((element) => {
       Object.defineProperty(element, "duration", { configurable: true, value: 100 });
       Object.defineProperty(element, "currentTime", { configurable: true, writable: true, value: 0 });
