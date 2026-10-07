@@ -2507,8 +2507,23 @@ model AffiliateRemunerationSnapshot {
   exportedAt DateTime?
   createdAt DateTime @default(now())
   payout AffiliatePayout @relation(fields: [vendorId, affiliateId, payoutId], references: [vendorId, affiliateId, id], onDelete: Restrict)
+  exportReceipt AffiliateRemunerationExport?
+  @@unique([vendorId, affiliateId, id])
   @@unique([vendorId, payoutId, revision])
   @@index([vendorId, affiliateId, status])
+}
+
+/// One immutable private export receipt per exact signed snapshot. Downloading
+/// a file records no transfer and never marks the merchant payout as paid.
+model AffiliateRemunerationExport {
+  snapshotId String @id
+  vendorId String
+  affiliateId String
+  exportedByUserId String
+  createdAt DateTime @default(now())
+  snapshot AffiliateRemunerationSnapshot @relation(fields: [vendorId, affiliateId, snapshotId], references: [vendorId, affiliateId, id], onDelete: Restrict)
+  @@unique([vendorId, affiliateId, snapshotId])
+  @@index([vendorId, createdAt])
 }
 
 /// Merchant-owned course revenue-share snapshot. This is deliberately separate

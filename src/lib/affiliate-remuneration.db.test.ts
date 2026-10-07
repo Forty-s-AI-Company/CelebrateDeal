@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { getDb } from "./db";
 import { createBankAccountKeyring } from "./bank-account";
 import { AffiliatePayeeConflict, approveAffiliatePayeeProfile, submitAffiliatePayeeProfile } from "./affiliate-payee-profile";
-import { createAffiliateRemunerationQuote, signAffiliateRemunerationQuote } from "./affiliate-remuneration-quotes";
+import { createAffiliateRemunerationQuote, exportAffiliateRemunerationQuote, signAffiliateRemunerationQuote } from "./affiliate-remuneration-quotes";
 import { appendCommissionLedgerEntry } from "./affiliate-commission-accounting";
 const db = getDb();
 const keyring = createBankAccountKeyring({ activeKeyId: "synthetic", keys: { synthetic: Buffer.alloc(32, 4).toString("base64url") } });
@@ -150,5 +150,50 @@ describe("affiliate remuneration private database contracts", () => {
     await expect(db.affiliateRemunerationSnapshot.update({ where: { id: quote!.id }, data: { signedByUserId: "another-signer" } })).rejects.toThrow();
     await db.affiliateRemunerationSnapshot.update({ where: { id: quote!.id }, data: { status: "invalidated", invalidatedAt: new Date() } });
     await expect(db.affiliateRemunerationSnapshot.update({ where: { id: quote!.id }, data: { status: "signed", invalidatedAt: null } })).rejects.toThrow();
+  });
+  it("manager export is idempotent and records no payment", async () => {
+    const f = await payableFixture();
+    const quote = await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1500 });
+    await signAffiliateRemunerationQuote(db, f.actor, f.scope, quote!.id, quote!.revision);
+    const first = await exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring);
+    expect(first).toMatchObject({ bank: submission.bank, taxIdentity: submission.taxIdentity, netPayoutAmountCents: 2_635_200 });
+    expect(await exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring)).toEqual(first);
+    expect(await db.affiliateRemunerationExport.count({ where: { snapshotId: quote!.id } })).toBe(1);
+    expect(await db.affiliatePayout.findUniqueOrThrow({ where: { id: f.payout.id } })).toMatchObject({ status: "pending", paidAt: null, payoutItemId: null });
+  });
+  it("export rejects partner, foreign manager, fee change and revoked signer", async () => {
+    const f = await payableFixture(), other = await fixture(), foreignManager = await grant(other, "owner");
+    const quote = await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1500 });
+    await signAffiliateRemunerationQuote(db, f.actor, f.scope, quote!.id, quote!.revision);
+    expect(await exportAffiliateRemunerationQuote(db, f.actor, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring)).toBeNull();
+    expect(await exportAffiliateRemunerationQuote(db, foreignManager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring)).toBeNull();
+    expect(await exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1600 }, keyring)).toBeNull();
+    await db.affiliatePortalAccess.update({ where: { vendorId_affiliateId: f.scope }, data: { active: false } });
+    expect(await exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring)).toBeNull();
+    expect(await db.affiliateRemunerationExport.count({ where: { snapshotId: quote!.id } })).toBe(0);
+  });
+  it("refund/export race never permits a stale re-download or marks payment", async () => {
+    const f = await payableFixture();
+    const quote = await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1500 });
+    await signAffiliateRemunerationQuote(db, f.actor, f.scope, quote!.id, quote!.revision);
+    const refund = { ...f.event, eventIdentity: randomUUID(), entryType: "refund" as const, amountCents: -500_000 };
+    const results = await Promise.allSettled([
+      exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring),
+      db.$transaction(tx => appendCommissionLedgerEntry(tx, refund)),
+    ]);
+    expect(results[1]!.status).toBe("fulfilled");
+    if (results[0]!.status === "rejected") expect(results[0]!.reason).toMatchObject({ code: "P2034" });
+    expect(await exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring)).toBeNull();
+    expect(await db.affiliateRemunerationExport.count({ where: { snapshotId: quote!.id } })).toBeLessThanOrEqual(1);
+    expect(await db.affiliatePayout.findUniqueOrThrow({ where: { id: f.payout.id } })).toMatchObject({ status: "pending", paidAt: null });
+    expect(await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1500 })).toMatchObject({ revision: 1, grossAmountCents: 2_500_000 });
+  });
+  it("export receipts reject mutation and deletion", async () => {
+    const f = await payableFixture();
+    const quote = await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1500 });
+    await signAffiliateRemunerationQuote(db, f.actor, f.scope, quote!.id, quote!.revision);
+    await exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring);
+    await expect(db.affiliateRemunerationExport.update({ where: { snapshotId: quote!.id }, data: { exportedByUserId: "substitution" } })).rejects.toThrow();
+    await expect(db.affiliateRemunerationExport.delete({ where: { snapshotId: quote!.id } })).rejects.toThrow();
   });
 });

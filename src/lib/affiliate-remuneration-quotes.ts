@@ -4,6 +4,9 @@ import { z } from "zod";
 import { calculateAffiliateRemuneration } from "./affiliate-remuneration";
 import { reconcileAffiliatePendingPayout } from "./affiliate-payout-accounting";
 import type { AffiliateBankScope } from "./affiliate-bank-account";
+import { decryptAffiliateBankAccount } from "./affiliate-bank-account";
+import { decryptAffiliateTaxIdentity } from "./affiliate-tax-identity";
+import { loadRuntimeBankAccountKeyring, type BankAccountKeyring } from "./bank-account";
 const Id = z.string().regex(/^[A-Za-z0-9_-]{1,160}$/u);
 type Database = Pick<PrismaClient, "$transaction">;
 const publicQuote = { id: true, revision: true, profileRevision: true, ruleVersion: true, grossAmountCents: true, withholdingTaxCents: true, nhiSupplementaryTaxCents: true, bankFeeCents: true, netPayoutAmountCents: true, status: true, signedAt: true } as const;
@@ -63,5 +66,34 @@ export async function signAffiliateRemunerationQuote(db: Database, actor: { user
     const signed = await tx.affiliateRemunerationSnapshot.updateMany({ where: { id: snapshot.id, ...scope, revision: expectedRevision, status: "quoted" }, data: { status: "signed", signedByUserId: actor.userId, signedAt: new Date() } });
     if (signed.count !== 1) return null;
     return tx.affiliateRemunerationSnapshot.findUnique({ where: { id: snapshot.id }, select: publicQuote });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+/** Private export data for a tenant manager. The HTTP layer must use no-store,
+ * CSRF protection and an attachment response; never log this return value.
+ * Export is not payment, and re-download revalidates every current invariant. */
+export async function exportAffiliateRemunerationQuote(db: Database, actor: { userId: string }, scope: AffiliateBankScope, snapshotId: string, policy: { bankFeeCents: number }, injectedKeyring?: BankAccountKeyring) {
+  if (![actor.userId, scope.vendorId, scope.affiliateId, snapshotId].every(value => Id.safeParse(value).success)) return null;
+  z.number().int().min(0).max(2_147_483_647).parse(policy.bankFeeCents);
+  return db.$transaction(async tx => {
+    const manager = await tx.vendorMember.findFirst({ where: { vendorId: scope.vendorId, userId: actor.userId, role: { in: ["owner", "admin"] }, status: "active", user: { status: "active" } }, select: { id: true } });
+    if (!manager) return null;
+    const snapshot = await tx.affiliateRemunerationSnapshot.findFirst({ where: { ...scope, id: snapshotId, status: { in: ["signed", "exported"] } } });
+    if (!snapshot?.signedByUserId) return null;
+    const state = await current(tx, { userId: snapshot.signedByUserId }, scope, snapshot.payoutId);
+    if (!state || snapshot.ledgerDigest !== state.ledgerDigest || snapshot.profileRevision !== state.profile.revision || snapshot.bankFeeCents !== policy.bankFeeCents || snapshot.bankEncrypted !== state.profile.bankEncrypted || snapshot.taxIdentityEncrypted !== state.profile.taxIdentityEncrypted) return null;
+    const quote = calculateAffiliateRemuneration({ grossAmountCents: state.payout.finalAmountCents, bankFeeCents: policy.bankFeeCents, recipientType: state.profile.recipientType, nhiTreatment: state.profile.nhiTreatment, exemptionReference: state.profile.exemptionReference ?? undefined, invoiceReference: state.profile.invoiceReference ?? undefined });
+    if (Object.entries(quote).some(([field, value]) => snapshot[field as keyof typeof snapshot] !== value)) return null;
+    const keyring = injectedKeyring ?? loadRuntimeBankAccountKeyring();
+    const bank = decryptAffiliateBankAccount(snapshot.bankEncrypted, scope, keyring);
+    const taxIdentity = decryptAffiliateTaxIdentity(snapshot.taxIdentityEncrypted, scope, keyring);
+    if (snapshot.status === "signed") {
+      const changed = await tx.affiliateRemunerationSnapshot.updateMany({ where: { ...scope, id: snapshot.id, status: "signed" }, data: { status: "exported", exportedAt: new Date() } });
+      if (changed.count !== 1) return null;
+      await tx.affiliateRemunerationExport.create({ data: { ...scope, snapshotId, exportedByUserId: actor.userId } });
+    }
+    const receipt = await tx.affiliateRemunerationExport.findUnique({ where: { snapshotId } });
+    if (!receipt) throw new Error("Export receipt is required.");
+    return { snapshotId, payoutId: snapshot.payoutId, revision: snapshot.revision, exportedAt: receipt.createdAt, ...quote, bank, taxIdentity };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
