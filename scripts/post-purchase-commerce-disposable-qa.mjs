@@ -3,8 +3,8 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { chromium } from "@playwright/test";
-import { main, listCanonicalMigrations } from "./prisma-loopback-disposable-migration-runner.mjs";
-import { captureSourceFingerprint, assertSourceFingerprintStable } from "./qa-source-fingerprint.mjs";
+import { main } from "./prisma-loopback-disposable-migration-runner.mjs";
+import { captureCanonicalMigrationFingerprint, assertCanonicalMigrationStable, assertAppliedCanonicalMigrations } from "./canonical-migration-source-fingerprint.mjs";
 
 const unitFiles = ["src/lib/post-purchase-upsell.test.ts", "src/lib/post-purchase-product-policy.test.ts",
   "src/app/api/checkout/upsell/route.test.ts", "src/app/api/payments/checkout/admission/route.test.ts",
@@ -30,16 +30,16 @@ const files = ["prisma/schema.prisma", "prisma.playwright.config.ts",
   "src/lib/commerce-orders.ts", "src/lib/inventory-reservations.ts", "src/lib/buyer-support-access.ts", "src/lib/product-delivery.ts",
   "vitest.post-purchase-db.config.ts", "scripts/post-purchase-commerce-disposable-qa.mjs",
   "scripts/prisma-loopback-disposable-migration-runner.mjs", "scripts/local-database-safety.ts",
-  "playwright.config.ts", "playwright.post-purchase-commerce.config.ts", "tests/e2e/post-purchase-commerce.spec.ts", ...unitFiles,
-  ...listCanonicalMigrations().map(name => `prisma/migrations/${name}/migration.sql`)];
+  "playwright.config.ts", "playwright.post-purchase-commerce.config.ts", "tests/e2e/post-purchase-commerce.spec.ts", ...unitFiles];
 // Keep every original source and migration; include the actual merchant entry
 // pages, reporter and the settings copied into the production-mode mirror.
 files.push("src/app/(app)/products/[id]/edit/page.tsx", "src/app/(app)/products/new/page.tsx",
   "src/lib/product-action-state.ts", "scripts/playwright-ci-reporter.ts", "scripts/playwright-ci-reporter.test.ts",
   "scripts/qa-source-fingerprint.mjs", "scripts/qa-source-fingerprint.test.mjs",
+  "scripts/canonical-migration-source-fingerprint.mjs", "scripts/canonical-migration-source-fingerprint.test.mjs",
   "package.json", "package-lock.json", "tsconfig.json", "next.config.ts", "postcss.config.mjs",
   "sentry.server.config.ts", "sentry.edge.config.ts");
-const snapshot = () => captureSourceFingerprint(process.cwd(), files);
+const snapshot = () => captureCanonicalMigrationFingerprint(process.cwd(), files);
 const before = snapshot();
 let tests; let unit; let browser;
 const migration = await main({ afterMigrate: async ({ databaseUrl, environment, tempRoot }) => {
@@ -122,11 +122,20 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
     for (const suite of report.suites ?? []) visit(suite);
     if (outcome.status !== 0 || browser.expected !== 1 || browser.unexpected || browser.skipped || browser.flaky) throw new Error("browser-gate-failed");
   }
-  assertSourceFingerprintStable(before, snapshot());
+  assertCanonicalMigrationStable(before, snapshot());
 } });
+if (migration.status === "PASS") {
+  try {
+    assertCanonicalMigrationStable(before, snapshot());
+    assertAppliedCanonicalMigrations(before, migration.migrationNames);
+  } catch {
+    migration.status = "FAIL";
+    migration.failure = "migration-source-or-applied-set-changed";
+  }
+}
 const receipt = { taskId: "f2-post-purchase-commerce", status: migration.status, tests, unit, browser,
   migrations: migration.migrationNames.length, failure: migration.failure, cleanup: migration.cleanup,
-  sourceFiles: before, sourceRevision: `sha256:${createHash("sha256").update(JSON.stringify(before)).digest("hex")}`,
+  sourceFiles: before.sourceFiles, migrationNames: before.migrationNames, sourceRevision: `sha256:${createHash("sha256").update(JSON.stringify(before)).digest("hex")}`,
   scope: "Paid source credit, reservation/refund/recovery; merchant configuration and real buyer upsell/downsell/checkout journey; independent review and acceptance still pending",
   acceptance: "NOT_READY", delivered: false };
 fs.mkdirSync(".ai-team/reports", { recursive: true });
