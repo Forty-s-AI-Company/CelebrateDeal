@@ -57,6 +57,16 @@ beforeEach(() => {
 });
 
 describe("payment result page", () => {
+  it.each(["payment_failed", "expired"])("routes credited %s orders to the exact grant instead of a full-price catalog checkout", async status => {
+    const credited = grant(status);
+    mocks.resolveBuyerSupportGrants.mockResolvedValue([{ ...credited, order: { ...credited.order, postPurchaseCreditReceived: { id: "credit-1" } } }]);
+    const page = await PaymentResultPage({});
+    const html = renderToStaticMarkup(page);
+    expect(findElementByHref(page, `/checkout/recover/${credited.id}`)?.type).toBe("a");
+    expect(html).toContain("恢復原加購訂單");
+    expect(html).toContain("原金額與抵扣額");
+    expect(html).not.toContain('href="/checkout/vendor-1/product-1"');
+  });
   it("shows the verified callback notice and actual order state without raw identifiers", async () => {
     const html = renderToStaticMarkup(await PaymentResultPage({ searchParams: Promise.resolve({ payment: "updated" }) }));
 

@@ -138,12 +138,21 @@ test("merchant configures offers; buyer declines, upgrades once, resumes and los
     expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id } })).toBe(2);
     expect((await db.product.findUniqueOrThrow({ where: { id: target.id } })).inventory).toBe(2);
     stage("synthetic-expired-manual-recovery");
+    const nativeCheckoutUrl = viewer.url();
     const manualPayment = await db.paymentTransaction.findUniqueOrThrow({ where: { id: originalPayment.id } });
     await db.inventoryReservation.update({ where: { paymentTransactionId: originalPayment.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
     await releaseExpiredInventoryReservations(100);
     expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: originalPayment.id } })).status).toBe("expired");
+    stage("exact-result-entry-recovery");
+    const targetGrant = await db.buyerSupportOrderGrant.findUniqueOrThrow({ where: { vendorId_orderId: { vendorId: vendor.id, orderId: credit.targetOrderId } } });
+    await viewer.goto("/checkout/result");
+    // The exact server grant must bootstrap recovery without browser history.
+    await viewer.evaluate(() => window.sessionStorage.clear());
+    expect(await viewer.locator(`a[href="/checkout/${vendor.id}/${target.id}"]`).count()).toBe(0);
     const expiredRecoveryResponse = viewer.waitForResponse(response => response.url().endsWith("/api/payments/checkout/recovery") && response.request().method() === "POST");
-    await viewer.reload(); expect((await expiredRecoveryResponse).status()).toBe(200);
+    await viewer.locator(`a[href="/checkout/recover/${targetGrant.id}"]`).click();
+    await expect(viewer).toHaveURL(new RegExp(`/checkout/recover/${targetGrant.id}$`));
+    expect((await expiredRecoveryResponse).status()).toBe(200);
     await expect(viewer.getByText("已找到原本的待付款訂單。", { exact: false })).toBeVisible();
     expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: originalPayment.id } }))
       .toMatchObject({ status: "pending", grossAmountCents: 9500, metadata: {
@@ -153,6 +162,8 @@ test("merchant configures offers; buyer declines, upgrades once, resumes and los
     expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id } })).toBe(2);
     expect(await db.commerceOrderEvent.count({ where: { vendorId: vendor.id, orderId: credit.targetOrderId,
       eventType: "payment.checkout_recovered" } })).toBe(2);
+    await viewer.goto(nativeCheckoutUrl);
+    await expect(viewer.getByText("已找到原本的待付款訂單。", { exact: false })).toBeVisible();
     stage("source-refund");
     await db.$transaction(tx => reconcileCommerceOrderRefund(tx, { vendorId: vendor.id, orderId: sourceOrderId,
       providerName: "demo", eventIdentity: randomUUID(), amountCents: 1000, occurredAt: new Date() }), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
