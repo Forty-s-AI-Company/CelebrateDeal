@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import { saveTrackingCredentialConfiguration, TrackingConfigurationConflict } from "@/lib/tracking-settings";
 import { unprotectFacebookAccessToken } from "@/lib/tracking-credentials";
 const db = getDb();
+// The standard CI unit suite also runs this file. Always use a synthetic,
+// sufficiently long key rather than depending on the runner's injected key.
+beforeEach(() => vi.stubEnv("CSRF_SECRET", "synthetic-tracking-encryption-key-at-least-32-bytes"));
+afterEach(() => vi.unstubAllEnvs());
 const token = "synthetic-meta-token-for-isolated-database-tests";
 const input = { expectedRevision: 0, token, testEventCode: "SYNTHETIC_TEST", clearToken: false };
 async function vendor() {

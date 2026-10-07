@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
 import { protectCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { saveTrackingCredentialConfiguration } from "@/lib/tracking-settings";
@@ -8,7 +8,8 @@ import { runPurchaseTrackingBatch } from "@/lib/tracking-purchase-worker";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
 
 const db = getDb();
-afterEach(() => vi.unstubAllGlobals());
+beforeEach(() => vi.stubEnv("CSRF_SECRET", "synthetic-tracking-encryption-key-at-least-32-bytes"));
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 async function fixture() {
   const id = randomUUID();
   const vendor = await db.vendor.create({ data: { name: "Synthetic tracking shop", slug: `outbox-${id}`, email: `${id}@example.test`, passwordHash: "synthetic-only" } });
