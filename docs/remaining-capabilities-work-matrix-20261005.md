@@ -76,3 +76,6 @@ Q2 latest exact candidate `b0362e3a`：87 migrations、67/67 DB、2/2 browser、
 
 已交付主線 checkpoint：
 本次整合 `origin/master` `daa6372a6e0f060e93de2c2e10afa0c9c4d09c73`：F2.1 #374 已受保護 squash merge，accepted/merged tree `4f63c92d6c24e6585484912863704b3ecffd1f43` 一致。F3.2 Save acknowledgement 最新source `4ab03f...` 本機全部回歸通過、medium canonical READY；最新獨立review受同task dispatch4/4限制仍待授權。整合後驗證與CI待執行，未交付。
+
+
+A1 domain workflow migration: exact source `bf45235f8b10fa1fded2da0a4c079e5b883cfef0`, current base `a10728f4147ce84ad6d33524ed0e412660602283`; root sole writer, one readonly reviewer, task `a1-canonical-domain-workflows` dispatch2/4. Six thin project adapters plus shared domain contracts preserve product actors, attribution/commission/refund/chargeback, tenant, browser console/network/privacy, design and canonical acceptance requirements. Six skill validations, links/anchors and 38 routing tests PASS; original MAJOR/MINOR fixed and independent incremental review findings=[]; observed unknown. Canonical revision `sha256:452d43d895b3fb606aed31ab8be39a8c50fe16fecd5a3f203133080f7a6688e6` READY. Evidence `remaining-capabilities-a1-domain-workflows-20261007.json`. Exact-head CI and protected PR delivery pending; remaining historical application/workflow scope retained, A1/Goal NOT COMPLETE.
