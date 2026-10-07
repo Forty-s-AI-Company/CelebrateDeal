@@ -1,0 +1,21 @@
+{
+  "goal_id": "remaining-capabilities-20261005",
+  "task_id": "source-map-security-patch",
+  "status": "DELIVERED",
+  "pull_request": 376,
+  "accepted_head": "17a3c632ede763ddb38a2b5f7d52dbc953906dfe",
+  "merge_commit": "a11fa20f61e67ed04ba1bc5a09e26a4f25c5d3a2",
+  "accepted_tree": "523a3ff4da2a52455ac92875ef92fb635c1d66e8",
+  "merged_tree": "523a3ff4da2a52455ac92875ef92fb635c1d66e8",
+  "tree_equal": true,
+  "source_hash": "sha256:b1f8a4da221b2a655165adedb1568caebaa8aca998d204c660bde5fc6b50d352",
+  "push_ci": 37401203428,
+  "pr_ci": 37401237720,
+  "ci_status": "SUCCESS",
+  "merge_mode": "protected_expected_head_squash",
+  "production_dependency_audit_high": 0,
+  "independent_review_dispatch": 1,
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "overall_goal_status": "ACTIVE"
+}

@@ -15,8 +15,8 @@ test("G7-55 receipt fails closed for migration, privacy, durable requeue, cleanu
 
 test("G7-55 historical runner rejects the additive migration while retaining its safety contract", () => {
   const source = fs.readFileSync(new URL("./g7-email-operations-browser-qa.mjs", import.meta.url), "utf8");
-  assert.equal(canonicalMigrations().length, EXPECTED_CANONICAL_MIGRATIONS + 7);
-  assert.deepEqual(canonicalMigrations().slice(-7), ["20260929170000_payment_method_setup_intent", "20260930094500_payuni_live_probe", "20261004140000_line_rich_menu_drafts", "20261004154500_student_portal_access_tokens", "20261006040000_native_course_learning", "20261006080000_affiliate_portal_access", "20261006120000_merchant_affiliate_policy_snapshots"]);
+  assert.equal(canonicalMigrations().length, EXPECTED_CANONICAL_MIGRATIONS + 9);
+  assert.deepEqual(canonicalMigrations().slice(-9), ["20260929170000_payment_method_setup_intent", "20260930094500_payuni_live_probe", "20261004140000_line_rich_menu_drafts", "20261004154500_student_portal_access_tokens", "20261006040000_native_course_learning", "20261006080000_affiliate_portal_access", "20261006120000_merchant_affiliate_policy_snapshots", "20261006140000_subscription_refund_entitlement_state", "20261007002000_reconcile_legacy_subscription_refund_state"]);
   assert.match(safeSourceDigest(), /^[a-f0-9]{64}$/u); assert.equal(assertStaticSafety(source), true);
   for (const text of ["emailDelivery", "55", "/messages/deliveries", "aria-busy=true", "provider_rejected", "createEmailRecipientHash", "manualRetryCount", "liveReminderFailedId", "observation-", "mergeBrowserObservations", "PLAYWRIGHT_BROWSERS_PATH", "NPM_CONFIG_OFFLINE", "receipt-exists-no-overwrite", ".HostConfig.Tmpfs", "G7_EMAIL_OPERATIONS_EXTERNAL_NETWORK_DENIED"]) assert.equal(source.includes(text), true, text);
   for (const unsafe of ["require('dotenv')", "launchPersistentContext", "fetch('https://outside.example')"]) assert.equal(assertStaticSafety(unsafe), false);

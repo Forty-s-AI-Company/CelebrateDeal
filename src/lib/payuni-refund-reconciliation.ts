@@ -1,3 +1,4 @@
+import { applyPlatformSubscriptionRefundProjection } from "@/lib/platform-subscription-refund";
 import { createHash } from "node:crypto";
 import { Prisma, type PaymentTransaction, type PrismaClient, type RefundRecord } from "@prisma/client";
 import {
@@ -67,7 +68,7 @@ export function validatePayUniRefundSnapshot(
 type ReconciliationDb = Pick<PrismaClient, "paymentTransaction" | "refundRecord" | "auditLog" | "$transaction">;
 
 type TransactionRow = Pick<PaymentTransaction,
-  "id" | "vendorId" | "providerName" | "providerTradeNo" | "orderNumber" | "grossAmountCents" | "netAmountCents" | "refundedAmountCents" | "status" | "refundReason" | "refundedAt" | "occurredAt"
+  "id" | "vendorId" | "providerName" | "providerTradeNo" | "orderNumber" | "grossAmountCents" | "netAmountCents" | "refundedAmountCents" | "status" | "refundReason" | "refundedAt" | "occurredAt" | "paymentMode" | "metadata"
 >;
 
 type RefundRow = Pick<RefundRecord, "id" | "refundAmountCents" | "status" | "providerEventId">;
@@ -125,6 +126,9 @@ export async function reconcilePayUniRefund(input: {
       && transaction.refundedAmountCents === input.providerSnapshot.refundedAmountCents
       && reservedAmountCents === input.providerSnapshot.refundedAmountCents
     ) {
+      // Historical refunds can have a complete ledger but no entitlement projection.
+      // Repair inside this same transaction; replay never creates another refund.
+      await applyPlatformSubscriptionRefundProjection(tx, transaction, input.now ?? new Date());
       return {
         disposition: "already_reconciled",
         transactionId: transaction.id,
@@ -209,6 +213,7 @@ export async function reconcilePayUniRefund(input: {
       transactionOccurredAt: transaction.occurredAt instanceof Date ? transaction.occurredAt : now,
       occurredAt: now,
     });
+    await applyPlatformSubscriptionRefundProjection(tx, updated, now);
     await tx.auditLog.create({
       data: {
         vendorId: transaction.vendorId,

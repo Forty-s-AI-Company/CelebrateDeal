@@ -68,7 +68,9 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   await management.getByRole("button", { name: "Edit Page", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/landing-pages/${createdId}\\?step=`, "u"));
   // Edit the actual canvas document and exercise the global toolbar's page history.
-  const headline = page.locator('[data-funnel-node-type="headline"] h1');
+  // Template previews can remain mounted; edits must target the actual canvas.
+  const headline = page.locator('[data-render-mode="editor"] [data-funnel-node-type="headline"] h1');
+  await expect(headline).toHaveCount(1);
   const originalHeadline = await headline.innerText();
   const editedHeadline = `TEST ONLY Webinar 修改標題 ${suffix}`;
   await headline.click();

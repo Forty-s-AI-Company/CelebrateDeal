@@ -1,0 +1,28 @@
+{
+  "task_id": "sharp-security-patch-20261007",
+  "source_revision": "sha256:a2c0fb7ca3315b52c8f84199b656dad67b89258e7ed8c25996a45c19283c9628",
+  "source_files": ["package.json", "package-lock.json"],
+  "product_commit": "e894648f",
+  "change": "sharp 0.35.5 and matching native platform packages; GHSA-wq5f-xc86-pv6w",
+  "checks": {
+    "npm_ci_ignore_scripts": "PASS",
+    "production_dependency_audit": "PASS: zero vulnerabilities",
+    "actual_native_svg_png_resize": "PASS: sharp 0.35.5, 4x4 PNG",
+    "canonical_acceptance": "READY"
+  },
+  "independent_review": {
+    "role": "critical_review",
+    "requested_team": "ai-team-pro",
+    "resolved_model": "gpt-6-astra",
+    "resolved_effort": "high",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "findings": [],
+    "dispatch_used": 3,
+    "dispatch_limit": 4,
+    "fallback_events": ["INVALID_INPUT before provider dispatch: corrected security_impact enum", "AGY discovery verified; Opus review TOOL_DENIED; canonical native fallback"]
+  },
+  "ownership": {"writer": "root", "readonly_helpers": 1, "depth": 1},
+  "external_payment_or_production_operations": false,
+  "delivery": "PENDING_EXACT_HEAD_CI_AND_PROTECTED_PR"
+}

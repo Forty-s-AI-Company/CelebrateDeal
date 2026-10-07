@@ -9,6 +9,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const receipt = { schemaVersion: "merchant-affiliate-policy-browser/v1", status: "NOT_STARTED", tests: { total: 0, passed: 0, failed: 0, skipped: 0 }, cleanup: null, startedAt: new Date().toISOString(), finishedAt: null };
 const includeBrowser = process.argv.includes("--browser");
 const migration = await runMigration({ afterMigrate: async ({ databaseUrl, environment, tempRoot }) => {
+  // Generate only against the runner-owned database, with the no-dotenv config.
+  const generated = spawnSync(process.execPath, [path.join(root, "node_modules/prisma/build/index.js"), "generate", "--config", "prisma.playwright.config.ts"], {
+    cwd: root, windowsHide: true, stdio: "ignore",
+    env: { ...environment, DATABASE_URL: databaseUrl, DIRECT_URL: databaseUrl },
+  });
+  if (generated.status !== 0) throw new Error("commission-client-generation-failed");
   const output = path.join(tempRoot, "course-vitest.json");
   const child = spawnSync(process.execPath, [path.join(root, "node_modules/vitest/vitest.mjs"), "run", "--config", "vitest.merchant-affiliate-policy-db.config.ts", "--reporter=json", "--outputFile", output], {
     cwd: root, windowsHide: true, encoding: "utf8", maxBuffer: 4 * 1024 * 1024,

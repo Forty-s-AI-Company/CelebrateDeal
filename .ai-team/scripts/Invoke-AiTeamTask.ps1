@@ -94,7 +94,7 @@ $attempts = [System.Collections.Generic.List[object]]::new()
 $agyDiscoveryStatus = 'NOT_REQUESTED'
 
 function Invoke-RoutingAdapter([hashtable]$Request) {
-    $result = Invoke-AiTeamProcess -FilePath $python.Source -ArgumentList @($adapter) `
+    $result = Invoke-AiTeamProcess -FilePath $python.Source -ArgumentList @('-X', 'utf8', $adapter) `
         -StandardInputText ($Request | ConvertTo-Json -Depth 24 -Compress) `
         -Profile 'local-router' -Model 'deterministic' -ReasoningEffort 'none' `
         -FirstOutputTimeoutSeconds 5 -IdleTimeoutSeconds 5 -HardTimeoutSeconds 10 -MaxOutputChars 120000 -MaxOutputLines 1000
@@ -202,16 +202,24 @@ try {
         $reviewPromptPath = Join-Path $PSScriptRoot '../prompts/reviewer-prompt.md'
         if (-not (Test-Path -LiteralPath $reviewPromptPath -PathType Leaf)) { throw 'Canonical reviewer prompt is missing' }
         $reviewPrompt = ([IO.File]::ReadAllText($reviewPromptPath)).Replace('{{TASK}}', $Prompt)
-        $arguments = @('--print', $reviewPrompt, '--model', $decision.model, '--mode', 'plan', '--sandbox', '--print-timeout', "${TimeoutSeconds}s")
+        # Keep large review scopes out of Windows' 32,767-character command line.
+        $inputMessage = @{event='user'; message=@{content=$reviewPrompt}} | ConvertTo-Json -Depth 4 -Compress
+        $arguments = @('--print', '', '--input-format', 'stream-json', '--output-format', 'stream-json',
+                       '--model', $decision.model, '--mode', 'plan', '--sandbox', '--disable-slash-commands',
+                       '--log-file', $(if ($IsWindows) { 'NUL' } else { '/dev/null' }), '--print-timeout', "${TimeoutSeconds}s")
         if ($decision.reasoning_effort -ne 'model-default') { $arguments += @('--effort', $decision.reasoning_effort) }
         $result = Invoke-AiTeamProcess -FilePath $agy.Source -ArgumentList $arguments `
+            -StandardInputText ($inputMessage + "`n") `
             -Profile $decision.role -Model $decision.model -ReasoningEffort $decision.reasoning_effort -MarkAsChild `
             -FirstOutputTimeoutSeconds $FirstOutputTimeoutSeconds -IdleTimeoutSeconds $IdleTimeoutSeconds `
-            -HardTimeoutSeconds $HardTimeoutSeconds -GracefulShutdownSeconds $GracefulShutdownSeconds -MaxOutputChars $MaxOutputChars -MaxOutputLines 1000
+            -HardTimeoutSeconds $HardTimeoutSeconds -GracefulShutdownSeconds $GracefulShutdownSeconds -MaxOutputChars 120000 -MaxOutputLines 1000
         $status = $result.status
         $review = $null
         if ($status -eq 'SUCCESS' -and -not $result.stdoutTruncated) {
-            try { $review = Invoke-RoutingAdapter @{action='validate_review'; output=$result.stdout} }
+            try {
+                $reviewOutput = Get-AiTeamAgyReviewOutput -StreamText $result.stdout -MaxResponseChars $MaxOutputChars
+                $review = Invoke-RoutingAdapter @{action='validate_review'; output=$reviewOutput}
+            }
             catch { $status = 'INVALID_REVIEW' }
         } elseif ($status -eq 'SUCCESS') { $status = 'TRUNCATED_REVIEW' }
         $attempts.Add(@{model=$decision.model; status=$status; exitCode=$result.exitCode})

@@ -44,7 +44,7 @@ function Add-AiTeamBoundedLine {
 function Quote-AiTeamProcessArgument {
     param([AllowNull()][string]$Argument)
 
-    if ($null -eq $Argument) { return '""' }
+    if ([string]::IsNullOrEmpty($Argument)) { return '""' }
     if ($Argument -notmatch '[\s"]') { return $Argument }
     return '"' + ($Argument -replace '(\\*)"', '$1$1\\"') + '"'
 }
@@ -54,6 +54,7 @@ function Set-AiTeamProcessArguments {
         [Parameter(Mandatory)]
         [System.Diagnostics.ProcessStartInfo]$StartInfo,
         [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string[]]$ArgumentList
     )
 
@@ -153,6 +154,7 @@ function Invoke-AiTeamProcess {
         [ValidateNotNullOrEmpty()]
         [string]$FilePath,
         [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string[]]$ArgumentList,
         [Parameter(Mandatory)]
         [string]$Profile,
@@ -191,6 +193,10 @@ function Invoke-AiTeamProcess {
     $startupTimedOut = $false
     $processStarted = $false
     $processId = $null
+    $inputWrite = $null
+    $inputClosed = $false
+    $stdoutLinesTruncated = $false
+    $stderrLinesTruncated = $false
 
     try {
         $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
@@ -199,6 +205,9 @@ function Invoke-AiTeamProcess {
         $startInfo.RedirectStandardOutput = $true
         $startInfo.RedirectStandardError = $true
         $startInfo.RedirectStandardInput = -not [string]::IsNullOrEmpty($StandardInputText)
+        if ($startInfo.RedirectStandardInput) {
+            $startInfo.StandardInputEncoding = [System.Text.UTF8Encoding]::new($false)
+        }
         $startInfo.CreateNoWindow = $true
         # Child wrappers cannot route or spawn another AI Team.
         if ($MarkAsChild) { $startInfo.Environment['AI_TEAM_CHILD'] = '1' }
@@ -213,8 +222,8 @@ function Invoke-AiTeamProcess {
         $processStarted = $true
         $processId = $process.Id
         if ($startInfo.RedirectStandardInput) {
-            $process.StandardInput.Write($StandardInputText)
-            $process.StandardInput.Close()
+            # Drain output while writing input so full pipes cannot bypass timeouts.
+            $inputWrite = $process.StandardInput.WriteAsync($StandardInputText)
         }
         if ($startWatch.Elapsed.TotalSeconds -gt $StartupTimeoutSeconds) {
             $startupTimedOut = $true
@@ -265,11 +274,23 @@ function Invoke-AiTeamProcess {
     $timeoutStatus = $null
 
     while ($true) {
+        if ($null -ne $inputWrite -and -not $inputClosed -and $inputWrite.IsCompleted) {
+            try {
+                [void]$inputWrite.GetAwaiter().GetResult()
+                $process.StandardInput.Close()
+                $inputClosed = $true
+            } catch {
+                $timedOut = $true
+                $timeoutStatus = 'STDIN_WRITE_FAILED'
+                break
+            }
+        }
         if (-not $stdoutDone -and $stdoutReader.IsCompleted) {
             $line = $stdoutReader.GetAwaiter().GetResult()
             if ($null -eq $line) {
                 $stdoutDone = $true
             } else {
+                if ($stdoutLines.Count -ge $MaxOutputLines) { $stdoutLinesTruncated = $true }
                 Add-AiTeamBoundedLine -Buffer $stdoutLines -Line $line -MaxLines $MaxOutputLines
                 $lastActivityAt = [DateTime]::UtcNow
                 if ($null -eq $firstOutputAt) { $firstOutputAt = $lastActivityAt }
@@ -281,6 +302,7 @@ function Invoke-AiTeamProcess {
             if ($null -eq $line) {
                 $stderrDone = $true
             } else {
+                if ($stderrLines.Count -ge $MaxOutputLines) { $stderrLinesTruncated = $true }
                 Add-AiTeamBoundedLine -Buffer $stderrLines -Line $line -MaxLines $MaxOutputLines
                 $lastActivityAt = [DateTime]::UtcNow
                 if ($null -eq $firstOutputAt) { $firstOutputAt = $lastActivityAt }
@@ -342,11 +364,29 @@ function Invoke-AiTeamProcess {
         stderrBytes = [Text.Encoding]::UTF8.GetByteCount($stderr)
         stdout = $out.text
         stderr = $err.text
-        stdoutTruncated = $out.truncated
-        stderrTruncated = $err.truncated
+        stdoutTruncated = ($out.truncated -or $stdoutLinesTruncated)
+        stderrTruncated = ($err.truncated -or $stderrLinesTruncated)
         exitCode = $exitCode
         wasKilled = $wasKilled
         cleanupResult = $cleanupResult
         currentPhase = if ($classification -eq 'SUCCESS') { 'completed' } else { 'failed' }
     }
+}
+
+# Only one successful terminal event can provide a review; progress is not evidence.
+function Get-AiTeamAgyReviewOutput {
+    param([Parameter(Mandatory)][string]$StreamText,
+          [ValidateRange(500,120000)][int]$MaxResponseChars = 12000)
+    $terminal = @()
+    foreach ($line in ($StreamText -split "`n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        $event = $line | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+        if ($event['event'] -eq 'result') { $terminal += $event['result'] }
+    }
+    if ($terminal.Count -ne 1 -or $terminal[0]['status'] -ne 'SUCCESS' -or
+        $terminal[0]['response'] -isnot [string] -or
+        [string]::IsNullOrWhiteSpace($terminal[0]['response']) -or
+        $terminal[0]['response'].Length -gt $MaxResponseChars -or
+        $terminal[0]['error']) { throw 'INVALID_AGY_TERMINAL_REVIEW' }
+    return $terminal[0]['response']
 }
