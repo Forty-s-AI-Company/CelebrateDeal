@@ -1,0 +1,102 @@
+{
+  "task_id": "f2-commission-policy",
+  "head": "87654487e816ad9321d0d51d2fd165e03f3563d7",
+  "source_revision": "sha256:3fca9acdb103ea64721a96675555ee5504df69639788eb76baa6d66cebb6d991",
+  "status": "CURRENT_TEST_CORRECTIONS_VERIFIED_PENDING_COVERAGE_CURRENT_REVIEW_CANONICAL_AND_CI",
+  "changes_after_review_6": [
+    "scripts/staging-payuni-management-migrate.test.ts",
+    "scripts/staging-migration-compat-preflight.test.mjs",
+    "scripts/staging-migration-isolated-replay.test.mjs"
+  ],
+  "reason": "Main added community migration, maintain exact 89 inventory and explicit presence; historical 81 and 79/21 windows and source checksums unchanged",
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:3fca9acdb103ea64721a96675555ee5504df69639788eb76baa6d66cebb6d991",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 32.344
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:3fca9acdb103ea64721a96675555ee5504df69639788eb76baa6d66cebb6d991",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 16.031
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "strict-index",
+      "revision": "sha256:3fca9acdb103ea64721a96675555ee5504df69639788eb76baa6d66cebb6d991",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 47.594
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:3fca9acdb103ea64721a96675555ee5504df69639788eb76baa6d66cebb6d991",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 7.687
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "contracts",
+      "revision": "sha256:3fca9acdb103ea64721a96675555ee5504df69639788eb76baa6d66cebb6d991",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 93.579
+    }
+  ],
+  "review_6": {
+    "kind": "review",
+    "source": "desktop_native",
+    "revision": "sha256:4d8898958d6d8c653de64c81b32aaee24643274b619ea2d1495aa1b6a65290fa",
+    "head": "d3be0d9c8973f86a460311ef67a22b658d174a7b",
+    "status": "PASS",
+    "independent": true,
+    "role": "critical_review",
+    "model": "gpt-6-astra",
+    "resolved_effort": "high",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "dispatch": 6,
+    "agent": "/root/community_critical_review",
+    "raw_report": [],
+    "source_binding": "Reviewed exact integrated HEAD, only exact Git blob byte alignment afterward; semantic equality verified"
+  },
+  "review_current": "NOT_YET_VERIFIED",
+  "browser_pre_correction": {
+    "schemaVersion": "merchant-affiliate-policy-browser/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 61,
+      "passed": 61,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T18:37:15.216Z",
+    "finishedAt": "2026-10-07T18:42:15.061Z",
+    "failedTitles": [],
+    "browser": {
+      "expected": 1,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "browser_migrations": 89,
+  "not_merged": true
+}

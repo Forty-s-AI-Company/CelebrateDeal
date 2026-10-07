@@ -1,0 +1,107 @@
+{
+  "goal_id": "remaining-capabilities-20261005",
+  "task_id": "f2-commission-policy",
+  "source_revision": "sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0",
+  "status": "IMPLEMENTED_TESTED_PENDING_CURRENT_REVIEW",
+  "canonical_acceptance": {
+    "status": "BLOCKED",
+    "blockers": [
+      "independent_review_unverified"
+    ],
+    "revision": "sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0"
+  },
+  "unit_vitest": 4605,
+  "unit_tap": 1067,
+  "skip": 0,
+  "full_suite_observation": "Completed terminal session 13216, exit 0, 623 files/4605 Vitest; retained LF summary independently verified",
+  "migrations": 86,
+  "database_regressions": 61,
+  "actual_browser_journeys": 1,
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 22.969,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\f2-commission-policy\\unit-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 48.703,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\f2-commission-policy\\typecheck-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "strict-index",
+      "revision": "sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 53.672,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\f2-commission-policy\\strict-index-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 12.937,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\f2-commission-policy\\lint-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "db",
+      "revision": "sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 25.484,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\f2-commission-policy\\db-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser",
+      "revision": "sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 269.891,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\f2-commission-policy\\browser-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "contracts",
+      "revision": "sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.063,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\f2-commission-policy\\contracts-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "coverage",
+      "revision": "sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 0.047,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-course\\.ai-team\\tmp\\f2-commission-policy\\coverage-final.json"
+    }
+  ],
+  "review_revision": "sha256:ebdd69d9f88ed6efdae7164df8f5dafb3027994e66d4d745d38b20bcc27bc6eb",
+  "review_dispatch_used": 4,
+  "review_dispatch_limit": 4,
+  "extra_review_approval": "PENDING",
+  "overall_goal": "ACTIVE"
+}

@@ -1,0 +1,16 @@
+{
+  "task_id": "f2-merchant-remuneration",
+  "review_dispatch": 3,
+  "resolved_model": "gpt-6-astra",
+  "resolved_effort": "high",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "findings": [
+    { "severity": "MAJOR", "file": "src/components/affiliate-remuneration-summary.tsx", "issue": "TWD whole-unit display hid cents from signing and payment confirmation", "remediation": "Dedicated exact two-decimal formatter, fee 1501 and fractional net browser fixture", "status": "CODE_FIXED_CURRENT_BROWSER_PENDING" },
+    { "severity": "MINOR", "file": "src/lib/affiliate-payee-profile.ts", "issue": "Profile edits erased earlier approval actor/time provenance", "remediation": "Tenant/revision qualified approval audit in the same transaction without private bank/tax payload", "status": "CODE_FIXED_CURRENT_DB_BROWSER_PENDING" }
+  ],
+  "validation": { "unit_passed": 344, "unit_files": 3, "scoped_lint": "PASS", "prior_29_db_run": "FAIL_SOURCE_CHANGED_DURING_RUN_DESPITE_29_TESTS_PASS", "current_runner": 91840, "current_source_frozen": true },
+  "final_review": { "dispatch": 4, "maximum_dispatches": 4, "status": "RUNNING", "helper": "/root/remuneration_canonical_critical_fallback" },
+  "canonical_acceptance": "NOT_READY",
+  "delivered": false
+}

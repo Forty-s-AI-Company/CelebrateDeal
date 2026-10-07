@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "celebratedeal-f2-private-export/v1",
+  "task_id": "f2-merchant-remuneration",
+  "goal_id": "remaining-capabilities-20261005",
+  "base_head": "8e91a7b5bf82fc453257c73064a54e7e02556aa9",
+  "source_files": [
+    {
+      "sha256": "147fd080f95b6755efb606990e64529d44b6a9d6788ad859179ac2bf1afacbb9",
+      "path": "prisma/schema.prisma"
+    },
+    {
+      "sha256": "904b4ed43a7385904c93c81da0ded2e791598539bb147c2935a8ac8db686b607",
+      "path": "prisma/migrations/20261007070000_affiliate_remuneration_export_audit/migration.sql"
+    },
+    {
+      "sha256": "06b1c3d2bab72a91325aaad6405e1fef23bb868b0f726ceab1e506161e557dda",
+      "path": "src/lib/affiliate-remuneration-quotes.ts"
+    },
+    {
+      "sha256": "657b5c8b9d963ad6544a7f7f84af5aa27b96c9239fcddd1e852be765020765e5",
+      "path": "src/lib/affiliate-remuneration.db.test.ts"
+    },
+    {
+      "sha256": "08c55b43372741d9aff7689fe1129ef05e88fddfcae05b1857b3bb9d2b7f1e20",
+      "path": "scripts/affiliate-remuneration-disposable-qa.mjs"
+    },
+    {
+      "sha256": "31cf9573f88b1411669af9b09088edbb8be2a4aefc6ad3fbb495da17d48f449b",
+      "path": "src/lib/affiliate-remuneration-csv.ts"
+    },
+    {
+      "sha256": "7e75f52f2a62d4dd96cf3625df294e25736e1eddfdf31973da196965f0bf0bb1",
+      "path": "src/lib/affiliate-remuneration-csv.test.ts"
+    }
+  ],
+  "disposable": {
+    "schemaVersion": "affiliate-remuneration-disposable/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 19,
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T00:29:53.772Z",
+    "failures": [],
+    "migrationCount": 89,
+    "finishedAt": "2026-10-07T00:30:15.53Z"
+  },
+  "unit": {
+    "files": 5,
+    "passed": 45,
+    "failed": 0
+  },
+  "lint": "PASS",
+  "typescript": "PASS",
+  "typescript_session": 94548,
+  "prior_failure": "remaining-capabilities-f2-export-schema-failure-20261007.json",
+  "implemented": [
+    "Current owner/admin membership authorizes private export",
+    "Current signer grant/profile/ledger/fee revalidated on every download",
+    "Single immutable export receipt per snapshot",
+    "Refund/export race blocks stale subsequent download",
+    "No paid status or provider transfer from export",
+    "CSV formula protection and text bank/tax identifiers"
+  ],
+  "root_review": {
+    "readability": "Separate CSV serialization from private financial service",
+    "performance": "Bounded single-row export; serializable state/receipt transaction",
+    "maintainability": "Forward composite-FK/RLS/immutable audit contract with preserved schema-failure evidence",
+    "security": "No payload logs; scoped decryption only after authorized current-state checks; no public endpoint yet"
+  },
+  "independent_critical_review": "NOT_COMPLETE",
+  "dispatches": 0,
+  "max_dispatches": 4,
+  "acceptance": "NOT_READY",
+  "delivered": false,
+  "remaining": [
+    "Persisted merchant fee policy and CAS configuration",
+    "Authenticated CSRF/no-store API and actual affiliate/manager UI",
+    "Current exported-snapshot contract on payout outcome",
+    "Actual browser and full financial regressions",
+    "Critical independent review/canonical acceptance/exact-head CI/protected delivery"
+  ],
+  "external_operations": false
+}

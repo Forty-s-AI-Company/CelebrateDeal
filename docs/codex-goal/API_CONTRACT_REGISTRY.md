@@ -162,6 +162,11 @@
 | `GET /api/live-chat/private`、`POST /api/live-chat/private` | Active viewer admission + verified fss1 conversation; same-origin web client; POST trusted ingress IP + CSRF; transactional current blacklist checks | Private encrypted conversation only; strict identity inputs, signed scoped cursor, 50-message pages, deterministic retries, no-store |
 | `GET /api/live-chat/instructor`、`POST /api/live-chat/instructor` | Authenticated current manager and enabled-factor MFA; tenant/member/session derived server-side; stable per-user rate key | Strict live/submission/cursor; transaction rechecks active session/membership, selected project and VERIFIED form binding; POST CSRF | Private encrypted conversations, 50-message/thread pages, idempotent replies, private no-store | unit and disposable PG; browser/review/gate pending |
 
+### 2026-10-07 聯盟扣繳私人匯出
+
+| Route／method | Caller 與安全邊界 | Input／resource boundary | Side effect 與 response | 目前證據 |
+|---|---|---|---|---|
+| `POST /api/affiliates/[affiliateId]/remuneration/[snapshotId]/export` | 同源表單、session／MFA、目前商家管理員、兩項功能權益與 CSRF | 4096-byte body；精確租戶、affiliate、snapshot、簽署、政策／profile revision 與 ledger proof | 私人 CSV attachment；private／CDN no-store；冪等不可變匯出 audit；不執行付款；401／403／404／409 fail closed | 同路徑 6 unit；29 disposable PG；實際 workspace browser 與跨租戶／重試證据 |
 
 ## 原生課程社群（2026-10-06）
 

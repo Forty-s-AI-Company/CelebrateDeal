@@ -1,0 +1,13 @@
+{
+  "task_id": "f2-commission-policy",
+  "head": "d3be0d9c8973f86a460311ef67a22b658d174a7b",
+  "revision": "sha256:4d8898958d6d8c653de64c81b32aaee24643274b619ea2d1495aa1b6a65290fa",
+  "review_dispatch": 6,
+  "findings": [],
+  "failed_dispatch_5": "Wrong checkout supplied by root; reviewer stopped before full review; original dirty checkout preserved",
+  "models": 136,
+  "migrations": 89,
+  "acceptance": "NOT_YET_RUN",
+  "observed_model": "unknown",
+  "observed_effort": "unknown"
+}
