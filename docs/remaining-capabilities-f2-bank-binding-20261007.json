@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "celebratedeal-f2-affiliate-bank-binding/v1",
+  "task_id": "f2-merchant-remuneration",
+  "goal_id": "remaining-capabilities-20261005",
+  "base_head": "acbee948e33cc93a5b79032f0fc4450b1eb58add",
+  "source_files": [
+    {
+      "path": "src/lib/bank-account.ts",
+      "sha256": "3fae600a8c49f02d4fd3378b83016ed959d96e2669a6344de84fd65baba9e966"
+    },
+    {
+      "path": "src/lib/affiliate-bank-account.ts",
+      "sha256": "3c3ffb76fb8fc5fa376ac6156454dad350091c326b2e500c6f8f4063893e5765"
+    },
+    {
+      "path": "src/lib/affiliate-bank-account.test.ts",
+      "sha256": "c97f7df58b5e09b45d98fb2b8b914fc13979b23fa06625f19564eca3642bb416"
+    }
+  ],
+  "scope": "Affiliate payee bank envelope with tenant/affiliate/purpose authenticated binding; existing merchant envelopes unchanged",
+  "unit": {
+    "scope": [
+      "affiliate-bank-account.test.ts:13",
+      "bank-account.test.ts:5",
+      "affiliate-remuneration.test.ts:17"
+    ],
+    "passed": 35,
+    "total": 35,
+    "failed": 0
+  },
+  "lint": "PASS",
+  "typescript": "PASS",
+  "typescript_session": 89102,
+  "root_review": {
+    "readability": "Affiliate wrapper enforces binding while retaining existing API compatibility",
+    "maintainability": "Existing keyring and merchant envelope format reused; key rotation authenticates old scope",
+    "security": "Scope-bound AES-GCM; strict identity/payee parsing; no runtime secrets read by tests",
+    "performance": "Bounded input, constant-size scope, single envelope operation"
+  },
+  "independent_critical_review": "NOT_COMPLETE",
+  "acceptance": "NOT_READY",
+  "delivery": "NOT_DELIVERED",
+  "remaining": [
+    "Encrypted tax identity",
+    "Forward profile/snapshot migration and server authorization",
+    "Payout signature/refund concurrency and database regressions",
+    "Actual UI/export/browser",
+    "Independent Critical review and canonical acceptance",
+    "Exact-head CI and protected delivery"
+  ],
+  "external_operations": false,
+  "secrets_read": false
+}
