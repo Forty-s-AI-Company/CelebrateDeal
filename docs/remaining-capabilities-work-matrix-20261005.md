@@ -85,3 +85,17 @@ A1 domain workflow migration: exact source `bf45235f8b10fa1fded2da0a4c079e5b883c
 | ID | 精確來源 | 缺口與相依 | owner | 驗收條件 | 本輪證據 | 實際狀態 |
 |---|---|---|---|---|---|---|
 | F2 tracking / `f2-server-tracking-webhooks` | 歷史 `b5397dbb45ddc4dc15a3059b7dec90b5a7771487`；當前 main `c72b5089a0a87e63ebb5cea6a09fdb28deb2b93d` | Purchase 已接實際付款 transaction/outbox；其餘事件、實際 browser、核准 provider binding/proof 未完成。不依賴 Q1 注入。 | root 唯一 writer；readonly review 尚未派遣 0/4 | tenant/CSRF/CAS、付款與 queue atomicity、FK/concurrency/retry/refund、實際介面、provider proof、Critical independent review、canonical acceptance、精確 head CI、protected PR | `remaining-capabilities-f2-tracking-payment-outbox-checkpoint-20261007.json`：89 migrations、18 DB、68 unit、12 TAP、TS/lint PASS；另有先前完整55付款 DB PASS。來源綁定1899檔。 | 已實作部分待驗收；NOT_READY；未建 PR、未交付；全 Goal 未 COMPLETE。 |
+
+### F2 tracking 最新驗證（2026-10-07；優先於前述 checkpoint）
+
+原 task `f2-server-tracking-webhooks` 維持 dispatch 0/4，root 唯一 writer。精確 pushed head `5f6f647e860fb2f9e7ada9830d3333fb8d90a1e2` 的 CI `37626880629` 在完整 unit/coverage gate FAILURE；未縮減測試或門檻。另建同 task 的隔離診斷 checkout，以 read-only Git blob LF mirror、core.longpaths、獨立 Prisma client 重現；尚未有診斷結論。
+
+目前瀏覽器候選 89 migrations、18/18 DB、0 skip、cleanup PASS；第三輪 browser 0/2 PASS、0 skipped/flaky，sourceStable=true。永久失敗證據 `remaining-capabilities-f2-tracking-browser-submit-timing-failure-20261007.json` 綁定 source `sha256:0d333b9610cb4b7dd4bfab0b1eb687c956eb30ae62f9f8e4712545806f740592`。已修正等待本次 POST 與原生表單送出測試綁定，TS/lint PASS；完整 browser 重跑中，尚未有 PASS。Lead/ViewContent/Schedule、完整 provider binding/proof、獨立 Critical review、canonical gate、exact-head CI、PR/交付仍未完成。
+
+其他批次：Q2 #379 已完成授權的第五次獨立審查並交付；F1.3 #375 精確 head `e6342ad7f6a2cec7cd38e1a4a9707081e26a7cd4` 的 PR CI `37625359550` SUCCESS，仍待原 task 額外 review 授權，未驗收或交付。Q2 授權不延伸至其他 task。
+
+F2 tracking CI 根因已用精確 `5f6f647e860fb2f9e7ada9830d3333fb8d90a1e2` 的完整 coverage gate 重現：645 test files 中 644 PASS／1 FAIL；4740 tests 中 4739 PASS／1 FAIL。唯一失敗為 `scripts/api-contract-registry.test.ts`，新增 `POST /api/jobs/tracking-deliveries` 未登錄；原斷言未改。契約表已補上 Preview/job-secret/bounded vendor batch/queue/closed response 契約，targeted inventory 1/1 PASS；完整 corrected coverage 重跑中。永久證據 `remaining-capabilities-f2-tracking-api-registry-ci-failure-20261007.json`。
+
+第四輪實際 browser 權限拒絕旅程 1 PASS、另一條旅程末段 Server Action stream wait TIMEOUT；所有 89 migrations／18 DB PASS／zero skips 與 cleanup PASS。永久 source-bound receipt `remaining-capabilities-f2-tracking-browser-stream-wait-failure-20261007.json`。送出等待改驗證本次 POST status，保留 CAS、CSRF、tenant、credential clear 與 paid outbox assertions，完整第五輪 browser 執行中，尚未宣稱 PASS。
+
+F2 tracking 最新 browser PASS：89 migrations、18/18 DB、2/2 actual browser、0 skip/flaky、sourceStable=true、cleanup PASS。source `sha256:7cf2a50b98d710022e64a555a4f36f96d88fd97d230889496264e648131b393a`；永久完整 receipt `remaining-capabilities-f2-tracking-workspace-browser-pass-20261007.json`。Purchase/settings 部分已驗證；Lead/ViewContent/Schedule、provider binding/proof、獨立 Critical review、canonical acceptance、exact-head CI 與 PR delivery 仍未完成，task dispatch0/4、Goal ACTIVE。

@@ -3,11 +3,17 @@ import { saveTrackingSettingsAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
 import { Card, Field, PageHeader, SubmitButton } from "@/components/ui";
 import { requireVendorManager } from "@/lib/auth";
+import { getDb } from "@/lib/db";
 
 export default async function TrackingSettingsPage({ searchParams }: { searchParams?: Promise<{ tracking?: string }> }) {
   const vendor = await requireVendorManager();
   const tracking = vendor.tracking;
   const status = (await searchParams)?.tracking;
+  const deliveries = await getDb().trackingDelivery.findMany({
+    where: { vendorId: vendor.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 20,
+    select: { id: true, status: true, attemptCount: true, createdAt: true },
+  });
+  const deliveryLabels: Record<string, string> = { queued: "待傳送", processing: "傳送中", accepted: "平台已接受", rejected: "傳送失敗", cancelled: "已取消" };
 
   return (
     <>
@@ -35,7 +41,7 @@ export default async function TrackingSettingsPage({ searchParams }: { searchPar
             {[
               ["enablePageView", "記錄頁面瀏覽", tracking?.enablePageView ?? true],
               ["enableLeadEvent", "記錄名單送出", tracking?.enableLeadEvent ?? true],
-              ["enablePurchaseEvent", "記錄商品 CTA", tracking?.enablePurchaseEvent ?? true],
+              ["enablePurchaseEvent", "記錄商品 CTA 與已確認付款事件", tracking?.enablePurchaseEvent ?? true],
             ].map(([name, label, checked]) => (
               <label key={String(name)} className="flex items-center justify-between gap-3 text-sm font-medium text-slate-700">
                 {label}
@@ -45,6 +51,17 @@ export default async function TrackingSettingsPage({ searchParams }: { searchPar
           </div>
           <SubmitButton />
         </form>
+      </Card>
+      <Card>
+        <h2 className="mb-3 font-bold">最近的伺服器追蹤事件</h2>
+        <p className="mb-3 text-sm text-slate-600">付款確認後建立事件。平台接受事件不代表廣告歸因或額外的付款證明。</p>
+        {deliveries.length === 0 ? <p className="text-sm text-slate-500">目前沒有伺服器追蹤事件。</p> : <ul className="divide-y divide-slate-200">
+          {deliveries.map(delivery => <li key={delivery.id} className="flex flex-wrap justify-between gap-2 py-3 text-sm">
+            <span>{deliveryLabels[delivery.status] ?? "狀態待確認"}</span>
+            <span>已嘗試 {delivery.attemptCount} 次</span>
+            <time dateTime={delivery.createdAt.toISOString()}>{delivery.createdAt.toISOString().replace("T", " ").slice(0, 19)} UTC</time>
+          </li>)}
+        </ul>}
       </Card>
     </>
   );

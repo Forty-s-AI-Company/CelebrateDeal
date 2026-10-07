@@ -164,3 +164,9 @@
 - `POST /api/admin/ops/payuni/wp4-subscription-reconcile`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。
 - `POST /api/admin/ops/payuni/wp4-subscription-refund`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。
 - `POST /api/admin/ops/payuni/wp4-subscription-state`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。
+
+### 2026-10-07 Server tracking delivery job
+
+| API | 授權 | 輸入與範圍 | 行為與安全契約 | 回應 | 驗證 |
+| --- | --- | --- | --- | --- | --- |
+| `POST /api/jobs/tracking-deliveries` | timing-safe `JOB_SECRET` Bearer；固定 `VERCEL_ENV=preview` 與明確啟用 `META_TRACKING_TEST_DELIVERY_ENABLED=true` | 2048-byte bounded JSON；strict vendorId 與 limit 1–20；不接受事件、provider endpoint 或 credential | server-owned paid outbox；tenant-scoped conditional lease；退款／設定 revision stale 取消；固定 Meta origin、test event code、bounded retry；缺少明確 `META_GRAPH_API_VERSION` 不呼叫 provider 且保留 queue | 401 unauthorized、403 disabled、400 invalid request、202 providerNotConfigured、200 bounded aggregate counts、503 sanitized failure；不輸出憑證、PII 或 provider body | 同路徑 9 unit；89 migrations／18 PostgreSQL 回歸；browser 與真實核准非 Production provider proof 另行驗收 |
