@@ -37,4 +37,3 @@ export function rateLimitRequestWithIdentity(request: Request, clientIp: string 
   // body later in POST does not compete with the stream owned by the route.
   return new Request(request.body ? request.clone() : request, { headers });
 }
-

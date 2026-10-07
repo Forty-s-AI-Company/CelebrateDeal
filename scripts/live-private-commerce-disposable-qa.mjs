@@ -8,6 +8,7 @@ const sourceFiles = ["prisma/schema.prisma", "prisma/migrations/20261007110000_l
 sourceFiles.push("src/lib/live-private-chat.ts", "src/lib/live-private-chat-contract.ts");
 sourceFiles.push("src/lib/live-chat-request-security.ts", "src/app/api/live-chat/messages/route.ts",
   "src/app/api/live-chat/private/route.ts", "src/app/api/live-chat/private/route.test.ts");
+sourceFiles.push("src/app/api/live-chat/instructor/route.ts", "src/app/api/live-chat/instructor/route.test.ts");
 const snapshot = () => Object.fromEntries(sourceFiles.map(file => [file, createHash("sha256").update(fs.readFileSync(file)).digest("hex")]));
 const original = snapshot();
 let tests;
@@ -25,7 +26,7 @@ try {
       locations: [...new Set((test.failureMessages ?? []).join("\n").match(/(?:live-purchase-broadcasts|commerce-orders)\.(?:db\.test\.)?ts:\d+:\d+/gu) ?? [])] })));
     fs.mkdirSync(".ai-team/reports", { recursive: true });
     fs.writeFileSync(".ai-team/reports/live-private-commerce-failures.json", JSON.stringify({ tests, failures }));
-    if (result.status !== 0 || !value.success || tests.total !== 16 || tests.skipped) throw new Error("db-tests-failed");
+    if (result.status !== 0 || !value.success || tests.total !== 23 || tests.skipped) throw new Error("db-tests-failed");
     if (JSON.stringify(snapshot()) !== JSON.stringify(original)) throw new Error("source-changed");
   } });
   const receipt = { taskId: "f2-live-private-chat-purchase-broadcast", status: migration.status, tests, migrations: migration.migrationNames.length,
