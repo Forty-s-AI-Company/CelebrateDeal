@@ -1,0 +1,95 @@
+{
+  "task_id": "f2-referral-share-cards-20261008",
+  "head": "85034bd46c0a4d550f981e72d577ef531a200e5a",
+  "revision": "sha256:3d0119e9f832f5eb4b072a904a273b189b258800d2da7e863ab546fef2fdc463",
+  "snapshot_files": [
+    ".github/workflows/ci.yml",
+    "package-lock.json",
+    "package.json",
+    "playwright.affiliate-portal.config.ts",
+    "scripts/affiliate-portal-browser-qa.mjs",
+    "src/app/affiliate-portal/[vendorSlug]/[affiliateId]/page.tsx",
+    "src/app/api/form-submissions/verify/route.test.ts",
+    "src/app/api/form-submissions/verify/route.ts",
+    "src/app/verify-registration/page.test.tsx",
+    "src/app/verify-registration/page.tsx",
+    "src/components/referral-share-controls.tsx",
+    "src/components/verified-registration-share.test.tsx",
+    "src/components/verified-registration-share.tsx",
+    "src/lib/affiliate-portal.ts",
+    "src/lib/app-url.test.ts",
+    "src/lib/app-url.ts",
+    "src/lib/form-submission-chat-session.ts",
+    "src/lib/public-registration-form.ts",
+    "src/lib/referral-share-card.test.ts",
+    "src/lib/referral-share-card.ts",
+    "tests/e2e/affiliate-portal.spec.ts",
+    "tests/e2e/referral-card-assertions.ts",
+    "tests/e2e/verified-registration-share.spec.ts"
+  ],
+  "migrations": 88,
+  "receipt": {
+    "schemaVersion": "affiliate-portal-browser/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T18:39:47.055Z",
+    "finishedAt": "2026-10-07T18:44:54.506Z",
+    "failedTitles": [],
+    "browser": {
+      "expected": 2,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "canonical_acceptance": "NOT_YET_RUN",
+  "review": "Prior review 4 predates current CI integration and test correction; no current review claimed",
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:3d0119e9f832f5eb4b072a904a273b189b258800d2da7e863ab546fef2fdc463",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.516
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:3d0119e9f832f5eb4b072a904a273b189b258800d2da7e863ab546fef2fdc463",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 58.797
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "strict-index",
+      "revision": "sha256:3d0119e9f832f5eb4b072a904a273b189b258800d2da7e863ab546fef2fdc463",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 53.922
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:3d0119e9f832f5eb4b072a904a273b189b258800d2da7e863ab546fef2fdc463",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 12.625
+    }
+  ],
+  "status": "IMPLEMENTED_CURRENT_MAIN_TESTED_PENDING_CURRENT_REVIEW_AND_CI"
+}

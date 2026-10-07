@@ -72,6 +72,15 @@ describe("student portal actions", () => {
     expect(JSON.stringify(persisted)).not.toContain("signed-token");
   });
 
+  it("keeps English eligible and unknown-recipient responses indistinguishable while encrypting localized mail", async () => {
+    const eligible = await requestMagicLinkAction(STUDENT_PORTAL_INITIAL_STATE, form({ email: "student@example.test", vendorSlug: "teacher", locale: "en" }));
+    expect(eligible).toEqual({ status: "sent", message: "If this email has accessible content, we have sent a secure link valid for 15 minutes." });
+    expect(mocks.protect).toHaveBeenCalledWith(expect.objectContaining({ subject: "老師品牌 | Learner sign-in link", body: expect.stringContaining("Open this link within 15 minutes") }), expect.objectContaining({ vendorId: "vendor-1" }));
+    mocks.orderCount.mockResolvedValue(0); mocks.createToken.mockClear(); mocks.emailCreate.mockClear();
+    expect(await requestMagicLinkAction(STUDENT_PORTAL_INITIAL_STATE, form({ email: "unknown@example.test", vendorSlug: "teacher", locale: "en" }))).toEqual(eligible);
+    expect(mocks.createToken).not.toHaveBeenCalled(); expect(mocks.emailCreate).not.toHaveBeenCalled();
+  });
+
   it("clears the encrypted session after CSRF validation and redirects within the validated tenant slug", async () => {
     await logoutStudentPortalAction(form({ vendorSlug: "teacher" }));
     expect(mocks.security).toHaveBeenCalledOnce();
