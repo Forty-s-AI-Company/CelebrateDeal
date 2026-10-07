@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "team-video-disposable/v1",
+  "status": "BLOCKED_OR_FAILED",
+  "tests": {
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
+    "skipped": 0
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "startedAt": "2026-10-07T07:07:11.915Z",
+  "finishedAt": "2026-10-07T07:11:50.665Z",
+  "browserFailure": [
+    "::error file=tests/e2e/team-video-persistence-isolation.spec.ts,line=49::playwright status=failed retry=0 class=step_error category=expect duration_ms=39",
+    "::error file=tests/e2e/team-video-persistence-isolation.spec.ts,line=49::playwright status=failed retry=0 class=test_error_location",
+    "::error file=tests/e2e/team-video-persistence-isolation.spec.ts,line=49::playwright status=failed retry=1 class=step_error category=expect duration_ms=35",
+    "::error file=tests/e2e/team-video-persistence-isolation.spec.ts,line=49::playwright status=failed retry=1 class=test_error_location",
+    "::error file=tests/e2e/team-video-persistence-isolation.spec.ts,line=12::playwright status=failed retry=1 first_status=failed first_duration_ms=3563"
+  ],
+  "browser": {
+    "expected": 1,
+    "unexpected": 1,
+    "skipped": 0,
+    "flaky": 0
+  },
+  "sourceRevision": "sha256:6e81b601aa336c638fcf706daac452c3d1b4ec317fdf527d43da69edcc88dfac",
+  "sourceUnchanged": true
+}
