@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "celebratedeal-session-resume/v1",
+  "goal": "remaining-capabilities-20261005",
+  "parent_goal_id": "CELEBRATEDEAL-M2-M7",
+  "status": "IN_PROGRESS",
+  "base": "2319c742f1455681ff08b720c193a2faf1545e27",
+  "f1": {
+    "pr": 370,
+    "head": "84cdb47567bbc85e3eee43b2557fc899507907d8",
+    "wp88": "PASS: exact 89 guarded pages and 50 vendorManager pages, actual browser family journey",
+    "db": "PASS:84 migrations and 7 regressions",
+    "gate": "READY for mechanical inventory correction; original product acceptance unchanged",
+    "ci": "37377307924 IN_PROGRESS",
+    "dispatches": 4,
+    "limit": 4
+  },
+  "f3": {
+    "status": "IMPLEMENTED_PENDING_FINAL_REGRESSION",
+    "core_review": "MAJOR outer acknowledgement and MINOR receipt counts resolved; independent dispatch3 no findings",
+    "final_review_dispatch": 4,
+    "regression": "latest final browser running; no delivery claim"
+  },
+  "q1": {
+    "pr": 371,
+    "status": "BLOCKED_BROWSER_AND_INJECTION",
+    "head": "561ffdfe57d6192ed472055846575aa8846a33d9"
+  },
+  "ownership": {
+    "writer": "root",
+    "helpers": 1,
+    "depth": 1
+  },
+  "observed": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "production": "NOT_PERFORMED"
+}

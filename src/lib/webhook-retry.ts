@@ -2,7 +2,7 @@ import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { captureOperationalError } from "@/lib/monitoring";
 import { classifyPaymentWebhookFailure, paymentWebhookFailureMessage } from "@/lib/payment-webhook-errors";
-import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
+import { PaymentWebhookPayload, processPaymentWebhook, type PaymentWebhookExpectedScope } from "@/lib/payment-webhooks";
 
 const WEBHOOK_RETRY_LEASE_MS = 1000 * 60 * 10;
 
@@ -59,10 +59,14 @@ export async function recoverStaleWebhookRetryClaim(event: RetryableWebhookEvent
   return retryWebhookEvent(event.id);
 }
 
-export async function retryWebhookEvent(eventId: string, actorLabel = "job:webhook-retry") {
+export async function retryWebhookEvent(eventId: string, actorLabel = "job:webhook-retry", expectedVersion?: { retryCount: number; updatedAt: Date; paymentScope?: PaymentWebhookExpectedScope }) {
   const db = getDb();
   const event = await db.webhookEvent.findUnique({ where: { id: eventId } });
   if (!event) return { status: "missing" as const };
+  // Fixed recovery validates a particular stored payload/version before dispatch.
+  // A scheduler or callback that changed it must win rather than being retried here.
+  if (expectedVersion && (event.retryCount !== expectedVersion.retryCount
+    || event.updatedAt.getTime() !== expectedVersion.updatedAt.getTime())) return { status: "claimed_elsewhere" as const, event };
   if (event.retryCount >= event.maxRetries) {
     const exhausted = await db.webhookEvent.updateMany({
       where: { id: event.id, status: "failed", retryCount: event.retryCount, updatedAt: event.updatedAt },
@@ -111,7 +115,15 @@ export async function retryWebhookEvent(eventId: string, actorLabel = "job:webho
   }
 
   try {
-    const result = await processPaymentWebhook(parsed.data, claimedEvent);
+    const scope = expectedVersion?.paymentScope;
+    if (scope && parsed.data.vendorId !== undefined && parsed.data.vendorId !== scope.vendorId) {
+      throw new Error("Recovery webhook tenant does not match the reserved payment.");
+    }
+    // Bind an omitted provider tenant to the validated server payment, while
+    // retaining vendorSlug so the core rejects a reassigned/conflicting slug.
+    const result = scope
+      ? await processPaymentWebhook({ ...parsed.data, vendorId: scope.vendorId }, claimedEvent, scope)
+      : await processPaymentWebhook(parsed.data, claimedEvent);
     await db.webhookEvent.updateMany({
       where: { id: event.id, status: "processed", retryCount: claimedRetryCount },
       data: { nextRetryAt: null, errorMessage: null },

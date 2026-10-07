@@ -2,11 +2,15 @@
 
 import { portalText } from "@/lib/student-portal-translations";
 import type { StudentPortalLocale } from "@/lib/student-portal-locale";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { courseChapters, courseCompletion, shouldAutoCompleteLesson, type CourseLesson, type CourseLessonProgress } from "@/lib/course-learning";
 type Lesson = CourseLesson & {
   videoUrl: string | null;
 };
+const subscribeToHydration = () => () => {};
+const clientHydrationSnapshot = () => true;
+const serverHydrationSnapshot = () => false;
+
 export function CoursePlayer({
   vendorSlug,
   course,
@@ -26,6 +30,8 @@ export function CoursePlayer({
   locale?: StudentPortalLocale;
 }) {
   const t = (text: string) => portalText(locale, text);
+  // Keep translated SSR controls inactive until client handlers are attached.
+  const interactive = useSyncExternalStore(subscribeToHydration, clientHydrationSnapshot, serverHydrationSnapshot);
   const [selectedId, setSelectedId] = useState(lessons[0]?.id ?? "");
   const [progress, setProgress] = useState(initialProgress);
   const [notice, setNotice] = useState<string | null>(null);
@@ -123,7 +129,7 @@ export function CoursePlayer({
           width: `${completion.percent}%`
         }} /></div></header><div className="grid lg:grid-cols-[300px_minmax(0,1fr)]"><aside className="border-b border-slate-200 bg-slate-50 p-4 lg:border-b-0 lg:border-r">{courseChapters(lessons).map(chapter => <section key={chapter.title} className="mb-5"><h2 className="px-2 text-sm font-bold text-slate-700">{chapter.title}</h2><ol className="mt-2 space-y-1">{chapter.lessons.map(lesson => {
               const done = Boolean(progressByLesson.get(lesson.id)?.completedAt);
-              return <li key={lesson.id}><button type="button" onClick={() => {
+              return <li key={lesson.id}><button type="button" disabled={!interactive} onClick={() => {
                   setSelectedId(lesson.id);
                   setNotice(null);
                 }} className={`flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left text-sm ${lesson.id === selected.id ? "bg-white font-bold text-blue-800 shadow-sm" : "text-slate-700 hover:bg-white"}`}><span aria-label={done ? t("\u5DF2\u5B8C\u6210") : t("\u672A\u5B8C\u6210")} className={`grid size-5 shrink-0 place-items-center rounded-full text-xs ${done ? "bg-emerald-600 text-white" : "border border-slate-300 text-transparent"}`}>✓</span>{lesson.title}</button></li>;
@@ -145,5 +151,5 @@ export function CoursePlayer({
           const seconds = Math.floor(event.currentTarget.currentTime);
           lastSent.current[selected.id] = seconds;
           void save(selected, seconds, false);
-        }} /> : <div className="grid aspect-video place-items-center rounded-xl bg-slate-950 p-8 text-center text-white"><p>{t("\u9019\u500B\u55AE\u5143\u76EE\u524D\u6C92\u6709\u5F71\u7247\uFF0C\u8ACB\u95B1\u8B80\u8B1B\u5E2B\u63D0\u4F9B\u7684\u6559\u6750\u5F8C\u624B\u52D5\u6A19\u8A18\u5B8C\u6210\u3002")}</p></div>}<div className="mt-5 flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-600">{selected.chapterTitle}</p><h2 className="text-xl font-bold">{selected.title}</h2>{notice ? <p role="status" className="mt-2 text-sm text-slate-600">{notice}</p> : null}</div><button type="button" onClick={() => void save(selected, selected.durationSeconds || resume, true)} className="min-h-11 rounded-xl bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800">{progressByLesson.get(selected.id)?.completedAt ? t("\u5DF2\u6A19\u8A18\u5B8C\u6210") : t("\u6A19\u8A18\u5B8C\u6210")}</button></div>{completion.complete ? <a href={`/portal/${encodeURIComponent(vendorSlug)}/learn/${encodeURIComponent(course.id)}/certificate`} className="mt-6 inline-flex min-h-11 items-center rounded-xl bg-amber-500 px-4 text-sm font-bold text-slate-950 hover:bg-amber-400">{t("\u4E0B\u8F09\u5B8C\u8AB2\u8B49\u66F8")}</a> : null}</div></div></section>;
+        }} /> : <div className="grid aspect-video place-items-center rounded-xl bg-slate-950 p-8 text-center text-white"><p>{t("\u9019\u500B\u55AE\u5143\u76EE\u524D\u6C92\u6709\u5F71\u7247\uFF0C\u8ACB\u95B1\u8B80\u8B1B\u5E2B\u63D0\u4F9B\u7684\u6559\u6750\u5F8C\u624B\u52D5\u6A19\u8A18\u5B8C\u6210\u3002")}</p></div>}<div className="mt-5 flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-600">{selected.chapterTitle}</p><h2 className="text-xl font-bold">{selected.title}</h2>{notice ? <p role="status" className="mt-2 text-sm text-slate-600">{notice}</p> : null}</div><button type="button" disabled={!interactive} onClick={() => void save(selected, selected.durationSeconds || resume, true)} className="min-h-11 rounded-xl bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800">{progressByLesson.get(selected.id)?.completedAt ? t("\u5DF2\u6A19\u8A18\u5B8C\u6210") : t("\u6A19\u8A18\u5B8C\u6210")}</button></div>{completion.complete ? <a href={`/portal/${encodeURIComponent(vendorSlug)}/learn/${encodeURIComponent(course.id)}/certificate`} className="mt-6 inline-flex min-h-11 items-center rounded-xl bg-amber-500 px-4 text-sm font-bold text-slate-950 hover:bg-amber-400">{t("\u4E0B\u8F09\u5B8C\u8AB2\u8B49\u66F8")}</a> : null}</div></div></section>;
 }

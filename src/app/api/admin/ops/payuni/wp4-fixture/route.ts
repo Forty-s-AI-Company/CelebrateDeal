@@ -1,3 +1,4 @@
+import { authorizeWp4Ops } from "@/lib/wp4-runtime-boundary";
 import { NextResponse } from "next/server";
 import { requireJobSecret } from "@/lib/api-security";
 import { getDb } from "@/lib/db";
@@ -49,6 +50,8 @@ export async function POST(request: Request) {
   if (!wp4SourceMatchesRequest(request, expectedSha)) return unavailableResponse("SOURCE_MISMATCH");
   if (await requestHasNonEmptyBody(request)) return unavailableResponse("BODY_REJECTED");
 
+  const authorization = await authorizeWp4Ops(request);
+  if (authorization instanceof Response) return authorization;
   try {
     const result = await ensureWp4SandboxFixture(getDb());
     return NextResponse.json(

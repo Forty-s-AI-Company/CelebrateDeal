@@ -2,6 +2,7 @@ import { isValidElement, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CoursePlayer } from "@/components/course-player";
 import { getCsrfToken, verifyCsrfToken } from "@/lib/csrf";
+const hydration = vi.hoisted(() => ({ active: true }));
 
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }), headers: async () => new Headers() }));
 
@@ -11,6 +12,7 @@ vi.mock("react", async (importOriginal) => ({
   useState: (initial: unknown) => [initial, vi.fn()],
   useRef: (initial: unknown) => ({ current: initial }),
   useMemo: (calculate: () => unknown) => calculate(),
+  useSyncExternalStore: () => hydration.active,
 }));
 
 function find(node: ReactNode, type: string, text?: string): { [key: string]: unknown } | undefined {
@@ -28,9 +30,26 @@ function playerTree(durationSeconds = 100, csrfToken = "synthetic") {
 type MediaHandler = (event: { currentTarget: { currentTime: number; duration: number } }) => void;
 const player = (durationSeconds = 100) => find(playerTree(durationSeconds), "video")!.onTimeUpdate as MediaHandler;
 
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
+afterEach(() => { hydration.active = true; vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
 
 describe("CoursePlayer progress requests", () => {
+  it("keeps translated controls behind the hydration barrier", () => {
+    const translatedPlayer = () => CoursePlayer({ vendorSlug: "academy", locale: "en", course: { id: "course-1", name: "Course" }, csrfToken: "synthetic", initialProgress: [], lessons: [{ id: "lesson-1", title: "Lesson", chapterTitle: "Chapter", position: 1, durationSeconds: 100, videoUrl: null }] });
+    hydration.active = false;
+    expect(find(translatedPlayer(), "button", "Mark complete")?.disabled).toBe(true);
+    expect(find(translatedPlayer(), "button")?.disabled).toBe(true);
+    hydration.active = true;
+    expect(find(translatedPlayer(), "button", "Mark complete")?.disabled).toBe(false);
+  });
+
+  it("keeps both lesson controls disabled until the client handlers are attached", () => {
+    hydration.active = false;
+    expect(find(playerTree(), "button", "標記完成")?.disabled).toBe(true);
+    expect(find(playerTree(), "button")?.disabled).toBe(true);
+    hydration.active = true;
+    expect(find(playerTree(), "button", "標記完成")?.disabled).toBe(false);
+    expect(find(playerTree(), "button")?.disabled).toBe(false);
+  });
   it.each([false, true])("refreshes an expired token and resends the same checkpoint, manual=%s", async (manual) => {
     vi.useFakeTimers();
     vi.stubEnv("CSRF_SECRET", "synthetic-course-player-renewal-secret-32-bytes");

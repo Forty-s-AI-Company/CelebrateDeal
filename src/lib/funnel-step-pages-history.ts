@@ -2,13 +2,16 @@ import { parseFunnelStepPages, type FunnelStepPages } from "@/lib/funnel-step-pa
 
 export type FunnelStepPagesHistory = { past: FunnelStepPages[]; future: FunnelStepPages[] };
 
+/** Bound cloned multi-page snapshots to avoid unbounded editor memory. */
+export const FUNNEL_STEP_HISTORY_LIMIT = 50;
+
 const copy = (state: FunnelStepPages) => structuredClone(state);
 
 export function createFunnelStepPagesHistory(): FunnelStepPagesHistory { return { past: [], future: [] }; }
 
 export function recordFunnelStepPages(history: FunnelStepPagesHistory, previous: FunnelStepPages): FunnelStepPagesHistory {
   const parsed = parseFunnelStepPages(previous);
-  return parsed ? { past: [...history.past, copy(parsed)], future: [] } : history;
+  return parsed ? { past: [...history.past, copy(parsed)].slice(-FUNNEL_STEP_HISTORY_LIMIT), future: [] } : history;
 }
 
 export function undoFunnelStepPages(history: FunnelStepPagesHistory, current: FunnelStepPages): { history: FunnelStepPagesHistory; state: FunnelStepPages } | null {
@@ -20,5 +23,5 @@ export function undoFunnelStepPages(history: FunnelStepPagesHistory, current: Fu
 export function redoFunnelStepPages(history: FunnelStepPagesHistory, current: FunnelStepPages): { history: FunnelStepPagesHistory; state: FunnelStepPages } | null {
   const next = history.future[0];
   const parsedCurrent = parseFunnelStepPages(current);
-  return next && parsedCurrent ? { state: copy(next), history: { past: [...history.past, copy(parsedCurrent)], future: history.future.slice(1) } } : null;
+  return next && parsedCurrent ? { state: copy(next), history: { past: [...history.past, copy(parsedCurrent)].slice(-FUNNEL_STEP_HISTORY_LIMIT), future: history.future.slice(1) } } : null;
 }
