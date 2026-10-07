@@ -37,7 +37,7 @@
     },
     {
       "path": "src/components/live-playback.test.tsx",
-      "sha256": "2f03f4b775fd11481efc89035b0a20b9b0137f281dbb14c61a9c91fef8c3974a"
+      "sha256": "040ade116364dc1b43389246d0cedbf54ffdaf754240b793429a23992e68e5f9"
     },
     {
       "path": "src/components/live-purchase-broadcast-panel.tsx",

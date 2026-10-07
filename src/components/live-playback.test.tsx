@@ -1564,4 +1564,3 @@ describe("LivePlayback checkout", () => {
     expect(textContent(checkoutErrors(renderCheckoutLive()))).toContain("結帳頁載入逾時");
   });
 });
-
