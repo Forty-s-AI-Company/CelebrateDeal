@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
+import { decideTrackingDelivery } from "@/lib/tracking-delivery-policy";
 import { getDb } from "@/lib/db";
 import { resolveAuthoritativeTrackingPayload } from "@/lib/tracking-event-payload";
 import { trackingEventEnabled } from "@/lib/tracking-event-outbox";
@@ -6,6 +8,14 @@ import { unprotectFacebookAccessToken } from "@/lib/tracking-credentials";
 import { sendMetaTrackingEvent } from "@/lib/tracking-meta-transport";
 
 const LEASE_MS = 120_000;
+
+/** 僅明確暫時 Prisma 連線/逾時錯誤可重試；損毀 envelope 仍拒絕。 */
+function transientSourceFailure(error: unknown): boolean {
+  const known = error instanceof Prisma.PrismaClientKnownRequestError ? error.code
+    : error instanceof Prisma.PrismaClientInitializationError ? error.errorCode : undefined;
+  return known !== undefined && ["P1001", "P1002", "P1008", "P1017", "P2024", "P2034"].includes(known);
+}
+
 
 /** 四種事件共用有界 tenant batch；provider request 不佔用 DB transaction。
  * 保留既有函式入口以相容已交付的 job/test 契約。 */
@@ -56,7 +66,14 @@ export async function runPurchaseTrackingBatch(input: { vendorId: string; apiVer
     try {
       token = unprotectFacebookAccessToken(input.vendorId, setting.facebookAccessTokenEncrypted);
       event = await resolveAuthoritativeTrackingPayload(db, candidate);
-    } catch { await terminal("rejected"); continue; }
+    } catch (error) {
+      if (!transientSourceFailure(error)) { await terminal("rejected"); continue; }
+      const retry = decideTrackingDelivery({ attempt: candidate.attemptCount + 1, now: claimTime, status: null, acceptedEvents: null });
+      if (retry.outcome !== "retry") { await terminal("rejected"); continue; }
+      const changed = await db.trackingDelivery.updateMany({ where: lease, data: { status: "queued", nextAttemptAt: retry.retryAt, leaseToken: null, leaseExpiresAt: null } });
+      if (changed.count) summary.retried++;
+      continue;
+    }
     if (!event) { await terminal("cancelled"); continue; }
     const decision = await sendMetaTrackingEvent({
       pixelId: candidate.pixelId, apiVersion: input.apiVersion, token, testEventCode: candidate.testEventCode,

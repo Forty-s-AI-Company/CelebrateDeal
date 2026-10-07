@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { createHash, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { getDb } from "@/lib/db";
@@ -11,7 +12,7 @@ import { reserveConsultationBooking, type ConsultationDatabase } from "@/app/act
 const db = getDb();
 const context = { sourceUrl: "https://tracking.example.test/live/synthetic", userAgent: "SyntheticTrackingBrowser/1.0" };
 beforeEach(() => vi.stubEnv("CSRF_SECRET", "synthetic-tracking-encryption-key-at-least-32-bytes"));
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 async function fixture() {
   const id = randomUUID();
   const vendor = await db.vendor.create({ data: { name: "Synthetic source shop", slug: `source-${id}`, email: `${id}@example.test`, passwordHash: "synthetic-only" } });
@@ -122,4 +123,29 @@ it("real booking preserves published-project and cross-tenant isolation before a
   expect((await reserveConsultationBooking(db as unknown as ConsultationDatabase, input, undefined, context)).status).toBe("booked");
   expect(await db.salesProjectCustomer.count({ where: { vendorId: f.vendor.id, projectId: project.id } })).toBe(1);
   expect(await db.trackingDelivery.count({ where: { vendorId: f.vendor.id, eventName: "Schedule" } })).toBe(1);
+});
+
+
+it.each(["P1001", "P2024"])("source database %s schedules a bounded retry then delivers once with the original event identity", async code => {
+  const f = await fixture(); const row = await enqueue(f, "Lead");
+  vi.spyOn(db.formSubmission, "findFirst").mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("Synthetic temporary database failure", { code, clientVersion: "synthetic" }));
+  const fetchMock = vi.fn().mockResolvedValue(new Response('{"events_received":1}', { status: 200 })); vi.stubGlobal("fetch", fetchMock);
+  expect(await run(f)).toMatchObject({ claimed: 1, retried: 1, rejected: 0 });
+  expect(fetchMock).not.toHaveBeenCalled();
+  const retry = await db.trackingDelivery.findUniqueOrThrow({ where: { id: row!.id } });
+  expect(retry).toMatchObject({ status: "queued", attemptCount: 1, leaseToken: null, eventId: row!.eventId });
+  expect(retry.nextAttemptAt.getTime()).toBeGreaterThan(Date.now());
+  expect(await runPurchaseTrackingBatch({ vendorId: f.vendor.id, apiVersion: "v22.0", now: new Date(retry.nextAttemptAt.getTime() + 1) })).toMatchObject({ accepted: 1 });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body).data[0].event_id).toBe(row!.eventId);
+  await run(f); expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+it("the eighth temporary source failure terminates without a provider call or ninth attempt", async () => {
+  const f = await fixture(); const row = await enqueue(f, "Lead");
+  await db.trackingDelivery.update({ where: { id: row!.id }, data: { attemptCount: 7 } });
+  vi.spyOn(db.formSubmission, "findFirst").mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("Synthetic temporary database failure", { code: "P1001", clientVersion: "synthetic" }));
+  const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+  expect(await run(f)).toMatchObject({ claimed: 1, rejected: 1, retried: 0 });
+  expect(await db.trackingDelivery.findUniqueOrThrow({ where: { id: row!.id } })).toMatchObject({ status: "rejected", attemptCount: 8, leaseToken: null });
+  expect(await run(f)).toMatchObject({ claimed: 0 }); expect(fetchMock).not.toHaveBeenCalled();
 });

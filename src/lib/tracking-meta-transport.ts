@@ -23,6 +23,29 @@ function validateMetaEvent(event: MetaEvent): void {
       event.user_data.external_id.length !== 1) throw new TypeError("Invalid tracking event.");
 }
 
+/** 完整但無效的回應拒絕；串流中斷則以同 event ID 有界重試。 */
+async function readMetaAcceptance(response: Response): Promise<{ acceptedEvents: number | null; interrupted: boolean }> {
+  const invalid = { acceptedEvents: null, interrupted: false };
+  const reader = response.body?.getReader();
+  if (!reader) return invalid;
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      length += chunk.value.length;
+      if (length > 65_536) { await reader.cancel(); return invalid; }
+      chunks.push(chunk.value);
+    }
+  } catch { return { acceptedEvents: null, interrupted: true }; }
+  finally { reader.releaseLock(); }
+  try {
+    const body: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return { acceptedEvents: body && typeof body === "object" && "events_received" in body && typeof body.events_received === "number" ? body.events_received : null, interrupted: false };
+  } catch { return invalid; }
+}
+
 /** Server worker only: credentials and hashed identities must never enter browser props. */
 export async function sendMetaTrackingEvent(input: {
   pixelId: string;
@@ -49,26 +72,6 @@ export async function sendMetaTrackingEvent(input: {
     body: JSON.stringify({ data: [input.event], test_event_code: input.testEventCode }),
   }).catch(() => null);
   if (!response) return decideTrackingDelivery({ attempt: input.attempt, now: input.now, status: null, acceptedEvents: null });
-  let acceptedEvents: number | null = null;
-  // Bound the response independently of Content-Length. Never log its body.
-  const reader = response.body?.getReader();
-  if (reader) {
-    try {
-      const chunks: Uint8Array[] = [];
-      let length = 0;
-      for (;;) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        length += chunk.value.length;
-        if (length > 65_536) { await reader.cancel(); break; }
-        chunks.push(chunk.value);
-      }
-      if (length <= 65_536) {
-        const body: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-        if (body && typeof body === "object" && "events_received" in body && typeof body.events_received === "number") acceptedEvents = body.events_received;
-      }
-    } catch { /* Invalid or interrupted provider responses never prove acceptance. */ }
-    finally { reader.releaseLock(); }
-  }
-  return decideTrackingDelivery({ attempt: input.attempt, now: input.now, status: response.status, acceptedEvents });
+  const result = await readMetaAcceptance(response);
+  return decideTrackingDelivery({ attempt: input.attempt, now: input.now, status: result.interrupted ? null : response.status, acceptedEvents: result.acceptedEvents });
 }

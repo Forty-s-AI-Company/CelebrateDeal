@@ -6,7 +6,7 @@ const input = {
   event: { event_name: "Purchase" as const, event_time: 1791331200, event_id: "purchase:synthetic-payment", action_source: "website" as const, event_source_url: "https://tracking.example.test/checkout/synthetic/product", user_data: { external_id: ["a".repeat(64)], client_user_agent: "SyntheticTrackingBrowser/1.0" } },
   attempt: 1, now: new Date("2026-10-07T00:00:00Z"),
 };
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 describe("Meta test-events transport with simulated HTTP only", () => {
   it("keeps credentials out of the URL and requests one stable event without redirects", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"events_received":1}', { status: 200 }));
@@ -35,6 +35,40 @@ describe("Meta test-events transport with simulated HTTP only", () => {
     for (const change of [{ testEventCode: "" }, { pixelId: "../other" }, { apiVersion: "https://example.org" }, { attempt: 0 }]) {
       await expect(sendMetaTrackingEvent({ ...input, ...change })).rejects.toThrow(TypeError);
     }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("interrupted successful provider response with simulated streams only", () => {
+  it.each(["reset", "timeout"] as const)("%s retries with the same event ID and stops at the eighth attempt", async failure => {
+    const actualTimeout = AbortSignal.timeout.bind(AbortSignal);
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => actualTimeout(5));
+    const fetchMock = vi.fn().mockImplementation(async (_url, options) => new Response(new ReadableStream({
+      start(controller) {
+        if (failure === "reset") controller.error(new TypeError("synthetic stream reset"));
+        else options.signal.addEventListener("abort", () => controller.error(options.signal.reason), { once: true });
+      },
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(sendMetaTrackingEvent(input)).resolves.toEqual({ outcome: "retry", retryAt: new Date(input.now.getTime() + 30_000) });
+    await expect(sendMetaTrackingEvent({ ...input, attempt: 8 })).resolves.toEqual({ outcome: "rejected" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(timeoutSpy).toHaveBeenNthCalledWith(1, 10_000);
+    expect(timeoutSpy).toHaveBeenNthCalledWith(2, 10_000);
+    expect(fetchMock.mock.calls.map(call => JSON.parse(call[1].body).data[0].event_id)).toEqual([input.event.event_id, input.event.event_id]);
+  });
+  it("rejects unsafe URL, plain-text identity and absent browser context before network", async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    const events = [
+      { ...input.event, event_source_url: "https://tracking.example.test/?token=synthetic" },
+      { ...input.event, event_source_url: "https://synthetic:synthetic@tracking.example.test/" },
+      { ...input.event, event_source_url: "file:///synthetic" },
+      { ...input.event, user_data: { ...input.event.user_data, external_id: ["synthetic-user@example.test"] } },
+      { ...input.event, user_data: { ...input.event.user_data, client_user_agent: "" } },
+      { ...input.event, event_time: 0 },
+    ];
+    for (const event of events) await expect(sendMetaTrackingEvent({ ...input, event })).rejects.toThrow(TypeError);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
