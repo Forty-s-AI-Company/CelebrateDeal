@@ -91,3 +91,5 @@ A1 domain workflow migration: exact source `bf45235f8b10fa1fded2da0a4c079e5b883c
 ### F1.2 current main integration 2026-10-07
 
 Root integrated c72b5089 into existing community branch; 129 models / 88 migrations, 9 DB + 1 actual browser + 22 unit/API + 5 inventory Vitest + 12 migration TAP PASS; TypeScript/lint PASS, zero skip/flaky, cleanup PASS. Fresh proof: `remaining-capabilities-f1.2-current-main-browser-20261007.json`. Original task dispatch4/4; extra independent review pending authorization. Canonical NOT_READY; exact new-head CI pending; no protected merge yet. All historical evidence retained.
+
+F1.2 current-head CI37616047757 failed at WP-88 exact inventory after main integration: actual91 pages/52 manager vs old90/51. Full inventory corrected without deleting assertions/cases. New isolated complete WP-88 guard matrix browser + 88 migrations/9 DB PASS, zero skip/flaky, cleanup PASS; lint PASS. Receipt `remaining-capabilities-f1.2-main-guard-browser-pass-20261007.json`; new exact head CI and independent review still required.

@@ -1,0 +1,13 @@
+{
+  "status": "IMPLEMENTED_PENDING_EXACT_BROWSER_REVALIDATION",
+  "failed_head": "5d923bbb84cc100895993d5b929d2595a18d2cf8",
+  "failed_ci": 37616047757,
+  "failed_step": "Release browser gates",
+  "annotation_source": "GitHub structured check annotations 112774503953",
+  "location": "tests/e2e/wp88-direct-url-guard-matrix.spec.ts:79",
+  "confirmed_cause": "Current integrated source has 91 guarded pages and 52 vendorManager pages; exact inventory assertion retained prior counts90/51",
+  "fix": "Update exact inventory to full current set91/52, preserving every guard family and browser authorization case",
+  "assertions_removed": 0,
+  "tests_skipped": 0,
+  "raw_logs_read": false
+}
