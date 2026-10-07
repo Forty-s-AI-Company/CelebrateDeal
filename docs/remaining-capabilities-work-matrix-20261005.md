@@ -10,6 +10,8 @@ Goal：`remaining-capabilities-20261005`，狀態 **IN_PROGRESS**。承接既有
 | --- | --- | --- | --- | --- | --- | --- |
 | F1 | future-work F1；#210/#211：播放器、進度、證書、社群、多語/PWA/push、SMS/WhatsApp | 現行 portal session、租戶與購買權益 | 主代理，待分批路由 | 每個能力具完整 UI/API、跨租戶/權益回歸、DB 與瀏覽器旅程；provider 實測分開標記 | F1.1 本機 unit、7 PostgreSQL、1 Chromium、Critical review及canonical READY；其餘 F1 待續 | IN_PROGRESS |
 | F1.1 | #210/#211；`b7956d803f8dfebbbfdb3a4faeff497ab4bc140e` 的原生播放器/progress/certificate，依現行契約重建商家單元發布 | manager auth/CSRF、portal session、paid entitlement、前向 migration | 主代理唯一 writer；獨立 Critical reviewer（policy fallback Astra high） | 商家發布→學員權益學習→75秒持久化/reload續播→完課證書→退款撤權；跨租戶/跨課程/併發/CSRF回歸 | 本機 unit/typecheck/lint、84 migration、7 DB、1 Chromium PASS，canonical acceptance READY；`remaining-capabilities-f1.1-local-receipt-20261006.json`；精確head CI雙SUCCESS、#370 squash 728f0e59、tree一致 | DELIVERED |
+| F1.1 | #210/#211；`b7956d803f8dfebbbfdb3a4faeff497ab4bc140e` 的原生播放器/progress/certificate，依現行契約重建商家單元發布 | manager auth/CSRF、portal session、paid entitlement、前向 migration | 主代理唯一 writer；獨立 Critical reviewer（policy fallback Astra high） | 商家發布→學員權益學習→75秒持久化/reload續播→完課證書→退款撤權；跨租戶/跨課程/併發/CSRF回歸 | 本機 unit/typecheck/lint、84 migration、7 DB、1 Chromium PASS，canonical acceptance READY；`remaining-capabilities-f1.1-local-receipt-20261006.json`；精確 head CI PASS、#370 squash `728f0e59`，验收tree一致 | DELIVERED |
+| F1.2 | `b7956d803f8dfebbbfdb3a4faeff497ab4bc140e`：學員社群、商家置頂／公告；依現行課程權益重建 | F1.1、portal session、tenant scope、manager CSRF/CAS | root 唯一 writer；Astra high readonly Critical review（observed unknown），dispatch4/4 | 發文／回覆／按讚／分頁／管理公告／退款撤權完整瀏覽器、跨租戶及併發DB、精確CI/PR | 最新候選8unit、TS/lint、1067 Node TAP零skip；85migration9DB、完整實際manager/learner browser PASS，review無findings，canonical READY；PR/CI待交付 | LOCAL_ACCEPTED_REMOTE_CI_PENDING |
 | F1.1 | #210/#211；`b7956d803f8dfebbbfdb3a4faeff497ab4bc140e` 的原生播放器/progress/certificate，依現行契約重建商家單元發布 | manager auth/CSRF、portal session、paid entitlement、前向 migration | 主代理唯一 writer；獨立 Critical reviewer（policy fallback Astra high） | 商家發布→學員權益學習→75秒持久化/reload續播→完課證書→退款撤權；跨租戶/跨課程/併發/CSRF回歸 | 本機 unit/typecheck/lint、84 migration、7 DB、1 Chromium PASS，canonical acceptance READY；`remaining-capabilities-f1.1-local-receipt-20261006.json`；精確 head push/PR CI SUCCESS；#370 squash `728f0e59`、tree 一致 | DELIVERED |
 | F2 | future-work F2：affiliate、階梯/多層佣金、扣繳/payout export、referral、upsell、tracking/webhooks、私訊/廣播 | 現行收入快照、退款、權限/provider 契約 | root 唯一 writer | 先跨租戶/併發/退款回歸再接 UI；Critical review、精確 head CI | F2.1 已實作並正在驗證；其餘完整範圍保留 | IN_PROGRESS |
 | F3.1 | #211 `b5397dbb45ddc4dc15a3059b7dec90b5a7771487`：editor parent echo、文件替換與 undo/redo lifecycle | 現行 FunnelPageEditor / FunnelStepPagesEditor | 主代理 writer；f3_inspect 唯讀 | parent echo 保留歷史；外部替換顯示新文件；undo/redo 不還原外部舊文件；真實瀏覽器測試 | `remaining-capabilities-f3.1-local-receipt-20261006.json`：14 unit、9 Chromium、lint/typecheck、獨立複審與 canonical READY；push/PR CI PASS，#369 squash `2319c742`，合併 tree 與驗收 head 一致 | DELIVERED |
@@ -30,6 +32,11 @@ Goal：`remaining-capabilities-20261005`，狀態 **IN_PROGRESS**。承接既有
 
 F3.1：PR [#369](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/369)，候選 head `00d43f4875489a1fa6f0b30a5cb2397f35fa3743`，merge `2319c742f1455681ff08b720c193a2faf1545e27`。push run `37354840583` 與 PR run `37354873011` 全部 quality PASS；expected head 合併後 tree 比對無差異。
 
+F1.1：native curriculum/player/progress/certificate 位於 `codex/remaining-course-learning-20261006`，已接續 master #369。完整 84 migration chain 及 7 PostgreSQL 邊界回歸通過；source snapshot/瀏覽器/Critical review及gate已通過；#370已交付，不宣稱外部影片 provider PASS。
+
+## 2026-10-06 精確 CI 補正進度
+
+F1.2 PR #373 head `92dcac17` 的 coverage gate 確認漏登社群 GET/POST API 契約及同路徑測試。已新增 8 個 route 邊界回歸，連同既有 8 unit 及契約 inventory 共17項 PASS，TS/strict-index/lint及1067 Node TAP PASS；完整隔離 coverage 正在執行。原始失敗與新 recovery 分開保留，task4/4，額外獨立複審待owner答覆，不宣稱最新修正已canonical READY。
 F1.1：native curriculum/player/progress/certificate 位於 `codex/remaining-course-learning-20261006`，已接續 master #369。完整 84 migration chain 及 7 PostgreSQL 邊界回歸通過；source snapshot/瀏覽器/Critical review 尚待最終候選 gate，不宣稱交付或外部影片 provider PASS。
 
 F3.2 latest candidate: 13 unit, 16 harness Chromium, actual workspace persistence/cross-tenant browser, lint/typecheck PASS; independent final review no findings; canonical READY. Exact-head CI and protected merge pending. Evidence: `remaining-capabilities-f3.2-local-receipt-20261006.json`.
@@ -48,6 +55,7 @@ F2.1已交付：#374 expected-head squash merge `daa6372a6e0f060e93de2c2e10afa0c
 | F2.2 | F2剩餘階梯／多層佣金；以F2.1已交付契約為base | immutable收入快照、refund/provider/tenant契約 | root唯一writer、Critical readonlyreview task2/4 | 商家政策UI→exactcheckout→paid tier/counter→全部beneficiary refunds/disputes→portal；併發/冪等/跨租戶/DB/browser/review/canonical/CI | 106targetedunits、86migrations+53DB PASS；browser與獨立Critical review執行中 | IMPLEMENTED_PENDING_VALIDATION |
 
 F2.2 latest source `sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0`：4605 Vitest、1067 TAP零skip、86 migrations、61 DB、1實際browser、lint/TS/strict全部PASS。抽離純payout helper後canonical gate僅因最新獨立review缺證據BLOCKED；同task dispatch4/4已用盡，額外1次核准待回覆，不宣稱READY或交付。收據 `remaining-capabilities-f2.2-current-regression-20261006.json`。
+本次社群接入 master `daa6372a`；F2.1 #374已交付、tree一致。F1.2舊head c968 CI雙SUCCESS；整合後129models/86migrations需重新驗證。最新獨立review同task dispatch4/4已用滿，extension待owner回覆，不宣稱已交付。
 
 Q2 分支既有 checkpoint：
 
@@ -91,3 +99,10 @@ A1 domain workflow migration: exact source `bf45235f8b10fa1fded2da0a4c079e5b883c
 ### F2.2 current main integration 2026-10-07
 
 Same task f2-commission-policy, root sole writer. Original dirty checkpoint worktree preserved; clean isolated integration includes main c72b5089. Complete 133 model / 88 migration inventory; 61 DB refund/commission regressions + 1 actual merchant browser + 142 unit + 5 inventory Vitest + 12 migration TAP, TypeScript/lint PASS; zero skip/flaky, cleanup PASS. Evidence: `remaining-capabilities-f2.2-main-integrated-browser-20261007.json`. Latest independent review and exact new-head CI pending; canonical NOT_READY, no delivery. Dispatch count is unchanged.
+### F1.2 current main integration 2026-10-07
+
+Root integrated c72b5089 into existing community branch; 129 models / 88 migrations, 9 DB + 1 actual browser + 22 unit/API + 5 inventory Vitest + 12 migration TAP PASS; TypeScript/lint PASS, zero skip/flaky, cleanup PASS. Fresh proof: `remaining-capabilities-f1.2-current-main-browser-20261007.json`. Original task dispatch4/4; extra independent review pending authorization. Canonical NOT_READY; exact new-head CI pending; no protected merge yet. All historical evidence retained.
+
+F1.2 current-head CI37616047757 failed at WP-88 exact inventory after main integration: actual91 pages/52 manager vs old90/51. Full inventory corrected without deleting assertions/cases. New isolated complete WP-88 guard matrix browser + 88 migrations/9 DB PASS, zero skip/flaky, cleanup PASS; lint PASS. Receipt `remaining-capabilities-f1.2-main-guard-browser-pass-20261007.json`; new exact head CI and independent review still required.
+
+Commission integration with delivered community a5964d83: 136 models and 89 canonical forward migrations. Both community and immutable merchant-affiliate snapshot migrations retained. Updated exact inventory assertions without exclusions or reduced checks; fresh validation pending.

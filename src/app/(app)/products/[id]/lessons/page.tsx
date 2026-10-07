@@ -18,6 +18,7 @@ export default async function CourseLessonsPage({ params, searchParams }: {
     <PageHeader title={`${product.name}：課程內容`} description="新增單元並發布後，具有購買權益的學員即可從學員中心學習。取消發布會停止該單元的存取，已存進度會保留。" action={<ButtonLink href={`/products/${encodeURIComponent(id)}/edit`} tone="secondary">回到商品</ButtonLink>} />
     {query.error ? <p role="alert" className="mb-4 text-red-700">{query.error === "conflict" ? "內容已變更或無法存取，請重新整理後再儲存。" : "請確認章節、名稱、影片網址與秒數；發布單元必須提供 HTTPS 影片。"}</p> : null}
     {query.saved ? <p role="status" className="mb-4 text-green-700">課程單元已儲存。</p> : null}
+    <div className="mb-5"><ButtonLink href={`/products/${encodeURIComponent(id)}/community`} tone="secondary">學員討論管理</ButtonLink></div>
     <div className="space-y-5">{lessons.map((lesson) => <form key={lesson?.id ?? "new"} action={saveCourseLessonAction} className="space-y-4 rounded-xl border bg-white p-5">
       <h2 className="text-lg font-bold">{lesson ? `單元 ${lesson.position + 1}` : "新增單元"}</h2>
       <CsrfField /><input type="hidden" name="productId" value={id} /><input type="hidden" name="revision" value={product.revision} />

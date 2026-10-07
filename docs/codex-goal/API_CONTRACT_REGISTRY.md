@@ -153,6 +153,12 @@
 | `GET /api/live-interactions` | 有效 viewer session，綁定 vendor／live | bounded vendorId／liveId query；僅回該場互動與 spotlight | 唯讀、private no-store；不回傳參與者名單 | 400／401 或互動快照；同路徑 unit |
 | `POST /api/live-interactions` | same-origin、client marker、rate limit、有效 viewer session | Zod action union：open／respond／ask_question；已發布且綁定該場的腳本與商品；購買抽獎另驗證簽署的已驗證報名身分及同場已付款訂單 | Serializable transaction 重新檢查互動版本與有效期間；重複回應及領券競爭回 409；成功領券設定 HttpOnly cookie；問題受頻率限制 | 400／401／403／404／409／429；同路徑 unit 與隔離 PostgreSQL 測試；完整瀏覽器付款流程待驗證 |
 
+## 原生課程社群（2026-10-06）
+
+| Route／method | Caller 與安全邊界 | Input／資源契約 | Side effect／replay | Response／證據 |
+|---|---|---|---|---|
+| `GET /portal/[vendorSlug]/learn/[courseId]/community/data` | 有效學員 session、同站 client marker、購買權益 | 有界貼文／回覆 cursor，綁定 vendor、course、customer | 唯讀，退款後拒絕，cursor 不可跨租戶／課程 | private no-store；同路徑 unit、隔離 DB、實際 browser |
+| `POST /portal/[vendorSlug]/learn/[courseId]/community/data` | 同站、CSRF、有效學員 session、購買權益 | strict action union、24 KiB body、合成 UUID operation identity | Serializable 再驗權益；post/reply 重試冪等，reaction desired state；不含外部渠道 | 泛化拒絕、private no-store；同路徑 unit、9 DB 回歸、實際 browser |
 本輪 Q2 固定非 Production recovery 契約：
 
 - `POST /api/admin/ops/payuni/wp4-buyer-callback-retry`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。

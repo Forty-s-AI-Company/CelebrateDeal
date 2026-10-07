@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "course-community-browser/v1",
+  "status": "PASS",
+  "tests": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "startedAt": "2026-10-05T22:10:09.590Z",
+  "finishedAt": "2026-10-05T22:14:17.060Z",
+  "failedTitles": [],
+  "browser": {
+    "expected": 1,
+    "unexpected": 0,
+    "skipped": 0,
+    "flaky": 0
+  }
+}
