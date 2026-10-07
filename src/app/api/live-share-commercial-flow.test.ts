@@ -95,7 +95,8 @@ vi.mock("@/lib/email-delivery", () => ({
 vi.mock("@/lib/checkout-admission", () => testRuntime.admissionMocks);
 vi.mock("@/lib/commerce-orders", () => testRuntime.commerceOrderMocks);
 vi.mock("@/lib/merchant-affiliate-policy-service", () => ({ freezeMerchantAffiliateCheckout: vi.fn(), MerchantAffiliatePolicyConflict: class extends Error {}, MerchantAffiliatePolicyDenied: class extends Error {} }));
-vi.mock("@/lib/buyer-support-access", () => ({
+vi.mock("@/lib/buyer-support-access", async importOriginal => ({
+  ...await importOriginal<typeof import("@/lib/buyer-support-access")>(),
   issueBuyerSupportGrant: testRuntime.buyerSupportMocks.issueBuyerSupportGrant,
   buyerSupportCookieOptions: () => ({
     httpOnly: true, sameSite: "lax", secure: true, path: "/",

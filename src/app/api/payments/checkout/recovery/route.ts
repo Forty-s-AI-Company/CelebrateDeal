@@ -8,6 +8,7 @@ import { getDb } from "@/lib/db";
 import { FunnelCheckoutReferenceSchema } from "@/lib/funnel-commerce";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { assertPostPurchaseCreditReplay, postPurchaseRequestCookies, PostPurchaseUnavailableError } from "@/lib/post-purchase-credit";
+import { resumeUnissuedPostPurchaseCheckout } from "@/lib/post-purchase-checkout-recovery";
 
 const RecoveryRequest = z.object({
   vendorId: z.string().trim().min(1).max(128),
@@ -114,7 +115,7 @@ export async function POST(request: Request) {
   const parsed = RecoveryRequest.safeParse(await readJsonBody(request));
   if (!parsed.success) return NextResponse.json({ error: "Invalid checkout recovery request" }, { status: 400 });
   const { vendorId, productId, idempotencyKey } = parsed.data;
-  const transaction = await getDb().paymentTransaction.findUnique({
+  let transaction = await getDb().paymentTransaction.findUnique({
     where: { vendorId_checkoutIdempotencyKey: { vendorId, checkoutIdempotencyKey: idempotencyKey } },
     select: { status: true, metadata: true, primaryCommerceOrder: { select: recoveryOrderSelect } },
   });
@@ -123,7 +124,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Checkout recovery not found" }, { status: 404 });
   }
   if (transaction.status !== "pending") {
-    return NextResponse.json({ error: "Checkout request already finished" }, { status: 409 });
+    if (transaction.status !== "failed" || metadata.postPurchaseSessionState !== "unissued" || !metadata.postPurchaseCredit) {
+      return NextResponse.json({ error: "Checkout request already finished" }, { status: 409 });
+    }
+    try {
+      await resumeUnissuedPostPurchaseCheckout(request, parsed.data);
+      transaction = await getDb().paymentTransaction.findUnique({
+        where: { vendorId_checkoutIdempotencyKey: { vendorId, checkoutIdempotencyKey: idempotencyKey } },
+        select: { status: true, metadata: true, primaryCommerceOrder: { select: recoveryOrderSelect } },
+      });
+      if (!transaction || transaction.status !== "pending") throw new PostPurchaseUnavailableError();
+    } catch (error) {
+      return NextResponse.json({ error: "Checkout recovery unavailable" }, { status: error instanceof PostPurchaseUnavailableError ? 409 : 503,
+        headers: { "Cache-Control": "private, no-store" } });
+    }
   }
   if (metadata.postPurchaseCredit) {
     try {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
-import { createReservedPaymentTransaction } from "../../src/lib/inventory-reservations";
+import { createReservedPaymentTransaction, failPendingCheckoutAndReleaseInventory } from "../../src/lib/inventory-reservations";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition, reconcileCommerceOrderRefund } from "../../src/lib/commerce-orders";
 import { issueBuyerSupportGrant } from "../../src/lib/buyer-support-access";
 
@@ -117,6 +117,26 @@ test("merchant configures offers; buyer declines, upgrades once, resumes and los
     stage("pending-recovery");
     await viewer.reload(); await expect(viewer.getByText("已找到原本的待付款訂單。", { exact: false })).toBeVisible();
     expect(await db.postPurchaseCredit.count({ where: { vendorId: vendor.id } })).toBe(1);
+    stage("synthetic-unissued-preparation-recovery");
+    // Explicit synthetic local-only handoff. This models a failure before a
+    // provider form is issued; it does not claim a real PayUni trade failed.
+    const originalTarget = await db.commerceOrder.findUniqueOrThrow({ where: { id: credit.targetOrderId } });
+    const originalPayment = await db.paymentTransaction.findUniqueOrThrow({ where: { id: originalTarget.primaryPaymentTransactionId! } });
+    const unissuedMetadata = { ...originalPayment.metadata as Prisma.JsonObject, postPurchaseSessionState: "unissued" };
+    delete (unissuedMetadata as Prisma.JsonObject).checkoutSession;
+    await db.paymentTransaction.update({ where: { id: originalPayment.id }, data: { metadata: unissuedMetadata } });
+    await failPendingCheckoutAndReleaseInventory({ vendorId: vendor.id, transactionId: originalPayment.id, reason: "provider_checkout_failed" });
+    const recoveryResponse = viewer.waitForResponse(response => response.url().endsWith("/api/payments/checkout/recovery") && response.request().method() === "POST");
+    await viewer.reload(); expect((await recoveryResponse).status()).toBe(200);
+    await expect(viewer.getByText("已找到原本的待付款訂單。", { exact: false })).toBeVisible();
+    expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: originalPayment.id } }))
+      .toMatchObject({ status: "pending", orderNumber: originalPayment.orderNumber, grossAmountCents: 9500,
+        metadata: { postPurchaseSessionState: "issued" } });
+    expect(await db.commerceOrder.findUniqueOrThrow({ where: { id: credit.targetOrderId } }))
+      .toMatchObject({ status: "pending_payment", primaryPaymentTransactionId: originalPayment.id, totalAmountCents: 9500 });
+    expect(await db.postPurchaseCredit.count({ where: { vendorId: vendor.id } })).toBe(1);
+    expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id } })).toBe(2);
+    expect((await db.product.findUniqueOrThrow({ where: { id: target.id } })).inventory).toBe(2);
     stage("source-refund");
     await db.$transaction(tx => reconcileCommerceOrderRefund(tx, { vendorId: vendor.id, orderId: sourceOrderId,
       providerName: "demo", eventIdentity: randomUUID(), amountCents: 1000, occurredAt: new Date() }), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

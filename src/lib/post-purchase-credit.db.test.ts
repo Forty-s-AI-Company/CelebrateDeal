@@ -9,6 +9,7 @@ import { createReservedPaymentTransaction, failPendingCheckoutAndReleaseInventor
 import { protectProductDeliveryConfig } from "@/lib/product-delivery";
 import { issuePostPurchaseCheckoutToken } from "@/lib/post-purchase-upsell";
 import { assertPostPurchaseCreditReplay, consumePostPurchaseCredit, PostPurchaseUnavailableError, resolvePostPurchaseCreditQuote } from "./post-purchase-credit";
+import { resumeUnissuedPostPurchaseCheckout } from "./post-purchase-checkout-recovery";
 
 const ownedVendors: string[] = [];
 const buyer = { name: "合成買家", email: "post-purchase@example.test", phone: "0912345678" };
@@ -94,6 +95,60 @@ async function refund(input: Fixture) {
 }
 
 describe("transactional post-purchase upgrade credit", () => {
+  async function preparationFailure(reason: "provider_checkout_failed" | "checkout_metadata_failed" = "provider_checkout_failed") {
+    const input = await fixture(1); const result = await upgrade(input); const db = getDb();
+    await db.paymentTransaction.update({ where: { id: result.payment.id }, data: {
+      metadata: { productId: input.target.id, postPurchaseCredit: { sourceOrderId: input.orderId }, postPurchaseSessionState: "unissued" },
+    } });
+    await failPendingCheckoutAndReleaseInventory({ vendorId: input.vendor.id, transactionId: result.payment.id, reason });
+    const request = new Request("http://127.0.0.1:31046/api/payments/checkout/recovery", {
+      headers: { cookie: input.cookies.getAll().map(cookie => `${cookie.name}=${cookie.value}`).join("; ") },
+    });
+    const identity = { vendorId: input.vendor.id, productId: input.target.id, idempotencyKey: result.payment.checkoutIdempotencyKey! };
+    return { input, result, db, request, identity };
+  }
+  for (const reason of ["provider_checkout_failed", "checkout_metadata_failed"] as const) {
+    it(`restores the same unissued ${reason} checkout at its immutable net price`, async () => {
+      const context = await preparationFailure(reason);
+      expect(await resumeUnissuedPostPurchaseCheckout(context.request, context.identity)).toBe(true);
+      expect(await resumeUnissuedPostPurchaseCheckout(context.request, context.identity)).toBe(false);
+      const payment = await context.db.paymentTransaction.findUniqueOrThrow({ where: { id: context.result.payment.id } });
+      expect(payment).toMatchObject({ status: "pending", grossAmountCents: 9_500, orderNumber: context.result.payment.orderNumber,
+        metadata: { postPurchaseSessionState: "issued", checkoutSession: { mode: "manual", provider: "demo" } } });
+      expect(await context.db.commerceOrder.findUniqueOrThrow({ where: { id: context.result.targetOrderId } }))
+        .toMatchObject({ status: "pending_payment", primaryPaymentTransactionId: payment.id, totalAmountCents: 9_500 });
+      expect(await context.db.postPurchaseCredit.count({ where: { vendorId: context.input.vendor.id } })).toBe(1);
+      expect(await context.db.paymentTransaction.count({ where: { vendorId: context.input.vendor.id } })).toBe(2);
+    });
+  }
+  it("concurrent preparation recovery reserves stock once without creating another payment", async () => {
+    const context = await preparationFailure();
+    const outcomes = await Promise.all([resumeUnissuedPostPurchaseCheckout(context.request, context.identity),
+      resumeUnissuedPostPurchaseCheckout(context.request, context.identity)]);
+    expect(outcomes.sort()).toEqual([false, true]);
+    expect((await context.db.product.findUniqueOrThrow({ where: { id: context.input.target.id } })).inventory).toBe(0);
+    expect(await context.db.paymentTransaction.count({ where: { vendorId: context.input.vendor.id } })).toBe(2);
+  });
+  it("never re-prepares an already issued failed session", async () => {
+    const context = await preparationFailure();
+    await context.db.paymentTransaction.update({ where: { id: context.result.payment.id }, data: {
+      metadata: { productId: context.input.target.id, postPurchaseCredit: {}, postPurchaseSessionState: "issued" },
+    } });
+    await expect(resumeUnissuedPostPurchaseCheckout(context.request, context.identity)).rejects.toThrow(PostPurchaseUnavailableError);
+    expect((await context.db.product.findUniqueOrThrow({ where: { id: context.input.target.id } })).inventory).toBe(1);
+  });
+  it("a provider reference forbids unissued-session recovery even when local metadata says unissued", async () => {
+    const context = await preparationFailure();
+    await context.db.paymentTransaction.update({ where: { id: context.result.payment.id }, data: { providerTradeNo: "synthetic-provider-reference" } });
+    await expect(resumeUnissuedPostPurchaseCheckout(context.request, context.identity)).rejects.toThrow(PostPurchaseUnavailableError);
+    expect((await context.db.paymentTransaction.findUniqueOrThrow({ where: { id: context.result.payment.id } })).status).toBe("failed");
+  });
+  it("source refund prevents local session recovery without recreating credit or stock", async () => {
+    const context = await preparationFailure(); await refund(context.input);
+    await expect(resumeUnissuedPostPurchaseCheckout(context.request, context.identity)).rejects.toThrow(PostPurchaseUnavailableError);
+    expect((await context.db.product.findUniqueOrThrow({ where: { id: context.input.target.id } })).inventory).toBe(1);
+    expect(await context.db.postPurchaseCredit.count({ where: { vendorId: context.input.vendor.id } })).toBe(1);
+  });
   for (const failure of ["provider_checkout_failed", "expired"] as const) {
     it(`reacquires the original ${failure} inventory once without replacing its credit or transaction`, async () => {
       const input = await fixture(1); const result = await upgrade(input);

@@ -1,0 +1,21 @@
+{
+  "run": 37579069131,
+  "head": "5c969b654896eb07fb1f7ec84a2db9827a88d547",
+  "logFetchExit": 0,
+  "failedTestFiles": [
+    "src/app/api/live-share-commercial-flow.test.ts"
+  ],
+  "locations": [
+    404
+  ],
+  "categories": {
+    "missingMockExport": true,
+    "assertion": true,
+    "typeError": false,
+    "referenceError": false,
+    "timeout": false,
+    "expected200Received502": false
+  },
+  "coverageFailures": [],
+  "rawLogOutput": false
+}

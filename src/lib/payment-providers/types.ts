@@ -154,6 +154,8 @@ export class PaymentQueryProviderError extends Error {
 
 export type PaymentProviderAdapter = {
   id: string;
+  /** Session preparation is pure local work; no remote trade is created. */
+  checkoutSessionPreparation?: "local";
   /** Runtime capability check. It must never return configuration values or secret material. */
   checkoutReadiness(): CheckoutProviderReadiness;
   verifySignature(request: Request, rawBody: string): Promise<boolean>;

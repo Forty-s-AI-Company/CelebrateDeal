@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
 const credit = vi.hoisted(() => ({ replay: vi.fn() }));
+const recovery = vi.hoisted(() => ({ resume: vi.fn() }));
+vi.mock("@/lib/post-purchase-checkout-recovery", () => ({ resumeUnissuedPostPurchaseCheckout: recovery.resume }));
 vi.mock("@/lib/post-purchase-credit", async importOriginal => {
   const original = await importOriginal<typeof import("@/lib/post-purchase-credit")>();
   return { ...original, assertPostPurchaseCreditReplay: credit.replay };
@@ -63,6 +65,37 @@ beforeEach(() => {
 });
 
 describe("checkout recovery snapshot", () => {
+  function failedPreparation() {
+    return { ...pendingTransaction(), status: "failed", metadata: {
+      productId: "product-1", postPurchaseCredit: { sourceOrderId: "original" }, postPurchaseSessionState: "unissued",
+    } };
+  }
+  it("re-reads original pending terms after authorized unissued preparation recovery", async () => {
+    findUnique.mockResolvedValueOnce(failedPreparation()).mockResolvedValueOnce(pendingTransaction());
+    recovery.resume.mockResolvedValueOnce(true);
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(recovery.resume).toHaveBeenCalledWith(expect.any(Request), { vendorId: "vendor-1", productId: "product-1", idempotencyKey: key });
+    const body = await response.json();
+    expect(body.priceCents).toBe(1200);
+    expect(JSON.stringify(body)).not.toContain("must-not-leak");
+    expect(credit.replay).toHaveBeenCalled();
+  });
+  it("does not expose failed preparation terms when recovery rejects current buyer rights", async () => {
+    findUnique.mockResolvedValueOnce(failedPreparation());
+    recovery.resume.mockRejectedValueOnce(new PostPurchaseUnavailableError());
+    const response = await POST(request());
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "Checkout recovery unavailable" });
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+  it("does not re-prepare a failed transaction whose form has already been issued", async () => {
+    const failed = failedPreparation(); failed.metadata.postPurchaseSessionState = "issued";
+    findUnique.mockResolvedValueOnce(failed);
+    const response = await POST(request());
+    expect(response.status).toBe(409);
+    expect(recovery.resume).not.toHaveBeenCalled();
+  });
   it("rechecks current buyer upgrade rights before returning immutable pending terms", async () => {
     const transaction = pendingTransaction();
     findUnique.mockResolvedValue({ ...transaction, metadata: { ...transaction.metadata, postPurchaseCredit: { sourceOrderId: "original" } },
