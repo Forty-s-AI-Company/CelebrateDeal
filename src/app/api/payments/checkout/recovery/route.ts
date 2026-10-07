@@ -8,7 +8,7 @@ import { getDb } from "@/lib/db";
 import { FunnelCheckoutReferenceSchema } from "@/lib/funnel-commerce";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { assertPostPurchaseCreditReplay, postPurchaseRequestCookies, PostPurchaseUnavailableError } from "@/lib/post-purchase-credit";
-import { resumeUnissuedPostPurchaseCheckout } from "@/lib/post-purchase-checkout-recovery";
+import { resumePostPurchaseCheckout } from "@/lib/post-purchase-checkout-recovery";
 
 const RecoveryRequest = z.object({
   vendorId: z.string().trim().min(1).max(128),
@@ -124,11 +124,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Checkout recovery not found" }, { status: 404 });
   }
   if (transaction.status !== "pending") {
-    if (transaction.status !== "failed" || metadata.postPurchaseSessionState !== "unissued" || !metadata.postPurchaseCredit) {
+    if (!["failed", "expired"].includes(transaction.status) || !metadata.postPurchaseCredit) {
       return NextResponse.json({ error: "Checkout request already finished" }, { status: 409 });
     }
     try {
-      await resumeUnissuedPostPurchaseCheckout(request, parsed.data);
+      await resumePostPurchaseCheckout(request, parsed.data);
       transaction = await getDb().paymentTransaction.findUnique({
         where: { vendorId_checkoutIdempotencyKey: { vendorId, checkoutIdempotencyKey: idempotencyKey } },
         select: { status: true, metadata: true, primaryCommerceOrder: { select: recoveryOrderSelect } },

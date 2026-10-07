@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const findUnique = vi.fn();
 const credit = vi.hoisted(() => ({ replay: vi.fn() }));
 const recovery = vi.hoisted(() => ({ resume: vi.fn() }));
-vi.mock("@/lib/post-purchase-checkout-recovery", () => ({ resumeUnissuedPostPurchaseCheckout: recovery.resume }));
+vi.mock("@/lib/post-purchase-checkout-recovery", () => ({ resumePostPurchaseCheckout: recovery.resume }));
 vi.mock("@/lib/post-purchase-credit", async importOriginal => {
   const original = await importOriginal<typeof import("@/lib/post-purchase-credit")>();
   return { ...original, assertPostPurchaseCreditReplay: credit.replay };
@@ -89,12 +89,13 @@ describe("checkout recovery snapshot", () => {
     expect(await response.json()).toEqual({ error: "Checkout recovery unavailable" });
     expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
-  it("does not re-prepare a failed transaction whose form has already been issued", async () => {
+  it("does not restore an issued failed transaction without a successful provider recovery decision", async () => {
     const failed = failedPreparation(); failed.metadata.postPurchaseSessionState = "issued";
     findUnique.mockResolvedValueOnce(failed);
+    recovery.resume.mockRejectedValueOnce(new PostPurchaseUnavailableError());
     const response = await POST(request());
     expect(response.status).toBe(409);
-    expect(recovery.resume).not.toHaveBeenCalled();
+    expect(recovery.resume).toHaveBeenCalled();
   });
   it("rechecks current buyer upgrade rights before returning immutable pending terms", async () => {
     const transaction = pendingTransaction();
