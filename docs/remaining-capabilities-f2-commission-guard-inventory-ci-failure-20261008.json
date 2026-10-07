@@ -1,0 +1,113 @@
+{
+  "task_id": "f2-commission-policy",
+  "failed_head": "393e24d9118b4989b7ada7fc164eca7bb3f1c777",
+  "ci_run": 37671893756,
+  "ci_step": "Release browser gates",
+  "annotations": {
+    "run": 37671893756,
+    "head": "393e24d9118b4989b7ada7fc164eca7bb3f1c777",
+    "annotations": [
+      {
+        "path": ".github",
+        "start_line": 2,
+        "level": "warning",
+        "codes": [],
+        "expected_received": [],
+        "generic_runner_exit": false
+      },
+      {
+        "path": ".github",
+        "start_line": 34,
+        "level": "failure",
+        "codes": [],
+        "expected_received": [],
+        "generic_runner_exit": true
+      },
+      {
+        "path": ".github",
+        "start_line": 33,
+        "level": "notice",
+        "codes": [],
+        "expected_received": [],
+        "generic_runner_exit": false
+      },
+      {
+        "path": "tests/e2e/wp88-direct-url-guard-matrix.spec.ts",
+        "start_line": 65,
+        "level": "failure",
+        "codes": [],
+        "expected_received": [],
+        "generic_runner_exit": false
+      },
+      {
+        "path": "tests/e2e/wp88-direct-url-guard-matrix.spec.ts",
+        "start_line": 79,
+        "level": "failure",
+        "codes": [],
+        "expected_received": [],
+        "generic_runner_exit": false
+      },
+      {
+        "path": "tests/e2e/wp88-direct-url-guard-matrix.spec.ts",
+        "start_line": 79,
+        "level": "failure",
+        "codes": [],
+        "expected_received": [],
+        "generic_runner_exit": false
+      },
+      {
+        "path": "tests/e2e/wp88-direct-url-guard-matrix.spec.ts",
+        "start_line": 79,
+        "level": "failure",
+        "codes": [],
+        "expected_received": [],
+        "generic_runner_exit": false
+      },
+      {
+        "path": "tests/e2e/wp88-direct-url-guard-matrix.spec.ts",
+        "start_line": 79,
+        "level": "failure",
+        "codes": [],
+        "expected_received": [],
+        "generic_runner_exit": false
+      },
+      {
+        "path": "src/components/landing-pages/landing-page-puck-config.tsx",
+        "start_line": 88,
+        "level": "warning",
+        "codes": [],
+        "expected_received": [],
+        "generic_runner_exit": false
+      },
+      {
+        "path": "src/components/landing-pages/landing-page-puck-config.tsx",
+        "start_line": 85,
+        "level": "warning",
+        "codes": [],
+        "expected_received": [],
+        "generic_runner_exit": false
+      },
+      {
+        "path": "src/components/landing-pages/landing-page-puck-config.tsx",
+        "start_line": 79,
+        "level": "warning",
+        "codes": [],
+        "expected_received": [],
+        "generic_runner_exit": false
+      },
+      {
+        "path": ".github",
+        "start_line": 1,
+        "level": "notice",
+        "codes": [],
+        "expected_received": [],
+        "generic_runner_exit": false
+      }
+    ]
+  },
+  "root_cause": "Inherited main exact matrix expects 91 pages / 52 vendorManager, but this branch adds merchant affiliate policy page: actual 92 / 53",
+  "fix": "Pin exact branch counts 92 / 53; all eight guard families, browser authorization flows and assertions retained",
+  "new_evidence": "Full direct-URL guard browser and current candidate review/CI required",
+  "status": "CORRECTED_PENDING_FRESH_VALIDATION",
+  "delivered": false
+}

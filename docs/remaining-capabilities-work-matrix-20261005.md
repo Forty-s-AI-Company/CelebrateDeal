@@ -158,6 +158,13 @@ F2.1 `codex/remaining-affiliate-portal-20261006`：明確 tenant/member 授權�
 
 F2.1 latest source `sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0`：9 targeted unit、TS/strict-index/lint、1067 Node TAP零skip、85migrations、6DB、1實際browser zero flaky全部PASS；第4/4獨立Critical複審精確25檔及hash一致無findings，canonical READY。精確head CI與protected PR待交付，其餘F2 scope未縮減。證據 `remaining-capabilities-f2.1-local-receipt-20261006.json`。
 
+F2.1 #374 已expected-head受保護squash merge `daa6372a6e0f060e93de2c2e10afa0c9c4d09c73`；push/PR quality與Preview全部SUCCESS，accepted/merged tree同為 `4f63c92d6c24e6585484912863704b3ecffd1f43`。交付證據 `remaining-capabilities-f2.1-delivery-20261006.json`。F2階梯/多層等完整剩餘範圍持續實作。
+
+F2.1已交付：#374 expected-head squash merge `daa6372a6e0f060e93de2c2e10afa0c9c4d09c73`，acceptedhead `ff9ea27896689d9983a203832993b22e4d33097b`，tree `4f63c92d6c24e6585484912863704b3ecffd1f43` 一致；精確push/PR CI雙SUCCESS。
+
+| F2.2 | F2剩餘階梯／多層佣金；以F2.1已交付契約為base | immutable收入快照、refund/provider/tenant契約 | root唯一writer、Critical readonlyreview task2/4 | 商家政策UI→exactcheckout→paid tier/counter→全部beneficiary refunds/disputes→portal；併發/冪等/跨租戶/DB/browser/review/canonical/CI | 106targetedunits、86migrations+53DB PASS；browser與獨立Critical review執行中 | IMPLEMENTED_PENDING_VALIDATION |
+
+F2.2 latest source `sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0`：4605 Vitest、1067 TAP零skip、86 migrations、61 DB、1實際browser、lint/TS/strict全部PASS。抽離純payout helper後canonical gate僅因最新獨立review缺證據BLOCKED；同task dispatch4/4已用盡，額外1次核准待回覆，不宣稱READY或交付。收據 `remaining-capabilities-f2.2-current-regression-20261006.json`。
 本次社群接入 master `daa6372a`；F2.1 #374已交付、tree一致。F1.2舊head c968 CI雙SUCCESS；整合後129models/86migrations需重新驗證。最新獨立review同task dispatch4/4已用滿，extension待owner回覆，不宣稱已交付。
 
 Q2 分支既有 checkpoint：
@@ -203,11 +210,22 @@ A1 domain workflow migration: exact source `bf45235f8b10fa1fded2da0a4c079e5b883c
 
 Same task f2-merchant-remuneration, root sole writer. Integrated c72b5089; complete137-model/93-migration inventory, original migrations untouched. 29 remuneration DB + 61 webhook/commission DB + 1 actual financial browser + 39 unit + 5 inventory Vitest + 12 migration TAP PASS; TypeScript/lint PASS, zero skip/flaky, cleanup/sourceUnchanged PASS. Full1601-file source fingerprint retained in new proof `remaining-capabilities-f2-remuneration-main-integrated-validation-20261007.json`. Exact93-page guard inventory verified unchanged. Original untracked evidence preserved. Task dispatch4/4; extra independent review authorization pending, exact new-head CI pending, canonical NOT_READY and no delivery.
 
+### F2.2 current main integration 2026-10-07
+
+Same task f2-commission-policy, root sole writer. Original dirty checkpoint worktree preserved; clean isolated integration includes main c72b5089. Complete 133 model / 88 migration inventory; 61 DB refund/commission regressions + 1 actual merchant browser + 142 unit + 5 inventory Vitest + 12 migration TAP, TypeScript/lint PASS; zero skip/flaky, cleanup PASS. Evidence: `remaining-capabilities-f2.2-main-integrated-browser-20261007.json`. Latest independent review and exact new-head CI pending; canonical NOT_READY, no delivery. Dispatch count is unchanged.
 ### F1.2 current main integration 2026-10-07
 
 Root integrated c72b5089 into existing community branch; 129 models / 88 migrations, 9 DB + 1 actual browser + 22 unit/API + 5 inventory Vitest + 12 migration TAP PASS; TypeScript/lint PASS, zero skip/flaky, cleanup PASS. Fresh proof: `remaining-capabilities-f1.2-current-main-browser-20261007.json`. Original task dispatch4/4; extra independent review pending authorization. Canonical NOT_READY; exact new-head CI pending; no protected merge yet. All historical evidence retained.
 
 F1.2 current-head CI37616047757 failed at WP-88 exact inventory after main integration: actual91 pages/52 manager vs old90/51. Full inventory corrected without deleting assertions/cases. New isolated complete WP-88 guard matrix browser + 88 migrations/9 DB PASS, zero skip/flaky, cleanup PASS; lint PASS. Receipt `remaining-capabilities-f1.2-main-guard-browser-pass-20261007.json`; new exact head CI and independent review still required.
+
+Commission integration with delivered community a5964d83: 136 models and 89 canonical forward migrations. Both community and immutable merchant-affiliate snapshot migrations retained. Updated exact inventory assertions without exclusions or reduced checks; fresh validation pending.
+
+### F2 commission current inventory correction 20261008
+
+- Original task `f2-commission-policy`, correct isolated worktree `commission-main-integration`, integrated product reviewed at `d3be0d9c` in explicitly authorized dispatch 6, raw findings `[]`; failed wrong-path dispatch 5 retained.
+- Exact migration assertions repaired after main community integration: 136 models / 89 migrations. Existing fixed historical 81 and 79/21 scopes, checksums and rejection assertions remain intact; community presence checks added. Product code did not change after review. Current test correction commit `87654487e816ad9321d0d51d2fd165e03f3563d7`, source `sha256:3fca9acdb103ea64721a96675555ee5504df69639788eb76baa6d66cebb6d991`.
+- Current unit, TypeScript, strict-index, lint and complete TAP 1067/1067 PASS, zero skip. 89 migrations / 61 DB / 1 merchant browser PASS before test-only correction. Full coverage running. Latest three test corrections are not claimed independently reviewed; canonical acceptance and exact-head CI pending. Not delivered.
 
 ### PWA integration with delivered community 2026-10-08
 
