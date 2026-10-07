@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const AFFILIATE_REMUNERATION_RULE_VERSION = "tw-affiliate-20261007-v2";
+export class AffiliateRemunerationInputError extends Error {}
 const Cents = z.number().int().min(0).max(2_147_483_647);
 const Reference = z.string().trim().regex(/^[A-Za-z0-9_-]{1,160}$/u);
 
@@ -27,12 +28,12 @@ export type AffiliateRemunerationQuote = {
 export function validateAffiliateRecipientClassification(raw: unknown) {
   const input = Input.omit({ grossAmountCents: true, bankFeeCents: true }).parse(raw);
   if (input.recipientType === "domestic_invoice_business") {
-    if (!input.invoiceReference || input.nhiTreatment !== "not_applicable_business") throw new Error("An approved invoice business classification is required.");
+    if (!input.invoiceReference || input.nhiTreatment !== "not_applicable_business") throw new AffiliateRemunerationInputError("An approved invoice business classification is required.");
     return;
   }
-  if (input.nhiTreatment === "not_applicable_business") throw new Error("An individual cannot use the business exemption.");
-  if (["documented_exemption", "not_insured"].includes(input.nhiTreatment) && !input.exemptionReference) throw new Error("An approved exemption reference is required.");
-  if (input.invoiceReference) throw new Error("An individual cannot use an invoice business reference.");
+  if (input.nhiTreatment === "not_applicable_business") throw new AffiliateRemunerationInputError("An individual cannot use the business exemption.");
+  if (["documented_exemption", "not_insured"].includes(input.nhiTreatment) && !input.exemptionReference) throw new AffiliateRemunerationInputError("An approved exemption reference is required.");
+  if (input.invoiceReference) throw new AffiliateRemunerationInputError("An individual cannot use an invoice business reference.");
 }
 
 /** Tax is collected in whole NTD, with sub-dollar amounts discarded. BigInt
@@ -64,6 +65,6 @@ export function calculateAffiliateRemuneration(raw: unknown): AffiliateRemunerat
   const nhiSupplementaryTaxCents = input.nhiTreatment === "subject_execution_business" && input.grossAmountCents >= 2_000_000
     ? Number((BigInt(nhiBaseCents) * BigInt(211) + BigInt(500_000)) / BigInt(1_000_000)) * 100 : 0;
   const netPayoutAmountCents = input.grossAmountCents - withholdingTaxCents - nhiSupplementaryTaxCents - input.bankFeeCents;
-  if (netPayoutAmountCents <= 0) throw new Error("A positive payable amount is required.");
+  if (netPayoutAmountCents <= 0) throw new AffiliateRemunerationInputError("A positive payable amount is required.");
   return { grossAmountCents: input.grossAmountCents, withholdingTaxCents, nhiSupplementaryTaxCents, bankFeeCents: input.bankFeeCents, netPayoutAmountCents, ruleVersion: AFFILIATE_REMUNERATION_RULE_VERSION };
 }

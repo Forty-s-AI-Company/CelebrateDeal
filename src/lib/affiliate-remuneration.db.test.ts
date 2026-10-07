@@ -6,6 +6,7 @@ import { AffiliatePayeeConflict, approveAffiliatePayeeProfile, submitAffiliatePa
 import { createAffiliateRemunerationQuote, exportAffiliateRemunerationQuote, signAffiliateRemunerationQuote } from "./affiliate-remuneration-quotes";
 import { appendCommissionLedgerEntry } from "./affiliate-commission-accounting";
 import { MerchantAffiliatePayoutPolicyConflict, setMerchantAffiliatePayoutPolicy } from "./merchant-affiliate-payout-policy";
+import { getAffiliateRemunerationDashboard } from "./affiliate-remuneration-dashboard";
 const db = getDb();
 const keyring = createBankAccountKeyring({ activeKeyId: "synthetic", keys: { synthetic: Buffer.alloc(32, 4).toString("base64url") } });
 const submission = { expectedRevision: 0, bank: { accountName: "Synthetic", bankCode: "999", accountNumber: "123456789" }, taxIdentity: "SYNTHETIC123", recipientType: "resident_individual", nhiTreatment: "subject_execution_business" };
@@ -227,5 +228,29 @@ describe("affiliate remuneration private database contracts", () => {
     expect(result.filter(item => item.status === "fulfilled")).toHaveLength(1);
     for (const item of result) if (item.status === "rejected") expect(item.reason instanceof MerchantAffiliatePayoutPolicyConflict || ["P2002", "P2034"].includes(item.reason.code)).toBe(true);
     expect(await db.merchantAffiliatePayoutPolicy.count({ where: { vendorId: f.vendor.id } })).toBe(1);
+  });
+  it("private dashboard enforces current grant/manager/tenant without exposing encrypted identifiers", async () => {
+    const f = await payableFixture(), other = await fixture(), stranger = await grant(other);
+    expect(await getAffiliateRemunerationDashboard(db, stranger, f.scope, "affiliate")).toBeNull();
+    expect(await getAffiliateRemunerationDashboard(db, f.actor, f.scope, "manager")).toBeNull();
+    expect(await getAffiliateRemunerationDashboard(db, f.manager, { vendorId: other.vendor.id, affiliateId: f.affiliate.id }, "manager")).toBeNull();
+    const member = await getAffiliateRemunerationDashboard(db, f.actor, f.scope, "affiliate");
+    expect(member).toMatchObject({ profile: { revision: 1, approvedRevision: 1 } });
+    expect(member!.profile).not.toHaveProperty("bankEncrypted");
+    expect(member!.profile).not.toHaveProperty("taxIdentityEncrypted");
+    expect(await getAffiliateRemunerationDashboard(db, f.manager, f.scope, "manager")).not.toBeNull();
+    await db.affiliatePortalAccess.update({ where: { vendorId_affiliateId: f.scope }, data: { active: false } });
+    expect(await getAffiliateRemunerationDashboard(db, f.actor, f.scope, "affiliate")).toBeNull();
+  });
+  it("dashboard pages exact tenant payouts and rejects foreign cursor or disabled feature", async () => {
+    const f = await payableFixture(), other = await fixture();
+    await db.affiliatePayout.createMany({ data: Array.from({ length: 23 }, (_, index) => ({ ...f.scope, monthKey: `${2027 + Math.floor(index / 12)}-${String(index % 12 + 1).padStart(2, "0")}`, finalAmountCents: 1000 })) });
+    const first = await getAffiliateRemunerationDashboard(db, f.actor, f.scope, "affiliate");
+    expect(first!.payouts).toHaveLength(20); expect(first!.nextCursor).not.toBeNull();
+    const second = await getAffiliateRemunerationDashboard(db, f.actor, f.scope, "affiliate", first!.nextCursor!);
+    expect(second!.payouts).toHaveLength(4); expect(second!.nextCursor).toBeNull();
+    expect(await getAffiliateRemunerationDashboard(db, f.actor, f.scope, "affiliate", other.payout.id)).toBeNull();
+    await db.vendor.update({ where: { id: f.vendor.id }, data: { enabledFeatureModules: ["affiliate_program"] } });
+    expect(await getAffiliateRemunerationDashboard(db, f.actor, f.scope, "affiliate")).toBeNull();
   });
 });
