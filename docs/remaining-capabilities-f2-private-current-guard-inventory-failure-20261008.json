@@ -1,0 +1,65 @@
+{
+  "task_id": "f2-live-private-chat-purchase-broadcast",
+  "failed_head": "476a1c95",
+  "status": "CORRECTED_PENDING_CURRENT_BROWSER",
+  "migrations": 89,
+  "tests": {
+    "total": 25,
+    "passed": 25,
+    "failed": 0,
+    "skipped": 0
+  },
+  "browser": {
+    "expected": 2,
+    "unexpected": 1,
+    "skipped": 0,
+    "flaky": 0,
+    "ingress": "synthetic-loopback-not-cloudflare-validation",
+    "rateLimitProvider": "cloudflare_waf",
+    "failureLocations": [
+      {
+        "file": "wp88-direct-url-guard-matrix.spec.ts",
+        "line": 65
+      },
+      {
+        "file": "wp88-direct-url-guard-matrix.spec.ts",
+        "line": 79,
+        "kind": "assertion_location"
+      },
+      {
+        "file": "wp88-direct-url-guard-matrix.spec.ts",
+        "line": 79,
+        "kind": "assertion_location"
+      },
+      {
+        "file": "wp88-direct-url-guard-matrix.spec.ts",
+        "line": 79,
+        "kind": "stack_location"
+      },
+      {
+        "file": "wp88-direct-url-guard-matrix.spec.ts",
+        "line": 79,
+        "kind": "assertion_location"
+      },
+      {
+        "file": "wp88-direct-url-guard-matrix.spec.ts",
+        "line": 79,
+        "kind": "assertion_location"
+      },
+      {
+        "file": "wp88-direct-url-guard-matrix.spec.ts",
+        "line": 79,
+        "kind": "stack_location"
+      }
+    ],
+    "inboxDiagnostics": []
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "root_cause": "Inherited main matrix expects 91 / 52 manager pages; actual branch adds protected private instructor chat page: 92 / 53",
+  "fix": "Exact 92 protected pages / 53 vendorManager, all other guard counts and RBAC browser assertions retained",
+  "failure_preserved": true,
+  "delivered": false
+}
