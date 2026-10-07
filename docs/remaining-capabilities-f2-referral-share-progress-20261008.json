@@ -1,0 +1,50 @@
+{
+  "task_id": "f2-referral-share-cards-20261008",
+  "status": "IMPLEMENTED_PENDING_ACCEPTANCE",
+  "scope": [
+    "authorized affiliate portal copy and QR download",
+    "signed verified registration session activity invitation"
+  ],
+  "actual_results": {
+    "unit_passed": 9,
+    "unit_skipped": 0,
+    "targeted_lint": "PASS",
+    "typecheck": "PASS",
+    "browser": "NOT_RUN",
+    "database": "NOT_RUN",
+    "independent_review": "NOT_RUN",
+    "canonical_acceptance": "NOT_RUN"
+  },
+  "source_hashes": {
+    "src/lib/referral-share-card.ts": "f9a32401f10bbf0b770b5b508f5e9ecf68bde4aa62ac2c4bfc814acc2adbfaf1",
+    "src/lib/referral-share-card.test.ts": "6d1a6d387fc763a13128d9186be0c5a84b0d734e7f4296045303b139cff1951e",
+    "src/components/referral-share-controls.tsx": "2ba97ad786ff34a6c1b753d4bd5f1395469578968aba283868559330f86e6427",
+    "src/components/verified-registration-share.tsx": "fa2563d08c7123fc15727e3fdfefc4293e4dcee5382cf700a888bf111222c295",
+    "src/components/verified-registration-share.test.tsx": "ac3462f409c00d7553e78cd09c53761adf1d70e2dc135eea82d70b7c2cb6aa05",
+    "src/app/verify-registration/page.tsx": "6f98cb6bc8a93d8b10a597afd79c8914cf962651f92a92c1ced5b4c165b9d15d",
+    "src/app/affiliate-portal/[vendorSlug]/[affiliateId]/page.tsx": "d39d0447e37a18d6fead04a81f9029c9696f1e1ec96edae2b3c84552678aaa55"
+  },
+  "ownership": {
+    "writer": "root",
+    "readonly_helpers_max": 1,
+    "dispatch_used": 0,
+    "dispatch_limit": 4,
+    "depth_limit": 1
+  },
+  "routing": {
+    "requested_team": "ai-team-pro",
+    "resolved_model": "gpt-6.1-sol",
+    "resolved_effort": "xhigh",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "review_required": true
+  },
+  "delivery": "NOT_DELIVERED",
+  "remaining": [
+    "actual browser clipboard/download/QR destination and attribution",
+    "disposable PG tenant/revocation checks",
+    "independent Critical review and corrections",
+    "canonical acceptance",
+    "exact head CI and protected PR delivery"
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "task_id": "f2-referral-share-cards-20261008",
+  "dispatch": 1,
+  "resolved_model": "gpt-6-astra",
+  "resolved_effort": "high",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "source_revision": "sha256:5b469047dd6835db7b5d85e9cc75fb0dc440179957eb321079e93aac2fa069b6",
+  "findings": [
+    {
+      "severity": "MINOR",
+      "file": "src/lib/referral-share-card.ts",
+      "issue": "40-character Chinese title clips outside SVG; measured Chromium x=80,width=1440,right=1520",
+      "status": "FIX_IMPLEMENTED_PENDING_BROWSER"
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/components/verified-registration-share.test.tsx",
+      "issue": "Real verification/session/share interaction not covered",
+      "status": "BROWSER_REGRESSION_ADDED_RUNNING"
+    },
+    {
+      "severity": "MINOR",
+      "file": "tests/e2e/affiliate-portal.spec.ts",
+      "issue": "QR PNG presence does not prove encoded destination",
+      "status": "PNG_QR_DECODE_AND_DESTINATION_REGRESSION_ADDED_RUNNING"
+    }
+  ],
+  "report_format": "root-recorded finding summary; not verbatim agent output",
+  "acceptance": "NOT_READY"
+}

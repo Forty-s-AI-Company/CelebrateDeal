@@ -1,0 +1,33 @@
+{
+  "source_revision": "sha256:100ef87c2deb33d4da214faac26fe7f31501f2ffc27c94ef5ef5fcb7ab322f29",
+  "migration_count": 87,
+  "receipt": {
+    "schemaVersion": "affiliate-portal-browser/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T17:12:07.473Z",
+    "finishedAt": "2026-10-07T17:15:45.254Z",
+    "failedTitles": [],
+    "browser": {
+      "expected": 2,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "canonical": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:100ef87c2deb33d4da214faac26fe7f31501f2ffc27c94ef5ef5fcb7ab322f29"
+  },
+  "delivery": "NOT_DELIVERED; pending byte-identical Git source and exact-head CI"
+}

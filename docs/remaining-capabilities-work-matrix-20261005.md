@@ -79,3 +79,16 @@ Q2 latest exact candidate `b0362e3a`：87 migrations、67/67 DB、2/2 browser、
 
 
 A1 domain workflow migration: exact source `bf45235f8b10fa1fded2da0a4c079e5b883cfef0`, current base `a10728f4147ce84ad6d33524ed0e412660602283`; root sole writer, one readonly reviewer, task `a1-canonical-domain-workflows` dispatch2/4. Six thin project adapters plus shared domain contracts preserve product actors, attribution/commission/refund/chargeback, tenant, browser console/network/privacy, design and canonical acceptance requirements. Six skill validations, links/anchors and 38 routing tests PASS; original MAJOR/MINOR fixed and independent incremental review findings=[]; observed unknown. Canonical revision `sha256:452d43d895b3fb606aed31ab8be39a8c50fe16fecd5a3f203133080f7a6688e6` READY. Evidence `remaining-capabilities-a1-domain-workflows-20261007.json`. Exact-head CI and protected PR delivery pending; remaining historical application/workflow scope retained, A1/Goal NOT COMPLETE.
+
+
+## F2 推薦分享接續（2026-10-08）
+
+| ID | 精確來源 | 缺口與相依 | owner | 驗收條件 | 證據 | 實際狀態 |
+| --- | --- | --- | --- | --- | --- | --- |
+| F2 referral sharing | b7956d803f8dfebbbfdb3a4faeff497ab4bc140e 的 referral-card、CopyReferralLink 與 form success caller；主線 #374 affiliate portal | 既有授權夥伴分享連結補 copy/QR；歷史活動邀請接入真實 verified session。相依既有 portal grant、public form DAL、signed registration session，沒有新增個人佣金契約 | root 唯一 writer；一個 readonly reviewer | clipboard readback、SVG文字邊界、QR decoded exact canonical URL、原 merchant attribution、無/invalid/unverified session隱藏、撤權/停用隱藏；DB/browser、Critical review、canonical gate、exact-head CI/protected PR | docs/remaining-capabilities-f2-referral-share-review-2-20261008.json；docs/remaining-capabilities-f2-referral-share-registration-browser-failure-20261008.json | IMPLEMENTED，9 unit/lint/TS PASS，review dispatch 2/4 無新 finding；87 migrations/6DB/夥伴browser PASS，但最新報名browser分享區塊缺席，正在診斷，NOT_READY/NOT_DELIVERED |
+
+失敗收據保留；不以舊的一條成功旅程支持目前完整 scope。Goal F1/F2/F3/Q1/Q2/A1/E1 仍未全部完成。
+
+F2 referral sharing 根因更新：Next16.3.8 的 NextRequest 將 127.0.0.1 正規化為 localhost，原驗證303回跳跨cookie主機。已以真正NextRequest重現並改用共享可信browser-return origin，付款helper保留既有wrapper。新增精確主機與cookiepath unit、移除暫時診斷。最新source `sha256:100ef87c2deb33d4da214faac26fe7f31501f2ffc27c94ef5ef5fcb7ab322f29`，31 targeted unit/lint通過；canonical完整runner與review dispatch3/4執行中，尚未READY或交付。
+
+F2 referral sharing 最終候選 `sha256:4312b55a723fcee2d951fa9131c3f827fcfd035da1d31f4ea261a45ffd193fff`：31 unit、lint、TS、87 migrations、6DB、2actualbrowser zero skip/flaky、cleanup、獨立Critical review dispatch4/4全部PASS；22sourcebytes與Gitobjects完全一致，實際assess_acceptance READY。證據 `docs/remaining-capabilities-f2-referral-share-final-canonical-ready-20261008.json`。目前待精確head CI與受保護PR交付，整體Goal仍IN_PROGRESS。

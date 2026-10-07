@@ -1,0 +1,9 @@
+{
+  "source": "actual installed Chromium with synthetic static markup",
+  "nested_region_count": 1,
+  "markup_scope": "role=status parent and named section child",
+  "conclusion": "Nested status role does not itself hide a named region from Playwright; actual application session/data path remains under diagnosis",
+  "application_browser_session": 46941,
+  "application_status": "RUNNING",
+  "delivery": "NOT_DELIVERED"
+}

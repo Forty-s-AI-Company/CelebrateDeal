@@ -1,5 +1,6 @@
 import { NativePostForm } from "@/components/native-post-form";
 import { LineLoginButton } from "@/components/line-login-button";
+import { VerifiedRegistrationShare } from "@/components/verified-registration-share";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ export default async function VerifyRegistrationPage({
             <h1 className="text-xl font-black">Email 已確認</h1>
             <p className="mt-2 text-sm leading-6">你的報名已列入正式名單，可以關閉這個頁面。</p>
             <div className="mt-4"><LineLoginButton request={{ mode: "registration", redirectPath: "/verify-registration?status=verified" }}>🟢 接收 LINE 開播提醒與電子票券</LineLoginButton></div>
+            <VerifiedRegistrationShare />
           </div>
         ) : invalid ? (
           <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
