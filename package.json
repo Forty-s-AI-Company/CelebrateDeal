@@ -85,7 +85,8 @@
       "brace-expansion": "^1.1.18"
     },
     "postcss": "^8.5.16",
-    "sharp": "^0.35.4",
-    "playwright-core": "1.61.1"
+    "sharp": "^0.35.5",
+    "playwright-core": "1.61.1",
+    "source-map-js": "1.2.2"
   }
 }

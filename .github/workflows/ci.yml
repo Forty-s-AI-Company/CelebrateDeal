@@ -80,6 +80,15 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Affiliate portal database boundaries
+        run: npx vitest run --config vitest.affiliate-portal-db.config.ts
+        env:
+          COURSE_LEARNING_DISPOSABLE: verified-loopback
+      - name: Native course database boundaries
+        run: npx vitest run --config vitest.course-learning-db.config.ts
+        env:
+          COURSE_LEARNING_DISPOSABLE: verified-loopback
+
       - name: PayUni deployment environment binding contract
         run: npx vitest run src/lib/env.test.ts
 
@@ -186,6 +195,10 @@ jobs:
 
       - name: Funnel development harness browser gate
         run: node scripts/funnel-elements-browser-qa.mjs
+
+      # Recovery requires its own verified loopback database, exact source and sandbox keys.
+      - name: Subscription recovery database and browser gate
+        run: node scripts/subscription-recovery-disposable-qa.mjs --browser
 
       - name: Release browser gates
         run: npm run e2e -- --fail-on-flaky-tests

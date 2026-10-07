@@ -25,6 +25,7 @@ function metadataObject(value: unknown): Record<string, unknown> | null {
 export async function reserveWp4PayUniPaymentAttempt(
   db: PaymentAttemptDb,
   sourceCommit: string,
+  fixedPurpose: "buyer_order" | "platform_subscription" = "buyer_order",
 ): Promise<Wp4PaymentAttemptResult> {
   return db.$transaction(async (tx) => {
     const rows = await tx.paymentTransaction.findMany({
@@ -33,18 +34,30 @@ export async function reserveWp4PayUniPaymentAttempt(
         providerName: "payuni",
         status: { in: ["pending", "paid", "partially_refunded", "refunded"] },
       },
-      select: { id: true, status: true, metadata: true },
+      select: { id: true, status: true, metadata: true, paymentMode: true, grossAmountCents: true, currency: true },
     });
     const candidates = rows.filter((row) => {
       const metadata = metadataObject(row.metadata);
       return wp4SourceCommitFromMetadata(metadata) === sourceCommit
-        && wp4PayUniPurposeFromMetadata(metadata) === "buyer_order"
-        && metadata?.productId === WP4_SANDBOX_FIXTURE.productId;
+        && wp4PayUniPurposeFromMetadata(metadata) === fixedPurpose
+        && (fixedPurpose === "buyer_order" ? metadata?.productId === WP4_SANDBOX_FIXTURE.productId
+          : metadata?.billingPlanId === WP4_SANDBOX_FIXTURE.planId && typeof metadata?.platformSubscriptionId === "string");
     });
     if (candidates.length === 0) return { status: "FIXTURE_UNAVAILABLE", reservationCreated: false };
     if (candidates.length > 1) return { status: "CANDIDATE_AMBIGUOUS", reservationCreated: false };
 
     const candidate = candidates[0]!;
+    if (fixedPurpose === "platform_subscription") {
+      const metadata = metadataObject(candidate.metadata);
+      if (candidate.paymentMode !== "platform" || candidate.grossAmountCents !== 100 || candidate.currency !== "TWD"
+        || typeof metadata?.platformSubscriptionId !== "string") return { status: "FIXTURE_UNAVAILABLE", reservationCreated: false };
+      const subscription = await tx.vendorSubscription.findFirst({
+        where: { id: metadata.platformSubscriptionId, vendorId: WP4_SANDBOX_FIXTURE.vendorId, planId: WP4_SANDBOX_FIXTURE.planId },
+        select: { status: true },
+      });
+      if (!subscription || (candidate.status === "pending" && subscription.status !== "pending_payment")) return { status: "FIXTURE_UNAVAILABLE", reservationCreated: false };
+    }
+
     if (candidate.status === "paid") return { status: "ALREADY_PAID", reservationCreated: false };
     if (candidate.status !== "pending") return { status: "ALREADY_FINISHED", reservationCreated: false };
 

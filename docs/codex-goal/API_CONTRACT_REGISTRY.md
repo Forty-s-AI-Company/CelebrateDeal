@@ -21,6 +21,16 @@
 |---|---|---|---|---|
 | `GET /api/admin/ops/payuni/pending-refund-proof` | timing-safe JOB_SECRET；固定 staging origin、Preview、sandbox、executor flag、部署 SHA 與 staging DB 身分 | 唯一 bounded transactionId；固定 synthetic vendor、buyer purpose 與目前 source metadata | 唯讀 Serializable snapshot；只回 hash references、封閉狀態與計數；private no-store；不存在同 404、錯誤同 503 | route unit、disposable PostgreSQL；真實 sandbox browser 尚待執行 |
 
+### 2026-10-06 原生課程學習新增契約
+
+| Route／method | Caller 與安全邊界 | Input／resource boundary | Side effect 與 response | 目前證據 |
+|---|---|---|---|---|
+| `GET /portal/[vendorSlug]/learn/[courseId]/progress` | 同源 client marker、學員 session | 租戶、課程、目前購買權益；已退款／撤銷拒絕 | 只讀進度與更新 CSRF；private no-store、Vary Cookie；拒絕同為 404 | 同路徑 unit、disposable DB、Chromium |
+| `POST /portal/[vendorSlug]/learn/[courseId]/progress` | 同源 client marker、CSRF、學員 session | 嚴格 4 KiB JSON；已發布單元與目前權益 | Serializable 重驗權益、單調進度與有限衝突重試；400／403／404 | 同路徑 unit、disposable DB、Chromium |
+| `GET /portal/[vendorSlug]/learn/[courseId]/certificate` | 學員 session | 租戶、課程、目前權益；全部已發布單元完成 | 只讀 escaped SVG attachment；CSP sandbox、private no-store；拒絕同為 404 | 同路徑 unit、disposable DB、Chromium 退款撤銷 |
+
+以上是本輪新增契約；下方日期與 revision 保留為歷史盤點基準。
+
 | # | Route／method | Caller 與安全邊界 | Input contract | Tenant／resource boundary | Side effect 與 replay contract | Response／error contract | 目前證據 |
 |---:|---|---|---|---|---|---|---|
 | 1 | `GET /(app)/billing/invoices/export` | `requireVendorContext` | 無 body | query 固定目前 `vendorId` | 只讀 CSV export；公式字元 neutralization | CSV attachment；不回傳其他 vendor | 同路徑 unit |
@@ -148,3 +158,15 @@
 |---|---|---|---|---|
 | `GET /api/live-interactions` | 有效 viewer session，綁定 vendor／live | bounded vendorId／liveId query；僅回該場互動與 spotlight | 唯讀、private no-store；不回傳參與者名單 | 400／401 或互動快照；同路徑 unit |
 | `POST /api/live-interactions` | same-origin、client marker、rate limit、有效 viewer session | Zod action union：open／respond／ask_question；已發布且綁定該場的腳本與商品；購買抽獎另驗證簽署的已驗證報名身分及同場已付款訂單 | Serializable transaction 重新檢查互動版本與有效期間；重複回應及領券競爭回 409；成功領券設定 HttpOnly cookie；問題受頻率限制 | 400／401／403／404／409／429；同路徑 unit 與隔離 PostgreSQL 測試；完整瀏覽器付款流程待驗證 |
+
+本輪 Q2 固定非 Production recovery 契約：
+
+- `POST /api/admin/ops/payuni/wp4-buyer-callback-retry`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。
+- `POST /api/admin/ops/payuni/wp4-buyer-existing-reconcile`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。
+- `POST /api/admin/ops/payuni/wp4-buyer-existing-refund`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。
+- `POST /api/admin/ops/payuni/wp4-buyer-existing-state`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。
+- `POST /api/admin/ops/payuni/wp4-refund-recovery`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。
+- `POST /api/admin/ops/payuni/wp4-subscription-payment-attempt`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。
+- `POST /api/admin/ops/payuni/wp4-subscription-reconcile`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。
+- `POST /api/admin/ops/payuni/wp4-subscription-refund`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。
+- `POST /api/admin/ops/payuni/wp4-subscription-state`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。

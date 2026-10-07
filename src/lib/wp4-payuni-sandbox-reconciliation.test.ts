@@ -19,7 +19,7 @@ describe("WP4 PayUni Sandbox transaction boundary", () => {
 
   it.each([
     ["buyer_order", { productId: WP4_SANDBOX_FIXTURE.productId }],
-    ["platform_subscription_checkout", { planId: WP4_SANDBOX_FIXTURE.planId }],
+    ["platform_subscription_checkout", { billingPlanId: WP4_SANDBOX_FIXTURE.planId, platformSubscriptionId: "synthetic-subscription" }],
     ["invoice_payment", { invoiceId: WP4_SANDBOX_FIXTURE.invoiceId }],
   ] as const)("accepts the matching %s fixture transaction", (billingPurpose, fixtureIdentity) => {
     expect(isWp4PayUniSandboxTransaction({

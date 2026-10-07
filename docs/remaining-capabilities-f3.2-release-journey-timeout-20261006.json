@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "f3-release-regression/v1",
+  "status": "BLOCKED_OR_FAILED",
+  "tests": {
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
+    "skipped": 0
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "startedAt": "2026-10-05T23:25:41.549Z",
+  "finishedAt": "2026-10-05T23:32:55.268Z",
+  "browserFailure": [
+    "::error file=tests/e2e/funnel-operations.spec.ts,line=84::playwright status=failed retry=0 class=step_error category=pw:api duration_ms=9083",
+    "::error file=tests/e2e/funnel-operations.spec.ts,line=84::playwright status=failed retry=0 class=test_error_location",
+    "::error file=tests/e2e/funnel-operations.spec.ts,line=257::playwright status=failed retry=1 class=step_error category=pw:api duration_ms=5015",
+    "::error file=tests/e2e/funnel-operations.spec.ts,line=257::playwright status=failed retry=1 class=test_error_location",
+    "::error file=tests/e2e/funnel-operations.spec.ts,line=32::playwright status=timedout retry=1 first_status=timedOut first_duration_ms=35639"
+  ],
+  "failedSteps": [
+    {
+      "source": null,
+      "category": [],
+      "matchCount": null
+    },
+    {
+      "source": {
+        "file": "funnel-operations.spec.ts",
+        "line": 84
+      },
+      "category": [
+        "toHaveText",
+        "getByRole"
+      ],
+      "matchCount": null
+    },
+    {
+      "source": null,
+      "category": [],
+      "matchCount": null
+    },
+    {
+      "source": {
+        "file": "funnel-operations.spec.ts",
+        "line": 257
+      },
+      "category": [
+        "getByRole"
+      ],
+      "matchCount": null
+    }
+  ],
+  "browser": {
+    "expected": 1,
+    "unexpected": 1,
+    "skipped": 0,
+    "flaky": 0
+  }
+}

@@ -91,18 +91,15 @@ async function ensureOwner(db: FixtureDb) {
         { email: WP4_SANDBOX_FIXTURE.userEmail },
       ],
     },
-    select: { id: true, email: true, name: true },
+    select: { id: true, email: true, name: true, status: true },
   });
   if (existing) {
     assertIdentity(
       existing.id === WP4_SANDBOX_FIXTURE.userId
       && existing.email === WP4_SANDBOX_FIXTURE.userEmail
-      && existing.name === "WP4 Synthetic Sandbox Owner",
+      && existing.name === "WP4 Synthetic Sandbox Owner"
+      && existing.status === "active",
     );
-    await db.user.update({
-      where: { id: WP4_SANDBOX_FIXTURE.userId },
-      data: { status: "active" },
-    });
     return false;
   }
   await db.user.create({
@@ -125,13 +122,10 @@ async function ensureMembership(db: FixtureDb) {
         userId: WP4_SANDBOX_FIXTURE.userId,
       },
     },
-    select: { id: true },
+    select: { id: true, role: true, status: true, deactivatedAt: true },
   });
   if (existing) {
-    await db.vendorMember.update({
-      where: { id: existing.id },
-      data: { role: "owner", status: "active", deactivatedAt: null },
-    });
+    assertIdentity(existing.role === "owner" && existing.status === "active" && existing.deactivatedAt === null);
     return false;
   }
   await db.vendorMember.create({
@@ -156,28 +150,19 @@ async function ensureProduct(db: FixtureDb) {
         },
       ],
     },
-    select: { id: true, vendorId: true, slug: true, name: true },
+    select: { id: true, vendorId: true, slug: true, name: true, priceCents: true, currency: true, commerceDomain: true, fulfillmentType: true, fulfillmentTypeConfirmed: true },
   });
   if (existing) {
     assertIdentity(
       existing.id === WP4_SANDBOX_FIXTURE.productId
       && existing.vendorId === WP4_SANDBOX_FIXTURE.vendorId
       && existing.slug === WP4_SANDBOX_FIXTURE.productSlug
-      && existing.name === "WP4 Synthetic Sandbox Product",
+      && existing.name === "WP4 Synthetic Sandbox Product"
+      && existing.priceCents === 100 && existing.currency === "TWD"
+      && existing.commerceDomain === "merchant" && existing.fulfillmentType === "physical"
+      && existing.fulfillmentTypeConfirmed,
     );
-    await db.product.update({
-      where: { id: WP4_SANDBOX_FIXTURE.productId },
-      data: {
-        priceCents: 100,
-        currency: "TWD",
-        inventory: 20,
-        isActive: true,
-        commerceDomain: "merchant",
-        fulfillmentType: "physical",
-        fulfillmentTypeConfirmed: true,
-        checkoutUrl: null,
-      },
-    });
+    // Replays preserve consumed inventory and the product lifecycle.
     return false;
   }
   await db.product.create({
@@ -207,17 +192,17 @@ async function ensurePlan(db: FixtureDb) {
         { code: WP4_SANDBOX_FIXTURE.planCode },
       ],
     },
-    select: { id: true, code: true, name: true },
+    select: { id: true, code: true, name: true, monthlyPriceCents: true },
   });
   if (existing) {
     assertIdentity(
       existing.id === WP4_SANDBOX_FIXTURE.planId
       && existing.code === WP4_SANDBOX_FIXTURE.planCode
-      && existing.name === "WP4 Synthetic Sandbox Plan",
+      && existing.name === "WP4 Synthetic Sandbox Plan" && existing.monthlyPriceCents === 100,
     );
     await db.billingPlan.update({
       where: { id: WP4_SANDBOX_FIXTURE.planId },
-      data: { monthlyPriceCents: 100, isActive: true },
+      data: { isActive: false },
     });
     return false;
   }
@@ -228,7 +213,7 @@ async function ensurePlan(db: FixtureDb) {
       code: WP4_SANDBOX_FIXTURE.planCode,
       monthlyPriceCents: 100,
       includedStreamMinutes: 10,
-      isActive: true,
+      isActive: false,
       description: "Synthetic staging-only PayUni reconciliation fixture.",
     },
   });
@@ -243,25 +228,17 @@ async function ensureInvoice(db: FixtureDb) {
         { invoiceNumber: WP4_SANDBOX_FIXTURE.invoiceNumber },
       ],
     },
-    select: { id: true, vendorId: true, invoiceNumber: true, monthKey: true },
+    select: { id: true, vendorId: true, invoiceNumber: true, monthKey: true, monthlyFeeCents: true, subtotalCents: true, totalCents: true },
   });
   if (existing) {
     assertIdentity(
       existing.id === WP4_SANDBOX_FIXTURE.invoiceId
       && existing.vendorId === WP4_SANDBOX_FIXTURE.vendorId
       && existing.invoiceNumber === WP4_SANDBOX_FIXTURE.invoiceNumber
-      && existing.monthKey === "2099-12",
+      && existing.monthKey === "2099-12" && existing.monthlyFeeCents === 100
+      && existing.subtotalCents === 100 && existing.totalCents === 100,
     );
-    await db.invoice.update({
-      where: { id: WP4_SANDBOX_FIXTURE.invoiceId },
-      data: {
-        monthlyFeeCents: 100,
-        subtotalCents: 100,
-        totalCents: 100,
-        status: "issued",
-        paidAt: null,
-      },
-    });
+    // Paid/refunded state is evidence; fixture replay must never erase it.
     return false;
   }
   await db.invoice.create({
@@ -281,7 +258,7 @@ async function ensureInvoice(db: FixtureDb) {
 }
 
 /**
- * Creates or repairs only the deterministic, non-customer WP4 staging fixture.
+ * Creates or reuses only the deterministic, non-customer WP4 staging fixture.
  * Any identity collision fails closed before an existing row can be repurposed.
  */
 export async function ensureWp4SandboxFixture(db: PrismaClient) {

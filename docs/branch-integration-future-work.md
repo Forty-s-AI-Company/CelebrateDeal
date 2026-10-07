@@ -1,3 +1,11 @@
+# 2026-10-06 新 session 接續 checkpoint（優先於下方歷史）
+
+- 主線核對 `2319c742`，F3.1 #369 已交付。
+- F1.1 #370 head `1d5bff45`：課程完整流程本機驗收通過；1067 Node TAP 全部通過、無skip；遠端CI執行中，尚未合併。
+- Q1 #371 Draft head `561ffdfe`：本機契約與DB通過；遠端CI未通過，固定sandbox指定交易驗收仍缺核准注入；不能發布。
+- F3.2 多步驟workspace已實作，先前disposable PG實際登入/save/reload/跨租戶browser通過，但最新review修正尚需重跑browser與複審；沒有canonical READY或PR。
+- 詳見 `docs/remaining-capabilities-session-handoff-20261006.md` 與 `docs/remaining-capabilities-f3.2-checkpoint-20261006.json`。整體Goal仍未完成；F2/Q2/A1及F1/F3其餘功能繼續承接。
+
 # 分支整合：未來處理與接手報告
 
 ## 2026-10-06 Q1 精確退款交接實作 checkpoint（尚未交付）
@@ -14,11 +22,15 @@ Q1 已實作精確 PENDING_REFUND CLI consumer 與唯讀 proof endpoint，沿用
 
 ## 2026-10-06 剩餘功能 Goal：編輯器生命週期交付候選
 
+## 2026-10-06 剩餘功能 Goal：編輯器生命週期已交付，課程流程實作中
+
 接手基準為 master `1cb2a32ea08e429de4e148ce24abc3d157b34f0c`，#368 已合併，接手時 open PR 為空。本節更新當前功能進度，保留下方來源與歷史收據。
 
-F3.1 已實作：相同父層文件回傳保留 Undo/Redo，外部文件替換重建 session，唯讀期間阻擋 toolbar/keyboard/workspace 還原；實際 WorkspaceEditor 以穩定 page ID 保留儲存後歷史。Callback 移出 React state updater，避免 Strict Mode 重複副作用。14 項 targeted unit、9 項 Chromium、TypeScript 與 ESLint PASS；獨立 reviewer 的儲存版本 key MAJOR 已修正，增量複審無 findings，canonical acceptance READY。精確 head CI 與受保護 PR 合併仍待交付，不能當作已合併。
+F3.1 已實作：相同父層文件回傳保留 Undo/Redo，外部文件替換重建 session，唯讀期間阻擋 toolbar/keyboard/workspace 還原；實際 WorkspaceEditor 以穩定 page ID 保留儲存後歷史。Callback 移出 React state updater，避免 Strict Mode 重複副作用。14 項 targeted unit、9 項 Chromium、TypeScript 與 ESLint PASS；獨立 reviewer 的儲存版本 key MAJOR 已修正，增量複審無 findings，canonical acceptance READY。PR [#369](https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/369) 已依 expected head squash merge 為 `2319c742f1455681ff08b720c193a2faf1545e27`；push run `37354840583` 與 PR run `37354873011` quality PASS。merge tree 與已驗收 head `00d43f4875489a1fa6f0b30a5cb2397f35fa3743` 無差異。
 
 工作矩陣見 [remaining-capabilities-work-matrix-20261005.md](remaining-capabilities-work-matrix-20261005.md)，本批新證據見 [remaining-capabilities-f3.1-local-receipt-20261006.json](remaining-capabilities-f3.1-local-receipt-20261006.json)。F1/F2/F3 其餘完整互動/Q1/Q2/A1/E1 仍未全部交付，Goal 保持 IN_PROGRESS。原始 dirty 目錄與來源分支未寫入，未操作正式環境或外部 provider。
+
+F1.1 正在接上商家發布單元、學員權益、持久化進度與證書，僅新增前向 migration。84 條 migration 與 7 項 PostgreSQL 回歸本機 PASS；一項完整 Chromium 原生課程旅程已通過，獨立 Critical review 的兩個 MINOR 已修正且增量複審無 findings；canonical acceptance READY，收據見 [remaining-capabilities-f1.1-local-receipt-20261006.json](remaining-capabilities-f1.1-local-receipt-20261006.json)。精確 head PR CI 與受保護合併仍待交付。社群、多語/PWA/通知、F2、Q1/Q2、A1 仍須完整實作。
 
 ## 2026-10-05 收尾處置（本節優先於下方歷史狀態）
 

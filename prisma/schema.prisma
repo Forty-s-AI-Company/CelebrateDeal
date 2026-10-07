@@ -182,6 +182,9 @@ model Vendor {
   consultationEvents               ConsultationEvent[]
   consultationBookings             ConsultationBooking[]
   studentPortalAccessTokens         StudentPortalAccessToken[]
+  courseLessons CourseLesson[]
+  courseLessonProgress CourseLessonProgress[]
+
 }
 
 model User {
@@ -290,6 +293,7 @@ model VendorMember {
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  affiliatePortalAccesses     AffiliatePortalAccess[]
   teamMemberships             TeamMembership[]
   createdTeamTemplateVersions TeamFunnelTemplateVersion[]   @relation("TeamTemplateVersionCreatedBy")
   templateFieldLocks          TeamFunnelTemplateFieldLock[]
@@ -420,6 +424,9 @@ model Product {
   @@index([vendorId, upsellProductId])
   @@index([vendorId, downsellProductId])
   @@index([imageAssetId])
+  courseLessons CourseLesson[]
+  courseLessonProgress CourseLessonProgress[]
+
 }
 
 model RegistrationForm {
@@ -1070,9 +1077,26 @@ model Affiliate {
   clicks          AffiliateClick[]
   commissions     AffiliateCommission[]
   payouts         AffiliatePayout[]
+  portalAccess    AffiliatePortalAccess?
   teamMemberships TeamMembership[]
 
   @@unique([vendorId, id])
+}
+
+/// Access is granted by a tenant manager to an existing tenant member.
+/// Composite FKs forbid linking a foreign member or affiliate.
+model AffiliatePortalAccess {
+  vendorId       String
+  affiliateId    String
+  vendorMemberId String
+  active         Boolean @default(true)
+  revision       Int @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  affiliate      Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Cascade)
+  member         VendorMember @relation(fields: [vendorId, vendorMemberId], references: [vendorId, id], onDelete: Cascade)
+  @@id([vendorId, affiliateId])
+  @@index([vendorId, vendorMemberId, active])
 }
 
 model AffiliateClick {
@@ -1298,6 +1322,8 @@ model PlatformReferralPayoutBatch {
 }
 
 model VendorUsageLimit {
+  /// Explicit revocation: zero limits retain their existing unlimited meaning.
+  entitlementStatus   String   @default("active")
   id                  String   @id @default(cuid())
   vendorId            String   @unique
   billingPlanId       String?
@@ -3577,3 +3603,47 @@ model StudentPortalAccessToken {
   @@index([vendorId, purpose, expiresAt])
 }
 
+
+/// Native curriculum belongs to exactly one vendor-qualified course product.
+model CourseLesson {
+  id              String   @id @default(cuid())
+  vendorId        String
+  productId       String
+  chapterTitle    String
+  title           String
+  videoUrl        String?
+  durationSeconds Int      @default(0)
+  position        Int
+  publishedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  vendor   Vendor                 @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product  Product                @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  progress CourseLessonProgress[]
+
+  @@unique([vendorId, id])
+  @@unique([vendorId, productId, id])
+  @@unique([vendorId, productId, position])
+  @@index([vendorId, productId, publishedAt])
+}
+
+/// The lesson FK includes its product, preventing cross-course progress even
+/// when a caller supplies a valid lesson ID from the same vendor.
+model CourseLessonProgress {
+  id              String    @id @default(cuid())
+  vendorId        String
+  productId       String
+  lessonId        String
+  customerKeyHash String
+  watchedSeconds  Int       @default(0)
+  completedAt     DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  vendor  Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product Product      @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)
+  lesson  CourseLesson @relation(fields: [vendorId, productId, lessonId], references: [vendorId, productId, id], onDelete: Cascade)
+
+  @@unique([vendorId, lessonId, customerKeyHash])
+  @@index([vendorId, productId, customerKeyHash])
+}

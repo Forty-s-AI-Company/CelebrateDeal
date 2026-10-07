@@ -1,3 +1,4 @@
+import { StreamQuotaExceededError } from "@/lib/stream-quota";
 import { getDb } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import { parseLiveQuotaPolicy } from "@/lib/live-quota-policy";
@@ -139,8 +140,9 @@ async function assertVendorStreamQuotaAvailable(input: {
 }) {
   const usageLimit = await input.tx.vendorUsageLimit.findUnique({
     where: { vendorId: input.vendorId },
-    select: { streamMinutesLimit: true, streamMinutesUsed: true, resetAt: true },
+    select: { entitlementStatus: true, streamMinutesLimit: true, streamMinutesUsed: true, resetAt: true },
   });
+  if (usageLimit?.entitlementStatus === "revoked") throw new StreamQuotaExceededError();
   const streamMinutesLimit = usageLimit?.streamMinutesLimit ?? 0;
   if (streamMinutesLimit <= 0) return null;
   const ledgerUsage = await input.tx.streamUsageLedgerEntry.aggregate({

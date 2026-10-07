@@ -1,17 +1,17 @@
 # CelebrateDeal Prisma Invariant Inventory
 
-最後更新：2026-10-04（Asia/Taipei）
+最後更新：2026-10-06（Asia/Taipei）
 
 基準 revision：`4ed3b463`
 
-> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前 chain 已增至 83，該歷史收據不代表新 migration、Staging 或 Production 已套用。
+> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 87，該歷史收據不代表新 migration、Staging 或 Production 已套用。
 
 ## Inventory 基準
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 123 |
-| Migration directories | 83 |
+| Prisma models | 126 |
+| Migration directories | 87 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -217,3 +217,13 @@
 新增 `StudentPortalAccessToken` 及 additive migration `20261004154500_student_portal_access_tokens`。tokenHash 全域唯一、vendor FK、vendor/customer/expiry 與 vendor/purpose/expiry 索引；CHECK 限制 15 分鐘期限與 digest 格式。RLS 啟用且沒有 anon/authenticated policy，只有 server database role 讀寫。
 
 原始 checkout_redirect purpose 僅保留 enum 相容，公開 access route 只接受 magic_link，單筆訂單 grant 不可取得整個帳戶權限。Consume 必須符合 tenant、customer、purpose、issuedAt、有效期限及 consumedAt=null，透過單次 updateMany 競爭唯一成功者。本機 disposable PostgreSQL 17 已 forward-apply 全部 83 條 migration；13 項 DB 測試驗證單次競爭、tenant/customer、expiry/purpose、FK/unique/TTL、RLS catalog 與優惠券商品狀態。2 項登入／登出及 checkout grant 邊界 browser 測試通過；獨立審查 findings 已修正。RLS 證據限 catalog，不宣稱 Data API role 實測；不冒稱 Staging/Production 已套用。
+
+## 2026-10-06 原生課程候選
+
+新增 `CourseLesson` 與 `CourseLessonProgress`；前向 migration `20261006040000_native_course_learning`。三欄位 lesson 外鍵同時約束 tenant、course、lesson，進度具非負上限約束。此候選的 disposable PostgreSQL 證據尚待執行，不沿用上方歷史收據。
+
+F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。
+
+Q2 本輪前向新增 `20261006140000_subscription_refund_entitlement_state`；既有126models不變，VendorUsageLimit新增active/revoked權限狀態。初次86 migration完整套用及51 PostgreSQL回歸PASS；之後擴充native退款backfill至byo訂閱快照，需重新驗證新revision。歷史migration/checksum保持原樣。
+
+Q2 新增 forward migration `20261007002000_reconcile_legacy_subscription_refund_state`：以既有完整 processed refund ledger 修復 native subscription 權益；保留較新 active subscription 與 usage counters，既有 migration checksum 不變。87 migrations disposable PostgreSQL 完整套用通過；latest-head DB/browser 收據仍待完成。

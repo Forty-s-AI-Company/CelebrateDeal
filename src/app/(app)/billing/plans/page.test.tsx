@@ -217,11 +217,11 @@ describe("/billing/plans route", () => {
     const stale = renderToStaticMarkup(await BillingPlansPage(query));
     expect(stale).not.toContain('action="https://api.payuni.com.tw/api/upp"');
   });
-  it("queries only active billing plans", async () => {
+  it("queries only active ordinary plans and excludes global synthetic fixtures", async () => {
     await BillingPlansPage({});
 
     expect(mocks.findMany).toHaveBeenCalledWith({
-      where: { isActive: true },
+      where: { OR: [{ isActive: true, id: { not: "wp4_synthetic_plan_v1" } }] },
       orderBy: { monthlyPriceCents: "asc" },
     });
     expect(mocks.subscriptionFindFirst).toHaveBeenCalledWith({
