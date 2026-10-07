@@ -1086,6 +1086,7 @@ model Affiliate {
   commissions     AffiliateCommission[]
   payouts         AffiliatePayout[]
   portalAccess    AffiliatePortalAccess?
+  payeeProfile   AffiliatePayeeProfile?
   teamMemberships TeamMembership[]
 
   merchantCheckoutSnapshots MerchantAffiliateCheckoutSnapshot[]
@@ -2448,10 +2449,65 @@ model AffiliatePayout {
 
   vendor    Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   affiliate Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  remunerationSnapshots AffiliateRemunerationSnapshot[]
 
+  @@unique([vendorId, affiliateId, id])
   @@unique([vendorId, affiliateId, monthKey])
   @@index([vendorId, monthKey])
   @@index([affiliateId, status])
+}
+
+/// Private merchant payee data. Every edit invalidates classification approval;
+/// approval belongs to an exact revision, never a browser-declared tax status.
+model AffiliatePayeeProfile {
+  vendorId String
+  affiliateId String
+  revision Int @default(0)
+  bankEncrypted String
+  taxIdentityEncrypted String
+  recipientType String
+  nhiTreatment String
+  exemptionReference String?
+  invoiceReference String?
+  approvedRevision Int?
+  approvedByUserId String?
+  approvedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  affiliate Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  @@id([vendorId, affiliateId])
+}
+
+/// A signed quote snapshots the exact payable/profile/policy revision. A new
+/// refund or adjustment requires a new revision and signature before export.
+model AffiliateRemunerationSnapshot {
+  id String @id @default(cuid())
+  vendorId String
+  affiliateId String
+  payoutId String
+  revision Int
+  profileRevision Int
+  ruleVersion String
+  grossAmountCents Int
+  withholdingTaxCents Int
+  nhiSupplementaryTaxCents Int
+  bankFeeCents Int
+  netPayoutAmountCents Int
+  bankEncrypted String
+  taxIdentityEncrypted String
+  recipientType String
+  nhiTreatment String
+  exemptionReference String?
+  invoiceReference String?
+  status String @default("quoted")
+  signedByUserId String?
+  signedAt DateTime?
+  invalidatedAt DateTime?
+  exportedAt DateTime?
+  createdAt DateTime @default(now())
+  payout AffiliatePayout @relation(fields: [vendorId, affiliateId, payoutId], references: [vendorId, affiliateId, id], onDelete: Restrict)
+  @@unique([vendorId, payoutId, revision])
+  @@index([vendorId, affiliateId, status])
 }
 
 /// Merchant-owned course revenue-share snapshot. This is deliberately separate
