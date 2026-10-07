@@ -185,6 +185,13 @@ model Vendor {
   courseLessons CourseLesson[]
   courseLessonProgress CourseLessonProgress[]
 
+  merchantAffiliatePolicies MerchantAffiliatePolicy[]
+  merchantAffiliatePolicyState MerchantAffiliatePolicyState?
+  merchantAffiliateCheckoutSnapshots MerchantAffiliateCheckoutSnapshot[]
+  merchantAffiliateCheckoutRecipients MerchantAffiliateCheckoutRecipient[]
+  merchantAffiliateCounters MerchantAffiliateSalesCounter[]
+  merchantAffiliateCalculations MerchantAffiliateCalculation[]
+  merchantAffiliateProductRates MerchantAffiliateProductRate[]
 }
 
 model User {
@@ -466,6 +473,7 @@ model Product {
   downsellForProducts           Product[]                       @relation("ProductDownsell")
   salesProjectLinks           SalesProjectProduct[]
 
+  merchantAffiliateRates MerchantAffiliateProductRate[]
   @@unique([vendorId, id])
   @@unique([vendorId, slug])
   @@index([vendorId, commerceDomain, isActive])
@@ -1130,6 +1138,9 @@ model Affiliate {
   portalAccess    AffiliatePortalAccess?
   teamMemberships TeamMembership[]
 
+  merchantCheckoutSnapshots MerchantAffiliateCheckoutSnapshot[]
+  merchantCheckoutRecipients MerchantAffiliateCheckoutRecipient[]
+  merchantSalesCounter MerchantAffiliateSalesCounter?
   @@unique([vendorId, id])
 }
 
@@ -1658,6 +1669,7 @@ model PaymentTransaction {
   commerceOrderRefunds        CommerceOrderRefund[]
   supportRefundHandoffs       SupportRefundHandoff[]
 
+  merchantAffiliateSnapshot MerchantAffiliateCheckoutSnapshot?
   @@unique([vendorId, id])
   @@unique([vendorId, checkoutIdempotencyKey])
   @@index([vendorId, occurredAt])
@@ -1711,6 +1723,7 @@ model CommerceOrder {
   deliverySnapshots         CommerceOrderItemDeliverySnapshot[]
   electronicInvoice         ElectronicInvoice?
 
+  merchantAffiliateSnapshot MerchantAffiliateCheckoutSnapshot?
   @@unique([vendorId, id])
   @@unique([vendorId, orderNumber])
   @@unique([vendorId, checkoutIdempotencyKey])
@@ -1719,6 +1732,7 @@ model CommerceOrder {
   @@index([vendorId, projectId, status, createdAt])
   @@index([vendorId, isTestOrder, status, createdAt])
   @@index([vendorId, paidAt])
+  @@unique([vendorId, primaryPaymentTransactionId, id])
 }
 
 /// Immutable commercial terms captured at purchase time. Product fields remain
@@ -2345,10 +2359,19 @@ model AffiliateCommission {
   affiliate     Affiliate?                       @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
   ledgerEntries AffiliateCommissionLedgerEntry[]
 
+  /// Legacy flat commissions leave these fields null; new rows bind one
+  /// checkout, immutable calculation and the same tenant's beneficiary.
+  merchantCheckoutId String?
+  merchantCalculationId String?
+  merchantRecipientId String?
+  merchantLevel Int?
+  merchantCalculation MerchantAffiliateCalculation? @relation(fields: [vendorId, merchantCheckoutId, merchantCalculationId], references: [vendorId, checkoutId, id], onDelete: Restrict)
+  merchantRecipient MerchantAffiliateCheckoutRecipient? @relation(fields: [vendorId, merchantCheckoutId, merchantRecipientId, affiliateId], references: [vendorId, checkoutId, id, affiliateId], onDelete: Restrict)
   @@unique([vendorId, id])
   @@unique([vendorId, deduplicationKey])
   @@index([vendorId, monthKey])
   @@index([affiliateId, status])
+  @@unique([vendorId, merchantCalculationId, affiliateId])
 }
 
 /// Immutable accounting entries. Operational commission status remains separate
@@ -2459,6 +2482,7 @@ model AffiliatePayout {
   monthKey                String
   commissionAmountCents   Int       @default(0)
   adjustmentAmountCents   Int       @default(0)
+  heldAmountCents       Int @default(0)
   finalAmountCents        Int       @default(0)
   /// Human-entered sanitized transfer/provider reference required before paid.
   outcomeReference        String?
@@ -2679,6 +2703,7 @@ model TeamMembership {
   streamUsageAllocationsReceived       StreamUsageAllocationEntry[]
   paymentMethodReferences              PaymentMethodReference[]
 
+  merchantAffiliateRecipients MerchantAffiliateCheckoutRecipient[]
   @@unique([teamId, vendorMemberId])
   @@unique([vendorId, affiliateId])
   @@unique([teamId, id])
@@ -3696,4 +3721,105 @@ model CourseLessonProgress {
 
   @@unique([vendorId, lessonId, customerKeyHash])
   @@index([vendorId, productId, customerKeyHash])
+}
+
+model MerchantAffiliatePolicy {
+  id String @id @default(cuid())
+  vendorId String
+  version Int
+  terms Json
+  createdAt DateTime @default(now())
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  activeStates MerchantAffiliatePolicyState[]
+  productRates MerchantAffiliateProductRate[]
+  checkoutSnapshots MerchantAffiliateCheckoutSnapshot[]
+  @@unique([vendorId, id])
+  @@unique([vendorId, version])
+}
+model MerchantAffiliatePolicyState {
+  vendorId String @id
+  activePolicyId String?
+  revision Int @default(0)
+  updatedAt DateTime @updatedAt
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  activePolicy MerchantAffiliatePolicy? @relation(fields: [vendorId, activePolicyId], references: [vendorId, id], onDelete: Restrict)
+}
+model MerchantAffiliateProductRate {
+  vendorId String
+  policyId String
+  productId String
+  rateBps Int
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  policy MerchantAffiliatePolicy @relation(fields: [vendorId, policyId], references: [vendorId, id], onDelete: Restrict)
+  product Product @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Restrict)
+  @@id([policyId, productId])
+  @@index([vendorId, productId])
+}
+/// Frozen in the same transaction as the canonical order and stock reservation.
+model MerchantAffiliateCheckoutSnapshot {
+  id String @id @default(cuid())
+  vendorId String
+  paymentTransactionId String
+  orderId String
+  policyId String?
+  fixedRateBps Int?
+  promoterAffiliateId String
+  currency String
+  grossAmountCents Int
+  lines Json
+  recipientTerms Json
+  createdAt DateTime @default(now())
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  payment PaymentTransaction @relation(fields: [vendorId, paymentTransactionId], references: [vendorId, id], onDelete: Restrict, map: "MerchantAffiliateCheckout_payment_fkey")
+  order CommerceOrder @relation(fields: [vendorId, paymentTransactionId, orderId], references: [vendorId, primaryPaymentTransactionId, id], onDelete: Restrict, map: "MerchantAffiliateCheckout_order_fkey")
+  policy MerchantAffiliatePolicy? @relation(fields: [vendorId, policyId], references: [vendorId, id], onDelete: Restrict)
+  promoter Affiliate @relation(fields: [vendorId, promoterAffiliateId], references: [vendorId, id], onDelete: Restrict)
+  recipients MerchantAffiliateCheckoutRecipient[]
+  calculation MerchantAffiliateCalculation?
+  @@unique([vendorId, id])
+  @@unique([vendorId, paymentTransactionId], map: "MerchantAffiliateCheckout_payment_key")
+  @@unique([vendorId, orderId])
+  @@unique([vendorId, paymentTransactionId, orderId], map: "MerchantAffiliateCheckout_payment_order_key")
+}
+model MerchantAffiliateCheckoutRecipient {
+  id String @id @default(cuid())
+  vendorId String
+  checkoutId String
+  affiliateId String
+  teamId String?
+  teamMembershipId String?
+  level Int
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  checkout MerchantAffiliateCheckoutSnapshot @relation(fields: [vendorId, checkoutId], references: [vendorId, id], onDelete: Restrict)
+  affiliate Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  membership TeamMembership? @relation(fields: [vendorId, teamId, teamMembershipId], references: [vendorId, teamId, id], onDelete: Restrict)
+  commissions AffiliateCommission[]
+  @@unique([vendorId, checkoutId, level])
+  @@unique([vendorId, checkoutId, affiliateId])
+  @@unique([vendorId, checkoutId, id, affiliateId])
+}
+/// Only first successful payment increments this lifetime qualified counter.
+model MerchantAffiliateSalesCounter {
+  vendorId String
+  affiliateId String
+  quantity BigInt @default(0)
+  updatedAt DateTime @updatedAt
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  affiliate Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  @@id([vendorId, affiliateId])
+}
+/// Includes zero-cent plans so replay never consumes tier quantity twice.
+model MerchantAffiliateCalculation {
+  id String @id @default(cuid())
+  vendorId String
+  checkoutId String
+  qualifiedQuantityBefore BigInt
+  qualifiedQuantityAfter BigInt
+  plan Json
+  createdAt DateTime @default(now())
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  checkout MerchantAffiliateCheckoutSnapshot @relation(fields: [vendorId, checkoutId], references: [vendorId, id], onDelete: Restrict)
+  commissions AffiliateCommission[]
+  @@unique([vendorId, checkoutId])
+  @@unique([vendorId, checkoutId, id])
 }

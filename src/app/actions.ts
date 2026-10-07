@@ -14,7 +14,8 @@ import {
 } from "@/lib/auth";
 import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
 import { AffiliateCommissionRateBps } from "@/lib/affiliate-commission";
-import { appendCommissionLedgerEntry, commissionLedgerBalance } from "@/lib/affiliate-commission-accounting";
+import { AffiliatePayoutMutationConflict, payoutCommissionAmount } from "@/lib/affiliate-payout-accounting";
+import { appendCommissionLedgerEntry, commissionLedgerPayableState } from "@/lib/affiliate-commission-accounting";
 import { encryptBankAccount, maskBankAccount, resolveStoredBankAccount } from "@/lib/bank-account";
 import { monthRange, payoutBatchNumber } from "@/lib/billing";
 import { BillingCycleError, generateSettlementForVendor } from "@/lib/billing-cycle";
@@ -147,7 +148,6 @@ function moneyToCents(formData: FormData, key: string, fallback = 0) {
 class RefundValidationError extends Error {}
 class PayoutBatchClaimConflict extends Error {}
 class SettlementMutationConflict extends Error {}
-class AffiliatePayoutMutationConflict extends Error {}
 
 function isDatabaseTransactionConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error &&
@@ -1665,19 +1665,23 @@ export async function lockSettlementAction(formData: FormData) {
       });
       const payoutSnapshotsByAffiliate = new Map<string, {
         commissionAmountCents: number;
+        heldAmountCents: number;
         grossSalesAmountCents: number;
         netReferenceAmountCents: number;
       }>();
       for (const commission of lockedCommissions) {
         if (!commission.affiliateId) continue;
-        const balance = await commissionLedgerBalance(tx, settlement.vendorId, commission.id);
+        const payable = await commissionLedgerPayableState(tx, settlement.vendorId, commission.id);
+        const balance = payable.balanceCents;
         const current = payoutSnapshotsByAffiliate.get(commission.affiliateId) ?? {
           commissionAmountCents: 0,
+          heldAmountCents: 0,
           grossSalesAmountCents: 0,
           netReferenceAmountCents: 0,
         };
         const next = {
           commissionAmountCents: current.commissionAmountCents + balance,
+          heldAmountCents: current.heldAmountCents + payable.heldCents,
           grossSalesAmountCents: current.grossSalesAmountCents + commission.commissionBaseAmountCents,
           netReferenceAmountCents: current.netReferenceAmountCents + commission.netReferenceAmountCents,
         };
@@ -1686,7 +1690,7 @@ export async function lockSettlementAction(formData: FormData) {
       }
 
       for (const [affiliateId, snapshot] of payoutSnapshotsByAffiliate) {
-        const { commissionAmountCents, grossSalesAmountCents, netReferenceAmountCents } = snapshot;
+        const { commissionAmountCents, heldAmountCents, grossSalesAmountCents, netReferenceAmountCents } = snapshot;
         // A zero balance is a valid locked commission state but is not an
         // amount payable to a merchant's affiliate.
         if (commissionAmountCents === 0) continue;
@@ -1703,6 +1707,7 @@ export async function lockSettlementAction(formData: FormData) {
         if (existingPayout) {
           if (
             existingPayout.commissionAmountCents !== commissionAmountCents
+            || (existingPayout.heldAmountCents ?? 0) !== heldAmountCents
             || existingPayout.adjustmentAmountCents !== 0
             || existingPayout.finalAmountCents !== commissionAmountCents
             || (typeof existingPayout.grossSalesAmountCents === "number" && existingPayout.grossSalesAmountCents !== grossSalesAmountCents)
@@ -1719,6 +1724,7 @@ export async function lockSettlementAction(formData: FormData) {
             affiliateId,
             monthKey: settlement.monthKey,
             commissionAmountCents,
+            heldAmountCents,
             adjustmentAmountCents: 0,
             finalAmountCents: commissionAmountCents,
             grossSalesAmountCents,
@@ -1805,15 +1811,16 @@ export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
         },
         select: { id: true, affiliateId: true, status: true },
       });
-      if (commissions.length === 0 || commissions.some((commission) => commission.status !== "locked" || commission.affiliateId !== payout.affiliateId)) {
+      if (commissions.length === 0 || commissions.some((commission) => !["locked", "void"].includes(commission.status) || commission.affiliateId !== payout.affiliateId)) {
         throw new AffiliatePayoutMutationConflict();
       }
 
       const balances = [] as Array<{ id: string; amountCents: number }>;
       let commissionTotalCents = 0;
       for (const commission of commissions) {
-        const amountCents = await commissionLedgerBalance(tx, vendor.id, commission.id);
-        if (amountCents < 0) throw new AffiliatePayoutMutationConflict();
+        const payable = await commissionLedgerPayableState(tx, vendor.id, commission.id);
+        const amountCents = payoutCommissionAmount(commission.status, status, payable);
+        if (amountCents === null) continue;
         balances.push({ id: commission.id, amountCents });
         commissionTotalCents += amountCents;
       }
@@ -1849,12 +1856,12 @@ export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
       const commissionClaim = await tx.affiliateCommission.updateMany({
         where: {
           vendorId: vendor.id,
-          id: { in: commissions.map((commission) => commission.id) },
+          id: { in: balances.map((commission) => commission.id) },
           status: "locked",
         },
         data: { status, settledAt: transitionedAt },
       });
-      if (commissionClaim.count !== commissions.length) throw new AffiliatePayoutMutationConflict();
+      if (commissionClaim.count !== balances.length) throw new AffiliatePayoutMutationConflict();
 
       const updated = await tx.affiliatePayout.findUnique({ where: { id: payout.id } });
       if (!updated || updated.vendorId !== vendor.id || updated.status !== status) {

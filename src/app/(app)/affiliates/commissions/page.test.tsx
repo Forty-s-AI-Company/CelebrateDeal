@@ -45,6 +45,7 @@ const pendingPayout = {
   monthKey: "2026-07",
   commissionAmountCents: 500,
   adjustmentAmountCents: 0,
+  heldAmountCents: 0,
   finalAmountCents: 500,
   status: "pending",
   payoutItemId: null,
@@ -136,6 +137,14 @@ describe("/affiliates/commissions route", () => {
     expect(html).not.toContain('name="reason"');
     expect(html).not.toContain('placeholder="付款備註"');
     expect(html).not.toContain('placeholder="作廢原因"');
+  });
+
+  it("shows dispute holds and refuses payment controls while the payout is held", async () => {
+    mocks.payoutFindMany.mockResolvedValue([{ ...pendingPayout, heldAmountCents: 500 }]);
+    const html = renderToStaticMarkup(await AffiliateCommissionsPage({}));
+    expect(html).toContain("爭議暫扣：$5");
+    expect(html).not.toContain("標記已付款");
+    expect(html).not.toContain('name="status" value="paid"');
   });
 
   it("renders only allowlisted action errors", async () => {

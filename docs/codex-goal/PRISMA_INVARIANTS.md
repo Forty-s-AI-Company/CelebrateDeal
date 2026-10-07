@@ -11,6 +11,7 @@
 
 | 項目 | 結果 |
 |---|---:|
+| Prisma models | 133 |
 | Prisma models | 129 |
 | Migration directories | 88 |
 | Isolated PostgreSQL version | 18.3 |
@@ -238,4 +239,7 @@ Q2 本輪前向新增 `20261006140000_subscription_refund_entitlement_state`；�
 
 Q2 新增 forward migration `20261007002000_reconcile_legacy_subscription_refund_state`：以既有完整 processed refund ledger 修復 native subscription 權益；保留較新 active subscription 與 usage counters，既有 migration checksum 不變。87 migrations disposable PostgreSQL 完整套用通過；latest-head DB/browser 收據仍待完成。
 
+Current integrated inventory: `20261006120000_merchant_affiliate_policy_snapshots`, `MerchantAffiliatePolicy`, `MerchantAffiliatePolicyState`, `MerchantAffiliateProductRate`, `MerchantAffiliateCheckoutSnapshot`, `MerchantAffiliateCheckoutRecipient`, `MerchantAffiliateSalesCounter`, `MerchantAffiliateCalculation`
 Current integrated inventory: 
+
+Commission integration with delivered community a5964d83: 136 models and 89 canonical forward migrations. Both community and immutable merchant-affiliate snapshot migrations retained. Updated exact inventory assertions without exclusions or reduced checks; fresh validation pending.
