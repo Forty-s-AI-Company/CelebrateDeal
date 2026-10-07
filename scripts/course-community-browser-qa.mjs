@@ -8,6 +8,8 @@ import { main as runMigration } from "./prisma-loopback-disposable-migration-run
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const receipt = { schemaVersion: "course-community-browser/v1", status: "NOT_STARTED", tests: { total: 0, passed: 0, failed: 0, skipped: 0 }, cleanup: null, startedAt: new Date().toISOString(), finishedAt: null };
 const includeBrowser = process.argv.includes("--browser");
+const guardMatrix = process.argv.includes("--guard-matrix");
+receipt.browserScope = guardMatrix ? "complete-direct-url-guard-matrix" : "course-community";
 const migration = await runMigration({ afterMigrate: async ({ databaseUrl, environment, tempRoot }) => {
   const output = path.join(tempRoot, "course-vitest.json");
   const child = spawnSync(process.execPath, [path.join(root, "node_modules/vitest/vitest.mjs"), "run", "--config", "vitest.course-community-db.config.ts", "--reporter=json", "--outputFile", output], {
@@ -33,7 +35,7 @@ const migration = await runMigration({ afterMigrate: async ({ databaseUrl, envir
     fs.copyFileSync(path.join(root, "scripts/local-database-safety.ts"), path.join(mirror, "scripts/local-database-safety.ts"));
     fs.symlinkSync(path.join(root, "node_modules"), path.join(mirror, "node_modules"), process.platform === "win32" ? "junction" : "dir");
     const browserReport = path.join(tempRoot, "course-browser.json");
-    const browser = spawnSync(process.execPath, [path.join(root, "node_modules/@playwright/test/cli.js"), "test", "--config", "playwright.course-community.config.ts", "--fail-on-flaky-tests"], {
+    const browser = spawnSync(process.execPath, [path.join(root, "node_modules/@playwright/test/cli.js"), "test", "--config", guardMatrix ? "playwright.course-community-guard.config.ts" : "playwright.course-community.config.ts", "--fail-on-flaky-tests"], {
       cwd: root, windowsHide: true, encoding: "utf8", maxBuffer: 8 * 1024 * 1024,
       env: { ...environment, DATABASE_URL: databaseUrl, DIRECT_URL: databaseUrl, COURSE_BROWSER_MIRROR: mirror, COURSE_BROWSER_REPORT: browserReport, PLAYWRIGHT_EXECUTABLE_PATH: executable, E2E_PORT: "31032", E2E_BASE_URL: "http://127.0.0.1:31032", NEXT_PUBLIC_APP_URL: "http://127.0.0.1:31032", E2E_TEST_MODE: "true" },
     });
@@ -47,7 +49,7 @@ const migration = await runMigration({ afterMigrate: async ({ databaseUrl, envir
 receipt.status = migration.status;
 receipt.cleanup = migration.cleanup;
 receipt.finishedAt = new Date().toISOString();
-const destination = path.join(root, ".ai-team/reports/course-community-browser-receipt.json");
+const destination = path.join(root, guardMatrix ? ".ai-team/reports/course-community-guard-browser-receipt.json" : ".ai-team/reports/course-community-browser-receipt.json");
 fs.mkdirSync(path.dirname(destination), { recursive: true });
 fs.writeFileSync(destination, `${JSON.stringify(receipt, null, 2)}\n`);
 process.stdout.write(`${JSON.stringify(receipt)}\n`);
