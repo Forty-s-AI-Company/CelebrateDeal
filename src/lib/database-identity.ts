@@ -7,6 +7,8 @@ const STAGING_APP_ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.i
 const STAGING_R2_BUCKET = "celebrate-deal-staging";
 const STAGING_PAYMENT_TEST_BRANCH = "codex/prelaunch-engineering-20260929";
 
+export const WP4_STAGING_BINDING = Object.freeze({ projectId: STAGING_VERCEL_PROJECT_ID, appOrigin: STAGING_APP_ORIGIN });
+
 export type StagingDatabaseIdentityReport = {
   supabase_url_match: boolean;
   database_url_match: boolean;

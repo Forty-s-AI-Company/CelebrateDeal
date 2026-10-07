@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   findSession: vi.fn(),
   findUser: vi.fn(),
+  findWp4Member: vi.fn(),
   redirect: vi.fn(),
   updateUser: vi.fn(),
   verifyPasswordAsync: vi.fn(),
@@ -16,6 +17,7 @@ vi.mock("@/lib/db", () => ({
   getDb: () => ({
     userSession: { create: mocks.createSession, findUnique: mocks.findSession },
     user: { findUnique: mocks.findUser, update: mocks.updateUser },
+    vendorMember: { findFirst: mocks.findWp4Member },
   }),
 }));
 vi.mock("@/lib/mfa", () => ({ decryptMfaSecret: vi.fn() }));
@@ -115,16 +117,22 @@ describe("createUserSession", () => {
   it("only creates an MFA-verified session through the guarded WP4 helper", async () => {
     mocks.createSession.mockResolvedValue({ id: "session-1" });
     mocks.updateUser.mockResolvedValue({ id: "user-1" });
+    mocks.findWp4Member.mockResolvedValue({ id: "synthetic-member" });
+    vi.stubEnv("VERCEL_PROJECT_ID", "");
+    vi.stubEnv("WP4_DISPOSABLE_RUNNER_MARKER", "verified-loopback");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://127.0.0.1:3000");
+    vi.stubEnv("DATABASE_URL", "postgresql://synthetic:synthetic@127.0.0.1:5433/celebratedeal_test");
+    vi.stubEnv("DIRECT_URL", "postgresql://synthetic:synthetic@127.0.0.1:5433/celebratedeal_test");
     vi.stubEnv("VERCEL_ENV", "preview");
     vi.stubEnv("PAYUNI_ENV", "sandbox");
     vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true");
 
-    await createWp4PreviewMfaVerifiedSession({ userId: "user-1", vendorId: "vendor-1" });
+    await createWp4PreviewMfaVerifiedSession({ userId: "wp4_synthetic_owner_v1", vendorId: "wp4_synthetic_vendor_v1" });
 
     expect(mocks.createSession).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        userId: "user-1",
-        vendorId: "vendor-1",
+        userId: "wp4_synthetic_owner_v1",
+        vendorId: "wp4_synthetic_vendor_v1",
         mfaVerifiedAt: expect.any(Date),
       }),
     });
