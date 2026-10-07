@@ -92,3 +92,9 @@ A1 domain workflow migration: exact source `bf45235f8b10fa1fded2da0a4c079e5b883c
 F2 referral sharing 根因更新：Next16.3.8 的 NextRequest 將 127.0.0.1 正規化為 localhost，原驗證303回跳跨cookie主機。已以真正NextRequest重現並改用共享可信browser-return origin，付款helper保留既有wrapper。新增精確主機與cookiepath unit、移除暫時診斷。最新source `sha256:100ef87c2deb33d4da214faac26fe7f31501f2ffc27c94ef5ef5fcb7ab322f29`，31 targeted unit/lint通過；canonical完整runner與review dispatch3/4執行中，尚未READY或交付。
 
 F2 referral sharing 最終候選 `sha256:4312b55a723fcee2d951fa9131c3f827fcfd035da1d31f4ea261a45ffd193fff`：31 unit、lint、TS、87 migrations、6DB、2actualbrowser zero skip/flaky、cleanup、獨立Critical review dispatch4/4全部PASS；22sourcebytes與Gitobjects完全一致，實際assess_acceptance READY。證據 `docs/remaining-capabilities-f2-referral-share-final-canonical-ready-20261008.json`。目前待精確head CI與受保護PR交付，整體Goal仍IN_PROGRESS。
+
+### F2 referral CI correction 2026-10-08
+
+Exact e968 head CI failed at unit/coverage. Complete local reproduction: 4668 passed, one legacy synchronous page-render test failed, cleanup PASS. Root changed only that unit renderer to asynchronous SSR, retained assertions and added forged-status denial checks; 6 focused tests and lint PASS. Complete unchanged coverage gate rerun active (session85409). No new head pushed, no merge, no current candidate READY claim.
+
+Complete referral correction Git-blob mirror coverage passed: 638 Vitest files / 4669 tests, 1067 Node TAP, zero skip, all unchanged global/library coverage floors met, 87 disposable migrations, cleanup PASS. Historical three CRLF checksum failures retained; no checksum changed. New local correction commit and main integration still require current-source DB/browser and exact-head CI before delivery.
