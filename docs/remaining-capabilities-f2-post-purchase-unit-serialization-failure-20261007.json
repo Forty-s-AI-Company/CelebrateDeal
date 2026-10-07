@@ -1,0 +1,67 @@
+{
+  "total": 169,
+  "passed": 161,
+  "failed": 8,
+  "skipped": 0,
+  "failures": [
+    {
+      "file": "src/app/api/checkout/upsell/route.test.ts",
+      "locations": [
+        "index.js:1487:10",
+        "index.js:1156:15",
+        "index.js:1700:25",
+        "route.test.ts:72:32",
+        "chunk-artifact.js:1903:20"
+      ]
+    },
+    {
+      "file": "src/app/api/checkout/upsell/route.test.ts",
+      "locations": [
+        "route.test.ts:121:29",
+        "chunk-artifact.js:1903:20"
+      ]
+    },
+    {
+      "file": "src/app/api/checkout/upsell/route.test.ts",
+      "locations": [
+        "route.test.ts:128:52",
+        "chunk-artifact.js:1903:20"
+      ]
+    },
+    {
+      "file": "src/app/api/checkout/upsell/route.test.ts",
+      "locations": [
+        "route.test.ts:137:44",
+        "chunk-artifact.js:1903:20"
+      ]
+    },
+    {
+      "file": "src/app/api/checkout/upsell/route.test.ts",
+      "locations": [
+        "route.test.ts:150:29",
+        "chunk-artifact.js:1903:20"
+      ]
+    },
+    {
+      "file": "src/app/api/checkout/upsell/route.test.ts",
+      "locations": [
+        "route.test.ts:161:31",
+        "chunk-artifact.js:1903:20"
+      ]
+    },
+    {
+      "file": "src/app/api/checkout/upsell/route.test.ts",
+      "locations": [
+        "route.test.ts:168:29",
+        "chunk-artifact.js:1903:20"
+      ]
+    },
+    {
+      "file": "src/app/api/checkout/upsell/route.test.ts",
+      "locations": [
+        "route.test.ts:168:29",
+        "chunk-artifact.js:1903:20"
+      ]
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import { safeParseCustomCheckoutFields } from "@/lib/commerce-custom-checkout";
 import { getDb } from "@/lib/db";
 import { FunnelCheckoutReferenceSchema } from "@/lib/funnel-commerce";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { assertPostPurchaseCreditReplay, postPurchaseRequestCookies, PostPurchaseUnavailableError } from "@/lib/post-purchase-credit";
 
 const RecoveryRequest = z.object({
   vendorId: z.string().trim().min(1).max(128),
@@ -123,6 +124,18 @@ export async function POST(request: Request) {
   }
   if (transaction.status !== "pending") {
     return NextResponse.json({ error: "Checkout request already finished" }, { status: 409 });
+  }
+  if (metadata.postPurchaseCredit) {
+    try {
+      if (!transaction.primaryCommerceOrder) throw new PostPurchaseUnavailableError();
+      await assertPostPurchaseCreditReplay(getDb(), postPurchaseRequestCookies(request), {
+        vendorId, productId, targetOrderId: transaction.primaryCommerceOrder.id,
+      });
+    } catch (error) {
+      return NextResponse.json({ error: "Checkout recovery unavailable" }, {
+        status: error instanceof PostPurchaseUnavailableError ? 409 : 503, headers: { "Cache-Control": "private, no-store" },
+      });
+    }
   }
   return recoverySnapshotResponse(transaction.primaryCommerceOrder, metadata, parsed.data);
 }

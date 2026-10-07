@@ -1,0 +1,15 @@
+{
+  "gate": "full_node_tap_lf_mirror",
+  "git_head": "f739c7e017d430f05cc10a85728f5335e1bc20be",
+  "source_revision": "sha256:dcc6f1b80f9c881090a78bef47da8bcfe1e93b5b085906446851803c99cbd547",
+  "source_files": 3705,
+  "exit_code": 0,
+  "counts": [
+    "# tests 1067",
+    "# pass 1067",
+    "# fail 0",
+    "# skipped 0"
+  ],
+  "sourceEnvFilesRead": false,
+  "skippedSensitive": 3
+}

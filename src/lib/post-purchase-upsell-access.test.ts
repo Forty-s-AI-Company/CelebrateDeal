@@ -132,4 +132,29 @@ describe("paid-order post-purchase offer access", () => {
       vendorId: vendor.id, orderId: order.id, kind: "upsell",
     })).resolves.toBeNull();
   });
+
+  it.each([
+    { label: "test", change: { isTestOrder: true } },
+    { label: "unsettled", change: { paidAmountCents: 0 } },
+    { label: "underpaid", change: { paidAmountCents: 9_000 } },
+    { label: "refunded", change: { refundedAmountCents: 1_000, status: "partially_refunded" as const } },
+  ])("refuses $label source money as upgrade credit", async ({ change }) => {
+    const vendor = await createVendor("SourceMoney");
+    const { source } = await createConfiguredProducts(vendor.id);
+    const order = await createPaidOrder({ vendorId: vendor.id, items: [{ productId: source.id }], totalAmountCents: 10_000 });
+    await getDb().commerceOrder.update({ where: { id: order.id }, data: change });
+    await expect(resolvePaidOrderPostPurchaseOffer(getDb(), {
+      vendorId: vendor.id, orderId: order.id, kind: "upsell",
+    })).resolves.toBeNull();
+  });
+
+  it("keeps the database ceiling that rejects overpaid source snapshots", async () => {
+    const vendor = await createVendor("Overpaid");
+    const { source } = await createConfiguredProducts(vendor.id);
+    const order = await createPaidOrder({ vendorId: vendor.id, items: [{ productId: source.id }], totalAmountCents: 10_000 });
+    await expect(getDb().commerceOrder.update({
+      where: { id: order.id }, data: { paidAmountCents: 11_000 },
+    })).rejects.toThrow();
+    expect((await getDb().commerceOrder.findUniqueOrThrow({ where: { id: order.id } })).paidAmountCents).toBe(10_000);
+  });
 });

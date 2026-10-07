@@ -118,6 +118,11 @@ export default async function PaymentResultPage({ searchParams }: {
                   <div><dt className="text-slate-500">退款金額</dt><dd className="mt-1 font-semibold text-slate-950">{formatAmount(grant.order.refundedAmountCents, grant.order.currency)}</dd></div>
                 </dl>
                 <div className="mt-5 flex flex-wrap gap-4 border-t border-slate-200 pt-4 text-sm">
+                  {grant.order.status === "paid" && grant.order.refundedAmountCents === 0 ? <Link
+                    href={`/checkout/upsell?grant=${encodeURIComponent(grant.id)}`}
+                    className="inline-flex min-h-11 items-center font-semibold text-blue-700 underline underline-offset-2">
+                    查看購買後加購 →
+                  </Link> : null}
                   {["paid", "partially_refunded", "refunded"].includes(grant.order.status) ? (
                     <form action={enterStudentPortalFromCheckoutAction}>
                       <CsrfField /><input type="hidden" name="grantId" value={grant.id} />
