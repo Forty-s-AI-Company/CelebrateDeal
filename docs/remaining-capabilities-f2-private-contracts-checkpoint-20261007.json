@@ -1,0 +1,62 @@
+{
+  "base_head": "6dbe50fee24ecf65ea469196482c02b2f203952a",
+  "status": "PRIVATE_ACCESS_AND_ENCRYPTION_CONTRACTS_LOCAL_VALIDATED_NOT_INTEGRATED",
+  "ownership": {
+    "observed_effort": "unknown",
+    "writer": "root",
+    "max_dispatches": 4,
+    "readonly_helpers": 0,
+    "observed_model": "unknown",
+    "dispatches": 0
+  },
+  "parent_goal_id": "remaining-capabilities-20261005",
+  "sources": [
+    {
+      "sha256": "313c09333f3e5fdedda29d8dd505fe38640dda83389ae2c484859a3f04df48d6",
+      "path": "src/lib/live-chat.ts"
+    },
+    {
+      "sha256": "5d11a8bdab4cf306eace81cc141849bcfd1db2d67278c0874a0ba2000e1100a5",
+      "path": "src/lib/live-private-chat-access.test.ts"
+    },
+    {
+      "sha256": "bf17ea1b03666411b71214db8b4315331598c88aba17939e18b090dd02ab676a",
+      "path": "src/lib/live-private-chat-storage.ts"
+    },
+    {
+      "sha256": "4b1ee66ca45b8b02e5f52e73e892607577f1b45c44b2f4711512c36abc65f221",
+      "path": "src/lib/live-private-chat-storage.test.ts"
+    }
+  ],
+  "tests": {
+    "unit_passed": 116,
+    "unit_skipped": 0,
+    "unit_failed": 0,
+    "unit_files": 10,
+    "private_browser": "NOT_RUN",
+    "acceptance": "NOT_READY",
+    "typescript": "PASS",
+    "private_db": "NOT_RUN_NO_MODEL_YET",
+    "eslint": "PASS",
+    "independent_review": "PENDING"
+  },
+  "delivered": false,
+  "contracts": [
+    "canonical admission plus fss1 verified server-owned submission",
+    "tenant/live/expiry/form binding and blacklist fail closed",
+    "no email/phone/bearer returned to private consumers",
+    "AES-GCM purpose binds tenant/live/submission/message/source",
+    "deterministic ids bind source and author plus client UUID",
+    "strict ciphertext envelope and Unicode normalization"
+  ],
+  "created_at": "2026-10-07T02:33:09.6505143Z",
+  "remaining": [
+    "forward private message migration and relational constraints",
+    "serializable manager/viewer service with current authorization and CSRF",
+    "viewer and instructor actual UI",
+    "disposable DB and real browser journeys",
+    "independent Critical review and canonical acceptance",
+    "exact-head CI and protected PR"
+  ],
+  "task_id": "f2-live-private-chat-purchase-broadcast"
+}
