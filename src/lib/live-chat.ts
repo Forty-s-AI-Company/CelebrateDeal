@@ -387,6 +387,7 @@ export async function resolveVerifiedPrivateChatViewer(
     admissionToken: string | null;
     chatSessionToken: string | null;
     ipAddress: string | null;
+    body?: string;
     now?: Date;
   },
 ) {
@@ -395,7 +396,8 @@ export async function resolveVerifiedPrivateChatViewer(
   if (!context) throw new LiveChatError("access_denied");
   // IP provenance is established by the route; this helper only normalizes it.
   const ip = normalizeClientIp(input.ipAddress);
-  await assertViewerIdentityAllowed(database, context, input.vendorId, ip);
+  const rules = await assertViewerIdentityAllowed(database, context, input.vendorId, ip);
+  if (input.body !== undefined && isKeywordBlocked(rules, input.body)) throw new LiveChatError("keyword_blocked");
   return {
     vendorId: input.vendorId,
     liveId: input.liveId,

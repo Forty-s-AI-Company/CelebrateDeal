@@ -159,3 +159,4 @@
 | Route／method | Caller 與安全邊界 | Input／resource boundary | Side effect 與 response | 目前證據 |
 |---|---|---|---|---|
 | `GET /api/live-purchase-broadcasts` | same-origin client marker；有效本租戶／活動 viewer admission；rate limit | 嚴格且唯一 vendorId／liveId；2048-byte URL；server checkout sourceLiveId；本場可見商品 | 僅最近30分鐘未退款的已付款、非test訂單；最多8筆匿名卡片；opaque display id；private／CDN no-store／Vary Cookie；無外部操作 | 同路徑unit／domain；disposable PG；UI／browser／review／驗收尚待完成 |
+| `GET /api/live-chat/private`、`POST /api/live-chat/private` | Active viewer admission + verified fss1 conversation; same-origin web client; POST trusted ingress IP + CSRF; transactional current blacklist checks | Private encrypted conversation only; strict identity inputs, signed scoped cursor, 50-message pages, deterministic retries, no-store |
