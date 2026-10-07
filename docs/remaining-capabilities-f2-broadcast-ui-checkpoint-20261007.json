@@ -1,0 +1,85 @@
+{
+  "regression": {
+    "fix": "Bind admission state to JSON tuple vendorId/liveId/refreshKey; mismatched scope immediately returns checking",
+    "covered": [
+      "admission plus product reveal required",
+      "legacy admission-free playback denied broadcast",
+      "renewal unmounts broadcast before effects",
+      "tenant and live change cannot reuse admission"
+    ],
+    "initial_failure": "live-playback.test.tsx: renewal kept previously admitted claim for first render"
+  },
+  "base_head": "8b06c29a80ceec5dbb901e0dbbaf3414ebcbcc44",
+  "prior_db_evidence": {
+    "migrations": 85,
+    "scope": "unchanged broadcast backend only; does not prove current UI browser acceptance",
+    "passed": 6
+  },
+  "tests": {
+    "unit": {
+      "skipped": 0,
+      "files": 7,
+      "failed": 0,
+      "passed": 84
+    },
+    "browser": "NOT_RUN_CURRENT_UI",
+    "typescript": "PASS",
+    "independent_review": "PENDING",
+    "acceptance": "NOT_READY",
+    "eslint": "PASS"
+  },
+  "parent_goal_id": "remaining-capabilities-20261005",
+  "created_at": "2026-10-07T02:28:58.0318607Z",
+  "sources": [
+    {
+      "path": "src/components/live-playback.tsx",
+      "sha256": "bd0a7cf7e4ab6606c8b1e3fac11350a59d3155f97247d0dd6fbc5d4070c146a7"
+    },
+    {
+      "path": "src/components/live-playback.test.tsx",
+      "sha256": "2f03f4b775fd11481efc89035b0a20b9b0137f281dbb14c61a9c91fef8c3974a"
+    },
+    {
+      "path": "src/components/live-purchase-broadcast-panel.tsx",
+      "sha256": "e01526e235d0167b450f041d5248195258f891447ff35dc316d3e30aa92e3ba3"
+    },
+    {
+      "path": "src/components/live-purchase-broadcast-panel.test.tsx",
+      "sha256": "dc1da0e3045789edf5c9e5d25914faa21df90934fe7889a6da06101c87a34433"
+    },
+    {
+      "path": "src/lib/live-purchase-broadcast-contract.ts",
+      "sha256": "7e3c74e3bbf18d6cb7faf61ab7d88e6bf15c242a2bd3a395533e47afa7a1254d"
+    },
+    {
+      "path": "src/lib/live-purchase-broadcast-contract.test.ts",
+      "sha256": "bbcc8bb2e0d19299e14265fad85a27a4dfbdd44c2d7f96019c569b77a77bc24c"
+    },
+    {
+      "path": "src/lib/live-purchase-broadcasts.ts",
+      "sha256": "52697e1f8901883844dad25fb64f19dff996844ff687863e81f4866ef387f86b"
+    },
+    {
+      "path": "src/app/api/live-purchase-broadcasts/route.ts",
+      "sha256": "324968123248a0b00501ecddcb3c8569077b59e93860f34f9a7507d34d324588"
+    }
+  ],
+  "status": "BROADCAST_UI_LOCAL_VALIDATED_FULL_TASK_INCOMPLETE",
+  "delivered": false,
+  "task_id": "f2-live-private-chat-purchase-broadcast",
+  "ownership": {
+    "readonly_helpers": 0,
+    "observed_effort": "unknown",
+    "dispatches": 0,
+    "writer": "root",
+    "max_dispatches": 4,
+    "observed_model": "unknown"
+  },
+  "remaining": [
+    "encrypted private chat backend and instructor/viewer UI",
+    "current-source disposable DB and actual browser journeys",
+    "independent Critical review",
+    "canonical acceptance",
+    "exact head CI and protected PR delivery"
+  ]
+}
