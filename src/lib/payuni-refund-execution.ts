@@ -1,3 +1,4 @@
+import { applyPlatformSubscriptionRefundProjection } from "@/lib/platform-subscription-refund";
 import { randomBytes } from "node:crypto";
 import { Prisma, type PaymentTransaction, type PrismaClient } from "@prisma/client";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
@@ -180,6 +181,7 @@ export async function executePayUniRefund(input: PayUniRefundExecutionInput): Pr
             transactionOccurredAt: currentTransaction.occurredAt,
             occurredAt: refundOccurredAt,
           });
+          await applyPlatformSubscriptionRefundProjection(tx, transaction, refundOccurredAt);
           const auditData = {
             vendorId: reserved.transaction.vendorId,
             actorId: input.actor.id,

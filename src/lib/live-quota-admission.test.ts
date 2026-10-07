@@ -402,3 +402,9 @@ describe("live quota admission", () => {
     })).resolves.toBe(false);
   });
 });
+
+it("rejects refunded permission before creating viewer sessions even with unlimited zero quotas", async () => {
+  tx.vendorUsageLimit.findUnique.mockResolvedValue({ entitlementStatus: "revoked", streamMinutesLimit: 0, creditsLimit: 0, creditsUsed: 0 });
+  await expect(admitLiveViewer(db, { vendorId: "vendor-1", liveId: "live-1", now })).rejects.toMatchObject({ code: "subscription_refunded" });
+  expect(tx.liveViewerSession.create).not.toHaveBeenCalled();
+});

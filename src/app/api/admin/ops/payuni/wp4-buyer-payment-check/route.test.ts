@@ -7,7 +7,7 @@ import { POST } from "./route";
 const secret = "buyer-check-test-job-secret";
 const source = "a".repeat(40);
 function request(options: { authorization?: string; sha?: string; body?: BodyInit } = {}) {
-  return new Request("https://preview.example.test/api/admin/ops/payuni/wp4-buyer-payment-check", {
+  return new Request("https://celebrate-deal-staging.carry-digital-nomad.in.net/api/admin/ops/payuni/wp4-buyer-payment-check", {
     method: "POST", headers: {
       ...(options.authorization ? { authorization: options.authorization } : {}),
       "x-celebratedeal-source-sha": options.sha ?? source,
@@ -15,6 +15,13 @@ function request(options: { authorization?: string; sha?: string; body?: BodyIni
   } as RequestInit);
 }
 beforeEach(() => {
+    vi.stubEnv("VERCEL_PROJECT_ID", "prj_3d4ib8cXrF3f3HsqdSwfabpBWvZn");
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://celebrate-deal-staging.carry-digital-nomad.in.net");
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ocbugvgojrunvenozsbx.supabase.co");
+  vi.stubEnv("DATABASE_URL", "postgresql://db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
+  vi.stubEnv("DIRECT_URL", "postgresql://db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
+  vi.stubEnv("STAGING_DATABASE_URL", "postgresql://db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres");
+
   vi.clearAllMocks(); vi.stubEnv("JOB_SECRET", secret); vi.stubEnv("VERCEL_ENV", "preview"); vi.stubEnv("PAYUNI_ENV", "sandbox");
   vi.stubEnv("WP4_SANDBOX_EXECUTOR_ENABLED", "true"); vi.stubEnv("VERCEL_GIT_COMMIT_SHA", source);
   mocks.check.mockResolvedValue({ status: "REFERENCE_UNAVAILABLE", localStatus: "PENDING", providerStatus: "UNKNOWN", referenceState: "PROVIDER_MISSING", queryAttempts: 0, callbackStatus: "NOT_OBSERVED", callbackFailure: "NONE" });
@@ -26,7 +33,7 @@ describe("WP4 current buyer payment check route", () => {
     expect((await POST(request())).status).toBe(401);
     vi.stubEnv("VERCEL_ENV", "production");
     expect((await POST(request({ authorization: `Bearer ${secret}` }))).status).toBe(404);
-    vi.stubEnv("VERCEL_ENV", "preview");
+      vi.stubEnv("VERCEL_ENV", "preview");
     vi.stubEnv("PAYUNI_ENV", "production");
     expect((await POST(request({ authorization: `Bearer ${secret}` }))).status).toBe(404);
     vi.stubEnv("PAYUNI_ENV", "sandbox");

@@ -5,10 +5,12 @@ import type { LandingPageContent, LandingPageRenderContext } from "@/lib/landing
 import type { LandingPageStoredContent } from "@/lib/landing-page-service";
 import type { PageDocument } from "@/lib/funnel-page-document";
 import type { FunnelCommerceProduct } from "@/lib/funnel-commerce";
-import { getActiveFunnelStepPage, replaceFunnelStepPage, type FunnelStepPages } from "@/lib/funnel-step-pages";
+import { type FunnelStepPages } from "@/lib/funnel-step-pages";
 
 const Editor = dynamic(() => import("@/components/landing-pages/landing-page-editor").then((module) => module.LandingPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入編輯器…</p> });
 const FunnelEditor = dynamic(() => import("@/components/landing-pages/funnel-page-editor").then((module) => module.FunnelPageEditor), { ssr: false, loading: () => <p className="p-8">正在載入 Funnel 編輯器…</p> });
+
+const FunnelStepsEditor = dynamic(() => import("@/components/landing-pages/funnel-step-pages-editor").then((module) => module.FunnelStepPagesEditor), { ssr: false, loading: () => <p className="p-8">正在載入 Funnel 流程…</p> });
 
 function isPageDocument(content: LandingPageStoredContent): content is PageDocument { return "root" in content && "settings" in content; }
 function isFunnelStepPages(content: LandingPageStoredContent): content is FunnelStepPages { return "pages" in content && "activeStepId" in content && "flow" in content; }
@@ -19,22 +21,10 @@ function isFunnelStepPages(content: LandingPageStoredContent): content is Funnel
 export function WorkspaceEditor({ content, forms, live, pending, onLegacyChange, onDocumentChange, onValidityChange, commerceProducts }: {
   content: LandingPageStoredContent; forms: LandingPageRenderContext["forms"]; live?: LandingPageRenderContext["live"];
   commerceProducts: FunnelCommerceProduct[];
-  pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument | FunnelStepPages) => void; onValidityChange: (valid: boolean) => void;
+  pending: boolean; revision: number; onLegacyChange: (content: LandingPageContent) => void; onDocumentChange: (content: PageDocument | FunnelStepPages) => void | boolean; onValidityChange: (valid: boolean) => void;
 }) {
   if (isFunnelStepPages(content)) {
-    const active = getActiveFunnelStepPage(content);
-    if (!active) return <p role="alert" className="p-8">找不到目前要編輯的 Funnel step。</p>;
-    return <FunnelEditor
-      key={active.page.id}
-      document={active.page}
-      commerceProducts={commerceProducts}
-      commerceEnabled={active.step.type === "order_form"}
-      disabled={pending || !active.editable}
-      onChange={(document) => {
-        const result = replaceFunnelStepPage(content, active.step.id, document);
-        if (result.ok) onDocumentChange(result.state);
-      }}
-    />;
+    return <FunnelStepsEditor state={content} disabled={pending} commerceProducts={commerceProducts} onChange={onDocumentChange} />;
   }
   if (isPageDocument(content)) return <FunnelEditor key={content.id} document={content} disabled={pending} onChange={onDocumentChange} />;
   return <Editor content={content} forms={forms} live={live} disabled={pending} onValidityChange={onValidityChange} onChange={onLegacyChange} />;

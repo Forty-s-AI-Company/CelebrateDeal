@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ email: vi.fn(), push: vi.fn(), fetch: vi.fn() }));
 vi.mock("./email", async original => ({ ...await original<typeof import("./email")>(), sendTransactionalEmail: mocks.email }));
-vi.mock("web-push", () => ({ default: { sendNotification: mocks.push } }));
+vi.mock("web-push", () => ({ default: { generateRequestDetails: mocks.push } }));
 import { LearnerPushDestination, sendLearnerNotificationProvider, type NotificationProviderConfiguration } from "./learner-notification-providers";
 import { TransactionalEmailError } from "./email";
 const base = { channel: "sms" as const, destination: { phone: "+886900000001" }, message: { title: "Synthetic", body: "Synthetic only", path: "/portal/synthetic/learn/course" }, appOrigin: "https://app.example.test", idempotencyKey: "a".repeat(64) };
 const config: NotificationProviderConfiguration = { sms: { accountSid: `AC${"0".repeat(32)}`, authToken: "synthetic-test-credential", from: "+15005550006" }, whatsapp: { version: "v22.0", phoneNumberId: "100000000000000", accessToken: "synthetic-test-credential", templateName: "synthetic_notification", language: "zh_TW" }, email: { enabled: true }, push: { subject: "mailto:synthetic@invalid.example", publicKey: "synthetic-public", privateKey: "synthetic-private" } };
 const subscription = { endpoint: "https://fcm.googleapis.com/fcm/send/synthetic", keys: { p256dh: "a".repeat(87), auth: "a".repeat(22) } };
 beforeEach(() => { vi.clearAllMocks(); vi.stubGlobal("fetch",mocks.fetch); });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 it.each(["email","push","sms","whatsapp"] as const)("missing %s configuration never sends or reports success", async channel => {
  const destination = channel === "email" ? { email: "synthetic@invalid.example" } : channel === "push" ? subscription : base.destination;
  expect(await sendLearnerNotificationProvider({ ...base, channel, destination },{})).toEqual({ outcome: "not_delivered", code: "CONFIGURATION" });
@@ -51,9 +51,11 @@ it.each(["https://127.0.0.1/private","https://fcm.googleapis.com.attacker.exampl
  expect(await sendLearnerNotificationProvider({...base,channel:"push",destination:{...subscription,endpoint}},config)).toEqual({outcome:"not_delivered",code:"INVALID_DESTINATION"});expect(mocks.push).not.toHaveBeenCalled();
 });
 it("uses per-request VAPID settings without global credential mutation", async () => {
- mocks.push.mockResolvedValue({statusCode:201});
+ mocks.push.mockReturnValue({endpoint:subscription.endpoint,headers:{TTL:300},body:Buffer.from("synthetic-encrypted-body")});
+ mocks.fetch.mockResolvedValue(new Response(null,{status:201}));
  expect(await sendLearnerNotificationProvider({...base,channel:"push",destination:subscription},config)).toEqual({outcome:"sent",providerReceipt:"push_http_201"});
- expect(mocks.push.mock.calls[0]![2]).toMatchObject({vapidDetails:config.push,timeout:10000,TTL:300,contentEncoding:"aes128gcm"});
+ expect(mocks.push.mock.calls[0]![2]).toMatchObject({vapidDetails:config.push,TTL:300,contentEncoding:"aes128gcm"});
+ expect(mocks.fetch.mock.calls[0]![1]).toMatchObject({redirect:"error",signal:expect.any(AbortSignal)});
 });
 it("email keeps existing idempotent sender and sanitizes its failures", async () => {
  const input={...base,channel:"email" as const,destination:{email:"synthetic@invalid.example"}};
@@ -70,4 +72,33 @@ it("invalid origin or caller destination never contacts a provider", async () =>
 it("keeps valid base64 WhatsApp receipts while dropping arbitrary response fields", async () => {
  mocks.fetch.mockResolvedValue(new Response(JSON.stringify({ messages:[{id:"wamid.synthetic+/=="}],recipient:"private-provider-data" }),{status:200}));
  expect(await sendLearnerNotificationProvider({...base,channel:"whatsapp"},config)).toEqual({outcome:"sent",providerReceipt:"wamid.synthetic+/=="});
+});
+
+it("oversized push response cancels its stream and does not retry", async () => {
+ const cancel = vi.fn();
+ const stream = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array(8193)); }, cancel });
+ mocks.push.mockReturnValue({ endpoint: subscription.endpoint, headers: {}, body: Buffer.from("synthetic") });
+ mocks.fetch.mockResolvedValue(new Response(stream, { status: 201 }));
+ expect(await sendLearnerNotificationProvider({ ...base, channel: "push", destination: subscription }, config)).toEqual({ outcome: "indeterminate", code: "OUTCOME_UNKNOWN" });
+ expect(cancel).toHaveBeenCalledTimes(1); expect(mocks.fetch).toHaveBeenCalledTimes(1);
+});
+
+it.each([false, true])("push hard deadline aborts an unfinished response, active stream=%s", async active => {
+ vi.useFakeTimers();
+ const controller = new AbortController();
+ const deadline = vi.spyOn(AbortSignal, "timeout").mockImplementation(ms => { setTimeout(() => controller.abort(new DOMException("Synthetic deadline", "TimeoutError")), ms); return controller.signal; });
+ let interval: ReturnType<typeof setInterval> | undefined;
+ let abortObserved = false;
+ mocks.push.mockReturnValue({ endpoint: subscription.endpoint, headers: {}, body: Buffer.from("synthetic") });
+ mocks.fetch.mockImplementation(async (_url, options: RequestInit) => {
+  const stream = new ReadableStream<Uint8Array>({ start(reader) {
+   options.signal!.addEventListener("abort", () => { abortObserved = true; if (interval) clearInterval(interval); reader.error(options.signal!.reason); }, { once: true });
+   if (active) interval = setInterval(() => reader.enqueue(new Uint8Array(1)), 1000);
+  }, cancel() { if (interval) clearInterval(interval); } });
+  return new Response(stream, { status: 201 });
+ });
+ const pending = sendLearnerNotificationProvider({ ...base, channel: "push", destination: subscription }, config);
+ await vi.advanceTimersByTimeAsync(10000);
+ expect(await pending).toEqual({ outcome: "indeterminate", code: "OUTCOME_UNKNOWN" });
+ expect(deadline).toHaveBeenCalledWith(10000); expect(abortObserved).toBe(true); expect(mocks.fetch).toHaveBeenCalledTimes(1);
 });

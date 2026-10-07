@@ -53,14 +53,34 @@ async function sendEmail(input: PreparedInput, config: NotificationProviderConfi
   return unknownResult;
  }
 }
+/** Consume at most 8 KiB without retaining provider response content. The fetch
+ * abort signal applies to headers and body, including a continuously active stream. */
+async function boundedPushResponse(response: Response) {
+ if (!response.body) return true;
+ const reader = response.body.getReader();
+ let bytes = 0;
+ try {
+  for (;;) {
+   const chunk = await reader.read();
+   if (chunk.done) return true;
+   bytes += chunk.value.byteLength;
+   if (bytes > 8192) return false;
+  }
+ } finally { await reader.cancel().catch(() => undefined); }
+}
 async function sendPush(input: PreparedInput, config: NotificationProviderConfiguration): Promise<NotificationProviderResult> {
  if (!config.push) return configurationResult;
  const parsed = LearnerPushDestination.safeParse(input.destination);
  if (!parsed.success) return { outcome: "not_delivered", code: "INVALID_DESTINATION" };
  try {
-  const response = await webpush.sendNotification(parsed.data,JSON.stringify({ title: input.prepared.title, body: input.prepared.body, path: input.prepared.path }),
-   { vapidDetails: config.push, TTL: 300, timeout: 10000, contentEncoding: "aes128gcm" });
-  return response.statusCode >= 200 && response.statusCode < 300 ? { outcome: "sent", providerReceipt: `push_http_${response.statusCode}` } : unknownResult;
+  const request = webpush.generateRequestDetails(parsed.data, JSON.stringify({ title: input.prepared.title, body: input.prepared.body, path: input.prepared.path }),
+   { vapidDetails: config.push, TTL: 300, contentEncoding: "aes128gcm" });
+  const response = await fetch(request.endpoint, { method: "POST", redirect: "error",
+   headers: Object.fromEntries(Object.entries(request.headers).map(([key,value]) => [key,String(value)])),
+   body: request.body ? new Uint8Array(request.body) : null, signal: AbortSignal.timeout(10000) });
+  if (!await boundedPushResponse(response)) return unknownResult;
+  if (response.status >= 400 && response.status < 500) return rejectedResult;
+  return response.status >= 200 && response.status < 300 ? { outcome: "sent", providerReceipt: `push_http_${response.status}` } : unknownResult;
  } catch (error) {
   const status = typeof error === "object" && error !== null && "statusCode" in error ? error.statusCode : null;
   return typeof status === "number" && status >= 400 && status < 500 ? rejectedResult : unknownResult;

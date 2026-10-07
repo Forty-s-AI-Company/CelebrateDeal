@@ -1380,6 +1380,8 @@ model PlatformReferralPayoutBatch {
 }
 
 model VendorUsageLimit {
+  /// Explicit revocation: zero limits retain their existing unlimited meaning.
+  entitlementStatus   String   @default("active")
   id                  String   @id @default(cuid())
   vendorId            String   @unique
   billingPlanId       String?

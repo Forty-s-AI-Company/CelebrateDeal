@@ -71,6 +71,11 @@ beforeEach(() => {
 });
 
 describe("recordStreamUsageLedgerEntry", () => {
+  it("rejects refunded permission even when zero means unlimited, before any ledger write", async () => {
+    mocks.usageLimitFindUnique.mockResolvedValue({ entitlementStatus: "revoked", streamMinutesLimit: 0 });
+    await expect(recordStreamUsageLedgerEntry(directInput)).rejects.toMatchObject({ name: "StreamQuotaExceededError" });
+    expect(mocks.entryCreate).not.toHaveBeenCalled();
+  });
   it("rejects invalid event identity and duration before database access", async () => {
     await expect(recordStreamUsageLedgerEntry({ ...directInput, eventId: "not-an-uuid" })).rejects.toMatchObject({
       code: "invalid_event",

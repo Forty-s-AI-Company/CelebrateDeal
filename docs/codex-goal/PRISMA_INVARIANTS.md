@@ -4,14 +4,14 @@
 
 基準 revision：`4ed3b463`
 
-> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 85，該歷史收據不代表新 migration、Staging 或 Production 已套用。
+> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 87，該歷史收據不代表新 migration、Staging 或 Production 已套用。
 
 ## Inventory 基準
 
 | 項目 | 結果 |
 |---|---:|
 | Prisma models | 133 |
-| Migration directories | 90 |
+| Migration directories | 92 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -237,3 +237,7 @@ F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_af
 ## 本次通知與社群整合候選
 
 接入來源 `efee6e262685402b8c6efd13b2fe91091b49c70c` 的 `CourseCommunityPost`、`CourseCommunityReply`、`CourseCommunityReaction` 與唯一 `20261006070000_course_community` migration；保留其 SQL 原文，不新增等價 migration。討論回覆與通知來源同 transaction，送出前鎖定 exact parent/reply 與原作者；整合候選仍待新測試、獨立 review 與 acceptance。
+
+Q2 本輪前向新增 `20261006140000_subscription_refund_entitlement_state`；既有126models不變，VendorUsageLimit新增active/revoked權限狀態。初次86 migration完整套用及51 PostgreSQL回歸PASS；之後擴充native退款backfill至byo訂閱快照，需重新驗證新revision。歷史migration/checksum保持原樣。
+
+Q2 新增 forward migration `20261007002000_reconcile_legacy_subscription_refund_state`：以既有完整 processed refund ledger 修復 native subscription 權益；保留較新 active subscription 與 usage counters，既有 migration checksum 不變。87 migrations disposable PostgreSQL 完整套用通過；latest-head DB/browser 收據仍待完成。

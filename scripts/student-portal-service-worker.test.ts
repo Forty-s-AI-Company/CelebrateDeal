@@ -45,3 +45,13 @@ describe("received portal device notifications",()=>{
   const worker=notificationWorker();await worker.receive({title:"直播開始",body:"合成課程",path:"/live/synthetic-live"});expect(worker.openWindow).not.toHaveBeenCalled();await worker.click("/live/synthetic-live");expect(worker.openWindow).toHaveBeenCalledWith("https://app.example.test/live/synthetic-live");
  });
 });
+
+it("completed course payload preserves its exact certificate click destination", async () => {
+ const worker = notificationWorker();
+ const path = "/portal/academy/learn/course_a/certificate";
+ await worker.receive({ title: "課程已完成", body: "合成課程", path });
+ expect(worker.showNotification).toHaveBeenCalledWith("課程已完成", expect.objectContaining({ data: { path } }));
+ expect(worker.openWindow).not.toHaveBeenCalled();
+ await worker.click(path);
+ expect(worker.openWindow).toHaveBeenCalledWith(`https://app.example.test${path}`);
+});

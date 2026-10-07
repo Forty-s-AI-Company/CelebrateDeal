@@ -84,7 +84,9 @@ export function isWp4PayUniSandboxTransaction(transaction: TransactionIdentity):
   if (!purpose || !metadata) return false;
 
   if (purpose === "buyer_order") return metadata.productId === WP4_SANDBOX_FIXTURE.productId;
-  if (purpose === "platform_subscription") return metadata.planId === WP4_SANDBOX_FIXTURE.planId;
+  if (purpose === "platform_subscription") return metadata.billingPurpose === "platform_subscription_checkout"
+    && metadata.billingPlanId === WP4_SANDBOX_FIXTURE.planId
+    && typeof metadata.platformSubscriptionId === "string" && metadata.platformSubscriptionId.length > 0;
   return metadata.invoiceId === WP4_SANDBOX_FIXTURE.invoiceId;
 }
 
@@ -123,6 +125,7 @@ function candidateTransaction(value: unknown): CandidateTransaction | null {
 export async function reconcileWp4PayUniSandboxRefund(
   db: Wp4ReconciliationDb,
   sourceCommit: string,
+  fixedPurpose: "buyer_order" | "platform_subscription" = "buyer_order",
 ): Promise<Wp4PayUniSandboxReconciliationResult> {
   const selected = await db.paymentTransaction.findMany({
     where: {
@@ -137,7 +140,7 @@ export async function reconcileWp4PayUniSandboxRefund(
     .filter((row): row is CandidateTransaction => Boolean(
       row
       && isWp4PayUniSandboxTransactionForSource(row, sourceCommit)
-      && wp4PayUniPurposeFromMetadata(row.metadata) === "buyer_order",
+      && wp4PayUniPurposeFromMetadata(row.metadata) === fixedPurpose,
     ));
   if (candidates.length === 0) {
     return { reconciled: false, status: "FIXTURE_UNAVAILABLE" };

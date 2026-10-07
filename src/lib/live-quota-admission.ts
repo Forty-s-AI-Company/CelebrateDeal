@@ -21,7 +21,8 @@ export type LiveQuotaAdmissionErrorCode =
   | "credits_below_threshold"
   | "stream_minutes_exhausted"
   | "payment_method_required"
-  | "admission_busy";
+  | "admission_busy"
+  | "subscription_refunded";
 
 export class LiveQuotaAdmissionError extends Error {
   constructor(public readonly code: LiveQuotaAdmissionErrorCode) {
@@ -189,8 +190,9 @@ async function admitWithinTransaction(tx: Prisma.TransactionClient, input: Admis
 
   const usageLimit = await tx.vendorUsageLimit.findUnique({
     where: { vendorId: input.vendorId },
-    select: { creditsLimit: true, creditsUsed: true, streamMinutesLimit: true, streamMinutesUsed: true, resetAt: true },
+    select: { entitlementStatus: true, creditsLimit: true, creditsUsed: true, streamMinutesLimit: true, streamMinutesUsed: true, resetAt: true },
   });
+  if (usageLimit?.entitlementStatus === "revoked") throw new LiveQuotaAdmissionError("subscription_refunded");
   assertCreditsAvailable(usageLimit, policy.stopWhenCreditsBelow);
   const streamMinutesLimit = usageLimit?.streamMinutesLimit ?? 0;
   if (streamMinutesLimit > 0) {

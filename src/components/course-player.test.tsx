@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CoursePlayer } from "@/components/course-player";
 import {renderToStaticMarkup} from "react-dom/server";
 import { getCsrfToken, verifyCsrfToken } from "@/lib/csrf";
+const hydration = vi.hoisted(() => ({ active: true }));
 
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined }), headers: async () => new Headers() }));
 
@@ -15,10 +16,10 @@ it("renders English empty-course copy without translating merchant course data",
 // Exercise the actual media handlers without relying on a browser's media clock.
 vi.mock("react", async (importOriginal) => ({
   ...await importOriginal<typeof import("react")>(),
-  useSyncExternalStore: () => true,
   useState: (initial: unknown) => [initial, vi.fn()],
   useRef: (initial: unknown) => ({ current: initial }),
   useMemo: (calculate: () => unknown) => calculate(),
+  useSyncExternalStore: () => hydration.active,
 }));
 
 function find(node: ReactNode, type: string, text?: string): { [key: string]: unknown } | undefined {
@@ -36,9 +37,17 @@ function playerTree(durationSeconds = 100, csrfToken = "synthetic") {
 type MediaHandler = (event: { currentTarget: { currentTime: number; duration: number } }) => void;
 const player = (durationSeconds = 100) => find(playerTree(durationSeconds), "video")!.onTimeUpdate as MediaHandler;
 
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
+afterEach(() => { hydration.active = true; vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
 
 describe("CoursePlayer progress requests", () => {
+  it("keeps both lesson controls disabled until the client handlers are attached", () => {
+    hydration.active = false;
+    expect(find(playerTree(), "button", "標記完成")?.disabled).toBe(true);
+    expect(find(playerTree(), "button")?.disabled).toBe(true);
+    hydration.active = true;
+    expect(find(playerTree(), "button", "標記完成")?.disabled).toBe(false);
+    expect(find(playerTree(), "button")?.disabled).toBe(false);
+  });
   it.each([false, true])("refreshes an expired token and resends the same checkpoint, manual=%s", async (manual) => {
     vi.useFakeTimers();
     vi.stubEnv("CSRF_SECRET", "synthetic-course-player-renewal-secret-32-bytes");

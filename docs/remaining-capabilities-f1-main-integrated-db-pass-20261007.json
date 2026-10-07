@@ -1,0 +1,373 @@
+{
+  "source": {
+    "files": {
+      "src/lib/learner-notification-access.ts": "a08b8236a64a4623f0a3c7bb2ea3a81f1f3dbf35b3e208fdf3b61717d8c329bf",
+      "src/lib/course-community.ts": "4f2b504d876e1a8e3502d3d3d6fffc3c54f6fa79cbcc3c3abe115f66c01339c1",
+      "prisma/migrations/20261006070000_course_community/migration.sql": "0f8fa8023cc7bf082a7d325e1e502b451266175af79d9e47cced16350906d482",
+      "src/lib/learner-consultation-reminders.ts": "3e101cbf22ecc28a1d9d9622b5ef02b1623e56e54903d7ba0a8b3d5918d1c55c",
+      "src/lib/learner-notification-job.ts": "c8a1b4524b17be390b3689e3a8fba2dacf1cc3826d24ea5be8f60a9b9f0f56e8",
+      "prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql": "d65b53304d8a3e04005de9cf1c39ff407ef4a6c07d4c4c97f46995dfb627d567",
+      "src/app/actions/consultation-actions.ts": "9e180cda49709058ae5719f04785170172d7c8282998cbeced2bdd7806b1e1fa",
+      "src/app/actions.ts": "abbee5f953c98e99581bbed05bfab7e0164a7c39a74dbc0dc4d41602062654d9",
+      "src/lib/learner-live-notifications.ts": "c1ec6dbc59b52af179466d19f45d05f2c00f231d0a5ae0e8a0a03fb61690a07c",
+      "src/lib/learner-payment-notifications.ts": "1f0a668dfb0b8c80af530a1c4de088fdab7e00efc95f1d32f06d741011fb7ef9",
+      "src/lib/learner-notification-source-events.ts": "d32f1366813026bda373294e7559dd041fe72fa747cd08471828ec619c062a13",
+      "src/lib/course-curriculum.ts": "7f5abff9742ad45982e3770d52921acca623e15c8ee5ebbee45d641de8b1a4ac",
+      "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql": "6aaec73e4b1335966d44cd94c613f78d0da74af4421a3857549cd9ae2a730993",
+      "src/lib/learner-verification-delivery.ts": "b9d0c8d9cf32ad3e3f437d42e4c967460be8caa6e6fea05320e17d74434bf993",
+      "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql": "a2b25be832ae9981b832dfa44e59217a2aab8b72c194a53c00a6b451745150e4",
+      "package.json": "3348ccdf618d1785b687f24a45b10efaf61dc4cc130f46cd53d5df9d3ad75094",
+      "package-lock.json": "316fe741454b5747c1afc8c09a62ff80a4ed819899d7ea4a51a77eace5f523f0",
+      "prisma/schema.prisma": "915bb5e4478982d5b4f0c4da347285ca0acac73bd6e05834d7590948e46f1d85",
+      "prisma/migrations/20261007010000_learner_notifications/migration.sql": "9556eb9165d262a8c17b26a2ca87a06da024d8e95cf3a1167b4e3f1556071515",
+      "src/lib/learner-notification-contract.ts": "b09c722bbed2be39f174129bfebd04575a71e57cdc16c80a8686587f70364c02",
+      "src/lib/learner-notification-preferences.ts": "c25cfa700bf4b267f07ac0f39b336ca5c5811b020cde65adaf7fd096fa203181",
+      "src/lib/learner-notification-outbox.ts": "ba469f1c63fc9c0d8a552c7d46cde2419fc9278b82ce0958d5dddd626b190683",
+      "src/lib/learner-notification-dispatch.ts": "235f5ef5b498e8058d7923fd18be07b54adf656ad6a7ea6965ca16e8f10a8663",
+      "src/lib/learner-notification-providers.ts": "a1fffc86023159e3f781cdfb0f9911f9afbcc3e4ba18d47c8aa1852af8ae7f65",
+      "src/lib/learner-notification-verification.ts": "19bac9b69ceef70ef7a3317e9375322521e62e17569e46703428f32c806ee989",
+      "src/lib/student-course-learning.ts": "3886e2281fe9baf36463a416f9526c59e7b10aea7f47091ebaaae00d29e85415",
+      "src/lib/sensitive-data.ts": "07c2eb967a8f03f661d98a8193f7153786598ddb6d94b831f51b72c08eac9822",
+      "src/lib/commerce-order-pii.ts": "6761a568619e2830ea51c150a064e3ee60b1e75572533734eb0fe6f7f9b04220",
+      "src/lib/commerce-order-fulfillment.ts": "b5a78f51f0455b96fd63939397677d71acc7869ed8ccdff8df0e73a69c3a8081",
+      "src/lib/commerce-orders.ts": "7405a79e074f8553bce9a1bb41acabd487fabb00f8443221691be7fe74481aa2",
+      "scripts/learner-notification-disposable-qa.mjs": "58ff1093b3946d42c868593b3f21a85641b90e673bfe59b51358977fe2b48b1c"
+    },
+    "revision": "sha256:46fd1cd62dd7edc4a4ce026244bd630db54ee6057003a1afa6ddc429c4c2b782"
+  },
+  "status": "PASS",
+  "migrationCount": 92,
+  "tests": [
+    {
+      "name": "cross-tenant product FK refuses preference",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-tenant delivery/preference FK refuses dispatch",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent consent CAS admits one writer",
+      "status": "PASS"
+    },
+    {
+      "name": "event uniqueness survives a consent revision change",
+      "status": "PASS"
+    },
+    {
+      "name": "default-deny RLS hides rows and rejects anonymous-role writes",
+      "status": "PASS"
+    },
+    {
+      "name": "refunded recipient can unsubscribe using authenticated scope",
+      "status": "PASS"
+    },
+    {
+      "name": "service rejects stale consent revision",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign recipient cannot unsubscribe another tenant",
+      "status": "PASS"
+    },
+    {
+      "name": "recipient without current purchase cannot opt in",
+      "status": "PASS"
+    },
+    {
+      "name": "verification rejects exhausted attempts and expired enrollment",
+      "status": "PASS"
+    },
+    {
+      "name": "non-course proof verifies without granting consent and exact purchase payment source is durable",
+      "status": "PASS"
+    },
+    {
+      "name": "non-course refund revokes opt-in and queued delivery while keeping withdrawal",
+      "status": "PASS"
+    },
+    {
+      "name": "non-course paid grant discovers settings and enforces tenant and buyer scope",
+      "status": "PASS"
+    },
+    {
+      "name": "a second paid purchase cannot authorize an old refunded payment notification",
+      "status": "PASS"
+    },
+    {
+      "name": "physical explicit contact proof does not automatically grant consent",
+      "status": "PASS"
+    },
+    {
+      "name": "physical partial refund suppresses a claimed payment and preserves withdrawal",
+      "status": "PASS"
+    },
+    {
+      "name": "physical purchase without entitlement admits only its owning buyer",
+      "status": "PASS"
+    },
+    {
+      "name": "service explicit contact proof does not automatically grant consent",
+      "status": "PASS"
+    },
+    {
+      "name": "service partial refund suppresses a claimed payment and preserves withdrawal",
+      "status": "PASS"
+    },
+    {
+      "name": "service purchase without entitlement admits only its owning buyer",
+      "status": "PASS"
+    },
+    {
+      "name": "contact proof refuses foreign recipient and locks after five wrong attempts",
+      "status": "PASS"
+    },
+    {
+      "name": "expired contact proof cannot mark destination verified",
+      "status": "PASS"
+    },
+    {
+      "name": "rotated contact proof consumes once without granting notification consent",
+      "status": "PASS"
+    },
+    {
+      "name": "native push subscription proves device separately from channel consent",
+      "status": "PASS"
+    },
+    {
+      "name": "durable proof is encrypted and repeat requests respect cooldown",
+      "status": "PASS"
+    },
+    {
+      "name": "cross-tenant and concurrent proof claims admit exactly one owner",
+      "status": "PASS"
+    },
+    {
+      "name": "expired proof suppresses provider and clears its encrypted payload",
+      "status": "PASS"
+    },
+    {
+      "name": "contact rotation suppresses old queued proof and rejects claimed old proof",
+      "status": "PASS"
+    },
+    {
+      "name": "unknown challenge provider outcome is terminal without automatic replay",
+      "status": "PASS"
+    },
+    {
+      "name": "failed proof commit after provider acceptance does not send again",
+      "status": "PASS"
+    },
+    {
+      "name": "real lesson publication commits one source and metadata saves do not republish",
+      "status": "PASS"
+    },
+    {
+      "name": "source insert failure rolls back the actual lesson and product revision",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent source consumers create only exact owning current recipients",
+      "status": "PASS"
+    },
+    {
+      "name": "real completed course source is recipient-bound and idempotent",
+      "status": "PASS"
+    },
+    {
+      "name": "bounded source fanout persists its cursor across more than twenty preferences",
+      "status": "PASS"
+    },
+    {
+      "name": "source materialization excludes consent granted after the domain event",
+      "status": "PASS"
+    },
+    {
+      "name": "live source insert failure rolls back owning lifecycle transition",
+      "status": "PASS"
+    },
+    {
+      "name": "live source requires exact owning active session and persisted course binding",
+      "status": "PASS"
+    },
+    {
+      "name": "owning active live dispatch has one bounded authorized provider attempt",
+      "status": "PASS"
+    },
+    {
+      "name": "live ending after claim suppresses queued session without provider call",
+      "status": "PASS"
+    },
+    {
+      "name": "reopened live has new source identity and removed binding suppresses dispatch",
+      "status": "PASS"
+    },
+    {
+      "name": "future notification source stays pending without early expansion or cursor mutation",
+      "status": "PASS"
+    },
+    {
+      "name": "source creation defaults immediate availability to the actual event timestamp",
+      "status": "PASS"
+    },
+    {
+      "name": "forward scheduling migration preserves existing timestamps and adds the immediate default",
+      "status": "PASS"
+    },
+    {
+      "name": "real consultation reservation resolves actual salesProject relation and owning membership",
+      "status": "PASS"
+    },
+    {
+      "name": "real concurrent consultation reservation admits only one exact slot",
+      "status": "PASS"
+    },
+    {
+      "name": "unpublished consultation project refuses new reservation without writes",
+      "status": "PASS"
+    },
+    {
+      "name": "payment source fault rolls back paid order entitlement and commerce event",
+      "status": "PASS"
+    },
+    {
+      "name": "exact canonical payment publishes only owning buyer and repeated paid does not republish",
+      "status": "PASS"
+    },
+    {
+      "name": "learner reminder list selects only own linked future bookings and excludes another recipient",
+      "status": "PASS"
+    },
+    {
+      "name": "reminder confirmation rejects caller tenant override before inserting a source",
+      "status": "PASS"
+    },
+    {
+      "name": "another buyer booking is not a confirmable recipient capability",
+      "status": "PASS"
+    },
+    {
+      "name": "stale booking start revision cannot create a reminder",
+      "status": "PASS"
+    },
+    {
+      "name": "verified contact without current notification opt-in cannot confirm a reminder",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent authenticated confirmations persist one exact personal source",
+      "status": "PASS"
+    },
+    {
+      "name": "confirmed due consultation dispatch makes one bounded authorized provider attempt",
+      "status": "PASS"
+    },
+    {
+      "name": "cancellation after claim suppresses the exact consultation without provider call",
+      "status": "PASS"
+    },
+    {
+      "name": "reschedule after claim cannot send the previous booking revision",
+      "status": "PASS"
+    },
+    {
+      "name": "course binding removal after claim suppresses consultation dispatch",
+      "status": "PASS"
+    },
+    {
+      "name": "unpublished consultation project after claim suppresses dispatch",
+      "status": "PASS"
+    },
+    {
+      "name": "an internal queued reminder without authenticated confirmation is never delivered",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent real replies share one exact author-scoped source",
+      "status": "PASS"
+    },
+    {
+      "name": "self replies do not create sources",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign tenant cannot reply or emit notifications",
+      "status": "PASS"
+    },
+    {
+      "name": "materialized reply sends only original author once",
+      "status": "PASS"
+    },
+    {
+      "name": "queued discussion post_hidden suppresses with zero provider calls",
+      "status": "PASS"
+    },
+    {
+      "name": "queued discussion reply_hidden suppresses with zero provider calls",
+      "status": "PASS"
+    },
+    {
+      "name": "queued discussion recipient_changed suppresses with zero provider calls",
+      "status": "PASS"
+    },
+    {
+      "name": "outbox deduplicates concurrent real database event producers",
+      "status": "PASS"
+    },
+    {
+      "name": "outbox foreign scope cannot queue or claim owning recipient",
+      "status": "PASS"
+    },
+    {
+      "name": "concurrent worker claim admits exactly one owner",
+      "status": "PASS"
+    },
+    {
+      "name": "forged or replayed worker completion cannot mark delivery",
+      "status": "PASS"
+    },
+    {
+      "name": "exact claimed dispatch cannot run twice or accept a forged token",
+      "status": "PASS"
+    },
+    {
+      "name": "provider uncertainty is durable and never invokes a second attempt",
+      "status": "PASS"
+    },
+    {
+      "name": "failed database commit after provider acceptance never repeats the external attempt",
+      "status": "PASS"
+    },
+    {
+      "name": "entitlement expiry after claim refuses provider dispatch",
+      "status": "PASS"
+    },
+    {
+      "name": "consent withdrawal waits for the bounded authorized provider attempt",
+      "status": "PASS"
+    },
+    {
+      "name": "consent revision change suppresses a queued event",
+      "status": "PASS"
+    },
+    {
+      "name": "real full refund after claim suppresses dispatch and further producer events",
+      "status": "PASS"
+    },
+    {
+      "name": "owned synthetic purchase fixture is created",
+      "status": "PASS"
+    }
+  ],
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "safety": {
+    "loopbackOnly": true,
+    "syntheticOnly": true,
+    "externalOperations": false,
+    "providerCallbacks": "synthetic-only;not actual provider delivery",
+    "rawLogsSaved": false
+  }
+}
