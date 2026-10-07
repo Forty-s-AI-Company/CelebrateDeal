@@ -312,6 +312,9 @@ model TrackingSetting {
   id                  String   @id @default(cuid())
   vendorId            String   @unique
   facebookPixelId     String?
+  facebookAccessTokenEncrypted String?
+  facebookTestEventCode String?
+  credentialRevision Int @default(0)
   tiktokPixelId       String?
   googleTagManagerId  String?
   enablePageView      Boolean  @default(true)

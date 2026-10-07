@@ -1,0 +1,20 @@
+import fs from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { main } from "./prisma-loopback-disposable-migration-runner.mjs";
+let tests;
+const migration = await main({ afterMigrate: async ({ databaseUrl, environment, tempRoot }) => {
+  const env = { ...environment, DATABASE_URL: databaseUrl, DIRECT_URL: databaseUrl, TRACKING_DISPOSABLE: "verified-loopback", CSRF_SECRET: "synthetic-tracking-encryption-key-at-least-32-bytes" };
+  const generated = spawnSync(process.execPath, ["node_modules/prisma/build/index.js", "generate", "--config", "prisma.playwright.config.ts"], { env, stdio: "ignore", windowsHide: true });
+  if (generated.status !== 0) throw new Error("tracking-client-generation-failed");
+  const reportPath = path.join(tempRoot, "tracking-settings.json");
+  const outcome = spawnSync(process.execPath, ["node_modules/vitest/vitest.mjs", "run", "--config", "vitest.tracking-settings-db.config.ts", "--reporter=json", "--outputFile", reportPath], { env, stdio: "ignore", windowsHide: true });
+  const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  tests = { total: report.numTotalTests, passed: report.numPassedTests, failed: report.numFailedTests, skipped: report.numPendingTests };
+  if (outcome.status !== 0 || !report.success || tests.total !== 5 || tests.skipped) throw new Error("tracking-settings-regression-failed");
+} });
+const receipt = { status: migration.status, migrations: migration.migrationNames.length, tests, cleanup: migration.cleanup, failure: migration.failure, externalDelivery: "NOT_VERIFIED", acceptance: "NOT_READY" };
+fs.mkdirSync(".ai-team/reports", { recursive: true });
+fs.writeFileSync(".ai-team/reports/tracking-settings-disposable-receipt.json", JSON.stringify(receipt, null, 2));
+process.stdout.write(JSON.stringify(receipt) + "\n");
+process.exitCode = receipt.status === "PASS" ? 0 : 1;
