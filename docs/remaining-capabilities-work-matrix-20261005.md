@@ -106,3 +106,9 @@ Root integrated c72b5089 into existing community branch; 129 models / 88 migrati
 F1.2 current-head CI37616047757 failed at WP-88 exact inventory after main integration: actual91 pages/52 manager vs old90/51. Full inventory corrected without deleting assertions/cases. New isolated complete WP-88 guard matrix browser + 88 migrations/9 DB PASS, zero skip/flaky, cleanup PASS; lint PASS. Receipt `remaining-capabilities-f1.2-main-guard-browser-pass-20261007.json`; new exact head CI and independent review still required.
 
 Commission integration with delivered community a5964d83: 136 models and 89 canonical forward migrations. Both community and immutable merchant-affiliate snapshot migrations retained. Updated exact inventory assertions without exclusions or reduced checks; fresh validation pending.
+
+### F2 commission current inventory correction 20261008
+
+- Original task `f2-commission-policy`, correct isolated worktree `commission-main-integration`, integrated product reviewed at `d3be0d9c` in explicitly authorized dispatch 6, raw findings `[]`; failed wrong-path dispatch 5 retained.
+- Exact migration assertions repaired after main community integration: 136 models / 89 migrations. Existing fixed historical 81 and 79/21 scopes, checksums and rejection assertions remain intact; community presence checks added. Product code did not change after review. Current test correction commit `87654487e816ad9321d0d51d2fd165e03f3563d7`, source `sha256:3fca9acdb103ea64721a96675555ee5504df69639788eb76baa6d66cebb6d991`.
+- Current unit, TypeScript, strict-index, lint and complete TAP 1067/1067 PASS, zero skip. 89 migrations / 61 DB / 1 merchant browser PASS before test-only correction. Full coverage running. Latest three test corrections are not claimed independently reviewed; canonical acceptance and exact-head CI pending. Not delivered.
