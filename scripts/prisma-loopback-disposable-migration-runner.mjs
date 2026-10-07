@@ -101,6 +101,8 @@ function dockerPort(container, environment) {
 
 function waitForPostgres(container, environment) {
   for (let attempt = 0; attempt < 30; attempt += 1) {
+    // The image's initialization server accepts Unix sockets before restarting.
+    // TCP readiness proves the final server is available for the marker writes.
     const ready = result("docker", ["exec", container, "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "celebratedeal_test"], environment);
     if (ready.exitCode === 0) return true;
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);

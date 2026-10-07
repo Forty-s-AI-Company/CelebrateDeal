@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "owned-disposable-cleanup/v1",
+  "failed_execution_window": [
+    "2026-10-05T23:01:36.828Z",
+    "2026-10-05T23:01:39.668Z"
+  ],
+  "container": "celebratedeal-prisma-migrate-b2d1d669542147f8",
+  "name_run_label_created_time": "VERIFIED",
+  "data": "TMPFS_NO_PERSISTENT_MOUNTS",
+  "network": "LOOPBACK_ONLY",
+  "public_tables_before_cleanup": 0,
+  "cleanup": "PASS",
+  "original_failure": "remaining-capabilities-f3.2-release-startup-failure-20261006.json",
+  "production": "NOT_PERFORMED"
+}

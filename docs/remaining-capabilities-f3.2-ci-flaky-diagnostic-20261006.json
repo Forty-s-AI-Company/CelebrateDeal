@@ -1,0 +1,27 @@
+{
+  "run": 37391042097,
+  "head": "aa0f08431ae1f5ab9c90215da5855e5464c3c7d1",
+  "conclusion": "FAILURE",
+  "failed_gate": "Release browser gates",
+  "sanitized_annotations": [
+    {
+      "file": "tests/e2e/funnel-operations.spec.ts",
+      "line": 32,
+      "status": "flaky"
+    },
+    {
+      "file": "tests/e2e/funnel-operations.spec.ts",
+      "line": 81,
+      "status": "failed",
+      "class": "step_error"
+    }
+  ],
+  "cause": "Save-to-return synchronization is a candidate cause; annotation alone does not prove the root cause. New assertions require exact DB revision/form/live acknowledgement and UI save settlement before returning.",
+  "status": "CORRECTION_REVALIDATION_PENDING",
+  "review_extension": "AWAITING_USER",
+  "dispatches": 4,
+  "dispatch_limit": 4,
+  "no_tests_skipped": true,
+  "no_assertions_relaxed": true,
+  "raw_logs_read_or_output": false
+}
