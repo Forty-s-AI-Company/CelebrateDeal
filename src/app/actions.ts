@@ -14,7 +14,7 @@ import {
 } from "@/lib/auth";
 import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
 import { AffiliateCommissionRateBps } from "@/lib/affiliate-commission";
-import { AffiliatePayoutMutationConflict, payoutCommissionAmount } from "@/lib/affiliate-payout-accounting";
+import { AffiliatePayoutMutationConflict, isAffiliatePayoutMutationConflict, payoutCommissionAmount } from "@/lib/affiliate-payout-accounting";
 import { affiliatePaidRemunerationFields, affiliateRemunerationPaymentProof, assertAffiliatePayoutFinanceActor } from "@/lib/affiliate-remuneration-quotes";
 import { appendCommissionLedgerEntry, commissionLedgerPayableState } from "@/lib/affiliate-commission-accounting";
 import { encryptBankAccount, maskBankAccount, resolveStoredBankAccount } from "@/lib/bank-account";
@@ -156,11 +156,6 @@ function isDatabaseTransactionConflict(error: unknown) {
 }
 
 function isSettlementMutationConflict(error: unknown) {
-  return typeof error === "object" && error !== null && "code" in error &&
-    (error.code === "P2002" || error.code === "P2025" || error.code === "P2034");
-}
-
-function isAffiliatePayoutMutationConflict(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error &&
     (error.code === "P2002" || error.code === "P2025" || error.code === "P2034");
 }

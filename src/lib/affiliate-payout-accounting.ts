@@ -33,3 +33,10 @@ export function payoutCommissionAmount(status: string, outcome: string, payable:
   return payable.balanceCents;
 }
 
+
+// Keep database conflict classification beside the affiliate payout domain.
+export function isAffiliatePayoutMutationConflict(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error &&
+    (error.code === "P2002" || error.code === "P2025" || error.code === "P2034");
+}
+

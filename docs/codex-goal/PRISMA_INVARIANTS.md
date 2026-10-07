@@ -223,3 +223,26 @@
 新增 `CourseLesson` 與 `CourseLessonProgress`；前向 migration `20261006040000_native_course_learning`。三欄位 lesson 外鍵同時約束 tenant、course、lesson，進度具非負上限約束。此候選的 disposable PostgreSQL 證據尚待執行，不沿用上方歷史收據。
 
 F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。
+
+
+## 2026-10-07 商家扣繳與付款證明新增契約
+
+本候選包含 137 models、91 migrations；上方歷史收據保留原始數字。本次 disposable PostgreSQL forward-apply 與 29 項回歸證據見 `docs/remaining-capabilities-f2-exact-cents-audit-browser-20261007.json`。
+
+- `AffiliatePayeeProfile`：vendor／affiliate 複合綁定；銀行與稅籍密文、分類證明、revision 與核准者；修改使待簽快照失效。
+- `AffiliateRemunerationSnapshot`：不可變收入／ledger、profile／policy revision、密文與整數扣繳快照；簽署者與狀態轉移受驗證。
+- `AffiliateRemunerationExport`：租戶、affiliate 與精確快照綁定；不可變、唯一匯出 audit，重試不新增重複證明。
+- `MerchantAffiliatePayoutPolicy`：商家明確啟用的匯款費用政策；管理員 CAS revision，變更使未完成快照失效。
+- `MerchantAffiliatePolicy`：商家佣金計算政策與階梯設定；收入基礎、退款與政策版本契約。
+- `MerchantAffiliatePolicyState`：商家目前政策版本與併發更新狀態。
+- `MerchantAffiliateProductRate`：商家政策與商品佣金率綁定。
+- `MerchantAffiliateCheckoutSnapshot`：checkout 當時不可變佣金政策與收入基礎。
+- `MerchantAffiliateCheckoutRecipient`：checkout 快照的各層受益者與佣金分配。
+- `MerchantAffiliateSalesCounter`：商家銷售階梯計數與交易隔離。
+- `MerchantAffiliateCalculation`：精確訂單／佣金計算與冪等結果。
+- `20261006120000_merchant_affiliate_policy_snapshots`：forward-only；驗證扣繳資料、不可變快照、匯出 audit、政策 revision 或付款金額／快照複合 FK。
+- `20261007050000_affiliate_remuneration_snapshots`：forward-only；驗證扣繳資料、不可變快照、匯出 audit、政策 revision 或付款金額／快照複合 FK。
+- `20261007060000_affiliate_remuneration_ledger_binding`：forward-only；驗證扣繳資料、不可變快照、匯出 audit、政策 revision 或付款金額／快照複合 FK。
+- `20261007070000_affiliate_remuneration_export_audit`：forward-only；驗證扣繳資料、不可變快照、匯出 audit、政策 revision 或付款金額／快照複合 FK。
+- `20261007080000_merchant_affiliate_payout_policy`：forward-only；驗證扣繳資料、不可變快照、匯出 audit、政策 revision 或付款金額／快照複合 FK。
+- `20261007090000_affiliate_paid_remuneration_binding`：forward-only；驗證扣繳資料、不可變快照、匯出 audit、政策 revision 或付款金額／快照複合 FK。

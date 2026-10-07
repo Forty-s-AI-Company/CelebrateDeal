@@ -152,3 +152,10 @@
 |---|---|---|---|---|
 | `GET /api/live-interactions` | 有效 viewer session，綁定 vendor／live | bounded vendorId／liveId query；僅回該場互動與 spotlight | 唯讀、private no-store；不回傳參與者名單 | 400／401 或互動快照；同路徑 unit |
 | `POST /api/live-interactions` | same-origin、client marker、rate limit、有效 viewer session | Zod action union：open／respond／ask_question；已發布且綁定該場的腳本與商品；購買抽獎另驗證簽署的已驗證報名身分及同場已付款訂單 | Serializable transaction 重新檢查互動版本與有效期間；重複回應及領券競爭回 409；成功領券設定 HttpOnly cookie；問題受頻率限制 | 400／401／403／404／409／429；同路徑 unit 與隔離 PostgreSQL 測試；完整瀏覽器付款流程待驗證 |
+
+
+### 2026-10-07 聯盟扣繳私人匯出
+
+| Route／method | Caller 與安全邊界 | Input／resource boundary | Side effect 與 response | 目前證據 |
+|---|---|---|---|---|
+| `POST /api/affiliates/[affiliateId]/remuneration/[snapshotId]/export` | 同源表單、session／MFA、目前商家管理員、兩項功能權益與 CSRF | 4096-byte body；精確租戶、affiliate、snapshot、簽署、政策／profile revision 與 ledger proof | 私人 CSV attachment；private／CDN no-store；冪等不可變匯出 audit；不執行付款；401／403／404／409 fail closed | 同路徑 6 unit；29 disposable PG；實際 workspace browser 與跨租戶／重試證据 |

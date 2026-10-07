@@ -1,0 +1,68 @@
+{
+  "task_id": "f2-merchant-remuneration",
+  "status": "PARTIAL_CI_CORRECTION_VALIDATED",
+  "created_at": "2026-10-07T01:44:21.312201+00:00",
+  "base_head": "7f4b0af161deda40139b55af06f5011e30f7746c",
+  "failed_ci_run": 37557623980,
+  "tests": {
+    "ci_failure_regressions": {
+      "files": 5,
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0
+    },
+    "architecture_and_server_actions": {
+      "total": 338,
+      "passed": 338,
+      "failed": 0,
+      "skipped": 0
+    },
+    "legacy_payout_disposable_postgresql": {
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "migrations": 91,
+      "cleanup": "PASS"
+    },
+    "typescript": "PASS",
+    "scoped_lint": {
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0
+    }
+  },
+  "scope": "API registry, exact schema inventory and tenant-feature page fixtures",
+  "models": 137,
+  "migrations": 91,
+  "historical_payment_adapter_migrations": 81,
+  "remaining": [
+    "latest-source disposable DB/browser verification",
+    "latest-source independent review and acceptance",
+    "exact-head CI"
+  ],
+  "delivered": false,
+  "source_hashes": {
+    "scripts/prisma-invariant-inventory.test.ts": "sha256:1596786b455978178201022847d02de39822407d2aed421c2348058a1ff682b8",
+    "scripts/staging-payuni-management-migrate.test.ts": "sha256:949d351f11b0d852e7d6d1d71f42ad169f2ed46091509be5a613121f3fcd3acb",
+    "src/app/(app)/affiliates/page.test.tsx": "sha256:387dfa120c044bcfa20f35875d8485bb7a1e6d6b565699676bb431b44309cb8f",
+    "src/app/(app)/affiliates/[id]/page.test.tsx": "sha256:2300ecd4e3e1df1cf98587c930289446593e1fd90cbdb1b416171ef33be3d00a",
+    "docs/codex-goal/API_CONTRACT_REGISTRY.md": "sha256:29ecd176dc6747a3fd843d86d40d71b59f926e9bcb6a2d5c34357d54c93678b9",
+    "docs/codex-goal/PRISMA_INVARIANTS.md": "sha256:f19830485727872d89cf2727b7c33a27cff46e604b9104dcd608718acb3080ee",
+    "src/app/actions.ts": "sha256:263a475defb46edd859a56c8132d0297106b535132ce8e71736003b99bfb4861",
+    "src/lib/affiliate-payout-accounting.ts": "sha256:f80532a92a70a963b2d97744e22b8684267c9c86f228cacec41b865d5e2bd639",
+    "src/app/actions.payout-db.test.ts": "sha256:5e8512aaa48c5db543b64db01b67eba1117d32d5d3514a88adb81dceec11af63"
+  },
+  "updated_at": "2026-10-07T01:47:52.852153+00:00",
+  "changes": [
+    "Complete enabled feature modules in merchant page fixtures",
+    "Register private CSV POST contract",
+    "Inventory all 137 models and 91 migrations while retaining historical 81-migration payment adapter checks",
+    "Move existing conflict classifier unchanged into affiliate payout domain; retain 2500-line root action ceiling",
+    "Persist actual active synthetic finance membership in legacy payout DB fixture; retain disposable schema cleanup boundary"
+  ],
+  "acceptance": "LATEST_CANDIDATE_NOT_YET_ACCEPTED",
+  "review_dispatches": 4,
+  "review_dispatch_limit": 4
+}
