@@ -28,7 +28,7 @@ try {
       codes: [...new Set((test.failureMessages ?? []).join("\n").match(/\bP\d{4}\b/gu) ?? [])],
       locations: [...new Set((test.failureMessages ?? []).join("\n").match(/affiliate-remuneration\.db\.test\.ts:\d+:\d+/gu) ?? [])],
     })));
-    if (child.status !== 0 || !report.success || report.numTotalTests !== 9 || report.numPendingTests !== 0 || report.testResults.length !== 1 || !report.testResults[0].name.replaceAll("\\", "/").endsWith("/src/lib/affiliate-remuneration.db.test.ts")) throw new Error("database-regression-failed");
+    if (child.status !== 0 || !report.success || report.numTotalTests !== 15 || report.numPendingTests !== 0 || report.testResults.length !== 1 || !report.testResults[0].name.replaceAll("\\", "/").endsWith("/src/lib/affiliate-remuneration.db.test.ts")) throw new Error("database-regression-failed");
   } });
   receipt.cleanup = migration.cleanup;
   receipt.migrationCount = migration.migrationNames.length;

@@ -2488,6 +2488,7 @@ model AffiliateRemunerationSnapshot {
   revision Int
   profileRevision Int
   ruleVersion String
+  ledgerDigest String?
   grossAmountCents Int
   withholdingTaxCents Int
   nhiSupplementaryTaxCents Int
