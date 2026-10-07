@@ -1,0 +1,19 @@
+{
+  "status": "DELIVERED_BATCH",
+  "pr": 383,
+  "accepted_head": "9518bc61ad71c6eb7668357fc43194635fca776b",
+  "merge_commit": "c72b5089a0a87e63ebb5cea6a09fdb28deb2b93d",
+  "accepted_tree": "2b16bc10252510e3c8a0e8aad3f44706bd96f650",
+  "merged_tree": "2b16bc10252510e3c8a0e8aad3f44706bd96f650",
+  "exact_head_ci": [
+    "37611270137:SUCCESS",
+    "37611218869:SUCCESS"
+  ],
+  "gate": "READY",
+  "independent_review_dispatch": 2,
+  "findings": [],
+  "skills_validated": 6,
+  "routing_tests": 38,
+  "overall_A1_complete": false,
+  "production_operation": false
+}
