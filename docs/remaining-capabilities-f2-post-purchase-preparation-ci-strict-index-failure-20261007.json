@@ -1,0 +1,17 @@
+{
+  "run": 37580991693,
+  "head": "36bb661166406c82929f6bf4b9c424fc081eb846",
+  "logFetchExit": 0,
+  "failedTestFiles": [],
+  "locations": [],
+  "categories": {
+    "missingMockExport": false,
+    "assertion": false,
+    "typeError": false,
+    "referenceError": false,
+    "timeout": false,
+    "expected200Received502": false
+  },
+  "coverageFailures": [],
+  "rawLogOutput": false
+}

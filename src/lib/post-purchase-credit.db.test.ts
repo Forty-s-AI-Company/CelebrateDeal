@@ -9,7 +9,7 @@ import { createReservedPaymentTransaction, failPendingCheckoutAndReleaseInventor
 import { protectProductDeliveryConfig } from "@/lib/product-delivery";
 import { issuePostPurchaseCheckoutToken } from "@/lib/post-purchase-upsell";
 import { assertPostPurchaseCreditReplay, consumePostPurchaseCredit, PostPurchaseUnavailableError, resolvePostPurchaseCreditQuote } from "./post-purchase-credit";
-import { resumeUnissuedPostPurchaseCheckout } from "./post-purchase-checkout-recovery";
+import { resumePostPurchaseCheckout } from "./post-purchase-checkout-recovery";
 
 const ownedVendors: string[] = [];
 const buyer = { name: "合成買家", email: "post-purchase@example.test", phone: "0912345678" };
@@ -107,11 +107,78 @@ describe("transactional post-purchase upgrade credit", () => {
     const identity = { vendorId: input.vendor.id, productId: input.target.id, idempotencyKey: result.payment.checkoutIdempotencyKey! };
     return { input, result, db, request, identity };
   }
+  async function expiredManualSession() {
+    const context = await preparationFailure();
+    const session = { provider: "demo", mode: "manual", nextAction: "demo_checkout_transaction_created", externalRequired: false,
+      formPayload: { transactionId: context.result.payment.id, orderNumber: context.result.payment.orderNumber! } };
+    await context.db.paymentTransaction.update({ where: { id: context.result.payment.id }, data: { status: "pending",
+      metadata: { productId: context.input.target.id, postPurchaseCredit: { sourceOrderId: context.input.orderId },
+        postPurchaseSessionState: "issued", checkoutSession: session } } });
+    await context.db.commerceOrder.update({ where: { id: context.result.targetOrderId }, data: { status: "pending_payment", failedAt: null } });
+    await context.db.$transaction(tx => reacquireReleasedCheckoutInventory(tx, { vendorId: context.input.vendor.id,
+      transactionId: context.result.payment.id, productId: context.input.target.id }), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    await context.db.inventoryReservation.update({ where: { paymentTransactionId: context.result.payment.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    await releaseExpiredInventoryReservations(100);
+    expect((await context.db.paymentTransaction.findUniqueOrThrow({ where: { id: context.result.payment.id } })).status).toBe("expired");
+    return { ...context, session };
+  }
+  it("resumes an expired local manual session on the same order and unchanged payload", async () => {
+    const context = await expiredManualSession();
+    expect(await resumePostPurchaseCheckout(context.request, context.identity)).toBe(true);
+    const payment = await context.db.paymentTransaction.findUniqueOrThrow({ where: { id: context.result.payment.id } });
+    expect(payment).toMatchObject({ status: "pending", grossAmountCents: 9500, metadata: { checkoutSession: context.session } });
+    expect((await context.db.product.findUniqueOrThrow({ where: { id: context.input.target.id } })).inventory).toBe(0);
+    expect(await context.db.paymentTransaction.count({ where: { vendorId: context.input.vendor.id } })).toBe(2);
+    expect(await context.db.postPurchaseCredit.count({ where: { vendorId: context.input.vendor.id } })).toBe(1);
+    expect(await context.db.commerceOrderEvent.count({ where: { vendorId: context.input.vendor.id, orderId: context.result.targetOrderId,
+      eventType: "payment.checkout_recovered" } })).toBe(1);
+  });
+  it("concurrent expired manual recovery reacquires its final unit once", async () => {
+    const context = await expiredManualSession();
+    expect((await Promise.all([resumePostPurchaseCheckout(context.request, context.identity),
+      resumePostPurchaseCheckout(context.request, context.identity)])).sort()).toEqual([false, true]);
+    expect((await context.db.product.findUniqueOrThrow({ where: { id: context.input.target.id } })).inventory).toBe(0);
+  });
+  it("rejects expired recovery when the saved manual session names another transaction", async () => {
+    const context = await expiredManualSession();
+    await context.db.paymentTransaction.update({ where: { id: context.result.payment.id }, data: { metadata: {
+      productId: context.input.target.id, postPurchaseCredit: {}, postPurchaseSessionState: "issued",
+      checkoutSession: { ...context.session, formPayload: { ...context.session.formPayload, transactionId: randomUUID() } },
+    } } });
+    await expect(resumePostPurchaseCheckout(context.request, context.identity)).rejects.toThrow(PostPurchaseUnavailableError);
+    expect((await context.db.product.findUniqueOrThrow({ where: { id: context.input.target.id } })).inventory).toBe(1);
+  });
+  it("source refund rejects an expired manual recovery before changing the original transaction", async () => {
+    const context = await expiredManualSession(); await refund(context.input);
+    await expect(resumePostPurchaseCheckout(context.request, context.identity)).rejects.toThrow(PostPurchaseUnavailableError);
+    expect((await context.db.paymentTransaction.findUniqueOrThrow({ where: { id: context.result.payment.id } })).status).toBe("expired");
+    expect((await context.db.product.findUniqueOrThrow({ where: { id: context.input.target.id } })).inventory).toBe(1);
+  });
+  it("a late paid transition prevents expired recovery and never re-reserves paid stock", async () => {
+    const context = await expiredManualSession();
+    await context.db.$transaction(async tx => {
+      await tx.paymentTransaction.update({ where: { id: context.result.payment.id }, data: { status: "paid" } });
+      await reconcileCommerceOrderPaymentTransition(tx, { vendorId: context.input.vendor.id,
+        paymentTransactionId: context.result.payment.id, transition: "paid", eventIdentity: randomUUID() });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    await expect(resumePostPurchaseCheckout(context.request, context.identity)).rejects.toThrow(PostPurchaseUnavailableError);
+    expect((await context.db.paymentTransaction.findUniqueOrThrow({ where: { id: context.result.payment.id } })).status).toBe("paid");
+    expect(await context.db.postPurchaseCredit.count({ where: { vendorId: context.input.vendor.id } })).toBe(1);
+  });
+  it("does not treat a pending payment with an already paid order as an idempotent recovery", async () => {
+    const context = await expiredManualSession();
+    await resumePostPurchaseCheckout(context.request, context.identity);
+    await context.db.$transaction(tx => reconcileCommerceOrderPaymentTransition(tx, { vendorId: context.input.vendor.id,
+      paymentTransactionId: context.result.payment.id, transition: "paid", eventIdentity: randomUUID() }));
+    await expect(resumePostPurchaseCheckout(context.request, context.identity)).rejects.toThrow(PostPurchaseUnavailableError);
+    expect((await context.db.commerceOrder.findUniqueOrThrow({ where: { id: context.result.targetOrderId } })).status).toBe("paid");
+    expect((await context.db.product.findUniqueOrThrow({ where: { id: context.input.target.id } })).inventory).toBe(0);
+  });
   for (const reason of ["provider_checkout_failed", "checkout_metadata_failed"] as const) {
     it(`restores the same unissued ${reason} checkout at its immutable net price`, async () => {
       const context = await preparationFailure(reason);
-      expect(await resumeUnissuedPostPurchaseCheckout(context.request, context.identity)).toBe(true);
-      expect(await resumeUnissuedPostPurchaseCheckout(context.request, context.identity)).toBe(false);
+      expect(await resumePostPurchaseCheckout(context.request, context.identity)).toBe(true);
+      expect(await resumePostPurchaseCheckout(context.request, context.identity)).toBe(false);
       const payment = await context.db.paymentTransaction.findUniqueOrThrow({ where: { id: context.result.payment.id } });
       expect(payment).toMatchObject({ status: "pending", grossAmountCents: 9_500, orderNumber: context.result.payment.orderNumber,
         metadata: { postPurchaseSessionState: "issued", checkoutSession: { mode: "manual", provider: "demo" } } });
@@ -123,8 +190,8 @@ describe("transactional post-purchase upgrade credit", () => {
   }
   it("concurrent preparation recovery reserves stock once without creating another payment", async () => {
     const context = await preparationFailure();
-    const outcomes = await Promise.all([resumeUnissuedPostPurchaseCheckout(context.request, context.identity),
-      resumeUnissuedPostPurchaseCheckout(context.request, context.identity)]);
+    const outcomes = await Promise.all([resumePostPurchaseCheckout(context.request, context.identity),
+      resumePostPurchaseCheckout(context.request, context.identity)]);
     expect(outcomes.sort()).toEqual([false, true]);
     expect((await context.db.product.findUniqueOrThrow({ where: { id: context.input.target.id } })).inventory).toBe(0);
     expect(await context.db.paymentTransaction.count({ where: { vendorId: context.input.vendor.id } })).toBe(2);
@@ -134,18 +201,18 @@ describe("transactional post-purchase upgrade credit", () => {
     await context.db.paymentTransaction.update({ where: { id: context.result.payment.id }, data: {
       metadata: { productId: context.input.target.id, postPurchaseCredit: {}, postPurchaseSessionState: "issued" },
     } });
-    await expect(resumeUnissuedPostPurchaseCheckout(context.request, context.identity)).rejects.toThrow(PostPurchaseUnavailableError);
+    await expect(resumePostPurchaseCheckout(context.request, context.identity)).rejects.toThrow(PostPurchaseUnavailableError);
     expect((await context.db.product.findUniqueOrThrow({ where: { id: context.input.target.id } })).inventory).toBe(1);
   });
   it("a provider reference forbids unissued-session recovery even when local metadata says unissued", async () => {
     const context = await preparationFailure();
     await context.db.paymentTransaction.update({ where: { id: context.result.payment.id }, data: { providerTradeNo: "synthetic-provider-reference" } });
-    await expect(resumeUnissuedPostPurchaseCheckout(context.request, context.identity)).rejects.toThrow(PostPurchaseUnavailableError);
+    await expect(resumePostPurchaseCheckout(context.request, context.identity)).rejects.toThrow(PostPurchaseUnavailableError);
     expect((await context.db.paymentTransaction.findUniqueOrThrow({ where: { id: context.result.payment.id } })).status).toBe("failed");
   });
   it("source refund prevents local session recovery without recreating credit or stock", async () => {
     const context = await preparationFailure(); await refund(context.input);
-    await expect(resumeUnissuedPostPurchaseCheckout(context.request, context.identity)).rejects.toThrow(PostPurchaseUnavailableError);
+    await expect(resumePostPurchaseCheckout(context.request, context.identity)).rejects.toThrow(PostPurchaseUnavailableError);
     expect((await context.db.product.findUniqueOrThrow({ where: { id: context.input.target.id } })).inventory).toBe(1);
     expect(await context.db.postPurchaseCredit.count({ where: { vendorId: context.input.vendor.id } })).toBe(1);
   });

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { hashPassword } from "../../src/lib/password";
-import { createReservedPaymentTransaction, failPendingCheckoutAndReleaseInventory } from "../../src/lib/inventory-reservations";
+import { createReservedPaymentTransaction, failPendingCheckoutAndReleaseInventory, releaseExpiredInventoryReservations } from "../../src/lib/inventory-reservations";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition, reconcileCommerceOrderRefund } from "../../src/lib/commerce-orders";
 import { issueBuyerSupportGrant } from "../../src/lib/buyer-support-access";
 
@@ -137,6 +137,22 @@ test("merchant configures offers; buyer declines, upgrades once, resumes and los
     expect(await db.postPurchaseCredit.count({ where: { vendorId: vendor.id } })).toBe(1);
     expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id } })).toBe(2);
     expect((await db.product.findUniqueOrThrow({ where: { id: target.id } })).inventory).toBe(2);
+    stage("synthetic-expired-manual-recovery");
+    const manualPayment = await db.paymentTransaction.findUniqueOrThrow({ where: { id: originalPayment.id } });
+    await db.inventoryReservation.update({ where: { paymentTransactionId: originalPayment.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    await releaseExpiredInventoryReservations(100);
+    expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: originalPayment.id } })).status).toBe("expired");
+    const expiredRecoveryResponse = viewer.waitForResponse(response => response.url().endsWith("/api/payments/checkout/recovery") && response.request().method() === "POST");
+    await viewer.reload(); expect((await expiredRecoveryResponse).status()).toBe(200);
+    await expect(viewer.getByText("已找到原本的待付款訂單。", { exact: false })).toBeVisible();
+    expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: originalPayment.id } }))
+      .toMatchObject({ status: "pending", grossAmountCents: 9500, metadata: {
+        checkoutSession: (manualPayment.metadata as Prisma.JsonObject).checkoutSession } });
+    expect((await db.product.findUniqueOrThrow({ where: { id: target.id } })).inventory).toBe(2);
+    expect(await db.postPurchaseCredit.count({ where: { vendorId: vendor.id } })).toBe(1);
+    expect(await db.paymentTransaction.count({ where: { vendorId: vendor.id } })).toBe(2);
+    expect(await db.commerceOrderEvent.count({ where: { vendorId: vendor.id, orderId: credit.targetOrderId,
+      eventType: "payment.checkout_recovered" } })).toBe(2);
     stage("source-refund");
     await db.$transaction(tx => reconcileCommerceOrderRefund(tx, { vendorId: vendor.id, orderId: sourceOrderId,
       providerName: "demo", eventIdentity: randomUUID(), amountCents: 1000, occurredAt: new Date() }), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

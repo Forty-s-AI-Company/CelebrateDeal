@@ -1,0 +1,18 @@
+{
+  "run_id": 37580991693,
+  "head": "36bb661166406c82929f6bf4b9c424fc081eb846",
+  "status": "FAILURE",
+  "failed_step": "Strict production index access",
+  "annotation_check_id": 112660362247,
+  "compiler_locations": [
+    { "file": "src/lib/post-purchase-checkout-recovery.ts", "line": 24, "count": 2 },
+    { "file": "src/lib/post-purchase-checkout-recovery.ts", "line": 61, "count": 1 }
+  ],
+  "diagnosis": "Unchecked primary order item access",
+  "correction": "Validate the primary item explicitly and pass its validated display name to local preparation",
+  "fresh_local_strict_index": "PASS",
+  "fresh_exact_head_ci": "NOT_REQUESTED_YET",
+  "raw_log_output": false,
+  "canonical_acceptance": "NOT_READY",
+  "delivered": false
+}

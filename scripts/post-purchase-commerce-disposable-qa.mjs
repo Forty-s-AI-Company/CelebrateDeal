@@ -48,7 +48,7 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
       locations: [...new Set((test.failureMessages ?? []).join("\n").match(/post-purchase-(?:upsell(?:-access)?|credit)(?:\.db)?(?:\.test)?\.ts:\d+:\d+/gu) ?? [])] })));
   fs.mkdirSync(".ai-team/reports", { recursive: true });
   fs.writeFileSync(".ai-team/reports/post-purchase-failures.json", JSON.stringify({ tests, failures }));
-  if (result.status !== 0 || !raw.success || tests.total !== 37 || tests.skipped) throw new Error("post-purchase-tests-failed");
+  if (result.status !== 0 || !raw.success || tests.total !== 43 || tests.skipped) throw new Error("post-purchase-tests-failed");
   // Generation writes shared Prisma modules. Run the complete unit slice
   // before browser startup, which generates that same client again.
   const unitReportPath = path.join(tempRoot, "post-purchase-unit.json");
@@ -93,7 +93,7 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
         : "GLOBAL_SETUP_UNKNOWN");
     }
     const allowedStages = new Set(["fixture", "merchant-login", "merchant-config", "merchant-form-loaded", "merchant-form-filled", "merchant-form-submitted", "settled-source-handoff", "anonymous-isolation",
-      "buyer-decline", "buyer-accept", "checkout-submit", "pending-recovery", "synthetic-unissued-preparation-recovery", "source-refund"]);
+      "buyer-decline", "buyer-accept", "checkout-submit", "pending-recovery", "synthetic-unissued-preparation-recovery", "synthetic-expired-manual-recovery", "source-refund"]);
     const visit = suite => {
       for (const spec of suite.specs ?? []) for (const test of spec.tests ?? []) for (const attempt of test.results ?? []) {
         for (const annotation of test.annotations ?? []) if (annotation.type === "post-purchase-stage" && allowedStages.has(annotation.description)) browser.stages.push(annotation.description);
