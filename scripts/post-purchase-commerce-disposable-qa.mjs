@@ -47,7 +47,7 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
       locations: [...new Set((test.failureMessages ?? []).join("\n").match(/post-purchase-(?:upsell(?:-access)?|credit)(?:\.db)?(?:\.test)?\.ts:\d+:\d+/gu) ?? [])] })));
   fs.mkdirSync(".ai-team/reports", { recursive: true });
   fs.writeFileSync(".ai-team/reports/post-purchase-failures.json", JSON.stringify({ tests, failures }));
-  if (result.status !== 0 || !raw.success || tests.total !== 26 || tests.skipped) throw new Error("post-purchase-tests-failed");
+  if (result.status !== 0 || !raw.success || tests.total !== 31 || tests.skipped) throw new Error("post-purchase-tests-failed");
   // Generation writes shared Prisma modules. Run the complete unit slice
   // before browser startup, which generates that same client again.
   const unitReportPath = path.join(tempRoot, "post-purchase-unit.json");

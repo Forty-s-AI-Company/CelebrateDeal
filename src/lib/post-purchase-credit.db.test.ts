@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getDb } from "@/lib/db";
 import { BUYER_SUPPORT_COOKIE_PREFIX, issueBuyerSupportGrant } from "@/lib/buyer-support-access";
 import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition, reconcileCommerceOrderRefund } from "@/lib/commerce-orders";
-import { createReservedPaymentTransaction } from "@/lib/inventory-reservations";
+import { createReservedPaymentTransaction, failPendingCheckoutAndReleaseInventory,
+  reacquireReleasedCheckoutInventory, releaseExpiredInventoryReservations } from "@/lib/inventory-reservations";
 import { protectProductDeliveryConfig } from "@/lib/product-delivery";
 import { issuePostPurchaseCheckoutToken } from "@/lib/post-purchase-upsell";
 import { assertPostPurchaseCreditReplay, consumePostPurchaseCredit, PostPurchaseUnavailableError, resolvePostPurchaseCreditQuote } from "./post-purchase-credit";
@@ -93,6 +94,58 @@ async function refund(input: Fixture) {
 }
 
 describe("transactional post-purchase upgrade credit", () => {
+  for (const failure of ["provider_checkout_failed", "expired"] as const) {
+    it(`reacquires the original ${failure} inventory once without replacing its credit or transaction`, async () => {
+      const input = await fixture(1); const result = await upgrade(input);
+      const now = new Date(Date.now() + 31 * 60_000);
+      if (failure === "expired") await releaseExpiredInventoryReservations(100, now);
+      else await failPendingCheckoutAndReleaseInventory({ vendorId: input.vendor.id, transactionId: result.payment.id, reason: failure });
+      const db = getDb();
+      const recoverStock = () => db.$transaction(async tx => {
+        await assertPostPurchaseCreditReplay(tx, input.cookies, { vendorId: input.vendor.id,
+          targetOrderId: result.targetOrderId, productId: input.target.id });
+        return reacquireReleasedCheckoutInventory(tx, { vendorId: input.vendor.id,
+          transactionId: result.payment.id, productId: input.target.id, now });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      expect(await recoverStock()).toBe(true);
+      expect(await recoverStock()).toBe(false);
+      expect((await db.product.findUniqueOrThrow({ where: { id: input.target.id } })).inventory).toBe(0);
+      expect(await db.postPurchaseCredit.count({ where: { vendorId: input.vendor.id } })).toBe(1);
+      expect(await db.paymentTransaction.count({ where: { vendorId: input.vendor.id } })).toBe(2);
+      expect(await db.commerceOrder.findUniqueOrThrow({ where: { id: result.targetOrderId } }))
+        .toMatchObject({ primaryPaymentTransactionId: result.payment.id, totalAmountCents: 9_500 });
+    });
+  }
+  it("rolls recovery back when released stock has sold out", async () => {
+    const input = await fixture(1); const result = await upgrade(input); const db = getDb();
+    await failPendingCheckoutAndReleaseInventory({ vendorId: input.vendor.id, transactionId: result.payment.id, reason: "provider_checkout_failed" });
+    await db.product.update({ where: { id: input.target.id }, data: { inventory: 0 } });
+    await expect(db.$transaction(tx => reacquireReleasedCheckoutInventory(tx, { vendorId: input.vendor.id,
+      transactionId: result.payment.id, productId: input.target.id }), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }))
+      .rejects.toThrow("Product inventory is unavailable.");
+    expect((await db.inventoryReservation.findUniqueOrThrow({ where: { paymentTransactionId: result.payment.id } })).status).toBe("released");
+    expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: result.payment.id } })).status).toBe("failed");
+  });
+  it("rejects another tenant before reacquiring inventory", async () => {
+    const input = await fixture(1); const result = await upgrade(input); const db = getDb();
+    await failPendingCheckoutAndReleaseInventory({ vendorId: input.vendor.id, transactionId: result.payment.id, reason: "provider_checkout_failed" });
+    await expect(db.$transaction(tx => reacquireReleasedCheckoutInventory(tx, { vendorId: randomUUID(),
+      transactionId: result.payment.id, productId: input.target.id }), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }))
+      .rejects.toThrow("Inventory reservation input is invalid.");
+    expect((await db.product.findUniqueOrThrow({ where: { id: input.target.id } })).inventory).toBe(1);
+  });
+  it("a refunded source prevents recovery before any released stock is reacquired", async () => {
+    const input = await fixture(1); const result = await upgrade(input); const db = getDb();
+    await failPendingCheckoutAndReleaseInventory({ vendorId: input.vendor.id, transactionId: result.payment.id, reason: "provider_checkout_failed" });
+    await refund(input);
+    await expect(db.$transaction(async tx => {
+      await assertPostPurchaseCreditReplay(tx, input.cookies, { vendorId: input.vendor.id,
+        targetOrderId: result.targetOrderId, productId: input.target.id });
+      return reacquireReleasedCheckoutInventory(tx, { vendorId: input.vendor.id,
+        transactionId: result.payment.id, productId: input.target.id });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })).rejects.toThrow(PostPurchaseUnavailableError);
+    expect((await db.product.findUniqueOrThrow({ where: { id: input.target.id } })).inventory).toBe(1);
+  });
   it("resumes only the original pending target with the current buyer grant and immutable credit", async () => {
     const input = await fixture();
     const result = await upgrade(input);
