@@ -92,6 +92,9 @@ jobs:
       - name: PayUni deployment environment binding contract
         run: npx vitest run src/lib/env.test.ts
 
+      - name: Tracking payment outbox database boundaries
+        run: node scripts/tracking-settings-disposable-qa.mjs
+
       - name: Strict production index access
         run: npm run typecheck:strict-index
 

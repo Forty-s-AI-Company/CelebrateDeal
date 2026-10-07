@@ -85,6 +85,7 @@ model Vendor {
 
   members                          VendorMember[]
   tracking                         TrackingSetting?
+  trackingDeliveries               TrackingDelivery[]
   videos                           Video[]
   products                         Product[]
   automationRules                  AutomationRule[]
@@ -324,6 +325,32 @@ model TrackingSetting {
   updatedAt           DateTime @updatedAt
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+}
+
+/// A payment-transaction outbox. No token or plaintext buyer identity is stored.
+model TrackingDelivery {
+  id                    String   @id @default(cuid())
+  vendorId              String
+  orderId               String
+  eventId               String
+  credentialRevision    Int
+  pixelId               String
+  testEventCode         String?
+  status                String   @default("queued")
+  attemptCount          Int      @default(0)
+  nextAttemptAt         DateTime @default(now())
+  leaseToken            String?
+  leaseExpiresAt        DateTime?
+  acceptedAt            DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  order CommerceOrder @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, eventId])
+  @@index([status, nextAttemptAt])
+  @@index([vendorId, orderId])
 }
 
 model Video {
@@ -1663,6 +1690,7 @@ model CommerceOrder {
   buyerSupportOrderGrants   BuyerSupportOrderGrant[]
   deliverySnapshots         CommerceOrderItemDeliverySnapshot[]
   electronicInvoice         ElectronicInvoice?
+  trackingDeliveries        TrackingDelivery[]
 
   @@unique([vendorId, id])
   @@unique([vendorId, orderNumber])

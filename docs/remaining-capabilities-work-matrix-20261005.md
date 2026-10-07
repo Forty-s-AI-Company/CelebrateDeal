@@ -79,3 +79,9 @@ Q2 latest exact candidate `b0362e3a`：87 migrations、67/67 DB、2/2 browser、
 
 
 A1 domain workflow migration: exact source `bf45235f8b10fa1fded2da0a4c079e5b883cfef0`, current base `a10728f4147ce84ad6d33524ed0e412660602283`; root sole writer, one readonly reviewer, task `a1-canonical-domain-workflows` dispatch2/4. Six thin project adapters plus shared domain contracts preserve product actors, attribution/commission/refund/chargeback, tenant, browser console/network/privacy, design and canonical acceptance requirements. Six skill validations, links/anchors and 38 routing tests PASS; original MAJOR/MINOR fixed and independent incremental review findings=[]; observed unknown. Canonical revision `sha256:452d43d895b3fb606aed31ab8be39a8c50fe16fecd5a3f203133080f7a6688e6` READY. Evidence `remaining-capabilities-a1-domain-workflows-20261007.json`. Exact-head CI and protected PR delivery pending; remaining historical application/workflow scope retained, A1/Goal NOT COMPLETE.
+
+## 2026-10-07 F2 server tracking 續接 checkpoint
+
+| ID | 精確來源 | 缺口與相依 | owner | 驗收條件 | 本輪證據 | 實際狀態 |
+|---|---|---|---|---|---|---|
+| F2 tracking / `f2-server-tracking-webhooks` | 歷史 `b5397dbb45ddc4dc15a3059b7dec90b5a7771487`；當前 main `c72b5089a0a87e63ebb5cea6a09fdb28deb2b93d` | Purchase 已接實際付款 transaction/outbox；其餘事件、實際 browser、核准 provider binding/proof 未完成。不依賴 Q1 注入。 | root 唯一 writer；readonly review 尚未派遣 0/4 | tenant/CSRF/CAS、付款與 queue atomicity、FK/concurrency/retry/refund、實際介面、provider proof、Critical independent review、canonical acceptance、精確 head CI、protected PR | `remaining-capabilities-f2-tracking-payment-outbox-checkpoint-20261007.json`：89 migrations、18 DB、68 unit、12 TAP、TS/lint PASS；另有先前完整55付款 DB PASS。來源綁定1899檔。 | 已實作部分待驗收；NOT_READY；未建 PR、未交付；全 Goal 未 COMPLETE。 |

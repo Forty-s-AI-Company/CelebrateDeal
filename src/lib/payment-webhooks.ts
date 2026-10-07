@@ -29,6 +29,7 @@ import {
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
 import { reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
 import { ensureCommerceOrderPaidDelivery } from "@/lib/commerce-order-email";
+import { enqueuePaidPurchaseTracking } from "@/lib/tracking-purchase-outbox";
 import { getDb } from "@/lib/db";
 import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
 import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-invoice";
@@ -1053,6 +1054,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
         eventType: payload.eventType, eventIdentity: payload.eventId, occurredAt,
       });
       if (payload.eventType === "paid") {
+        await enqueuePaidPurchaseTracking(tx, { vendorId: vendor.id, paymentTransactionId: savedTransaction.id });
         await ensureCommerceOrderPaidDelivery(tx, {
           vendorId: vendor.id,
           paymentTransactionId: savedTransaction.id,
