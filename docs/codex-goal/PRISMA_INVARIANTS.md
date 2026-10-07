@@ -6,11 +6,16 @@
 
 > 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 88，該歷史收據不代表新 migration、Staging 或 Production 已套用。
 
+> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 86，該歷史收據不代表新 migration、Staging 或 Production 已套用。
+> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 87，該歷史收據不代表新 migration、Staging 或 Production 已套用。
+
 ## Inventory 基準
 
 | 項目 | 結果 |
 |---|---:|
 | Prisma models | 127 |
+
+| Prisma models | 129 |
 | Migration directories | 88 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
@@ -222,12 +227,28 @@
 
 新增 `CourseLesson` 與 `CourseLessonProgress`；前向 migration `20261006040000_native_course_learning`。三欄位 lesson 外鍵同時約束 tenant、course、lesson，進度具非負上限約束。此候選的 disposable PostgreSQL 證據尚待執行，不沿用上方歷史收據。
 
+課程社群候選新增 `CourseCommunityPost`、`CourseCommunityReply`、`CourseCommunityReaction` 與前向 migration `20261006070000_course_community`。課程／租戶 composite FK、無 public policy 的 RLS、文字長度限制及 learner-qualified 唯一鍵；85 migrations 與 7 項 disposable PostgreSQL 回歸已通過。此結果不代表 staging／Production 或瀏覽器完成驗收。
+
+本次 F1.2 最終候選：85 migration、9 PostgreSQL 邊界回歸、1 manager/learner Chromium 長討論旅程、8 unit、TS/lint及1067 Node TAP零skip PASS；Critical複審無findings、canonical READY。精確head CI及受保護合併待完成。
+
 F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。
 
 ## 2026-10-07 本輪私訊資料層
 
 新增 `LivePrivateChatMessage` 與前向 migration `20261007110000_live_private_chat_messages`。獨立 AES-GCM 密文表；vendor/live、live/submission、vendor/author composite FK、作者來源與密文格式 CHECK、conversation 索引、64hex唯一訊息ID。Disposable PostgreSQL 完整86 migration及12 DB回歸 PASS，含既有廣播6項、私訊6項、併發唯一及跨租戶拒絕。尚無完整私訊 API/UI/browser/review/gate，不能宣稱交付；歷史migration清單與收據保留。
 
+
+F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。
+
+F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。
+
+本次社群／夥伴入口整合候選有129models與86migrations；新整合驗證尚未完成，舊收據不代表本次PASS。
 Q2 本輪前向新增 `20261006140000_subscription_refund_entitlement_state`；既有126models不變，VendorUsageLimit新增active/revoked權限狀態。初次86 migration完整套用及51 PostgreSQL回歸PASS；之後擴充native退款backfill至byo訂閱快照，需重新驗證新revision。歷史migration/checksum保持原樣。
 
 Q2 新增 forward migration `20261007002000_reconcile_legacy_subscription_refund_state`：以既有完整 processed refund ledger 修復 native subscription 權益；保留較新 active subscription 與 usage counters，既有 migration checksum 不變。87 migrations disposable PostgreSQL 完整套用通過；latest-head DB/browser 收據仍待完成。
+
+Current integrated inventory: 
+
+## Private messaging + delivered community/PWA candidate 20261008
+
+Current inventory: 130 models and 89 forward migrations, including `20261006070000_course_community` and `20261007110000_live_private_chat_messages`. Preserve every historical SQL/checksum and fixed staging replay window.

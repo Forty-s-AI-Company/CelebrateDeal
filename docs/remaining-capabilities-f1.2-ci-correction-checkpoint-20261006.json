@@ -1,0 +1,122 @@
+{
+  "schemaVersion": "community-ci-correction/v1",
+  "status": "VALIDATING_REVIEW_EXTENSION_REQUIRED",
+  "published_prior_head": "92dcac17cf1e1ca247bff9168c78e01e869c571b",
+  "revision": "sha256:99408aaf5e24295f3c0248a542325f5e66a8e68bad9524d4c912116de1213c64",
+  "snapshot_files": [
+    ".github/workflows/ci.yml",
+    "playwright.course-community.config.ts",
+    "prisma/migrations/20261006070000_course_community/migration.sql",
+    "prisma/schema.prisma",
+    "scripts/course-community-browser-qa.mjs",
+    "scripts/course-community-disposable-qa.mjs",
+    "scripts/g7-email-operations-browser-qa.test.mjs",
+    "scripts/prisma-invariant-inventory.test.ts",
+    "scripts/prisma-loopback-disposable-migration-runner.mjs",
+    "scripts/staging-migration-compat-preflight.test.mjs",
+    "scripts/staging-migration-isolated-replay.test.mjs",
+    "scripts/staging-payuni-management-migrate.test.ts",
+    "src/app/(app)/products/[id]/community/page.tsx",
+    "src/app/(app)/products/[id]/lessons/page.tsx",
+    "src/app/actions/course-community-actions.ts",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/community/data/route.test.ts",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/community/data/route.ts",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/community/page.tsx",
+    "src/app/portal/[vendorSlug]/learn/[courseId]/page.tsx",
+    "src/components/course-community.tsx",
+    "src/lib/course-community.db.test.ts",
+    "src/lib/course-community.test.ts",
+    "src/lib/course-community.ts",
+    "src/lib/student-course-learning.ts",
+    "tests/e2e/course-community.spec.ts",
+    "tests/e2e/wp88-direct-url-guard-matrix.spec.ts",
+    "vitest.course-community-db.config.ts"
+  ],
+  "canonical_acceptance": {
+    "status": "BLOCKED",
+    "blockers": [
+      "independent_review_unverified",
+      "required_check_unverified:browser",
+      "required_check_unverified:coverage",
+      "required_check_unverified:db"
+    ],
+    "revision": "sha256:99408aaf5e24295f3c0248a542325f5e66a8e68bad9524d4c912116de1213c64"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:99408aaf5e24295f3c0248a542325f5e66a8e68bad9524d4c912116de1213c64",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 12.125,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\unit-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:99408aaf5e24295f3c0248a542325f5e66a8e68bad9524d4c912116de1213c64",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 33.031,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\typecheck-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "strict-index",
+      "revision": "sha256:99408aaf5e24295f3c0248a542325f5e66a8e68bad9524d4c912116de1213c64",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 85.657,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\strict-index-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:99408aaf5e24295f3c0248a542325f5e66a8e68bad9524d4c912116de1213c64",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 18.391,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\lint-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "db",
+      "revision": "sha256:1a6ed01dbf1b8a7277081d3b8039ea1690293e3187ab45dbcac4758f2e42b8aa",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 15.828,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\db-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "browser",
+      "revision": "sha256:1a6ed01dbf1b8a7277081d3b8039ea1690293e3187ab45dbcac4758f2e42b8aa",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 210.906,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\browser-final.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "contracts",
+      "revision": "sha256:99408aaf5e24295f3c0248a542325f5e66a8e68bad9524d4c912116de1213c64",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 151.907,
+      "evidence_path": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal-community\\.ai-team\\tmp\\course-community\\contracts-final.json"
+    }
+  ],
+  "review_dispatches": 4,
+  "review_dispatch_limit": 4,
+  "owner_extension": "REQUESTED_NOT_GRANTED",
+  "remote_ci": "PENDING_NEW_CHECKPOINT",
+  "delivery": "NOT_DELIVERED"
+}

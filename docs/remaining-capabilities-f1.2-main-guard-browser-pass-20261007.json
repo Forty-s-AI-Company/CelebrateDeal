@@ -1,0 +1,47 @@
+{
+  "status": "LOCAL_GUARD_MATRIX_PASS_REMOTE_CI_PENDING",
+  "prior_failed_ci": 37616047757,
+  "prior_head": "5d923bbb84cc100895993d5b929d2595a18d2cf8",
+  "receipt": {
+    "schemaVersion": "course-community-browser/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T12:11:47.055Z",
+    "finishedAt": "2026-10-07T12:16:01.803Z",
+    "browserScope": "complete-direct-url-guard-matrix",
+    "failedTitles": [],
+    "browser": {
+      "expected": 1,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "migrations": 88,
+  "guarded_pages": 91,
+  "vendorManager_pages": 52,
+  "source_files": {
+    "tests/e2e/wp88-direct-url-guard-matrix.spec.ts": "01e003dd3d4ba877dec720e5053f7d9ff6f3daf02cbc06618a0d0874b9d2bf66",
+    "playwright.course-community-guard.config.ts": "2f4ed589a56448c23b9635a609f3ee0adc645b7b081ed4fdb42834d7a46aae39",
+    "playwright.course-community.config.ts": "c1b7b92b5335a6705ce33f10d27541922dd364e27e739c99de4c97a661e1f4b6",
+    "scripts/course-community-browser-qa.mjs": "81bcde39565a9cc56e1c25afdf3c4f2962700fdb8c3ba6f8f2a50dc5b4a01799",
+    "playwright.config.ts": "a811e7f2edcdc2781489e677eddae0e30874abe5ff00213a969b263793920960",
+    "src/lib/auth.ts": "14204a08f6d214db6fd671593815efe00a35747df8a130c1d93bab7dbf74d854",
+    "prisma/schema.prisma": "52128ac6e04256fd41650aba47f9cbe45e0c0460a2ca69c86d7a39a610bb5705"
+  },
+  "lint": "PASS",
+  "latest_independent_review": "PENDING_AUTHORIZATION",
+  "assertions_removed": 0,
+  "skip": 0,
+  "flaky": 0,
+  "delivered": false
+}
