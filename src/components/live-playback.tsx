@@ -9,6 +9,7 @@ import { LiveMediaReceiver } from "@/components/live-media-receiver";
 import { canUseLiveAdvancedInteractions, LiveAdvancedInteractions } from "@/components/live-advanced-interactions";
 import { LiveChatPanel } from "@/components/live-chat-panel";
 import { LivePurchaseBroadcastPanel } from "@/components/live-purchase-broadcast-panel";
+import { LiveViewerPrivateChat } from "@/components/live-viewer-private-chat";
 import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
@@ -1371,7 +1372,9 @@ function LivePlaybackExperience({
           trackCta={trackCta}
           trackProduct={trackProduct}
         />
-        <div className="max-h-[46vh] min-h-0 overflow-hidden rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md">
+        <div className="max-h-[46vh] min-h-0 overflow-y-auto rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md">
+          {canUseLiveAdvancedInteractions(true, admissionStatus, live.admissionRequired)
+            ? <LiveViewerPrivateChat key={`${live.vendorId}:${live.id}:${admissionStatus}`} vendorId={live.vendorId} liveId={live.id} /> : null}
           <LiveChatPanel
             enabled={live.chatEnabled === true}
             admissionStatus={admissionStatus}

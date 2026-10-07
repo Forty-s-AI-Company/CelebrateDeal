@@ -16,4 +16,10 @@ export const PrivateChatMessage = z.object({
   body: z.string().min(1).max(2_000), createdAt: z.string().datetime(),
 }).strict();
 export const PrivateChatPage = z.object({ messages: z.array(PrivateChatMessage).max(50), nextCursor: z.string().max(256).nullable() }).strict();
+export const PrivateChatResponse = PrivateChatPage.extend({ csrfToken: z.string().min(1).max(512) }).strict();
+export const PrivateInstructorConversations = z.object({
+  conversations: z.array(z.object({ submissionId: Id, displayName: z.string().min(1).max(160) }).strict()).max(50),
+  nextCursor: z.string().max(256).nullable(),
+}).strict();
+export const PrivateInstructorConversationsResponse = PrivateInstructorConversations.extend({ csrfToken: z.string().min(1).max(512) }).strict();
 export type PrivateChatMessageDto = z.infer<typeof PrivateChatMessage>;

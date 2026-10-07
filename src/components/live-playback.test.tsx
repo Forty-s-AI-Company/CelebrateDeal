@@ -75,6 +75,7 @@ import { trackClientAnalytics } from "@/lib/client-analytics";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import { LiveChatPanel } from "./live-chat-panel";
 import { LivePurchaseBroadcastPanel } from "./live-purchase-broadcast-panel";
+import { LiveViewerPrivateChat } from "./live-viewer-private-chat";
 import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, getWaitingCountdownSeconds, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, normalizePlaybackStartSeconds, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout, useLiveAdmission, useLivePlaybackSource } from "./live-playback";
 
 type ElementNode = {
@@ -270,17 +271,21 @@ describe("LivePlayback checkout", () => {
     })));
     const scope = { runtimeState: "playing" as const, status: "live", admissionRequired: true };
     const cards = (tree: unknown) => findElements(tree, element => element.type === LivePurchaseBroadcastPanel);
+    const privateChat = (tree: unknown) => findElements(tree, element => element.type === LiveViewerPrivateChat);
     expect(cards(renderLive(scope))).toHaveLength(0);
+    expect(privateChat(renderLive(scope))).toHaveLength(0);
     await flushHookEffects();
     renderLive(scope);
     await flushHookEffects();
     expect(cards(renderLive(scope))).toHaveLength(0);
+    expect(privateChat(renderLive(scope))).toHaveLength(1);
     const revealed = { ...scope, interactionEvents: [productSpotlightEvent("purchase-reveal", 0, "test-fixture-product-1")] };
     const panel = cards(renderLive(revealed));
     expect(panel).toHaveLength(1);
     expect(panel[0].props).toMatchObject({ vendorId: live.vendorId, liveId: live.id });
     (panel[0].props.onAdmissionInvalid as () => void)();
     expect(cards(renderLive(revealed))).toHaveLength(0);
+    expect(privateChat(renderLive(revealed))).toHaveLength(0);
   });
 
   it("does not expose broadcasts through a legacy playback without admission", () => {
@@ -290,6 +295,7 @@ describe("LivePlayback checkout", () => {
       interactionEvents: [productSpotlightEvent("legacy-reveal", 0, "test-fixture-product-1")],
     });
     expect(findElements(tree, element => element.type === LivePurchaseBroadcastPanel)).toHaveLength(0);
+    expect(findElements(tree, element => element.type === LiveViewerPrivateChat)).toHaveLength(0);
   });
   it("removes the bearer Live share from the browser URL while preserving safe navigation state", () => {
     expect(stripLiveShareFromUrl("https://app.example.test/live/webinar?share=tls1.fixture&ref=ignored#form"))

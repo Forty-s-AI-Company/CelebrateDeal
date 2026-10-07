@@ -9,6 +9,10 @@ sourceFiles.push("src/lib/live-private-chat.ts", "src/lib/live-private-chat-cont
 sourceFiles.push("src/lib/live-chat-request-security.ts", "src/app/api/live-chat/messages/route.ts",
   "src/app/api/live-chat/private/route.ts", "src/app/api/live-chat/private/route.test.ts");
 sourceFiles.push("src/app/api/live-chat/instructor/route.ts", "src/app/api/live-chat/instructor/route.test.ts");
+sourceFiles.push("src/components/live-private-conversation-panel.tsx", "src/components/live-viewer-private-chat.tsx",
+  "src/components/live-instructor-private-chat.tsx", "src/components/live-private-chat-ui.test.tsx",
+  "src/app/(app)/lives/[id]/chat/page.tsx", "src/app/(app)/lives/page.tsx",
+  "src/components/live-playback.test.tsx", "tests/e2e/wp88-direct-url-guard-matrix.spec.ts");
 const snapshot = () => Object.fromEntries(sourceFiles.map(file => [file, createHash("sha256").update(fs.readFileSync(file)).digest("hex")]));
 const original = snapshot();
 let tests;
