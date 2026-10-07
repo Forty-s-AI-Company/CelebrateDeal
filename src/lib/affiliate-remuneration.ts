@@ -24,7 +24,8 @@ export type AffiliateRemunerationQuote = {
   ruleVersion: typeof AFFILIATE_REMUNERATION_RULE_VERSION;
 };
 
-function assertClassification(input: AffiliateRemunerationInput) {
+export function validateAffiliateRecipientClassification(raw: unknown) {
+  const input = Input.omit({ grossAmountCents: true, bankFeeCents: true }).parse(raw);
   if (input.recipientType === "domestic_invoice_business") {
     if (!input.invoiceReference || input.nhiTreatment !== "not_applicable_business") throw new Error("An approved invoice business classification is required.");
     return;
@@ -53,7 +54,7 @@ function incomeTaxCents(grossCents: number, rateBps: number, resident: boolean) 
  */
 export function calculateAffiliateRemuneration(raw: unknown): AffiliateRemunerationQuote {
   const input = Input.parse(raw);
-  assertClassification(input);
+  validateAffiliateRecipientClassification({ recipientType: input.recipientType, nhiTreatment: input.nhiTreatment, exemptionReference: input.exemptionReference, invoiceReference: input.invoiceReference });
   const business = input.recipientType === "domestic_invoice_business";
   const resident = input.recipientType === "resident_individual";
   const withholdingTaxCents = business ? 0 : incomeTaxCents(input.grossAmountCents, resident ? 1_000 : 2_000, resident);

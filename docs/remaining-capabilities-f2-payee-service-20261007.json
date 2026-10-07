@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "celebratedeal-f2-payee-service/v1",
+  "task_id": "f2-merchant-remuneration",
+  "goal_id": "remaining-capabilities-20261005",
+  "base_head": "080bb179239f970ebbcbe054c16e6a65ea718e50",
+  "source_files": [
+    {
+      "path": "src/lib/affiliate-tax-identity.ts",
+      "sha256": "19870974d51a244ce71ab873c4017462ae01ff3245b709c48b4317e4724abe3d"
+    },
+    {
+      "path": "src/lib/affiliate-tax-identity.test.ts",
+      "sha256": "edf96e841695641206cd25a4ee2475d194b6d6a87e251a4f9a04efb166b8ec38"
+    },
+    {
+      "path": "src/lib/affiliate-payee-profile.ts",
+      "sha256": "c7c709379697681f3e2829a052c78c9d4e204ef4c940d0b8025ada7d852839fb"
+    },
+    {
+      "path": "src/lib/affiliate-remuneration.ts",
+      "sha256": "33a89a275b418a04f36c165715a84cb65cc91de9c99a726673a8149c43312cbd"
+    },
+    {
+      "path": "src/lib/affiliate-remuneration.db.test.ts",
+      "sha256": "53cc0456a8a51e7c9e05c8edee1b2fc190ba99436dcf78e0c71174d22f78c3c8"
+    },
+    {
+      "path": "scripts/affiliate-remuneration-disposable-qa.mjs",
+      "sha256": "49ae42a01118b588d799ec584ecb6a8287b728de2c0b4b90b757aad1edb10500"
+    }
+  ],
+  "unit": {
+    "failed": 0,
+    "passed": 39,
+    "files": 4
+  },
+  "disposable": {
+    "schemaVersion": "affiliate-remuneration-disposable/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T00:21:21.799Z",
+    "failures": [],
+    "migrationCount": 87,
+    "finishedAt": "2026-10-07T00:21:42.411Z"
+  },
+  "lint": "PASS",
+  "typescript": "PASS",
+  "typescript_session": 83888,
+  "root_review": {
+    "performance": "Bounded payload and serializable CAS; tax envelope decode capped at 256 chars",
+    "readability": "Explicit classification validation; no browser monetary input or trusted role",
+    "security": "Current tenant grant/member/user/affiliate verified; actual active owner/admin membership approves exact revision; encrypted fields/purpose separated and never returned",
+    "maintainability": "Existing keyring reused; edits invalidate only pending quotes and preserve exported historical snapshots"
+  },
+  "independent_critical_review": "NOT_COMPLETE",
+  "dispatches": 0,
+  "max_dispatches": 4,
+  "acceptance": "NOT_READY",
+  "delivered": false,
+  "remaining": [
+    "Quote/sign/export service and refund/ledger concurrency",
+    "Authenticated CSRF-protected routes and actual UI/browser",
+    "Critical independent review and canonical acceptance",
+    "Exact-head CI/protected delivery"
+  ],
+  "external_operations": false,
+  "secrets_read": false
+}

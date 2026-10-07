@@ -1,7 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { getDb } from "./db";
+import { createBankAccountKeyring } from "./bank-account";
+import { AffiliatePayeeConflict, approveAffiliatePayeeProfile, submitAffiliatePayeeProfile } from "./affiliate-payee-profile";
 const db = getDb();
+const keyring = createBankAccountKeyring({ activeKeyId: "synthetic", keys: { synthetic: Buffer.alloc(32, 4).toString("base64url") } });
+const submission = { expectedRevision: 0, bank: { accountName: "Synthetic", bankCode: "999", accountNumber: "123456789" }, taxIdentity: "SYNTHETIC123", recipientType: "resident_individual", nhiTreatment: "subject_execution_business" };
+async function grant(f: Awaited<ReturnType<typeof fixture>>, role = "partner") {
+  const user = await db.user.create({ data: { email: `${randomUUID()}@example.test`, name: "Synthetic member", passwordHash: "synthetic-only", memberships: { create: { vendorId: f.vendor.id, role, status: "active" } } }, include: { memberships: true } });
+  if (role === "partner") await db.affiliatePortalAccess.create({ data: { vendorId: f.vendor.id, affiliateId: f.affiliate.id, vendorMemberId: user.memberships[0]!.id } });
+  return { userId: user.id };
+}
 async function fixture() {
   const suffix = randomUUID();
   const vendor = await db.vendor.create({ data: { name: "Synthetic payee shop", slug: `payee-${suffix}`, email: `${suffix}@example.test`, passwordHash: "synthetic-only" } });
@@ -47,5 +56,37 @@ describe("affiliate remuneration private database contracts", () => {
     const rows = await db.$queryRaw<{ relname: string; relrowsecurity: boolean; policies: bigint }[]>`SELECT c.relname, c.relrowsecurity, (SELECT count(*) FROM pg_policy p WHERE p.polrelid = c.oid) AS policies FROM pg_class c WHERE c.relname IN ('AffiliatePayeeProfile', 'AffiliateRemunerationSnapshot')`;
     expect(rows).toHaveLength(2);
     for (const row of rows) { expect(row.relrowsecurity).toBe(true); expect(row.policies).toBe(BigInt(0)); }
+  });
+  it("denies foreign or revoked submitters and partner approval", async () => {
+    const f = await fixture(), foreign = await fixture();
+    const actor = await grant(f), other = await grant(foreign);
+    const scope = { vendorId: f.vendor.id, affiliateId: f.affiliate.id };
+    expect(await submitAffiliatePayeeProfile(db, other, scope, submission, keyring)).toBeNull();
+    await submitAffiliatePayeeProfile(db, actor, scope, submission, keyring);
+    expect(await approveAffiliatePayeeProfile(db, actor, scope, 1)).toBeNull();
+    await db.affiliatePortalAccess.update({ where: { vendorId_affiliateId: scope }, data: { active: false } });
+    expect(await submitAffiliatePayeeProfile(db, actor, scope, { ...submission, expectedRevision: 1 }, keyring)).toBeNull();
+  });
+  it("edits revoke exact-revision approval and invalidate pending signed quotes", async () => {
+    const f = await fixture(), actor = await grant(f), manager = await grant(f, "owner");
+    const scope = { vendorId: f.vendor.id, affiliateId: f.affiliate.id };
+    const initial = await submitAffiliatePayeeProfile(db, actor, scope, submission, keyring);
+    expect(initial).toEqual({ revision: 1, recipientType: "resident_individual", nhiTreatment: "subject_execution_business", approvedRevision: null });
+    expect(await approveAffiliatePayeeProfile(db, manager, scope, 1)).toMatchObject({ approvedRevision: 1 });
+    await db.affiliateRemunerationSnapshot.create({ data: { ...f.snapshot, status: "signed", signedByUserId: actor.userId, signedAt: new Date(), profileRevision: 1 } });
+    expect(await submitAffiliatePayeeProfile(db, actor, scope, { ...submission, expectedRevision: 1 }, keyring)).toMatchObject({ revision: 2, approvedRevision: null });
+    expect(await db.affiliateRemunerationSnapshot.findFirst({ where: scope })).toMatchObject({ status: "invalidated", signedByUserId: actor.userId });
+    await expect(approveAffiliatePayeeProfile(db, manager, scope, 1)).rejects.toBeInstanceOf(AffiliatePayeeConflict);
+    const stored = await db.affiliatePayeeProfile.findUniqueOrThrow({ where: { vendorId_affiliateId: scope } });
+    expect(stored.bankEncrypted).not.toContain("123456789");
+    expect(stored.taxIdentityEncrypted).not.toContain("SYNTHETIC123");
+  });
+  it("concurrent first submissions cannot overwrite each other", async () => {
+    const f = await fixture(), actor = await grant(f);
+    const scope = { vendorId: f.vendor.id, affiliateId: f.affiliate.id };
+    const results = await Promise.allSettled(Array.from({ length: 4 }, () => submitAffiliatePayeeProfile(db, actor, scope, submission, keyring)));
+    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    for (const result of results) if (result.status === "rejected") expect(result.reason instanceof AffiliatePayeeConflict || ["P2002", "P2034"].includes(result.reason.code)).toBe(true);
+    expect(await db.affiliatePayeeProfile.count({ where: scope })).toBe(1);
   });
 });
