@@ -10,6 +10,7 @@ import { protectProductDeliveryConfig } from "@/lib/product-delivery";
 import { issuePostPurchaseCheckoutToken } from "@/lib/post-purchase-upsell";
 import { assertPostPurchaseCreditReplay, consumePostPurchaseCredit, PostPurchaseUnavailableError, resolvePostPurchaseCreditQuote } from "./post-purchase-credit";
 import { resumePostPurchaseCheckout } from "./post-purchase-checkout-recovery";
+import { resolvePostPurchaseRecoveryEntry } from "./post-purchase-recovery-entry";
 
 const ownedVendors: string[] = [];
 const buyer = { name: "合成買家", email: "post-purchase@example.test", phone: "0912345678" };
@@ -95,6 +96,38 @@ async function refund(input: Fixture) {
 }
 
 describe("transactional post-purchase upgrade credit", () => {
+  async function entryFixture() {
+    const input = await fixture(); const result = await upgrade(input); const db = getDb();
+    const targetCookie = await issueBuyerSupportGrant(db, { vendorId: input.vendor.id, orderId: result.targetOrderId,
+      request: new Request("http://127.0.0.1:31046/synthetic") });
+    const targetGrant = await db.buyerSupportOrderGrant.findUniqueOrThrow({ where: { vendorId_orderId: {
+      vendorId: input.vendor.id, orderId: result.targetOrderId } } });
+    const cookies = { getAll: () => [...input.cookies.getAll(), { name: targetCookie.name, value: targetCookie.value }] };
+    return { input, result, db, cookies, targetCookie, targetGrant };
+  }
+  it("resolves an exact original order recovery key with current source and target grants", async () => {
+    const context = await entryFixture();
+    expect(await resolvePostPurchaseRecoveryEntry(context.db, context.cookies, context.targetGrant.id)).toEqual({
+      vendorId: context.input.vendor.id, productId: context.input.target.id, idempotencyKey: context.result.payment.checkoutIdempotencyKey,
+    });
+  });
+  it.each(["source", "target"] as const)("rejects recovery entry when the current %s grant is missing", async missing => {
+    const context = await entryFixture();
+    const cookies = { getAll: () => missing === "source" ? [{ name: context.targetCookie.name, value: context.targetCookie.value }] : context.input.cookies.getAll() };
+    await expect(resolvePostPurchaseRecoveryEntry(context.db, cookies, context.targetGrant.id)).rejects.toThrow(PostPurchaseUnavailableError);
+  });
+  it("rejects recovery entry after the original source is refunded", async () => {
+    const context = await entryFixture(); await refund(context.input);
+    await expect(resolvePostPurchaseRecoveryEntry(context.db, context.cookies, context.targetGrant.id)).rejects.toThrow(PostPurchaseUnavailableError);
+  });
+  it("selects the named older order and never substitutes a newer order or tenant", async () => {
+    const older = await entryFixture(); const newer = await entryFixture();
+    const cookies = { getAll: () => [...older.cookies.getAll(), ...newer.cookies.getAll()] };
+    expect(await resolvePostPurchaseRecoveryEntry(older.db, cookies, older.targetGrant.id)).toEqual({
+      vendorId: older.input.vendor.id, productId: older.input.target.id, idempotencyKey: older.result.payment.checkoutIdempotencyKey,
+    });
+    await expect(resolvePostPurchaseRecoveryEntry(older.db, older.cookies, newer.targetGrant.id)).rejects.toThrow(PostPurchaseUnavailableError);
+  });
   async function preparationFailure(reason: "provider_checkout_failed" | "checkout_metadata_failed" = "provider_checkout_failed") {
     const input = await fixture(1); const result = await upgrade(input); const db = getDb();
     await db.paymentTransaction.update({ where: { id: result.payment.id }, data: {

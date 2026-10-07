@@ -10,11 +10,14 @@ const unitFiles = ["src/lib/post-purchase-upsell.test.ts", "src/lib/post-purchas
   "src/app/api/payments/checkout/recovery/route.test.ts", "src/app/api/payments/checkout/route.test.ts",
   "src/app/actions/product-actions.test.ts", "src/components/product-form.test.tsx",
   "src/components/commerce-checkout-form.test.tsx", "src/app/checkout/[vendorId]/[productId]/page.test.tsx",
-  "src/app/checkout/result/page.test.tsx", "src/app/checkout/upsell/route.test.ts", "src/app/api/live-share-commercial-flow.test.ts"];
+  "src/app/checkout/result/page.test.tsx", "src/app/checkout/upsell/route.test.ts", "src/app/api/live-share-commercial-flow.test.ts",
+  "src/app/checkout/recover/[grantId]/page.test.tsx"];
 const files = ["prisma/schema.prisma", "prisma.playwright.config.ts",
   "src/lib/post-purchase-upsell-access.ts", "src/lib/post-purchase-upsell-access.test.ts",
   "src/lib/post-purchase-upsell.ts", "src/lib/post-purchase-upsell.test.ts", "src/lib/post-purchase-offer.ts",
   "src/lib/post-purchase-credit.ts", "src/lib/post-purchase-credit.db.test.ts", "src/lib/post-purchase-checkout-recovery.ts",
+  "src/lib/post-purchase-recovery-entry.ts", "src/components/commerce-checkout-entry.tsx", "src/lib/checkout-idempotency.ts",
+  "src/app/checkout/recover/[grantId]/page.tsx",
   "src/lib/payment-providers/types.ts", "src/lib/payment-providers/demo.ts", "src/lib/payment-providers/payuni.ts",
   "src/lib/post-purchase-product-policy.ts", "src/lib/post-purchase-product-policy.test.ts",
   "src/app/actions/product-actions.ts", "src/components/product-form-client.tsx", "src/components/product-form.tsx",
@@ -48,7 +51,7 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
       locations: [...new Set((test.failureMessages ?? []).join("\n").match(/post-purchase-(?:upsell(?:-access)?|credit)(?:\.db)?(?:\.test)?\.ts:\d+:\d+/gu) ?? [])] })));
   fs.mkdirSync(".ai-team/reports", { recursive: true });
   fs.writeFileSync(".ai-team/reports/post-purchase-failures.json", JSON.stringify({ tests, failures }));
-  if (result.status !== 0 || !raw.success || tests.total !== 43 || tests.skipped) throw new Error("post-purchase-tests-failed");
+  if (result.status !== 0 || !raw.success || tests.total !== 48 || tests.skipped) throw new Error("post-purchase-tests-failed");
   // Generation writes shared Prisma modules. Run the complete unit slice
   // before browser startup, which generates that same client again.
   const unitReportPath = path.join(tempRoot, "post-purchase-unit.json");
@@ -57,7 +60,7 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
   const unitReport = JSON.parse(fs.readFileSync(unitReportPath, "utf8"));
   unit = { total: unitReport.numTotalTests, passed: unitReport.numPassedTests,
     failed: unitReport.numFailedTests, skipped: unitReport.numPendingTests };
-  if (unitResult.status !== 0 || !unitReport.success || unit.total !== 173 || unit.skipped) throw new Error("post-purchase-unit-failed");
+  if (unitResult.status !== 0 || !unitReport.success || unit.total !== 177 || unit.skipped) throw new Error("post-purchase-unit-failed");
   if (process.argv.includes("--browser")) {
     const root = process.cwd(); const mirror = path.join(tempRoot, "post-purchase-browser-app");
     fs.mkdirSync(mirror, { recursive: true });
@@ -93,7 +96,7 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
         : "GLOBAL_SETUP_UNKNOWN");
     }
     const allowedStages = new Set(["fixture", "merchant-login", "merchant-config", "merchant-form-loaded", "merchant-form-filled", "merchant-form-submitted", "settled-source-handoff", "anonymous-isolation",
-      "buyer-decline", "buyer-accept", "checkout-submit", "pending-recovery", "synthetic-unissued-preparation-recovery", "synthetic-expired-manual-recovery", "source-refund"]);
+      "buyer-decline", "buyer-accept", "checkout-submit", "pending-recovery", "synthetic-unissued-preparation-recovery", "synthetic-expired-manual-recovery", "exact-result-entry-recovery", "source-refund"]);
     const visit = suite => {
       for (const spec of suite.specs ?? []) for (const test of spec.tests ?? []) for (const attempt of test.results ?? []) {
         for (const annotation of test.annotations ?? []) if (annotation.type === "post-purchase-stage" && allowedStages.has(annotation.description)) browser.stages.push(annotation.description);
