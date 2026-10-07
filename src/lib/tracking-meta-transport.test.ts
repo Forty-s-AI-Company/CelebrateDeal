@@ -3,7 +3,7 @@ import { sendMetaTrackingEvent } from "@/lib/tracking-meta-transport";
 
 const input = {
   pixelId: "123456789", apiVersion: "v22.0", token: "synthetic-meta-token", testEventCode: "TEST_SYNTHETIC",
-  event: { event_name: "Purchase" as const, event_time: 1791331200, event_id: "purchase:synthetic-payment", action_source: "website" as const, user_data: { external_id: ["a".repeat(64)] } },
+  event: { event_name: "Purchase" as const, event_time: 1791331200, event_id: "purchase:synthetic-payment", action_source: "website" as const, event_source_url: "https://tracking.example.test/checkout/synthetic/product", user_data: { external_id: ["a".repeat(64)], client_user_agent: "SyntheticTrackingBrowser/1.0" } },
   attempt: 1, now: new Date("2026-10-07T00:00:00Z"),
 };
 afterEach(() => vi.unstubAllGlobals());

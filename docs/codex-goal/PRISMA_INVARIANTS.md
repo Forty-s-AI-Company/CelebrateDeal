@@ -11,7 +11,7 @@
 | 項目 | 結果 |
 |---|---:|
 | Prisma models | 127 |
-| Migration directories | 89 |
+| Migration directories | 90 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -231,3 +231,5 @@ Q2 新增 forward migration `20261007002000_reconcile_legacy_subscription_refund
 Server tracking adds nullable tenant-bound encrypted credential, test event code and nonnegative CAS revision via forward migration `20261007123000_server_tracking_credentials`; 126 models unchanged; 88 migrations and 5 real DB regressions PASS. No provider delivery verified.
 
 本輪前向新增 `TrackingDelivery` 與 `20261007133000_tracking_payment_outbox`，保留付款交易內的單筆事件、租戶 FK 與持久化重試狀態。89 migrations 與新 DB 回歸尚待本輪 runner 驗證；不代表已套用 Production。
+
+本輪前向新增 `20261007150000_tracking_authoritative_event_sources`：保留既有 Purchase order FK，擴充 Lead/FormSubmission、ViewContent/AnalyticsEvent、Schedule/ConsultationBooking 的租戶複合 FK 與 exclusive-source CHECK；context 以 tenant/source 綁定加密。兩個新增 unique index 都包含原 primary key，不會讓既有資料產生重複衝突。歷史 migration／58/79 preflight 完全不改；90 migrations 與四事件回歸仍待本輪 disposable PG 證據。

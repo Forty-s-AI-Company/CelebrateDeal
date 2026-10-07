@@ -31,11 +31,16 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
   const outcome = spawnSync(process.execPath, ["node_modules/vitest/vitest.mjs", "run", "--config", paymentBoundaries ? "vitest.tracking-payment-boundaries-db.config.ts" : "vitest.tracking-settings-db.config.ts", "--reporter=json", "--outputFile", reportPath], { env, stdio: "ignore", windowsHide: true });
   const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
   tests = { total: report.numTotalTests, passed: report.numPassedTests, failed: report.numFailedTests, skipped: report.numPendingTests };
-  const requiredFiles = paymentBoundaries ? ["payment-webhooks.test.ts", "commerce-orders.db.test.ts"] : ["tracking-settings.db.test.ts", "tracking-purchase-outbox.db.test.ts"];
+  const requiredFiles = paymentBoundaries ? ["payment-webhooks.test.ts", "commerce-orders.db.test.ts"] : ["tracking-settings.db.test.ts", "tracking-purchase-outbox.db.test.ts", "tracking-event-sources.db.test.ts"];
   const verifiedFiles = report.testResults.map(suite => path.basename(suite.name)).sort();
   tests.files = verifiedFiles;
-  tests.failedLocations = report.testResults.flatMap(suite => suite.assertionResults.filter(test => test.status === "failed").flatMap(test => (test.failureMessages ?? []).flatMap(message => [...message.matchAll(/(?:payment-webhooks\.test\.ts|commerce-orders\.db\.test\.ts|tracking-purchase-outbox\.db\.test\.ts):(\d+):(\d+)/gu)].map(match => ({ file: path.basename(suite.name), line: Number(match[1]) })))));
-  if (outcome.status !== 0 || !report.success || (!paymentBoundaries && tests.total !== 18) || tests.total < 1 || tests.passed !== tests.total || tests.skipped || JSON.stringify(verifiedFiles) !== JSON.stringify(requiredFiles.sort())) throw new Error("tracking-settings-regression-failed");
+  tests.failedLocations = report.testResults.flatMap(suite => suite.assertionResults.filter(test => test.status === "failed").flatMap(test => (test.failureMessages ?? []).flatMap(message => [...message.matchAll(/(?:payment-webhooks\.test\.ts|commerce-orders\.db\.test\.ts|tracking-purchase-outbox\.db\.test\.ts|tracking-event-sources\.db\.test\.ts):(\d+):(\d+)/gu)].map(match => ({ file: path.basename(suite.name), line: Number(match[1]) })))));
+  tests.errorCodes = [...new Set(report.testResults.flatMap(suite => suite.assertionResults.filter(test => test.status === "failed").flatMap(test => (test.failureMessages ?? []).map(message => {
+    const value = String(message), prisma = /\bP\d{4}\b/u.exec(value);
+    return prisma?.[0] ?? (/Unique constraint/iu.test(value) ? "UNIQUE_CONFLICT" : /secret|key.*required|identity.*key/iu.test(value) ? "SYNTHETIC_KEY_BINDING" : /Unknown argument/iu.test(value) ? "SCHEMA_ARGUMENT" : /AssertionError|expected.*to/iu.test(value) ? "ASSERTION" : "UNCLASSIFIED");
+  }))))];
+  tests.errorTypes = [...new Set(report.testResults.flatMap(suite => suite.assertionResults.filter(test => test.status === "failed").flatMap(test => (test.failureMessages ?? []).flatMap(message => [...String(message).matchAll(/\b(?:TypeError|RangeError|PrismaClientKnownRequestError|PrismaClientUnknownRequestError|PrismaClientValidationError|AssertionError)\b/gu)].map(match => match[0])))))];
+  if (outcome.status !== 0 || !report.success || (!paymentBoundaries && tests.total !== 35) || tests.total < 1 || tests.passed !== tests.total || tests.skipped || JSON.stringify(verifiedFiles) !== JSON.stringify(requiredFiles.sort())) throw new Error("tracking-settings-regression-failed");
   if (includeBrowser) {
     const executable = chromium.executablePath();
     if (!fs.existsSync(executable)) throw new Error("tracking-browser-executable-missing");
@@ -71,7 +76,7 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
       inspect(suite.suites);
     } }
     inspect(report.suites); browserProof.diagnostics = diagnostics; browserProof.errorCodes = [...errorCodes];
-    if (browser.status !== 0 || browserProof.expected !== 2 || browserProof.unexpected || browserProof.skipped || browserProof.flaky) throw new Error("tracking-browser-gate-failed");
+    if (browser.status !== 0 || browserProof.expected !== 5 || browserProof.unexpected || browserProof.skipped || browserProof.flaky) throw new Error("tracking-browser-gate-failed");
   }
   assertCanonicalMigrationStable(before, captureSource());
 } });

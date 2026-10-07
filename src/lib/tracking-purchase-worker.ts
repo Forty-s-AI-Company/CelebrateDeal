@@ -1,13 +1,14 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
-import { revealCommerceOrderPii } from "@/lib/commerce-order-pii";
+import { resolveAuthoritativeTrackingPayload } from "@/lib/tracking-event-payload";
+import { trackingEventEnabled } from "@/lib/tracking-event-outbox";
 import { unprotectFacebookAccessToken } from "@/lib/tracking-credentials";
 import { sendMetaTrackingEvent } from "@/lib/tracking-meta-transport";
 
 const LEASE_MS = 120_000;
-const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
-/** One bounded tenant batch; each network request is outside DB transactions. */
+/** 四種事件共用有界 tenant batch；provider request 不佔用 DB transaction。
+ * 保留既有函式入口以相容已交付的 job/test 契約。 */
 export async function runPurchaseTrackingBatch(input: { vendorId: string; apiVersion: string; limit?: number; now?: Date }) {
   const now = input.now ?? new Date(), limit = input.limit ?? 10;
   if (!/^[A-Za-z0-9_-]{1,128}$/u.test(input.vendorId) || !/^v\d{1,3}\.0$/u.test(input.apiVersion) ||
@@ -46,30 +47,20 @@ export async function runPurchaseTrackingBatch(input: { vendorId: string; apiVer
       if (changed.count) summary[status]++;
     };
     const setting = await db.trackingSetting.findUnique({ where: { vendorId: input.vendorId } });
-    const order = await db.commerceOrder.findFirst({ where: {
-      id: candidate.orderId, vendorId: input.vendorId, status: "paid", refundedAmountCents: 0,
-      primaryPaymentTransaction: { vendorId: input.vendorId, status: "paid" },
-    } });
-    if (!setting?.enablePurchaseEvent || setting.credentialRevision !== candidate.credentialRevision ||
+    if (!setting || !trackingEventEnabled(setting, candidate.eventName) || setting.credentialRevision !== candidate.credentialRevision ||
         setting.facebookPixelId !== candidate.pixelId || setting.facebookTestEventCode !== candidate.testEventCode ||
-        !setting.facebookAccessTokenEncrypted || !candidate.testEventCode || !order?.paidAt ||
-        order.totalAmountCents <= 0 || order.paidAmountCents !== order.totalAmountCents || !/^[A-Z]{3}$/u.test(order.currency)) {
+        !setting.facebookAccessTokenEncrypted || !candidate.testEventCode) {
       await terminal("cancelled"); continue;
     }
-    let token: string, email: string;
+    let token: string, event;
     try {
       token = unprotectFacebookAccessToken(input.vendorId, setting.facebookAccessTokenEncrypted);
-      const pii = revealCommerceOrderPii({ buyerEncrypted: order.buyerEncryptedEnvelope, shippingEncrypted: null }, { vendorId: input.vendorId, orderId: order.id });
-      email = pii.buyer.email;
+      event = await resolveAuthoritativeTrackingPayload(db, candidate);
     } catch { await terminal("rejected"); continue; }
+    if (!event) { await terminal("cancelled"); continue; }
     const decision = await sendMetaTrackingEvent({
       pixelId: candidate.pixelId, apiVersion: input.apiVersion, token, testEventCode: candidate.testEventCode,
-      attempt: candidate.attemptCount + 1, now: claimTime,
-      event: {
-        event_name: "Purchase", event_id: candidate.eventId, event_time: Math.floor(order.paidAt.getTime() / 1000), action_source: "website",
-        user_data: { em: [sha256(email.trim().toLowerCase())], external_id: [sha256(`${input.vendorId}:${order.automationCustomerKeyHash ?? order.id}`)] },
-        custom_data: { currency: order.currency, value: order.paidAmountCents / 100 },
-      },
+      attempt: candidate.attemptCount + 1, now: claimTime, event,
     }).catch(() => ({ outcome: "rejected" as const }));
     const changed = await db.trackingDelivery.updateMany({
       where: lease,
