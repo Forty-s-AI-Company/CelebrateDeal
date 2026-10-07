@@ -40,7 +40,7 @@ const migration = await main({ afterMigrate: async ({ databaseUrl, environment, 
     return prisma?.[0] ?? (/Unique constraint/iu.test(value) ? "UNIQUE_CONFLICT" : /secret|key.*required|identity.*key/iu.test(value) ? "SYNTHETIC_KEY_BINDING" : /Unknown argument/iu.test(value) ? "SCHEMA_ARGUMENT" : /AssertionError|expected.*to/iu.test(value) ? "ASSERTION" : "UNCLASSIFIED");
   }))))];
   tests.errorTypes = [...new Set(report.testResults.flatMap(suite => suite.assertionResults.filter(test => test.status === "failed").flatMap(test => (test.failureMessages ?? []).flatMap(message => [...String(message).matchAll(/\b(?:TypeError|RangeError|PrismaClientKnownRequestError|PrismaClientUnknownRequestError|PrismaClientValidationError|AssertionError)\b/gu)].map(match => match[0])))))];
-  if (outcome.status !== 0 || !report.success || (!paymentBoundaries && tests.total !== 38) || tests.total < 1 || tests.passed !== tests.total || tests.skipped || JSON.stringify(verifiedFiles) !== JSON.stringify(requiredFiles.sort())) throw new Error("tracking-settings-regression-failed");
+  if (outcome.status !== 0 || !report.success || (!paymentBoundaries && tests.total !== 41) || tests.total < 1 || tests.passed !== tests.total || tests.skipped || JSON.stringify(verifiedFiles) !== JSON.stringify(requiredFiles.sort())) throw new Error("tracking-settings-regression-failed");
   if (includeBrowser) {
     const executable = chromium.executablePath();
     if (!fs.existsSync(executable)) throw new Error("tracking-browser-executable-missing");

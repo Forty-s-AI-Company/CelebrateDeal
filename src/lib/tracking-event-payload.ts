@@ -1,8 +1,12 @@
+import type { TrackingDeliveryMode } from "@/lib/tracking-executor-binding";
 import { createHash } from "node:crypto";
 import type { PrismaClient, TrackingDelivery } from "@prisma/client";
 import { revealCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { revealTrackingBrowserContext } from "@/lib/tracking-browser-context";
 import type { MetaEvent } from "@/lib/tracking-meta-transport";
+
+/** 正式 Purchase 必須排除合成測試訂單。 */
+const purchaseModeScope = (mode: TrackingDeliveryMode) => mode === "live" ? { isTestOrder: false } : {};
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const validEmail = (value: string) => value.length <= 320 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value);
@@ -18,13 +22,14 @@ async function validViewedProduct(db: PrismaClient, vendorId: string, event: { e
 }
 
 /** claim 後重新讀取來源；退款、撤銷、刪除及跨租戶不能成為 provider payload。 */
-export async function resolveAuthoritativeTrackingPayload(db: PrismaClient, row: TrackingDelivery): Promise<MetaEvent | null> {
+export async function resolveAuthoritativeTrackingPayload(db: PrismaClient, row: TrackingDelivery, mode: TrackingDeliveryMode): Promise<MetaEvent | null> {
   let occurredAt: Date, sourceId: string, contextEncrypted: string | null;
   let email: string | undefined, externalId: string;
   let customData: { currency: string; value: number } | undefined;
   if (row.eventName === "Purchase" && row.orderId) {
     const order = await db.commerceOrder.findFirst({ where: {
       id: row.orderId, vendorId: row.vendorId, status: "paid", refundedAmountCents: 0,
+      ...purchaseModeScope(mode),
       primaryPaymentTransaction: { vendorId: row.vendorId, status: "paid" },
     } });
     if (!order?.paidAt || order.totalAmountCents <= 0 || order.paidAmountCents !== order.totalAmountCents || !/^[A-Z]{3}$/u.test(order.currency)) return null;

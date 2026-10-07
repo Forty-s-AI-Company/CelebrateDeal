@@ -1,0 +1,322 @@
+{
+  "task_id": "f2-server-tracking-webhooks",
+  "dispatch_used": 4,
+  "dispatch_limit": 4,
+  "decision": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "f2-server-tracking-webhooks",
+    "signals": {
+      "task_type": "cross_module",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 11,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "cross_module",
+        "migration",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "ux_ui",
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [
+        "src/lib/tracking-credentials.ts",
+        "src/lib/tracking-settings.ts",
+        "src/app/actions/tracking-credential-actions.ts",
+        "src/app/(app)/settings/tracking/page.tsx",
+        "prisma/schema.prisma",
+        "prisma/migrations/20261007123000_server_tracking_credentials/migration.sql"
+      ],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "cross_module",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "required": true,
+        "fallback_events": [
+          {
+            "model": "opus",
+            "reason": "unavailable"
+          }
+        ],
+        "status": "planned",
+        "model_key": "astra",
+        "model": "gpt-6-astra",
+        "provider": "native_agent",
+        "reasoning_effort": "high",
+        "effort_floor": null,
+        "effort_reason": null,
+        "sandbox_mode": "read-only",
+        "execution": "native_agent_handoff_only",
+        "candidate_findings_only": false,
+        "may_spawn": false,
+        "astra_reason": "critical_review_no_equivalent"
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:df6e511dcd33febe0f57d34fec0234e44af4eaa39d8d15128ae39f93f9ef105c",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\remaining-server-tracking\\CelebrateDeal",
+    "snapshot_files": [
+      ".github/workflows/ci.yml",
+      "playwright.tracking.config.ts",
+      "prisma/migrations/20261007123000_server_tracking_credentials/migration.sql",
+      "prisma/migrations/20261007133000_tracking_payment_outbox/migration.sql",
+      "prisma/migrations/20261007150000_tracking_authoritative_event_sources/migration.sql",
+      "prisma/schema.prisma",
+      "scripts/canonical-migration-source-fingerprint.mjs",
+      "scripts/canonical-migration-source-fingerprint.test.mjs",
+      "scripts/g7-email-operations-browser-qa.test.mjs",
+      "scripts/playwright-ci-reporter.ts",
+      "scripts/prisma-invariant-inventory.test.ts",
+      "scripts/qa-source-fingerprint.mjs",
+      "scripts/qa-source-fingerprint.test.mjs",
+      "scripts/staging-migration-compat-preflight.test.mjs",
+      "scripts/staging-migration-isolated-replay.test.mjs",
+      "scripts/staging-payuni-management-migrate.test.ts",
+      "scripts/tracking-settings-disposable-qa.mjs",
+      "src/app/(app)/settings/tracking/page.tsx",
+      "src/app/actions/consultation-actions.test.ts",
+      "src/app/actions/consultation-actions.ts",
+      "src/app/actions/tracking-credential-actions.test.ts",
+      "src/app/actions/tracking-credential-actions.ts",
+      "src/app/api/analytics/route.test.ts",
+      "src/app/api/analytics/route.ts",
+      "src/app/api/form-submissions/verify/route.test.ts",
+      "src/app/api/form-submissions/verify/route.ts",
+      "src/app/api/jobs/tracking-deliveries/route.test.ts",
+      "src/app/api/jobs/tracking-deliveries/route.ts",
+      "src/app/api/payments/checkout/route.ts",
+      "src/lib/commerce-orders.ts",
+      "src/lib/form-submission-verification-domain.ts",
+      "src/lib/payment-webhooks.ts",
+      "src/lib/tracking-browser-context.test.ts",
+      "src/lib/tracking-browser-context.ts",
+      "src/lib/tracking-credentials.test.ts",
+      "src/lib/tracking-credentials.ts",
+      "src/lib/tracking-delivery-policy.test.ts",
+      "src/lib/tracking-delivery-policy.ts",
+      "src/lib/tracking-event-outbox.ts",
+      "src/lib/tracking-event-payload.ts",
+      "src/lib/tracking-event-sources.db.test.ts",
+      "src/lib/tracking-executor-binding.test.ts",
+      "src/lib/tracking-executor-binding.ts",
+      "src/lib/tracking-meta-transport.test.ts",
+      "src/lib/tracking-meta-transport.ts",
+      "src/lib/tracking-purchase-outbox.db.test.ts",
+      "src/lib/tracking-purchase-outbox.ts",
+      "src/lib/tracking-purchase-worker.ts",
+      "src/lib/tracking-settings.db.test.ts",
+      "src/lib/tracking-settings.ts",
+      "tests/tracking/native-tracking-settings.browser.ts",
+      "vitest.tracking-payment-boundaries-db.config.ts",
+      "vitest.tracking-settings-db.config.ts"
+    ],
+    "required_checks": [
+      "unit",
+      "typecheck",
+      "lint",
+      "db",
+      "browser",
+      "real_provider_delivery"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "evidence": {
+    "execution": {
+      "kind": "execution",
+      "source": "desktop_native",
+      "revision": "sha256:df6e511dcd33febe0f57d34fec0234e44af4eaa39d8d15128ae39f93f9ef105c",
+      "status": "COMPLETED",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "owner": "root",
+      "scope": "implementation edit/checkpoint phase; actual product edit tool calls terminal exit 0",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "external_provider_execution": "NOT_PERFORMED",
+      "task_acceptance": "NOT_READY",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-server-tracking\\CelebrateDeal\\.ai-team\\reports\\server-tracking\\review-4-implementation-execution.json"
+    },
+    "review": {
+      "kind": "review",
+      "source": "desktop_native",
+      "revision": "sha256:df6e511dcd33febe0f57d34fec0234e44af4eaa39d8d15128ae39f93f9ef105c",
+      "status": "PASS",
+      "independent": true,
+      "role": "critical_review",
+      "model": "gpt-6-astra",
+      "resolved_effort": "high",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "agent": "/root/f2_server_tracking_critical_review_1",
+      "dispatch": 4,
+      "provider_terminal": true,
+      "scope": "independent software source review completed; external provider proof remains unresolved BLOCKER",
+      "raw_report": "docs/remaining-capabilities-f2-tracking-critical-review-4-raw-20261008.json",
+      "task_acceptance": "NOT_READY",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-server-tracking\\CelebrateDeal\\.ai-team\\reports\\server-tracking\\review-4-independent-review.json"
+    },
+    "checks": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "unit",
+        "revision": "sha256:df6e511dcd33febe0f57d34fec0234e44af4eaa39d8d15128ae39f93f9ef105c",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 5.969,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-server-tracking\\CelebrateDeal\\.ai-team\\reports\\server-tracking\\review-4-unit-validation.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "typecheck",
+        "revision": "sha256:df6e511dcd33febe0f57d34fec0234e44af4eaa39d8d15128ae39f93f9ef105c",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 15.016,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-server-tracking\\CelebrateDeal\\.ai-team\\reports\\server-tracking\\review-4-typecheck-validation.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "lint",
+        "revision": "sha256:df6e511dcd33febe0f57d34fec0234e44af4eaa39d8d15128ae39f93f9ef105c",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 7.672,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-server-tracking\\CelebrateDeal\\.ai-team\\reports\\server-tracking\\review-4-lint-validation.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "db",
+        "revision": "sha256:df6e511dcd33febe0f57d34fec0234e44af4eaa39d8d15128ae39f93f9ef105c",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 33.625,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-server-tracking\\CelebrateDeal\\.ai-team\\reports\\server-tracking\\review-4-db-validation.json"
+      },
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "browser",
+        "revision": "sha256:df6e511dcd33febe0f57d34fec0234e44af4eaa39d8d15128ae39f93f9ef105c",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 282.344,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-server-tracking\\CelebrateDeal\\.ai-team\\reports\\server-tracking\\review-4-browser-validation.json"
+      }
+    ],
+    "findings": [
+      {
+        "severity": "BLOCKER",
+        "disposition": "unresolved",
+        "reason": "User confirmed Meta test Pixel not configured; real_provider_delivery required and not performed."
+      }
+    ]
+  },
+  "gate": {
+    "status": "BLOCKED",
+    "blockers": [
+      "finding_unresolved",
+      "required_check_unverified:real_provider_delivery"
+    ],
+    "revision": "sha256:df6e511dcd33febe0f57d34fec0234e44af4eaa39d8d15128ae39f93f9ef105c"
+  },
+  "validation_counts": {
+    "unit": 112,
+    "migrations": 90,
+    "db": 41,
+    "browser": 5,
+    "skip": 0,
+    "flaky": 0
+  },
+  "provider_network_attempted": false,
+  "production_execution": "NOT_PERFORMED",
+  "promotion": "DRAFT_PR_ONLY_PENDING_REAL_PROVIDER_PROOF"
+}

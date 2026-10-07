@@ -1,0 +1,38 @@
+{
+  "summary": "第 2/4 次唯讀複審完成。53 檔審查前後 SHA-256 均符合 manifest，source_revision=sha256:78cacdc0bd4f7f650a609ddc98158122bfaa96f0fc55585fe43e6d570cef3574。上一輪四項程式／CI findings 已有對應修正：body 中斷重試、暫時 Prisma source error 重試、G7 精確 +11 migration inventory、CI 完整 tracking browser gate。新增 live binding 已具備預設關閉的 route 與 SQL queue 分流，但仍有兩項模式邊界缺陷，均以記憶體合成依賴獨立重現。未修改檔案、存取 DB 或外部網路，未執行真正 Production/provider request。真實非 Production delivery 仍未驗證，因此維持 NOT_READY。resolved=Astra high；observed model/effort=unknown。",
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "file": ".ai-team/reports/server-tracking/critical-review-2-snapshot.json",
+      "area": "required_checks.real_provider_delivery、known_incomplete_scope",
+      "issue": "真實核准非 Production Meta delivery 仍缺少驗收證據。",
+      "evidence": "使用者已確認 Meta test Pixel 尚未設定；manifest 明列 real_provider_delivery 必要且未完成。現有 transport、live binding、DB 測試使用 mocked HTTP，不能證明 Meta 接受實際事件。",
+      "impact": "目前無法確認真實 Pixel／token／Graph API binding 與四事件 payload 可被 provider 接受，完整功能不能標示 READY。",
+      "recommended_fix": "維持此驗收阻擋；取得使用者設定的核准非 Production Pixel 與平台注入後，再執行固定範圍真實 delivery，保存去識別化結果，不用 mock 取代。",
+      "required_test": "核准非 Production 的 Purchase、Lead、ViewContent、Schedule 真實接受證據，包含穩定 event_id 與重試去重；禁止真正 Production 傳送。",
+      "confidence": 1
+    },
+    {
+      "severity": "MAJOR",
+      "file": "src/lib/tracking-executor-binding.ts",
+      "area": "assertTrackingDeliveryBinding:16；src/lib/tracking-purchase-worker.ts:14–19",
+      "issue": "直接呼叫 test worker／transport 可以繞過預設關閉與 Preview 專用環境綁定。",
+      "evidence": "assertTrackingDeliveryBinding 的 test 分支只驗證 testEventCode，未要求 resolveTrackingExecutorMode(process.env)==='test'；resolveBatchMode 也只限制 live。獨立記憶體 probe 使用空白合成環境，resolver 回 null，但直接 sendMetaTrackingEvent 仍呼叫 mock fetch 一次並回 accepted。",
+      "impact": "雖然 HTTP job route 有 guard，其他 server-side 呼叫可以在停用、Production 或互斥旗標衝突狀態傳送 Test Events。Test Events 仍會將事件與識別資料送往外部 provider，違反全路徑預設關閉的契約。",
+      "recommended_fix": "worker 與 transport 都要求 requested mode 等於 server-owned resolver 的有效模式，讓 test 與 live 使用一致的 fail-closed 規則；單元／DB 測試明確注入合成 Preview test binding。",
+      "required_test": "直接 worker 及 transport 在空環境、兩模式皆關閉、兩旗標皆開啟、Production test 呼叫時，必須在 DB claim／fetch 前拒絕；只有明確啟用的 Preview test 呼叫成功。",
+      "confidence": 1
+    },
+    {
+      "severity": "MAJOR",
+      "file": "src/lib/tracking-event-payload.ts",
+      "area": "Purchase source 重讀，25–35；src/lib/tracking-purchase-outbox.db.test.ts:149–171",
+      "issue": "live Purchase 未排除 isTestOrder=true，測試訂單會被當成正式廣告轉換傳送。",
+      "evidence": "Purchase 查詢及後續驗證完全未檢查 isTestOrder；worker 只以 testEventCode 是否為 null 分流。新增 live DB 測試沿用 isTestOrder=true 的 fixture，卻期待 live accepted。獨立記憶體 probe 同樣確認測試訂單產生 Purchase payload，live transport body 沒有 test_event_code。",
+      "impact": "正式 delivery 啟用後，已付款的測試訂單只要使用 null testEventCode，就可能污染正式 Purchase／營收轉換資料。",
+      "recommended_fix": "在 live Purchase enqueue 與傳送前來源重讀加入 isTestOrder=false 邊界；將 delivery mode 明確傳入 payload 解析，或由受控 row mode 推導。測試訂單只能走明確 Test Events 路徑。",
+      "required_test": "測試訂單在 live 設定下不得產生可傳送的 live Purchase；既有 queued row 若來源改為測試訂單，worker 必須取消且零 fetch。另以合成 isTestOrder=false 訂單驗證 live body 正確省略 test_event_code，全部維持 mocked HTTP。",
+      "confidence": 1
+    }
+  ]
+}

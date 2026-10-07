@@ -1,3 +1,4 @@
+import { assertTrackingDeliveryBinding, type TrackingDeliveryMode } from "@/lib/tracking-executor-binding";
 import { decideTrackingDelivery, type TrackingDeliveryDecision } from "@/lib/tracking-delivery-policy";
 
 export type MetaEvent = {
@@ -51,16 +52,18 @@ export async function sendMetaTrackingEvent(input: {
   pixelId: string;
   apiVersion: string;
   token: string;
-  testEventCode: string;
+  testEventCode: string | null;
+  deliveryMode?: TrackingDeliveryMode;
   event: MetaEvent;
   attempt: number;
   now: Date;
 }): Promise<TrackingDeliveryDecision> {
-  // Fixed provider origin and a required test code keep this first delivery
-  // path in Meta test-events mode. No user-supplied URL or redirect is followed.
+  // Explicit mode binding keeps Preview test events out of live transmission.
+  // No user-supplied endpoint or redirect is followed.
+  const deliveryMode = input.deliveryMode ?? "test";
+  assertTrackingDeliveryBinding(deliveryMode, input.testEventCode);
   if (!/^\d{5,32}$/u.test(input.pixelId) || !/^v\d{1,3}\.0$/u.test(input.apiVersion) ||
-      !/^[A-Za-z0-9._~+/-]{16,4096}=*$/u.test(input.token) ||
-      !/^[A-Za-z0-9_-]{1,128}$/u.test(input.testEventCode)) throw new TypeError("Invalid tracking transport binding.");
+      !/^[A-Za-z0-9._~+/-]{16,4096}=*$/u.test(input.token)) throw new TypeError("Invalid tracking transport binding.");
   // Validate the persisted attempt before any provider network operation.
   decideTrackingDelivery({ attempt: input.attempt, now: input.now, status: null, acceptedEvents: null });
   validateMetaEvent(input.event);
@@ -69,7 +72,7 @@ export async function sendMetaTrackingEvent(input: {
     redirect: "manual",
     signal: AbortSignal.timeout(10_000),
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${input.token}` },
-    body: JSON.stringify({ data: [input.event], test_event_code: input.testEventCode }),
+    body: JSON.stringify({ data: [input.event], ...(deliveryMode === "test" ? { test_event_code: input.testEventCode } : {}) }),
   }).catch(() => null);
   if (!response) return decideTrackingDelivery({ attempt: input.attempt, now: input.now, status: null, acceptedEvents: null });
   const result = await readMetaAcceptance(response);

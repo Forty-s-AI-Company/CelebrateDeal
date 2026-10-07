@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sendMetaTrackingEvent } from "@/lib/tracking-meta-transport";
 
 const input = {
@@ -6,7 +6,8 @@ const input = {
   event: { event_name: "Purchase" as const, event_time: 1791331200, event_id: "purchase:synthetic-payment", action_source: "website" as const, event_source_url: "https://tracking.example.test/checkout/synthetic/product", user_data: { external_id: ["a".repeat(64)], client_user_agent: "SyntheticTrackingBrowser/1.0" } },
   attempt: 1, now: new Date("2026-10-07T00:00:00Z"),
 };
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+beforeEach(() => { vi.stubEnv("VERCEL_ENV", "preview"); vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "true"); vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "false"); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 describe("Meta test-events transport with simulated HTTP only", () => {
   it("keeps credentials out of the URL and requests one stable event without redirects", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"events_received":1}', { status: 200 }));
@@ -71,4 +72,29 @@ describe("interrupted successful provider response with simulated streams only",
     for (const event of events) await expect(sendMetaTrackingEvent({ ...input, event })).rejects.toThrow(TypeError);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+});
+
+// 僅模擬 HTTP；此案例不執行正式環境或任何實際 provider request。
+it("omits test code only for explicitly enabled live binding using simulated HTTP", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response('{"events_received":1}', { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubEnv("VERCEL_ENV", "production");
+  vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "false");
+  vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "false");
+  await expect(sendMetaTrackingEvent({ ...input, deliveryMode: "live", testEventCode: null })).rejects.toThrow(TypeError);
+  expect(fetchMock).not.toHaveBeenCalled();
+  vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "true");
+  await expect(sendMetaTrackingEvent({ ...input, deliveryMode: "live", testEventCode: null })).resolves.toEqual({ outcome: "accepted" });
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ data: [input.event] });
+  await expect(sendMetaTrackingEvent({ ...input, deliveryMode: "live" })).rejects.toThrow(TypeError);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  ["", "", ""], ["preview", "false", "false"], ["preview", "true", "true"], ["production", "true", "false"],
+])("rejects direct test transmission with invalid binding %s/%s/%s before fetch", async (environment, testFlag, liveFlag) => {
+  vi.stubEnv("VERCEL_ENV", environment); vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", testFlag); vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", liveFlag);
+  const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+  await expect(sendMetaTrackingEvent(input)).rejects.toThrow(TypeError);
+  expect(fetchMock).not.toHaveBeenCalled();
 });

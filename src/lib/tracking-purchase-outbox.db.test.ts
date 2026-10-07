@@ -9,7 +9,13 @@ import { runPurchaseTrackingBatch } from "@/lib/tracking-purchase-worker";
 import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
 
 const db = getDb();
-beforeEach(() => vi.stubEnv("CSRF_SECRET", "synthetic-tracking-encryption-key-at-least-32-bytes"));
+// 每個 suite 自行宣告合成 Preview binding，完整 coverage 不依賴專用 runner。
+beforeEach(() => {
+  vi.stubEnv("CSRF_SECRET", "synthetic-tracking-encryption-key-at-least-32-bytes");
+  vi.stubEnv("VERCEL_ENV", "preview");
+  vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "true");
+  vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "false");
+});
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 async function fixture() {
   const id = randomUUID();
@@ -142,5 +148,53 @@ it("the actual paid webhook commits one durable purchase across distinct callbac
   expect(await db.commerceOrder.findUniqueOrThrow({ where: { id: f.order.id } })).toMatchObject({ status: "paid", paidAmountCents: 12345 });
   expect(await db.trackingDelivery.count({ where: { vendorId: f.vendor.id } })).toBe(1);
   expect(await db.trackingDelivery.findFirstOrThrow({ where: { vendorId: f.vendor.id } })).toMatchObject({ status: "queued", eventId: `purchase:${f.payment.id}`, attemptCount: 0 });
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+// 實際 disposable DB，provider 僅模擬；不送正式事件。
+it("keeps live rows untouched by test batches and requires explicit live enablement", async () => {
+  const live = await fixture(), test = await fixture();
+  await db.commerceOrder.update({ where: { id: live.order.id }, data: { isTestOrder: false } });
+  await saveTrackingCredentialConfiguration(live.vendor.id, { expectedRevision: 1, testEventCode: null, clearToken: false });
+  await enqueue(live.input); await enqueue(test.input);
+  const fetchMock = vi.fn().mockResolvedValue(accepted()); vi.stubGlobal("fetch", fetchMock);
+  vi.stubEnv("VERCEL_ENV", "preview");
+  vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "true");
+  vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "false");
+  expect(await run(live.vendor.id)).toMatchObject({ claimed: 0 });
+  await expect(runPurchaseTrackingBatch({ vendorId: live.vendor.id, apiVersion: "v22.0", deliveryMode: "live" })).rejects.toThrow(TypeError);
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(await db.trackingDelivery.findFirstOrThrow({ where: { vendorId: live.vendor.id } })).toMatchObject({ status: "queued", attemptCount: 0, testEventCode: null });
+  vi.stubEnv("VERCEL_ENV", "production");
+  vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "false");
+  vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "true");
+  expect(await runPurchaseTrackingBatch({ vendorId: test.vendor.id, apiVersion: "v22.0", deliveryMode: "live" })).toMatchObject({ claimed: 0 });
+  expect(await runPurchaseTrackingBatch({ vendorId: live.vendor.id, apiVersion: "v22.0", deliveryMode: "live" })).toMatchObject({ claimed: 1, accepted: 1 });
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("test_event_code");
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(await db.trackingDelivery.findFirstOrThrow({ where: { vendorId: test.vendor.id } })).toMatchObject({ status: "queued", attemptCount: 0, testEventCode: "TEST_SYNTHETIC" });
+});
+
+it("rejects disabled direct test workers before a database claim", async () => {
+  const f = await fixture(); await enqueue(f.input);
+  const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+  for (const [environment, testFlag, liveFlag] of [["", "", ""], ["preview", "false", "false"], ["preview", "true", "true"], ["production", "true", "false"]]) {
+    vi.stubEnv("VERCEL_ENV", environment); vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", testFlag); vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", liveFlag);
+    await expect(run(f.vendor.id)).rejects.toThrow(TypeError);
+    expect(await db.trackingDelivery.findFirstOrThrow({ where: { vendorId: f.vendor.id } })).toMatchObject({ status: "queued", attemptCount: 0 });
+  }
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+it("excludes test orders from live enqueue and cancels a queued purchase changed to test", async () => {
+  const f = await fixture();
+  await saveTrackingCredentialConfiguration(f.vendor.id, { expectedRevision: 1, testEventCode: null, clearToken: false });
+  expect(await enqueue(f.input)).toBeNull();
+  expect(await db.trackingDelivery.count({ where: { vendorId: f.vendor.id } })).toBe(0);
+  await db.commerceOrder.update({ where: { id: f.order.id }, data: { isTestOrder: false } });
+  await enqueue(f.input);
+  await db.commerceOrder.update({ where: { id: f.order.id }, data: { isTestOrder: true } });
+  vi.stubEnv("VERCEL_ENV", "production"); vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "false"); vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "true");
+  const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+  expect(await runPurchaseTrackingBatch({ vendorId: f.vendor.id, apiVersion: "v22.0", deliveryMode: "live" })).toMatchObject({ claimed: 1, cancelled: 1 });
   expect(fetchMock).not.toHaveBeenCalled();
 });

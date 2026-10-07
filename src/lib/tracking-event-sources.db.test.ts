@@ -11,7 +11,13 @@ import { reserveConsultationBooking, type ConsultationDatabase } from "@/app/act
 
 const db = getDb();
 const context = { sourceUrl: "https://tracking.example.test/live/synthetic", userAgent: "SyntheticTrackingBrowser/1.0" };
-beforeEach(() => vi.stubEnv("CSRF_SECRET", "synthetic-tracking-encryption-key-at-least-32-bytes"));
+// 每個 suite 自行宣告合成 Preview binding，完整 coverage 不依賴專用 runner。
+beforeEach(() => {
+  vi.stubEnv("CSRF_SECRET", "synthetic-tracking-encryption-key-at-least-32-bytes");
+  vi.stubEnv("VERCEL_ENV", "preview");
+  vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "true");
+  vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "false");
+});
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 async function fixture() {
   const id = randomUUID();

@@ -1,0 +1,16 @@
+{
+  "summary": "第 4/4 次唯讀複審完成。53 檔審查前後 SHA-256 均符合 source_revision=sha256:df6e511dcd33febe0f57d34fec0234e44af4eaa39d8d15128ae39f93f9ef105c。相較第 3 次僅變更兩套 DB tests 與專用 runner：兩套 beforeEach 現在自行注入合成 Preview/test binding，afterEach 還原環境；runner 已移除模式注入，因此上一輪 coverage setup MAJOR 已修妥。負向案例仍自行覆寫模式，既有 assertions、coverage/include/exclude 未降低。先前 retry、模式 guard、live 測試訂單排除、migration inventory 與 CI browser 修正均未回歸；限定來源內未發現新的程式缺陷，目前 findings 僅剩真實外部 delivery proof BLOCKER。最新 canonical validation 尚在執行，不能將其預先標成 PASS 或 READY。三支援檔前後 hash 一致：vitest.config.ts=ac44fd700f29b0bc76c201359c40756de7101e1d0c297eb99e820e66586b05ee；package.json=34b37857c04888e390a3d4013e62521f38fe62cdc224205ce8b8c2b83b391ffb；scripts/run-combined-coverage.mjs=93af5705c88b52ddc009cf8c50e73906d9b3c1ef25d3c8758c79dec731cbfb5c。未修改來源、存取 DB 或外部網路。resolved=Astra high；observed model/effort=unknown。",
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "file": ".ai-team/reports/server-tracking/critical-review-4-snapshot.json",
+      "area": "real_provider_delivery 驗收項目",
+      "issue": "真實核准非 Production Meta delivery 尚未驗證。",
+      "evidence": "使用者尚未設定 Meta Pixel；现有 provider 驗證均使用 mocked HTTP，沒有真實四事件接受及去重證據。",
+      "impact": "目前無法確認實際 Pixel、憑證、API binding 與四事件 payload 可完成送達；來源審查通過及本機測試不能取代完整功能驗收。",
+      "recommended_fix": "保留 NOT_READY；待核准非 Production Pixel 與平台注入完成後，再執行固定範圍真實 delivery 並保存去識別化證據。",
+      "required_test": "Purchase、Lead、ViewContent、Schedule 的真實非 Production 接受與穩定 event_id 重試去重證據；不得以 mock 取代或執行真正 Production 傳送。",
+      "confidence": 1
+    }
+  ]
+}

@@ -11,6 +11,8 @@ export async function enqueuePaidPurchaseTracking(
     where: {
       vendorId: input.vendorId, primaryPaymentTransactionId: input.paymentTransactionId,
       status: "paid", refundedAmountCents: 0,
+      // 未設定 Test Event Code 的 queue 屬正式轉換，禁止測試訂單。
+      ...(setting.facebookTestEventCode === null ? { isTestOrder: false } : {}),
       primaryPaymentTransaction: { status: "paid", vendorId: input.vendorId },
     },
     select: { id: true, totalAmountCents: true, paidAmountCents: true, paidAt: true },

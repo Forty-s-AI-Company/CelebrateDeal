@@ -5,7 +5,7 @@ import { POST } from "./route";
 beforeEach(() => {
   mocks.run.mockReset().mockResolvedValue({ claimed: 0, accepted: 0, retried: 0, rejected: 0, cancelled: 0 });
   vi.stubEnv("JOB_SECRET", "synthetic-tracking-job-secret"); vi.stubEnv("VERCEL_ENV", "preview");
-  vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "true"); vi.stubEnv("META_GRAPH_API_VERSION", "v22.0");
+  vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "false"); vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "true"); vi.stubEnv("META_GRAPH_API_VERSION", "v22.0");
 });
 afterEach(() => vi.unstubAllEnvs());
 const request = (body: unknown, authorized = true) => new Request("http://127.0.0.1/api/jobs/tracking-deliveries", {
@@ -27,10 +27,27 @@ it("preserves queued work when an explicit provider version is absent", async ()
 });
 it("passes the bounded authenticated tenant scope and exposes only summary counts", async () => {
   const response = await POST(request({ vendorId: "vendor-one", limit: 2 })); expect(response.status).toBe(200);
-  expect(mocks.run).toHaveBeenCalledWith({ vendorId: "vendor-one", limit: 2, apiVersion: "v22.0" });
+  expect(mocks.run).toHaveBeenCalledWith({ vendorId: "vendor-one", limit: 2, apiVersion: "v22.0", deliveryMode: "test" });
   expect(await response.json()).toEqual({ ok: true, claimed: 0, accepted: 0, retried: 0, rejected: 0, cancelled: 0 });
 });
 it("does not expose provider credentials or raw failures in the response", async () => {
   mocks.run.mockRejectedValue(new Error("synthetic-private-provider-error")); const response = await POST(request({ vendorId: "vendor-one" }));
   expect(response.status).toBe(503); expect(await response.json()).toEqual({ ok: false, error: "tracking_job_failed" });
+});
+
+it("uses live mode only for explicitly enabled production and never accepts a browser-selected mode", async () => {
+  vi.stubEnv("VERCEL_ENV", "production"); vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "false"); vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "true");
+  expect((await POST(request({ vendorId: "vendor-one", deliveryMode: "live" }))).status).toBe(400);
+  expect(mocks.run).not.toHaveBeenCalled();
+  expect((await POST(request({ vendorId: "vendor-one" }))).status).toBe(200);
+  expect(mocks.run).toHaveBeenCalledWith({ vendorId: "vendor-one", apiVersion: "v22.0", deliveryMode: "live" });
+});
+it("rejects ambiguous enabled modes, preview live flags and production test flags without invoking a provider", async () => {
+  vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "true");
+  expect((await POST(request({ vendorId: "vendor-one" }))).status).toBe(403);
+  vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "false");
+  expect((await POST(request({ vendorId: "vendor-one" }))).status).toBe(403);
+  vi.stubEnv("VERCEL_ENV", "production"); vi.stubEnv("META_TRACKING_LIVE_DELIVERY_ENABLED", "false"); vi.stubEnv("META_TRACKING_TEST_DELIVERY_ENABLED", "true");
+  expect((await POST(request({ vendorId: "vendor-one" }))).status).toBe(403);
+  expect(mocks.run).not.toHaveBeenCalled();
 });
