@@ -2445,12 +2445,16 @@ model AffiliatePayout {
   status                  String    @default("pending")
   payoutItemId            String?
   paidAt                  DateTime?
+  /// Exact private exported snapshot and actual reported net; null is legacy.
+  remunerationSnapshotId String?
+  paidNetAmountCents Int?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
   vendor    Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   affiliate Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
   remunerationSnapshots AffiliateRemunerationSnapshot[]
+  paidRemunerationSnapshot AffiliateRemunerationSnapshot? @relation("PaidAffiliateRemuneration", fields: [vendorId, affiliateId, id, remunerationSnapshotId], references: [vendorId, affiliateId, payoutId, id], onDelete: Restrict)
 
   @@unique([vendorId, affiliateId, id])
   @@unique([vendorId, affiliateId, monthKey])
@@ -2510,6 +2514,8 @@ model AffiliateRemunerationSnapshot {
   createdAt DateTime @default(now())
   payout AffiliatePayout @relation(fields: [vendorId, affiliateId, payoutId], references: [vendorId, affiliateId, id], onDelete: Restrict)
   exportReceipt AffiliateRemunerationExport?
+  paidPayouts AffiliatePayout[] @relation("PaidAffiliateRemuneration")
+  @@unique([vendorId, affiliateId, payoutId, id])
   @@unique([vendorId, affiliateId, id])
   @@unique([vendorId, payoutId, revision])
   @@index([vendorId, affiliateId, status])

@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { getDb } from "./db";
 import { createBankAccountKeyring } from "./bank-account";
 import { AffiliatePayeeConflict, approveAffiliatePayeeProfile, submitAffiliatePayeeProfile } from "./affiliate-payee-profile";
-import { createAffiliateRemunerationQuote, exportAffiliateRemunerationQuote, signAffiliateRemunerationQuote } from "./affiliate-remuneration-quotes";
+import { affiliateRemunerationPaymentProof, createAffiliateRemunerationQuote, exportAffiliateRemunerationQuote, signAffiliateRemunerationQuote } from "./affiliate-remuneration-quotes";
+import { AffiliatePayoutMutationConflict } from "./affiliate-payout-accounting";
 import { appendCommissionLedgerEntry } from "./affiliate-commission-accounting";
 import { MerchantAffiliatePayoutPolicyConflict, setMerchantAffiliatePayoutPolicy } from "./merchant-affiliate-payout-policy";
 import { getAffiliateRemunerationDashboard } from "./affiliate-remuneration-dashboard";
@@ -36,6 +37,82 @@ async function payableFixture() {
   return { ...f, actor, manager, scope, commission, event };
 }
 describe("affiliate remuneration private database contracts", () => {
+  it("preserves version approval provenance after later edits without storing private identifiers", async () => {
+    const f = await payableFixture();
+    const quote = await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1500 });
+    await signAffiliateRemunerationQuote(db, f.actor, f.scope, quote!.id, quote!.revision);
+    await exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring);
+    const first = await db.auditLog.findFirstOrThrow({ where: { vendorId: f.vendor.id, targetId: f.affiliate.id, action: "approve_affiliate_payee_profile" } });
+    expect(first.after).toMatchObject({ profileRevision: 1, approvedByUserId: f.manager.userId });
+    expect((first.after as { approvedAt: string }).approvedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
+    await submitAffiliatePayeeProfile(db, f.actor, f.scope, { ...submission, expectedRevision: 1 }, keyring);
+    await approveAffiliatePayeeProfile(db, f.manager, f.scope, 2);
+    const rows = await db.auditLog.findMany({ where: { vendorId: f.vendor.id, targetId: f.affiliate.id, action: "approve_affiliate_payee_profile" } });
+    expect(rows).toHaveLength(2);
+    expect(rows.find(row => row.id === first.id)?.after).toEqual(first.after);
+    for (const row of rows) {
+      expect(Object.keys(row.after as object).sort()).toEqual(["affiliateId", "approvedAt", "approvedByUserId", "profileRevision"]);
+      expect(JSON.stringify(row.after)).not.toContain(submission.taxIdentity);
+      expect(JSON.stringify(row.after)).not.toContain(submission.bank.accountNumber);
+    }
+    await expect(approveAffiliatePayeeProfile(db, f.manager, f.scope, 1)).rejects.toBeInstanceOf(AffiliatePayeeConflict);
+    expect(await db.auditLog.count({ where: { vendorId: f.vendor.id, targetId: f.affiliate.id, action: "approve_affiliate_payee_profile" } })).toBe(2);
+  });
+  it("paid snapshot binding rejects foreign payouts and incomplete net payment records", async () => {
+    const a = await fixture(), b = await fixture();
+    const snapshot = await db.affiliateRemunerationSnapshot.create({ data: a.snapshot });
+    await expect(db.affiliatePayout.update({ where: { id: b.payout.id }, data: { status: "paid", paidAt: new Date(), remunerationSnapshotId: snapshot.id, paidNetAmountCents: snapshot.netPayoutAmountCents } })).rejects.toMatchObject({ code: "P2003" });
+    await expect(db.affiliatePayout.update({ where: { id: a.payout.id }, data: { remunerationSnapshotId: snapshot.id, paidNetAmountCents: snapshot.netPayoutAmountCents } })).rejects.toThrow();
+    await expect(db.affiliatePayout.update({ where: { id: a.payout.id }, data: { status: "paid", paidAt: new Date(), remunerationSnapshotId: snapshot.id } })).rejects.toThrow();
+    await expect(db.affiliatePayout.update({ where: { id: a.payout.id }, data: { status: "paid", paidAt: new Date(), remunerationSnapshotId: snapshot.id, paidNetAmountCents: a.payout.finalAmountCents + 1 } })).rejects.toThrow();
+    expect(await db.affiliatePayout.findUniqueOrThrow({ where: { id: a.payout.id } })).toMatchObject({ status: "pending", remunerationSnapshotId: null, paidNetAmountCents: null });
+  });
+
+  it("a refund invalidates exported payment proof without marking the payout paid", async () => {
+    const f = await payableFixture();
+    const quote = await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1500 });
+    await signAffiliateRemunerationQuote(db, f.actor, f.scope, quote!.id, quote!.revision);
+    await exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring);
+    await db.$transaction(tx => appendCommissionLedgerEntry(tx, { ...f.event, eventIdentity: randomUUID(), entryType: "refund", amountCents: -500_000 }));
+    const confirmation = new FormData();
+    confirmation.set("remunerationSnapshotId", quote!.id);
+    confirmation.set("paidNetAmountCents", String(quote!.netPayoutAmountCents));
+    confirmation.set("paidNetConfirmed", "on");
+    await expect(db.$transaction(tx => affiliateRemunerationPaymentProof(tx, f.scope, f.payout.id, confirmation))).rejects.toBeInstanceOf(AffiliatePayoutMutationConflict);
+    expect(await db.affiliatePayout.findUniqueOrThrow({ where: { id: f.payout.id } })).toMatchObject({ status: "pending", paidAt: null, paidNetAmountCents: null });
+  });
+  it("payment proof requires export, exact net amount and explicit confirmation", async () => {
+    const f = await payableFixture();
+    const quote = await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1500 });
+    const confirmation = new FormData();
+    confirmation.set("remunerationSnapshotId", quote!.id);
+    confirmation.set("paidNetAmountCents", String(quote!.netPayoutAmountCents));
+    confirmation.set("paidNetConfirmed", "on");
+    const proof = () => db.$transaction(tx => affiliateRemunerationPaymentProof(tx, f.scope, f.payout.id, confirmation));
+    await expect(proof()).rejects.toBeInstanceOf(AffiliatePayoutMutationConflict);
+    await signAffiliateRemunerationQuote(db, f.actor, f.scope, quote!.id, quote!.revision);
+    await expect(proof()).rejects.toBeInstanceOf(AffiliatePayoutMutationConflict);
+    await exportAffiliateRemunerationQuote(db, f.manager, f.scope, quote!.id, { bankFeeCents: 1500 }, keyring);
+    // Re-fetching unchanged terms must preserve the already signed/exported revision.
+    expect(await createAffiliateRemunerationQuote(db, f.actor, f.scope, f.payout.id, { bankFeeCents: 1500 })).toMatchObject({ id: quote!.id, revision: quote!.revision, status: "exported" });
+    confirmation.set("paidNetAmountCents", String(quote!.grossAmountCents));
+    await expect(proof()).rejects.toBeInstanceOf(AffiliatePayoutMutationConflict);
+    confirmation.set("paidNetAmountCents", String(quote!.netPayoutAmountCents));
+    confirmation.delete("paidNetConfirmed");
+    await expect(proof()).rejects.toBeInstanceOf(AffiliatePayoutMutationConflict);
+    confirmation.set("paidNetConfirmed", "on");
+    expect(await proof()).toEqual({ snapshotId: quote!.id, netPayoutAmountCents: quote!.netPayoutAmountCents });
+    expect(await db.affiliatePayout.findUniqueOrThrow({ where: { id: f.payout.id } })).toMatchObject({ status: "pending", paidAt: null });
+    await db.affiliatePortalAccess.update({ where: { vendorId_affiliateId: f.scope }, data: { active: false } });
+    await expect(proof()).rejects.toBeInstanceOf(AffiliatePayoutMutationConflict);
+  });
+
+  it("payment proof preserves unenrolled legacy payouts and rejects foreign scope", async () => {
+    const f = await fixture(), foreign = await fixture();
+    expect(await db.$transaction(tx => affiliateRemunerationPaymentProof(tx, { vendorId: f.vendor.id, affiliateId: f.affiliate.id }, f.payout.id, new FormData()))).toBeNull();
+    const enrolled = await payableFixture();
+    await expect(db.$transaction(tx => affiliateRemunerationPaymentProof(tx, { vendorId: enrolled.vendor.id, affiliateId: foreign.affiliate.id }, enrolled.payout.id, new FormData()))).rejects.toBeInstanceOf(AffiliatePayoutMutationConflict);
+  });
   it("rejects foreign tenant and affiliate references", async () => {
     const a = await fixture(), b = await fixture();
     await expect(db.affiliatePayeeProfile.create({ data: { ...a.profile, affiliateId: b.affiliate.id } })).rejects.toMatchObject({ code: "P2003" });

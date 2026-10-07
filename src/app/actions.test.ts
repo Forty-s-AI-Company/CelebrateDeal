@@ -6461,11 +6461,15 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
     return formData;
   }
 
-  function configureOutcomeTransaction(updatedPayout: Omit<typeof payout, "paidAt"> & { paidAt: Date | null }, commissions = [commission]) {
+  function configureOutcomeTransaction(updatedPayout: Omit<typeof payout, "paidAt"> & { paidAt: Date | null }, commissions = [commission], payerActive = true) {
     mocks.affiliatePayoutFindFirst.mockResolvedValueOnce(payout);
     mocks.affiliatePayoutFindUnique.mockResolvedValueOnce(updatedPayout);
     mocks.affiliateCommissionFindMany.mockResolvedValueOnce(commissions);
     mocks.transaction.mockImplementationOnce(async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      vendorMember: { findFirst: vi.fn().mockResolvedValue(payerActive ? { id: "synthetic-active-finance" } : null) },
+      // Existing manual payouts have neither an enrolled policy nor a remuneration snapshot.
+      merchantAffiliatePayoutPolicy: { findUnique: vi.fn().mockResolvedValue(null) },
+      affiliateRemunerationSnapshot: { findFirst: vi.fn().mockResolvedValue(null) },
       affiliateCommission: {
         findMany: mocks.affiliateCommissionFindMany,
         updateMany: mocks.affiliateCommissionUpdateMany,
@@ -6494,6 +6498,15 @@ describe("FIN-05 merchant AffiliatePayout outcome workflow", () => {
       vi.useRealTimers();
     }
   }
+
+  it("rejects a finance actor revoked after session authorization before any payment write", async () => {
+    configureOutcomeTransaction({ ...payout, status: "paid", paidAt: transitionAt }, [commission], false);
+    await expect(recordAffiliatePayoutOutcomeAction(outcomeFormData())).rejects.toThrow("redirect:/affiliates/commissions?error=conflict");
+    expect(mocks.affiliateCommissionFindMany).not.toHaveBeenCalled();
+    expect(mocks.affiliatePayoutUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.affiliateCommissionUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.auditLogCreate).not.toHaveBeenCalled();
+  });
 
   it.each([
     ["failed", "merchant transfer failed"],

@@ -15,6 +15,7 @@ import {
 import { auditSnapshot, requestAuditMeta, writeAuditLog } from "@/lib/audit";
 import { AffiliateCommissionRateBps } from "@/lib/affiliate-commission";
 import { AffiliatePayoutMutationConflict, payoutCommissionAmount } from "@/lib/affiliate-payout-accounting";
+import { affiliatePaidRemunerationFields, affiliateRemunerationPaymentProof, assertAffiliatePayoutFinanceActor } from "@/lib/affiliate-remuneration-quotes";
 import { appendCommissionLedgerEntry, commissionLedgerPayableState } from "@/lib/affiliate-commission-accounting";
 import { encryptBankAccount, maskBankAccount, resolveStoredBankAccount } from "@/lib/bank-account";
 import { monthRange, payoutBatchNumber } from "@/lib/billing";
@@ -1790,7 +1791,7 @@ export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
       const payout = await tx.affiliatePayout.findFirst({
         where: { id, vendorId: vendor.id },
       });
-      if (!payout) throw new AffiliatePayoutMutationConflict();
+      if (payout?.vendorId !== vendor.id) throw new AffiliatePayoutMutationConflict();
       if (
         payout.payoutItemId !== null
         || payout.finalAmountCents <= 0
@@ -1802,6 +1803,9 @@ export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
       if (payout.status === "void" && payout.paidAt) throw new AffiliatePayoutMutationConflict();
       if (payout.status === status) return;
       if (payout.status !== "pending") throw new AffiliatePayoutMutationConflict();
+
+      // Recheck the payer at the write boundary; session authorization may be stale.
+      await assertAffiliatePayoutFinanceActor(tx, vendor.id, member.id);
 
       const commissions = await tx.affiliateCommission.findMany({
         where: {
@@ -1826,6 +1830,8 @@ export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
       }
       if (commissionTotalCents !== payout.commissionAmountCents) throw new AffiliatePayoutMutationConflict();
 
+      const remuneration = status === "paid" ? await affiliateRemunerationPaymentProof(tx, { vendorId: vendor.id, affiliateId: payout.affiliateId }, payout.id, formData) : null;
+
       const transitionedAt = new Date();
       if (status === "void") {
         for (const balance of balances) {
@@ -1849,6 +1855,7 @@ export async function recordAffiliatePayoutOutcomeAction(formData: FormData) {
           outcomeReference: status === "paid" ? outcomeReference : null,
           outcomeReason: reason,
           paidAt: status === "paid" ? transitionedAt : null,
+          ...affiliatePaidRemunerationFields(remuneration),
         },
       });
       if (payoutClaim.count !== 1) throw new AffiliatePayoutMutationConflict();

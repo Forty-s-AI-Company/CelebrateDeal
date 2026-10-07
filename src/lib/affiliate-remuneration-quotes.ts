@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { calculateAffiliateRemuneration } from "./affiliate-remuneration";
-import { reconcileAffiliatePendingPayout } from "./affiliate-payout-accounting";
+import { AffiliatePayoutMutationConflict, reconcileAffiliatePendingPayout } from "./affiliate-payout-accounting";
 import type { AffiliateBankScope } from "./affiliate-bank-account";
 import { decryptAffiliateBankAccount } from "./affiliate-bank-account";
 import { decryptAffiliateTaxIdentity } from "./affiliate-tax-identity";
@@ -10,6 +10,16 @@ import { loadRuntimeBankAccountKeyring, type BankAccountKeyring } from "./bank-a
 const Id = z.string().regex(/^[A-Za-z0-9_-]{1,160}$/u);
 type Database = Pick<PrismaClient, "$transaction">;
 const publicQuote = { id: true, revision: true, profileRevision: true, ruleVersion: true, grossAmountCents: true, withholdingTaxCents: true, nhiSupplementaryTaxCents: true, bankFeeCents: true, netPayoutAmountCents: true, status: true, signedAt: true } as const;
+export function affiliatePaidRemunerationFields(proof: { snapshotId: string; netPayoutAmountCents: number } | null) {
+  return proof ? { remunerationSnapshotId: proof.snapshotId, paidNetAmountCents: proof.netPayoutAmountCents } : {};
+}
+export async function assertAffiliatePayoutFinanceActor(tx: Prisma.TransactionClient, vendorId: string, memberId: string) {
+  const payer = await tx.vendorMember.findFirst({
+    where: { id: memberId, vendorId, status: "active", role: { in: ["owner", "admin", "accountant"] }, user: { status: "active" } },
+    select: { id: true },
+  });
+  if (!payer) throw new AffiliatePayoutMutationConflict();
+}
 async function current(tx: Prisma.TransactionClient, actor: { userId: string }, scope: AffiliateBankScope, payoutId: string) {
   const access = await tx.affiliatePortalAccess.findFirst({ where: { ...scope, active: true, affiliate: { isActive: true }, member: { userId: actor.userId, status: "active", user: { status: "active" } } }, select: { revision: true } });
   if (!access) return null;
@@ -41,7 +51,7 @@ export async function createAffiliateRemunerationQuote(db: Database, actor: { us
     const { profile, payout, ledgerDigest, payoutPolicy } = state;
     const quote = calculateAffiliateRemuneration({ grossAmountCents: payout.finalAmountCents, bankFeeCents: policy.bankFeeCents, recipientType: profile.recipientType, nhiTreatment: profile.nhiTreatment, exemptionReference: profile.exemptionReference ?? undefined, invoiceReference: profile.invoiceReference ?? undefined });
     const previous = await tx.affiliateRemunerationSnapshot.findFirst({ where: { ...scope, payoutId }, orderBy: { revision: "desc" } });
-    if (previous && ["quoted", "signed"].includes(previous.status) && previous.payoutPolicyRevision === payoutPolicy.revision && previous.profileRevision === profile.revision && previous.ledgerDigest === ledgerDigest && previous.bankFeeCents === quote.bankFeeCents && previous.ruleVersion === quote.ruleVersion && previous.grossAmountCents === quote.grossAmountCents) {
+    if (previous && ["quoted", "signed", "exported"].includes(previous.status) && previous.payoutPolicyRevision === payoutPolicy.revision && previous.profileRevision === profile.revision && previous.ledgerDigest === ledgerDigest && previous.bankFeeCents === quote.bankFeeCents && previous.ruleVersion === quote.ruleVersion && previous.grossAmountCents === quote.grossAmountCents) {
       return tx.affiliateRemunerationSnapshot.findUnique({ where: { id: previous.id }, select: publicQuote });
     }
     await tx.affiliateRemunerationSnapshot.updateMany({ where: { ...scope, payoutId, status: { in: ["quoted", "signed"] } }, data: { status: "invalidated", invalidatedAt: new Date() } });
@@ -98,4 +108,25 @@ export async function exportAffiliateRemunerationQuote(db: Database, actor: { us
     if (!receipt) throw new Error("Export receipt is required.");
     return { snapshotId, payoutId: snapshot.payoutId, revision: snapshot.revision, exportedAt: receipt.createdAt, ...quote, bank, taxIdentity };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+/** Existing merchant finance action calls this inside its serializable payout
+ * transaction. Enrolled payouts cannot bypass current signature/export proof;
+ * legacy payouts without a policy or snapshot keep their original contract. */
+export async function affiliateRemunerationPaymentProof(tx: Prisma.TransactionClient, scope: AffiliateBankScope, payoutId: string, confirmation: FormData) {
+  const policy = await tx.merchantAffiliatePayoutPolicy.findUnique({ where: { vendorId: scope.vendorId } });
+  const latest = await tx.affiliateRemunerationSnapshot.findFirst({ where: { ...scope, payoutId }, orderBy: { revision: "desc" } });
+  if (!policy?.enabled && !latest) return null;
+  if (!policy?.enabled || latest?.status !== "exported" || !latest.signedByUserId) throw new AffiliatePayoutMutationConflict();
+  const state = await current(tx, { userId: latest.signedByUserId }, scope, payoutId);
+  if (!state || latest.ledgerDigest !== state.ledgerDigest || latest.profileRevision !== state.profile.revision || latest.payoutPolicyRevision !== state.payoutPolicy.revision || latest.bankFeeCents !== state.payoutPolicy.bankFeeCents || latest.bankEncrypted !== state.profile.bankEncrypted || latest.taxIdentityEncrypted !== state.profile.taxIdentityEncrypted) throw new AffiliatePayoutMutationConflict();
+  const quote = calculateAffiliateRemuneration({ grossAmountCents: state.payout.finalAmountCents, bankFeeCents: state.payoutPolicy.bankFeeCents, recipientType: state.profile.recipientType, nhiTreatment: state.profile.nhiTreatment, exemptionReference: state.profile.exemptionReference ?? undefined, invoiceReference: state.profile.invoiceReference ?? undefined });
+  if (Object.entries(quote).some(([field, value]) => latest[field as keyof typeof latest] !== value)) throw new AffiliatePayoutMutationConflict();
+  if (!await tx.affiliateRemunerationExport.findUnique({ where: { snapshotId: latest.id }, select: { snapshotId: true } })) throw new AffiliatePayoutMutationConflict();
+  // Confirm the human-recorded transfer against the current immutable snapshot.
+  if (confirmation.get("remunerationSnapshotId") !== latest.id
+    || !/^\d{1,10}$/u.test(String(confirmation.get("paidNetAmountCents") ?? ""))
+    || Number(confirmation.get("paidNetAmountCents")) !== latest.netPayoutAmountCents
+    || confirmation.get("paidNetConfirmed") !== "on") throw new AffiliatePayoutMutationConflict();
+  return { snapshotId: latest.id, netPayoutAmountCents: latest.netPayoutAmountCents };
 }

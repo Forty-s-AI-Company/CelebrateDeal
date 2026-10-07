@@ -43,8 +43,15 @@ export async function approveAffiliatePayeeProfile(db: Database, actor: { userId
     if (!manager) return null;
     const affiliate = await tx.affiliate.findFirst({ where: { id: scope.affiliateId, vendorId: scope.vendorId, isActive: true }, select: { id: true } });
     if (!affiliate) return null;
-    const changed = await tx.affiliatePayeeProfile.updateMany({ where: { ...scope, revision: expectedRevision, approvedRevision: null }, data: { approvedRevision: expectedRevision, approvedByUserId: actor.userId, approvedAt: new Date() } });
+    const approvedAt = new Date();
+    const changed = await tx.affiliatePayeeProfile.updateMany({ where: { ...scope, revision: expectedRevision, approvedRevision: null }, data: { approvedRevision: expectedRevision, approvedByUserId: actor.userId, approvedAt } });
     if (changed.count !== 1) throw new AffiliatePayeeConflict();
+    // Persist version approval provenance independently of the editable profile.
+    await tx.auditLog.create({ data: {
+      vendorId: scope.vendorId, actorId: manager.id, action: "approve_affiliate_payee_profile",
+      targetType: "AffiliatePayeeProfile", targetId: scope.affiliateId,
+      after: { affiliateId: scope.affiliateId, profileRevision: expectedRevision, approvedByUserId: actor.userId, approvedAt: approvedAt.toISOString() },
+    } });
     return tx.affiliatePayeeProfile.findUnique({ where: { vendorId_affiliateId: scope }, select: publicProfile });
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }

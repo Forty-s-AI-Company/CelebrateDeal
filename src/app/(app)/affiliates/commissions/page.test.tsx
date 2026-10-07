@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   commissionFindMany: vi.fn(),
   payoutFindMany: vi.fn(),
+  payoutPolicyFindUnique: vi.fn(),
+  snapshotFindMany: vi.fn(),
   requireVendorFinance: vi.fn(),
   getCsrfToken: vi.fn(),
 }));
@@ -17,6 +19,8 @@ vi.mock("@/lib/db", () => ({
   getDb: () => ({
     affiliateCommission: { findMany: mocks.commissionFindMany },
     affiliatePayout: { findMany: mocks.payoutFindMany },
+    merchantAffiliatePayoutPolicy: { findUnique: mocks.payoutPolicyFindUnique },
+    affiliateRemunerationSnapshot: { findMany: mocks.snapshotFindMany },
   }),
 }));
 
@@ -64,9 +68,30 @@ beforeEach(() => {
   mocks.getCsrfToken.mockResolvedValue("csrf-affiliate");
   mocks.commissionFindMany.mockResolvedValue(commissions);
   mocks.payoutFindMany.mockResolvedValue([pendingPayout]);
+  mocks.payoutPolicyFindUnique.mockResolvedValue(null);
+  mocks.snapshotFindMany.mockResolvedValue([]);
 });
 
 describe("/affiliates/commissions route", () => {
+  it("requires the exported snapshot's exact net payment confirmation", async () => {
+    mocks.payoutPolicyFindUnique.mockResolvedValue({ enabled: true });
+    mocks.snapshotFindMany.mockResolvedValue([{ id: "snapshot-current", payoutId: pendingPayout.id, status: "exported", netPayoutAmountCents: 399 }]);
+    const html = renderToStaticMarkup(await AffiliateCommissionsPage({}));
+    expect(html).toContain('name="remunerationSnapshotId" value="snapshot-current"');
+    expect(html).toContain('name="paidNetAmountCents" value="399"');
+    expect(html).toContain("3.99");
+    const confirmation = html.match(/<input\b[^>]*\bname="paidNetConfirmed"[^>]*>/u)?.[0];
+    expect(confirmation).toBeDefined();
+    expect(confirmation).toMatch(/\brequired(?:="")?(?:\s|\/?>)/u);
+  });
+
+  it("blocks marking enrolled payouts paid before export", async () => {
+    mocks.payoutPolicyFindUnique.mockResolvedValue({ enabled: true });
+    const html = renderToStaticMarkup(await AffiliateCommissionsPage({}));
+    expect(html).not.toContain("標記已付款");
+    expect(html).toContain("請先完成報酬簽署與匯出");
+    expect(html).toContain("標記作廢並沖回佣金");
+  });
   it("scopes commissions and payout records to the current vendor", async () => {
     await AffiliateCommissionsPage({});
 
