@@ -1,4 +1,5 @@
 import {randomUUID} from "node:crypto";
+import {assertReferralCardDownload} from "./referral-card-assertions";
 import {expect,test} from "@playwright/test";
 import {PrismaClient} from "@prisma/client";
 import {hashPassword} from "../../src/lib/password";
@@ -44,7 +45,16 @@ test("manager grants portal access; partner reads ledger refund net and loses ac
   await expect(partnerPage.getByRole("link",{name:"推廣：合成不可公開場次",exact:true})).toHaveCount(0);
   const platformBefore=await db.platformReferralClick.count();
   const promo=partnerPage.getByRole("link",{name:"推廣：合成推廣場次",exact:true});
-  await expect(promo).toHaveAttribute("href",`/live/${live.slug}?ref=${encodeURIComponent(affiliate.code)}`);await promo.click();
+  await expect(promo).toHaveAttribute("href",`/live/${live.slug}?ref=${encodeURIComponent(affiliate.code)}`);
+  await partnerContext.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const shareUrl=`${baseURL}/live/${live.slug}?ref=${encodeURIComponent(affiliate.code)}`;
+  await expect(partnerPage.getByLabel("合成推廣場次推廣連結",{exact:true})).toHaveValue(shareUrl);
+  await partnerPage.getByRole("button",{name:"複製推廣連結",exact:true}).click();
+  await expect(partnerPage.getByRole("status")).toHaveText("推廣連結已複製");
+  expect(await partnerPage.evaluate(()=>navigator.clipboard.readText())).toBe(shareUrl);
+  const card=await assertReferralCardDownload(partnerPage,shareUrl,[partner.email,partner.id]);
+  expect(card.svg).toContain("合成推廣場次");
+  await partnerPage.goto(card.destination);
   await expect(partnerPage).toHaveURL(new RegExp(`/live/${live.slug}\\?ref=`));
   // Exercise the existing real merchant tracking handler from its public page.
   // The scheduled fixture is not admitted to playback, so this asserts the
