@@ -49,3 +49,35 @@ it("returns the safe message DTO with create/retry status and no-store errors", 
   mocks.create.mockRejectedValue(new LiveChatError("idempotency_conflict"));
   const conflict = await POST(request("POST", body)); expect(conflict.status).toBe(409); expect(conflict.headers.get("cache-control")).toBe("private, no-store");
 });
+
+it.each([false, true])("rejects an open oversized upload promptly (content-length: %s)", async (declaredLength) => {
+  let cancelled = false;
+  // 超量後保持開啟，確認拒絕不必等待上傳完成。
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) { controller.enqueue(new Uint8Array(20_000)); },
+    cancel() { cancelled = true; },
+  });
+  const headers = new Headers({ origin: "https://app.example.test",
+    "x-celebratedeal-client": "web", "content-type": "application/json" });
+  if (declaredLength) headers.set("content-length", "20000");
+  const incoming = new Request("https://app.example.test/api/live-chat/private", {
+    method: "POST", headers, body: stream, duplex: "half",
+  } as RequestInit & { duplex: "half" });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      POST(incoming),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("oversized stream was not rejected promptly")), 1000);
+      }),
+    ]);
+    expect(result.status).toBe(400);
+    expect(cancelled).toBe(true);
+    const limiterRequest = mocks.rate.mock.calls[0][0] as Request;
+    expect(limiterRequest.body).toBeNull();
+    expect(limiterRequest.method).toBe("POST");
+    expect(limiterRequest.url).toBe(incoming.url);
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.csrf).not.toHaveBeenCalled();
+  } finally { clearTimeout(timer); }
+});
