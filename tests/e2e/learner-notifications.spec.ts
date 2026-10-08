@@ -34,8 +34,8 @@ test("actual portal worker receives a synthetic device message and keeps authent
   };
  });
  try{
-  await page.goto(`${baseURL}/portal/`);await expect(page.getByRole("heading",{name:"你的學習中心",exact:true})).toBeVisible();
-  await expect(page).toHaveURL(`${baseURL}/portal/start/welcome`);
+  await page.goto(`${baseURL}/portal/start.html`);await expect(page.getByRole("heading",{name:"你的學習中心",exact:true})).toBeVisible();
+  await expect(page).toHaveURL(`${baseURL}/portal/start.html`);
   expect(await page.evaluate(()=>window.isSecureContext)).toBe(true);
   const workerScript=await page.request.get(`${baseURL}/portal/sw.js`);expect(workerScript.status()).toBe(200);expect(workerScript.headers()["content-type"]).toContain("javascript");
   for(const asset of ["/portal/offline.html","/portal/manifest.webmanifest","/portal/icon-192.png","/portal/icon-512.png"])expect((await page.request.get(`${baseURL}${asset}`)).status()).toBe(200);
@@ -43,7 +43,7 @@ test("actual portal worker receives a synthetic device message and keeps authent
   await expect.poll(()=>registrationId).toBeTruthy();
   const manifest=await page.locator('link[rel="manifest"]').getAttribute("href");expect(manifest).toBe("/portal/manifest.webmanifest");
   const manifestData=await (await page.request.get(`${baseURL}${manifest}`)).json();
-  expect(manifestData.scope).toBe("/portal/");expect(manifestData.start_url).toBe("/portal/start/welcome");
+  expect(manifestData.scope).toBe("/portal/");expect(manifestData.start_url).toBe("/portal/start.html");
   // This is browser-local CDP delivery of a synthetic payload, never a receipt
   // from Google/Apple/Mozilla or any configured external push provider.
   await session.send("ServiceWorker.deliverPushMessage",{origin:baseURL,registrationId:registrationId!,data:JSON.stringify({title:"合成裝置通知",body:"只驗證本機 worker 接收",path:"/portal/academy/learn/course_a/community/post_a"})});
@@ -64,7 +64,7 @@ test("actual portal worker receives a synthetic device message and keeps authent
   });
   expect(privateResults).toEqual([{networkFailed:true},{networkFailed:true},{networkFailed:true}]);expect(page.url()).toBe(originalUrl);
   const offline=await page.goto(`${baseURL}/portal/synthetic/learn/course_a`);expect(offline?.status()).toBe(503);await expect(page.getByRole("heading",{name:"目前沒有網路連線",exact:true})).toBeVisible();
-  await context.setOffline(false);await page.goto(`${baseURL}/portal/`);await expect(page.getByRole("heading",{name:"你的學習中心",exact:true})).toBeVisible();
+  await context.setOffline(false);await page.goto(`${baseURL}/portal/start.html`);await expect(page.getByRole("heading",{name:"你的學習中心",exact:true})).toBeVisible();
   expect(await page.evaluate(async()=>(await (await caches.open("celebratedeal-portal-public-v1")).keys()).map(request=>new URL(request.url).pathname).sort())).toEqual(cachePaths);
  }finally{
   const probe=await page.evaluate(()=>Reflect.get(window,"portalWorkerProbe")).catch(()=>null);
