@@ -30,6 +30,7 @@ const createCheckoutSession = vi.fn();
 const checkoutReadiness = vi.fn();
 const paymentProviderMocks = vi.hoisted(() => ({ getPaymentProvider: vi.fn() }));
 const commerceOrderMocks = vi.hoisted(() => ({ createCommerceOrderForCheckout: vi.fn() }));
+const affiliatePolicyMocks = vi.hoisted(() => ({ freezeMerchantAffiliateCheckout: vi.fn(), MerchantAffiliatePolicyConflict: class MerchantAffiliatePolicyConflict extends Error {}, MerchantAffiliatePolicyDenied: class MerchantAffiliatePolicyDenied extends Error {} }));
 const buyerSupportMocks = vi.hoisted(() => ({ issueBuyerSupportGrant: vi.fn() }));
 const funnelMocks = vi.hoisted(() => ({ resolvePublishedFunnelCheckout: vi.fn() }));
 const liveInteractionMocks = vi.hoisted(() => ({ resolveEligibleAutomationVoucherClaim: vi.fn(), resolveEligibleVoucherClaim: vi.fn(), consumeLive: vi.fn() }));
@@ -45,6 +46,7 @@ vi.mock("@/lib/payment-providers", () => ({
 }));
 vi.mock("@/lib/inventory-reservations", () => inventoryMocks);
 vi.mock("@/lib/commerce-orders", () => commerceOrderMocks);
+vi.mock("@/lib/merchant-affiliate-policy-service", () => affiliatePolicyMocks);
 vi.mock("@/lib/buyer-support-access", () => ({
   issueBuyerSupportGrant: buyerSupportMocks.issueBuyerSupportGrant,
   buyerSupportCookieOptions: ({ expiresAt, secure }: { expiresAt: Date; secure: boolean }) => ({
@@ -1044,6 +1046,10 @@ describe("checkout affiliate click attribution", () => {
       }),
     }));
     expect(createCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({ referralCode: "VALIDCODE" }));
+    expect(affiliatePolicyMocks.freezeMerchantAffiliateCheckout).toHaveBeenCalledWith(
+      commerceOrderMocks.createCommerceOrderForCheckout.mock.calls[0]![0],
+      { vendorId: "vendor-1", transactionId: "transaction-1", orderId: "order-1", affiliateId: "affiliate-1", referralCode: "VALIDCODE" },
+    );
   });
 
   it("stores a server-owned team click for conversion attribution without inventing affiliate commission", async () => {

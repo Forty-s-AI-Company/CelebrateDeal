@@ -34,6 +34,7 @@ export default async function AffiliateDetailPage({ params }: { params: Promise<
       />
 
       <div className="mb-5"><ButtonLink href={`/affiliates/${encodeURIComponent(affiliate.id)}/access`} tone="secondary">夥伴入口授權</ButtonLink></div>
+      {vendor.enabledFeatureModules.includes("tax_remuneration") ? <div className="mb-5"><ButtonLink href={`/affiliates/${encodeURIComponent(affiliate.id)}/remuneration`} tone="secondary">收款核准與提領匯出</ButtonLink></div> : null}
       <div className="mb-6 grid gap-4 md:grid-cols-4">
         <Card>
           <p className="text-sm text-slate-500">點擊</p>

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { classifyPrivateInboxDiagnostic } from "./private-inbox-diagnostic";
 import type { FullResult, Reporter, TestCase, TestResult, TestStep } from "@playwright/test/reporter";
 
 const allowedTestPath = /^tests\/e2e\/[A-Za-z0-9_.()[\]/-]+\.spec\.(?:[cm]?[jt]sx?)$/u;
@@ -147,7 +148,10 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
         if (stepAnnotation) this.write(stepAnnotation);
         // Direct database/explicit throws may not produce a failed Playwright step.
         for (const error of attempt.errors ?? []) {
-          const classification = classifySyntheticCheckoutError(error.message) ?? classifySanitizedAxeError(error.message);
+          // Playwright appends worker teardown diagnostics to message. Only the
+          // complete first line is considered; the remainder is never forwarded.
+          const inboxMessage = typeof error.message === "string" ? error.message.split("\n", 1)[0] : undefined;
+          const classification = classifySyntheticCheckoutError(error.message) ?? classifySanitizedAxeError(error.message) ?? classifyPrivateInboxDiagnostic(inboxMessage);
           const location = error.location;
           if (!classification && !location) continue;
           const errorAnnotation = formatSanitizedPlaywrightAnnotation({

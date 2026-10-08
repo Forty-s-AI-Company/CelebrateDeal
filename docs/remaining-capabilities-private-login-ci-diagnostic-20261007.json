@@ -1,0 +1,42 @@
+{
+  "taskId": "f2-live-private-chat-purchase-broadcast",
+  "candidateBaseHead": "716c8253467a2b7b69c7bbc92d650ded6e18a4ae",
+  "failedCiRun": "37569742620",
+  "observedFailure": "Instructor inbox viewer button missing after successful actual login; original line58 corresponds to current line64, not login assertion",
+  "rootCause": "CONFIRMED_SOURCE_CONTRACT: production memory trustMode none makes private write IP null and denies POST; original UI text assertion did not prove persistence",
+  "changes": [
+    "Closed instructor inbox diagnostic with exact navigation/API status and persisted-conversation booleans",
+    "Owned loopback ingress proof enabled only for explicit local E2E memory runtime; deployed Production and missing/forged proof remain denied",
+    "Full CI private journey uses same owned synthetic ingress as dedicated runner; limiter remains memory",
+    "Original UI assertions strengthened with real viewer/instructor POST201, rendered message lists, exact persisted viewer message, and instructor browser read200 then revoked403",
+    "Source fingerprint includes auth/rate limiter, trusted ingress, reporter/config and new security regressions"
+  ],
+  "privacyUnitTests": 16,
+  "scopedLint": "PASS",
+  "diffCheck": "PASS",
+  "currentDisposableRun": {
+    "sessionId": 56354,
+    "status": "PASS",
+    "rateLimitProvider": "memory",
+    "migrations": 86,
+    "db": 25,
+    "browser": 3,
+    "skipped": 0,
+    "flaky": 0,
+    "cleanup": "PASS",
+    "sourceRevision": "sha256:0d1da01e323e67810d3f27ab92e58fcf737f88a475e8473d9761d5c209479c55",
+    "evidence": "docs/remaining-capabilities-private-memory-browser-pass-20261007.json",
+    "productionOrExternalOperations": false
+  },
+  "independentReview": "NOT_PERFORMED_FOR_CURRENT_CHANGES",
+  "ready": false,
+  "delivered": false,
+  "correctedInterpretation": "Previous login failure interpretation was wrong; closed login diagnostics correctly absent because login passed. Three failed browser receipts preserved. Login-only helper/tests archived in owned ignored tmp; original login assertion retained. Current diagnostics target exact instructor navigation/API and same synthetic persisted conversation.",
+  "currentTests": {
+    "scopedLint": "PASS",
+    "targeted": 62,
+    "typescript": "PASS",
+    "files": 7,
+    "browser": "PASS:3 actual journeys"
+  }
+}

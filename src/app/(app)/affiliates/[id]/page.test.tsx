@@ -34,7 +34,7 @@ const affiliate = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
+  mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", enabledFeatureModules: ["affiliate_program", "tax_remuneration"] });
   mocks.affiliateFindFirst.mockResolvedValue(affiliate);
 });
 

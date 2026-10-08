@@ -74,6 +74,8 @@ import { postStreamUsageHeartbeat } from "@/lib/stream-usage-client";
 import { trackClientAnalytics } from "@/lib/client-analytics";
 import type { ScheduledRuntimeMessage } from "@/lib/live-chat-contract";
 import { LiveChatPanel } from "./live-chat-panel";
+import { LivePurchaseBroadcastPanel } from "./live-purchase-broadcast-panel";
+import { LiveViewerPrivateChat } from "./live-viewer-private-chat";
 import { affiliateClickEndpoint, CHECKOUT_NAVIGATION_LOCK_TIMEOUT_MS, checkoutPagePath, getLiveStatusLabel, getStreamUsageRetryDelayMs, getWaitingCountdownSeconds, isHlsPlaybackUrl, isInternalCheckoutPath, LivePlayback, normalizePlaybackStartSeconds, openExternalUrl, PersistentMiniPlayerControls, PlaybackNavigation, requestCheckout, ScriptedInteractionOverlay, shouldResetAffiliateAttribution, STREAM_USAGE_RETRY_DELAYS_MS, stripLiveShareFromUrl, submitCheckout, useLiveAdmission, useLivePlaybackSource } from "./live-playback";
 
 type ElementNode = {
@@ -241,6 +243,60 @@ function checkoutErrors(tree: unknown) {
 }
 
 describe("LivePlayback checkout", () => {
+  it("never carries an admitted claim into another tenant or live before effects run", async () => {
+    hookState.effectsEnabled = true;
+    vi.stubGlobal("window", { setInterval, clearInterval });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    const AdmissionHarness = (vendorId: string, liveId: string, refreshKey = 0) => {
+      hookState.cursor = 0;
+      hookState.effectCursor = 0;
+      return useLiveAdmission({ vendorId, liveId, refreshKey, admissionRequired: true });
+    };
+    expect(AdmissionHarness("tenant-a", "live-a")).toBe("checking");
+    await flushHookEffects();
+    expect(AdmissionHarness("tenant-a", "live-a")).toBe("admitted");
+    expect(AdmissionHarness("tenant-b", "live-a")).toBe("checking");
+    expect(AdmissionHarness("tenant-a", "live-b")).toBe("checking");
+    expect(AdmissionHarness("tenant-a", "live-a", 1)).toBe("checking");
+  });
+
+  it("reveals purchase broadcasts only after admission and product reveal, then removes them during revalidation", async () => {
+    hookState.effectsEnabled = true;
+    vi.stubGlobal("window", { setInterval, clearInterval, location: { search: "" }, localStorage: {} });
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => Promise.resolve({
+      ok: true,
+      json: async () => String(input).startsWith("/api/live-playback-source?")
+        ? { playbackUrl: "https://video.example.test/purchase.mp4", playbackStartSeconds: 0 }
+        : {},
+    })));
+    const scope = { runtimeState: "playing" as const, status: "live", admissionRequired: true };
+    const cards = (tree: unknown) => findElements(tree, element => element.type === LivePurchaseBroadcastPanel);
+    const privateChat = (tree: unknown) => findElements(tree, element => element.type === LiveViewerPrivateChat);
+    expect(cards(renderLive(scope))).toHaveLength(0);
+    expect(privateChat(renderLive(scope))).toHaveLength(0);
+    await flushHookEffects();
+    renderLive(scope);
+    await flushHookEffects();
+    expect(cards(renderLive(scope))).toHaveLength(0);
+    expect(privateChat(renderLive(scope))).toHaveLength(1);
+    const revealed = { ...scope, interactionEvents: [productSpotlightEvent("purchase-reveal", 0, "test-fixture-product-1")] };
+    const panel = cards(renderLive(revealed));
+    expect(panel).toHaveLength(1);
+    expect(panel[0].props).toMatchObject({ vendorId: live.vendorId, liveId: live.id });
+    (panel[0].props.onAdmissionInvalid as () => void)();
+    expect(cards(renderLive(revealed))).toHaveLength(0);
+    expect(privateChat(renderLive(revealed))).toHaveLength(0);
+  });
+
+  it("does not expose broadcasts through a legacy playback without admission", () => {
+    const tree = renderLive({
+      videoUrl: "https://video.example.test/legacy.mp4",
+      admissionRequired: false,
+      interactionEvents: [productSpotlightEvent("legacy-reveal", 0, "test-fixture-product-1")],
+    });
+    expect(findElements(tree, element => element.type === LivePurchaseBroadcastPanel)).toHaveLength(0);
+    expect(findElements(tree, element => element.type === LiveViewerPrivateChat)).toHaveLength(0);
+  });
   it("removes the bearer Live share from the browser URL while preserving safe navigation state", () => {
     expect(stripLiveShareFromUrl("https://app.example.test/live/webinar?share=tls1.fixture&ref=ignored#form"))
       .toBe("/live/webinar?ref=ignored#form");
