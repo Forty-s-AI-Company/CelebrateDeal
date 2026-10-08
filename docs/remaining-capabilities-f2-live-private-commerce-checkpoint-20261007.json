@@ -1,0 +1,194 @@
+{
+  "task_id": "f2-live-private-chat-purchase-broadcast",
+  "parent_goal_id": "remaining-capabilities-20261005",
+  "created_at": "2026-10-07T02:14:06.905729+00:00",
+  "base_head": "f739c7e017d430f05cc10a85728f5335e1bc20be",
+  "historical_source": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+  "branch": "codex/live-private-chat-purchase-broadcast-20261007",
+  "status": "BROADCAST_BACKEND_LOCAL_VALIDATED_FULL_TASK_INCOMPLETE",
+  "delivered": false,
+  "requested_team": "ai-team-pro",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "f2-live-private-chat-purchase-broadcast",
+    "signals": {
+      "task_type": "cross_module",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 8,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "cross_module",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [
+        "src/lib/live-private-chat.ts",
+        "src/app/api/live-chat/private/route.ts",
+        "src/app/api/live-chat/instructor/route.ts",
+        "src/app/api/live-purchase-broadcasts/route.ts"
+      ],
+      "context_size": 24000,
+      "expected_duration": 240,
+      "code_surface_area": 12,
+      "production_impact": "low",
+      "security_impact": "critical",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "cross_module",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "required": true,
+        "fallback_events": [
+          {
+            "model": "opus",
+            "reason": "unavailable"
+          }
+        ],
+        "status": "planned",
+        "model_key": "astra",
+        "model": "gpt-6-astra",
+        "provider": "native_agent",
+        "reasoning_effort": "high",
+        "effort_floor": null,
+        "effort_reason": null,
+        "sandbox_mode": "read-only",
+        "execution": "native_agent_handoff_only",
+        "candidate_findings_only": false,
+        "may_spawn": false,
+        "astra_reason": "critical_review_no_equivalent"
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "f739c7e017d430f05cc10a85728f5335e1bc20be",
+    "snapshot_root": null,
+    "snapshot_files": [],
+    "required_checks": [],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "routing_only_fallback_events_are_not_observed_provider_failures": true,
+  "execution_observed_model": "unknown",
+  "execution_observed_effort": "unknown",
+  "ownership": {
+    "writer": "root",
+    "readonly_helpers": 1,
+    "depth": 1,
+    "dispatches": 0,
+    "max_dispatches": 4
+  },
+  "tests": {
+    "unit_and_api_registry": {
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0
+    },
+    "disposable_postgresql": {
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    "forward_migrations": 85,
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "scoped_lint": "PASS",
+    "current_typescript": "PASS",
+    "visible_product_101_db_regression": "PASS"
+  },
+  "source_revision": "sha256:2cd69ca8217f43040c228ac44997364cf9ff7c868037b1a7d4a8020e2eb8ee99",
+  "scope": [
+    "exact sourceLiveId checkout attribution",
+    "active tenant/live viewer admission",
+    "all visible live products including product 101",
+    "paid/non-test/unrefunded canonical orders",
+    "opaque public card identifiers and private no-store"
+  ],
+  "remaining": [
+    "private instructor/viewer conversation backend and isolation regressions",
+    "actual private chat and purchase-broadcast UI",
+    "full browser journeys",
+    "independent Critical review",
+    "canonical acceptance",
+    "exact-head CI and protected PR delivery"
+  ],
+  "prior_failed_fixture_evidence_preserved": true,
+  "external_operations": false,
+  "production_operations": false,
+  "dotenv_read": false
+}

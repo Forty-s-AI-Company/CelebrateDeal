@@ -1,0 +1,66 @@
+{
+  "schema": "remaining-capabilities-ci-failure/v1",
+  "task_id": "f2-referral-share-cards-20261008",
+  "head": "e9682fc071dd169114526d1ffdf5a6f4d8b06503",
+  "pr": 385,
+  "push_run": 37658662066,
+  "pr_run": 37658740910,
+  "ci_status": "FAILURE",
+  "failure_step": "Unit tests and coverage thresholds",
+  "preceding_lint_typecheck_and_database_contracts": "PASS",
+  "local_reproduction": {
+    "command": "npx vitest run src/app/verify-registration/page.test.tsx",
+    "exit_code": 1,
+    "passed": 1,
+    "failed": 1,
+    "failing_test": "verified 與 invalid 狀態不回顯 token，也不呈現 POST 表單",
+    "confirmed_error": "A component suspended while responding to synchronous input",
+    "cause": "Existing synchronous renderToStaticMarkup cannot render the new async VerifiedRegistrationShare child",
+    "complete_ci_failure_set": "Not yet established; full coverage reproduction still running"
+  },
+  "planned_correction": "Use async-capable server rendering in page test with explicit no-session cookie fixture; preserve every existing assertion and add forged status cannot grant sharing assertion",
+  "thresholds_lowered": false,
+  "tests_skipped_or_deleted": false,
+  "delivery": "NOT_DELIVERED",
+  "full_local_reproduction": {
+    "passed": 4668,
+    "failed": 1,
+    "files_passed": 637,
+    "files_failed": 1,
+    "cleanup": "PASS",
+    "sole_failure": "verify-registration/page.test.tsx async child rendered by sync renderer"
+  },
+  "correction_validation": {
+    "targeted_unit_passed": 6,
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "complete_git_blob_mirror_coverage": "PASS"
+  },
+  "windows_full_correction_result": {
+    "vitest_passed": 4669,
+    "vitest_failed": 0,
+    "tap_passed": 1064,
+    "tap_failed": 3,
+    "sole_tap_cause": "Working-tree historical evidence CRLF differs from Git blob checksums",
+    "historical_checksums_modified": false
+  },
+  "git_blob_mirror_result": {
+    "vitest_files": 638,
+    "vitest_passed": 4669,
+    "vitest_failed": 0,
+    "node_tap_passed": 1067,
+    "node_tap_failed": 0,
+    "skipped": 0,
+    "coverage_gate": "PASS",
+    "statements_percent": 64.86,
+    "branches_percent": 63.6,
+    "functions_percent": 67.95,
+    "lines_percent": 70.39,
+    "migrations": 87,
+    "disposable_cleanup": "PASS",
+    "process_exit_code": 0,
+    "git_objects": "Shared read-only alternates; own mirror index/config",
+    "core_longpaths": true,
+    "secret_paths_materialized": false
+  }
+}

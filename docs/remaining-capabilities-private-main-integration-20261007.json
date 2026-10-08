@@ -1,0 +1,51 @@
+{
+  "taskId": "f2-live-private-chat-purchase-broadcast",
+  "candidateBase": "9b0816b559c98214d0beeeaf9c978db6f218f1f9",
+  "integratedMain": "a10728f4147ce84ad6d33524ed0e412660602283",
+  "models": 127,
+  "migrations": 88,
+  "validation": {
+    "privateCommerceTargetedVitest": {
+      "passed": 148,
+      "files": 16
+    },
+    "securityReportingVitest": {
+      "passed": 35,
+      "files": 6
+    },
+    "historicalMigrationTap": {
+      "passed": 12,
+      "skipped": 0
+    },
+    "typecheck": "PASS",
+    "scopedLint": "PASS",
+    "browserDatabase": {
+      "status": "RUNNING",
+      "session": 64519,
+      "requiredMigrations": 88,
+      "requiredDatabaseTests": 25,
+      "requiredBrowserJourneys": 3,
+      "rateLimitProvider": "memory"
+    }
+  },
+  "failedInvocation": {
+    "runner": "node --test applied to two Vitest files",
+    "status": "FAIL",
+    "category": "incorrect-test-runner",
+    "resolution": "same unchanged assertions executed under dedicated existing Vitest config; 148 PASS"
+  },
+  "diffCheck": {
+    "status": "INHERITED_WHITESPACE_WARNING",
+    "path": "src/app/api/admin/ops/payuni/wp4-refund-recovery/route.test.ts",
+    "reason": "extra EOF blank line inherited from main; no assertions changed"
+  },
+  "review": {
+    "usedDispatches": 4,
+    "limit": 4,
+    "additionalReviewAuthorization": "NOT_REQUESTED_YET",
+    "latestFixIndependentlyReviewed": false
+  },
+  "ready": false,
+  "delivered": false,
+  "productionAccess": false
+}

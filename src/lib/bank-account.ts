@@ -42,8 +42,16 @@ export class BankAccountEncryptionError extends Error {
   }
 }
 
-function encryptionPurpose(vendorId: string) {
+export type AffiliateBankBinding = Readonly<{ affiliateId: string }>;
+
+function encryptionPurpose(vendorId: string, binding?: AffiliateBankBinding) {
   if (!vendorId.trim()) throw new Error("Bank account vendor binding is required.");
+  if (binding) {
+    if (!binding.affiliateId.trim()) throw new Error("Bank account affiliate binding is required.");
+    // Length-unambiguous identity encoding prevents delimiter collisions. Keep
+    // the merchant-account purpose unchanged for existing stored envelopes.
+    return JSON.stringify(["affiliate-payout-bank-account", vendorId, binding.affiliateId]);
+  }
   return `payout-bank-account:${vendorId}`;
 }
 
@@ -119,8 +127,8 @@ export function loadRuntimeBankAccountKeyring(): BankAccountKeyring {
   }
 }
 
-function associatedData(vendorId: string, keyId: string) {
-  return Buffer.from(`${encryptionPurpose(vendorId)}:${BANK_ACCOUNT_ENVELOPE_VERSION}:${keyId}`, "utf8");
+function associatedData(vendorId: string, keyId: string, binding?: AffiliateBankBinding) {
+  return Buffer.from(`${encryptionPurpose(vendorId, binding)}:${BANK_ACCOUNT_ENVELOPE_VERSION}:${keyId}`, "utf8");
 }
 
 type ParsedEnvelope = { keyId: string; iv: Buffer; tag: Buffer; ciphertext: Buffer };
@@ -159,6 +167,7 @@ export function encryptBankAccount(
   details: BankAccountDetails,
   vendorId: string,
   keyring = loadRuntimeBankAccountKeyring(),
+  binding?: AffiliateBankBinding,
 ) {
   const normalized = normalizedDetails(details);
   const key = keyring.keys.get(keyring.activeKeyId);
@@ -166,7 +175,7 @@ export function encryptBankAccount(
 
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
-  cipher.setAAD(associatedData(vendorId, keyring.activeKeyId));
+  cipher.setAAD(associatedData(vendorId, keyring.activeKeyId, binding));
   const ciphertext = Buffer.concat([cipher.update(JSON.stringify(normalized), "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return [
@@ -182,6 +191,7 @@ export function decryptBankAccount(
   envelope: string,
   vendorId: string,
   keyring = loadRuntimeBankAccountKeyring(),
+  binding?: AffiliateBankBinding,
 ): BankAccountDetails {
   const parsed = parseEnvelope(envelope);
   const key = keyring.keys.get(parsed.keyId);
@@ -192,7 +202,7 @@ export function decryptBankAccount(
   let raw: string;
   try {
     const decipher = createDecipheriv("aes-256-gcm", key, parsed.iv);
-    decipher.setAAD(associatedData(vendorId, parsed.keyId));
+    decipher.setAAD(associatedData(vendorId, parsed.keyId, binding));
     decipher.setAuthTag(parsed.tag);
     raw = Buffer.concat([decipher.update(parsed.ciphertext), decipher.final()]).toString("utf8");
   } catch {

@@ -38,7 +38,11 @@ files.push("src/app/(app)/products/[id]/edit/page.tsx", "src/app/(app)/products/
   "scripts/qa-source-fingerprint.mjs", "scripts/qa-source-fingerprint.test.mjs",
   "scripts/canonical-migration-source-fingerprint.mjs", "scripts/canonical-migration-source-fingerprint.test.mjs",
   "package.json", "package-lock.json", "tsconfig.json", "next.config.ts", "postcss.config.mjs",
-  "sentry.server.config.ts", "sentry.edge.config.ts");
+  "sentry.server.config.ts", "sentry.edge.config.ts",
+  // Main integration: freeze checkout commission terms with the same credit transaction.
+  "src/lib/merchant-affiliate-policy-service.ts", "src/lib/affiliate-tier-policy.ts",
+  "src/lib/affiliate-commission.ts", "src/lib/affiliate-commission-accounting.ts",
+  "scripts/prisma-migrate-status-diagnostic.mjs");
 const snapshot = () => captureCanonicalMigrationFingerprint(process.cwd(), files);
 const before = snapshot();
 let tests; let unit; let browser;

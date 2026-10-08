@@ -376,6 +376,36 @@ async function assertViewerIdentityAllowed(
   return rows;
 }
 
+/** Private consumers must call this within their read/write transaction.
+ * Reuse the canonical admission, fss1 verification and blacklist checks;
+ * never accept a client-selected conversation/submission as viewer identity. */
+export async function resolveVerifiedPrivateChatViewer(
+  database: LiveChatModels,
+  input: {
+    vendorId: string;
+    liveId: string;
+    admissionToken: string | null;
+    chatSessionToken: string | null;
+    ipAddress: string | null;
+    body?: string;
+    now?: Date;
+  },
+) {
+  const admission = await resolveViewerAdmissionContext(database, input);
+  const context = await resolveVerifiedViewerContext(database, input, admission);
+  if (!context) throw new LiveChatError("access_denied");
+  // IP provenance is established by the route; this helper only normalizes it.
+  const ip = normalizeClientIp(input.ipAddress);
+  const rules = await assertViewerIdentityAllowed(database, context, input.vendorId, ip);
+  if (input.body !== undefined && isKeywordBlocked(rules, input.body)) throw new LiveChatError("keyword_blocked");
+  return {
+    vendorId: input.vendorId,
+    liveId: input.liveId,
+    submissionId: context.submission.id,
+    displayName: normalizeDisplayName(context.submission.name),
+  };
+}
+
 async function findExistingMessage(database: LiveChatModels, id: string) {
   return database.liveChatMessage.findUnique({
     where: { id },

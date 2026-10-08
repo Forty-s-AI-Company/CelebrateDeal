@@ -1,0 +1,14 @@
+{
+  "status": "RECOVERED_OWN_DISPOSABLE_ONLY",
+  "original_failure_receipt": "remaining-capabilities-f1.2-startup-failure-20261006.json",
+  "container": "celebratedeal-prisma-migrate-1b90af6708ed0d58",
+  "verification": [
+    "exact owned name/run-id and marker labels",
+    "tmpfs data directory",
+    "127.0.0.1 port",
+    "zero public tables before removal"
+  ],
+  "action": "removed only exact verified failed-startup container",
+  "original_failure_preserved": true,
+  "safety": "No production or persistent volumes touched"
+}

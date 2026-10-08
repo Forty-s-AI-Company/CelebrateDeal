@@ -46,8 +46,10 @@ test("invalid binding and container ID fail before any database action", async (
 });
 
 test("synthetic source is restored in network-none tmpfs and all 21 migrations replay", async () => {
-  assert.equal(allNames.length, 88);
+  assert.equal(allNames.length, 96);
+  assert.equal(allNames.includes("20261006070000_course_community"), true);
   assert.equal(allNames.at(-1), "20261007120000_post_purchase_credit");
+  assert.equal(allNames.includes("20261007110000_live_private_chat_messages"), true);
   const calls = [];
   const id = "f".repeat(64);
   const fakeCommand = (name, args, options = {}) => {
