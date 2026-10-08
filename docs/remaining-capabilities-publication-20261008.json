@@ -1,0 +1,209 @@
+{
+  "goal_id": "remaining-capabilities-20261005",
+  "parent_goal_id": "CELEBRATEDEAL-M2-M7",
+  "observed_at": "2026-10-08T03:59:30.369959+00:00",
+  "full_scope": [
+    "F1",
+    "F2",
+    "F3",
+    "Q1",
+    "Q2",
+    "A1",
+    "E1"
+  ],
+  "whole_goal_complete": false,
+  "scope_removed": [],
+  "scope_moved_to_future": [],
+  "owner": "root sole writer",
+  "prior_delivery_evidence_preserved": true,
+  "historical_references": [
+    "docs/branch-integration-publication-20261004.json",
+    "docs/branch-integration-delivery-state-20261004.json",
+    "docs/remaining-capabilities-work-matrix-20261005.md"
+  ],
+  "production_operations": "NOT_PERFORMED",
+  "schema": "remaining-capabilities-publication/v1",
+  "status": "ACTIVE_NOT_COMPLETE",
+  "kind": "current_incremental_evidence_publication",
+  "packages": [
+    {
+      "id": "f1-learner-notifications",
+      "head": "7a32d1061dcc35cd4db40e94f33f428f39fe486c",
+      "source_profiles": [
+        {
+          "profile": 1,
+          "files": 64,
+          "revision": "sha256:6ce14add45fa65bc4b847f7ff2d5107f4ced12e28670367984ef086d3c7cbbb5"
+        },
+        {
+          "profile": 2,
+          "files": 64,
+          "revision": "sha256:a7cba06d08c78252de0cb435f66e9a15cfe22289b6cd4ed8d698c6c735250f58"
+        },
+        {
+          "profile": 3,
+          "files": 32,
+          "revision": "sha256:748c51c69194278992b0b82a43e68446fc5ad32a4369778b58b84aab485ae155"
+        }
+      ],
+      "checks": {
+        "unit": 554,
+        "migrations": 99,
+        "db": 82,
+        "browser": 8,
+        "node_tap": 1067,
+        "skipped": 0
+      },
+      "ci": {
+        "run": 37720018327,
+        "status": "SUCCESS"
+      },
+      "review": {
+        "used": 6,
+        "approved": 6,
+        "next_authorization": "PENDING"
+      },
+      "canonical": "BLOCKED",
+      "missing": [
+        "independent review of current revision",
+        "approved four-channel injection and actual enrollment/delivery evidence"
+      ],
+      "pr": null,
+      "delivered": false,
+      "evidence": "C:\\Users\\eden\\Documents\\Codex\\2026-10-05\\new-chat\\work\\CelebrateDeal\\.ai-team\\tmp\\notification-main-integration-20261008\\browser-ci-final\\current-acceptance-proof.json"
+    },
+    {
+      "id": "q1-exact-pending-refund",
+      "head": "43ea2ea4c06aaae2ee55b9b6e6d9b7ebe249cc43",
+      "checks": {
+        "unit": 283,
+        "migrations": 95,
+        "db": 11,
+        "node_tap": 1067,
+        "skipped": 0
+      },
+      "ci": {
+        "head": "43ea2ea4c06aaae2ee55b9b6e6d9b7ebe249cc43",
+        "push_run": 37718036378,
+        "pr_run": 37718039071,
+        "both_exact_head_ci": "SUCCESS",
+        "all_steps": "PASS",
+        "independent_current_review": "PENDING_AUTHORIZATION_DISPATCH_4_OF_4",
+        "actual_sandbox_refund_browser": "NOT_VERIFIED",
+        "canonical": "BLOCKED",
+        "pr": 371,
+        "pr_state": "DRAFT",
+        "delivered": false
+      },
+      "review": {
+        "used": 4,
+        "approved": 4,
+        "next_authorization": "PENDING"
+      },
+      "canonical": "BLOCKED",
+      "missing": [
+        "independent review of current revision",
+        "approved exact sandbox transaction handoff and secret injection",
+        "actual exact-transaction refund browser/proof"
+      ],
+      "pr": {
+        "number": 371,
+        "state": "OPEN",
+        "draft": true
+      },
+      "delivered": false,
+      "evidence": "C:\\Users\\eden\\.codex\\worktrees\\remaining-refund-proof-qa\\CelebrateDeal\\docs\\remaining-capabilities-q1-query-contract-correction-20261008.json"
+    },
+    {
+      "id": "f2-post-purchase-commerce",
+      "head": "6db24c3962a66d4b379c76ccae0acbd0755107b3",
+      "local_document_checkpoint": "680d9fad80e4f3812685506d986dfe2cdd55fe36",
+      "source_files": 179,
+      "checks": {
+        "unit": 177,
+        "migrations": 96,
+        "db": 48,
+        "browser": 1,
+        "node_tap": 1067,
+        "source_mutation": 5,
+        "skipped": 0
+      },
+      "ci": {
+        "conclusion": "",
+        "headSha": "6db24c3962a66d4b379c76ccae0acbd0755107b3",
+        "status": "in_progress",
+        "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/37722467132"
+      },
+      "review": {
+        "used": 4,
+        "approved": 4,
+        "current_source": "COMPLETED_WITH_UNRESOLVED_MAJOR",
+        "resolved_model": "gpt-6-astra",
+        "resolved_effort": "high",
+        "observed_model": "unknown",
+        "observed_effort": "unknown"
+      },
+      "canonical": {
+        "head": "6db24c3962a66d4b379c76ccae0acbd0755107b3",
+        "status": "BLOCKED",
+        "profiles": [
+          {
+            "profile": 1,
+            "status": "BLOCKED",
+            "blockers": [
+              "finding_unresolved",
+              "required_check_unverified:provider_recovery"
+            ],
+            "revision": "sha256:6ba5d7d0efe3088b07923bbc2ee42254569d57fea5bb12f59fd711118d3ae2e4"
+          },
+          {
+            "profile": 2,
+            "status": "BLOCKED",
+            "blockers": [
+              "finding_unresolved",
+              "required_check_unverified:provider_recovery"
+            ],
+            "revision": "sha256:0ad14e5e73f6ea5920636a79724489d735a57ea58d70c031afa0fa50adcaa4cb"
+          },
+          {
+            "profile": 3,
+            "status": "BLOCKED",
+            "blockers": [
+              "finding_unresolved",
+              "required_check_unverified:provider_recovery"
+            ],
+            "revision": "sha256:3d33edb37cba0b59a445db5c15b53529606563ca237384424a8eee17ee1a41b5"
+          }
+        ],
+        "source_files": 179,
+        "review4_completed": true,
+        "minor_source_coverage": "FIXED_VALIDATED",
+        "provider_recovery_major": "OPEN",
+        "delivered": false
+      },
+      "missing": [
+        "authoritative same-issued-trade PayUni recovery contract",
+        "implementation and actual non-production recovery evidence"
+      ],
+      "pr": null,
+      "delivered": false,
+      "evidence": "C:\\Users\\eden\\.codex\\worktrees\\remaining-post-purchase-commerce\\CelebrateDeal\\docs\\remaining-capabilities-f2-post-purchase-review4-20261008.json"
+    },
+    {
+      "id": "f2-meta-server-tracking",
+      "head": "c4b76a246940fc18f20faacebce8328476582eb4",
+      "pr": {
+        "number": 384,
+        "state": "OPEN",
+        "draft": true
+      },
+      "configuration": "USER_CONFIRMED_NOT_CONFIGURED",
+      "canonical": "NOT_READY_EXTERNAL_PROVIDER_EVIDENCE_MISSING",
+      "missing": [
+        "approved test Pixel/token/event code/API version injection",
+        "actual current-source events and deduplication evidence"
+      ],
+      "delivered": false
+    }
+  ]
+}

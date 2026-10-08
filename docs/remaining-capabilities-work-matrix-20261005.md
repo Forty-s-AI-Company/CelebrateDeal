@@ -956,3 +956,8 @@ Preserved both documents and forward schema capabilities while integrating deliv
 ### Notification current CI browser correction 2026-10-08
 
 Root-owned original task continuation: all seven notification journeys retained plus the complete localization/PWA journey. Exact completion assertion is scoped to the CoursePlayer, with actual notification settings loading verified. Latest normalized source sha256:e55535e020d6bf7e4ad62c8cd732d9db69b78c230c00cfc19b7038d42123b59f passed 99 migrations and 8 browser journeys, zero skip/flaky; lint and TypeScript passed. New evidence: `docs/remaining-capabilities-notification-ci-browser-correction-20261008.json`. Independent current-source review remains pending authorization beyond dispatch 6/6; exact-head CI and actual external provider delivery remain required. NOT READY / NOT DELIVERED.
+
+
+### Current incremental publication and delivery state 20261008
+
+New publication `remaining-capabilities-publication-20261008.json` and delivery-state `remaining-capabilities-delivery-state-20261008.json` bind current F1 notification7a32d106 CI SUCCESS, Q1#371 head43ea2ea4 both CI SUCCESS, F2 post-purchase6db24c39 reviewed179-file gate with provider recovery OPEN and CI37722467132 still running, and Meta#384 draftc4b76a24 with user-confirmed test Pixel not configured. No new delivery is claimed. Notification review7 and Q1 review5 extensions remain pending; external injection and actual provider proof remain required. All F1/F2/F3/Q1/Q2/A1/E1 scope and historical evidence retained.
