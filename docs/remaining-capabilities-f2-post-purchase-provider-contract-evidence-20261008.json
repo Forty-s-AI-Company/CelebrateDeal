@@ -1,0 +1,55 @@
+{
+  "task_id": "f2-post-purchase-commerce",
+  "goal_id": "remaining-capabilities-20261005",
+  "at": "2026-10-08T02:35:40.160450+00:00",
+  "product_head": "7eea9fcdfbf1b73c6cf5cabae3b2f8f1495bbae5",
+  "product_code_changed": false,
+  "official_sources": [
+    {
+      "url": "https://docs.payuni.com.tw/web/#/7/34",
+      "api_page_id": 34,
+      "public_response_sha256": "111acb381496aba654725ea3dfedb50412b66f902f7a575f17871f73711ce19e",
+      "document_content_sha256": "3deecae0fe0a06b2553fefa06d00c3c443de6fed7fbd0af16f0b367d26167124",
+      "retrieved_at": "2026-10-08T02:25:51.738005+00:00",
+      "credentials_used": false
+    },
+    {
+      "url": "https://docs.payuni.com.tw/web/#/7/164",
+      "api_page_id": 164,
+      "public_response_sha256": "f2bbf7c3087e051fce0858a8e01113126d397fe668b7be08680c04b8f0dfe522",
+      "document_content_sha256": "bab28547db0a073a0895710dc62a542e2ff2312fec61aee1668dc3737a0d1b9b",
+      "retrieved_at": "2026-10-08T02:25:51.975677+00:00",
+      "credentials_used": false
+    }
+  ],
+  "verified_observation_contract": {
+    "query_version": "2.0",
+    "complete_result": "DataSource=A",
+    "trade_status": {
+      "2": "failed",
+      "3": "cancelled",
+      "4": "expired",
+      "8": "awaiting_confirmation"
+    },
+    "merchant_order_duplicate_window_minutes": 10
+  },
+  "unproven_requirements": [
+    "Provider permission to restore the original issued TradeNo using the same immutable payment/order/credit",
+    "Actual current-source non-production provider recovery evidence"
+  ],
+  "conclusion": "Terminal status and merchant order reuse after a duplicate window do not prove same-TradeNo resume permission.",
+  "q1_dependency": {
+    "patch_commit": "448359dd",
+    "candidate_head": "43ea2ea4c06aaae2ee55b9b6e6d9b7ebe249cc43",
+    "pr": 371,
+    "status": "IMPLEMENTED_LOCAL_VALIDATED_PENDING_REVIEW_CI_EXTERNAL_PROOF",
+    "purpose": "Correct documented CREDIT refund status and cumulative balance before recovery/refund observations are reused."
+  },
+  "review_dispatch_used": 3,
+  "review_dispatch_limit": 4,
+  "external_attempts": 0,
+  "provider_recovery": "NOT_IMPLEMENTED_VERIFIED",
+  "canonical": "NOT_READY",
+  "delivered": false,
+  "goal_complete": false
+}
