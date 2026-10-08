@@ -1,0 +1,153 @@
+{
+  "raw_independent_review": {
+    "task_id": "f2-post-purchase-commerce",
+    "dispatch": 4,
+    "head": "6db24c3962a66d4b379c76ccae0acbd0755107b3",
+    "base": "aba65b4e7913f79f7de72a7b3abedb5d1f10ec3f",
+    "findings": [
+      {
+        "severity": "MAJOR",
+        "status": "\u65e2\u6709\u554f\u984c\u4ecd\u672a\u89e3\u6c7a",
+        "location": "src/lib/post-purchase-checkout-recovery.ts:51",
+        "issue": "\u5df2\u9001\u51fa\u7684 PayUni \u52a0\u8cfc\u4ea4\u6613\u5931\u6557\u6216\u903e\u671f\u5f8c\uff0c\u4ecd\u7121\u6cd5\u6062\u5fa9\u539f\u4ea4\u6613\u3002",
+        "evidence": "issued session \u50c5\u5141\u8a31 readiness=local_only\uff1b\u8a2d\u5b9a\u6709\u6548\u7684 PayUni \u56de\u50b3 ready\uff0c\u56e0\u6b64\u6062\u5fa9\u906d\u62d2\u3002PostPurchaseCredit \u4fdd\u7559\u552f\u4e00 sourceOrderId \u7d81\u5b9a\uff0c\u65b0\u4ea4\u6613\u4e5f\u4e0d\u80fd\u518d\u6b21\u4f7f\u7528\u984d\u5ea6\u3002provider_recovery receipt \u4ecd\u70ba FAIL\uff1b\u5408\u6210 browser \u50c5\u9a57\u8b49\u672a\u9001\u51fa\u6e96\u5099\u8207 demo manual session\u3002",
+        "impact": "\u8cb7\u5bb6\u7684\u62b5\u7528\u984d\u6703\u6301\u7e8c\u7d81\u5728\u7121\u6cd5\u5b8c\u6210\u7684\u52a0\u8cfc\u8a02\u55ae\uff0c\u4ed8\u6b3e\u7ed3\u679c\u9801\u63d0\u4f9b\u7684\u6062\u5fa9\u5165\u53e3\u56de\u50b3 409\u3002",
+        "fix": "\u4fdd\u7559\u672a\u77e5\u72c0\u614b\u62d2\u7d55\u3002\u53d6\u5f97\u660e\u78ba\u5141\u8a31\u539f\u4ea4\u6613\u6062\u5fa9\u7684\u6b0a\u5a01 provider \u5951\u7d04\u5f8c\uff0c\u5be6\u4f5c\u7d81\u5b9a\u539f\u5546\u5e97\u3001\u4ea4\u6613\u8b58\u5225\u3001\u5e63\u5225\u8207\u91d1\u984d\u7684 observation/recovery\uff1b\u4ee5 CAS\u3001serializable transaction \u6cbf\u7528\u539f payment/order/credit\uff0c\u4e0d\u5efa\u7acb\u66ff\u4ee3\u4ea4\u6613\u6216\u91cb\u653e\u984d\u5ea6\u7e5e\u904e\u3002",
+        "required_test": "\u9a57\u8b49 issued PayUni failed/expired\u3001\u5ef6\u9072 paid callback\u3001\u672a\u77e5\u6216\u67e5\u8a62\u903e\u6642\u3001\u8b58\u5225\u8207\u91d1\u984d\u4e0d\u7b26\u3001\u539f\u55ae\u9000\u6b3e\u3001\u5eab\u5b58\u4e0d\u8db3\u53ca\u96d9\u91cd\u6062\u5fa9\u7af6\u614b\u3002\u88dc\u9f4a\u6388\u6b0a\u975e Production \u7684\u5be6\u969b provider \u8b49\u64da\uff0c\u4e0d\u80fd\u4ee5 mock/demo \u4ee3\u66ff\u3002"
+      },
+      {
+        "severity": "MINOR",
+        "category": "acceptance_source_coverage",
+        "location": ".ai-team/tmp/post-purchase-main-integration-20261008/canonical-current/profile-2/routing.json:79",
+        "issue": "\u76ee\u524d canonical gate \u7684\u4f86\u6e90\u806f\u96c6\u672a\u6db5\u84cb review manifest \u65b0\u589e\u7684\u4e94\u500b\u6e2c\u8a66\u6a94\u3002",
+        "evidence": "\u4e09\u4efd gate \u4f7f\u7528 64/64/46\uff0c\u5171174\u6a94\uff1breview4-manifest \u4f7f\u752864/64/51\uff0c\u5171179\u6a94\u3002\u7f3a\u5c11 g7-email-operations-browser-qa\u3001prisma-invariant-inventory\u3001staging-migration-compat-preflight\u3001staging-migration-isolated-replay\u3001staging-payuni-management-migrate \u4e94\u500b\u6e2c\u8a66\u6a94\u3002\u5404 gate \u81ea\u8eab revision \u6b63\u78ba\uff0c\u4f46\u4e0d\u80fd\u4ee3\u8868179\u6a94\u5b8c\u6574\u7d81\u5b9a\u3002",
+        "impact": "\u73fe\u6709 receipt \u80fd\u652f\u6301\u5176174\u6a94\u7bc4\u570d\uff0c\u537b\u7121\u6cd5\u55ae\u7368\u8b49\u660e\u65b0\u589e\u4e94\u6a94\u8207\u5b8c\u6574 review revision \u7684\u9a57\u6536\u95dc\u4fc2\u3002\u9019\u4e0d\u8868\u793a\u6e2c\u8a66\u672a\u57f7\u884c\u3002",
+        "fix": "\u88dc\u9f4a179\u6a94 canonical profiles\uff0c\u900f\u904e\u5be6\u969b validation runner \u5c07\u5c0d\u61c9\u4f86\u6e90\u8b49\u64da\u8207\u6b64\u6b21 review \u7d81\u5b9a\uff0c\u4fdd\u7559\u539f174\u6a94 receipts\u3002",
+        "required_test": "\u78ba\u8a8d\u6240\u670959\u500b\u975e\u6587\u4ef6\u5dee\u7570\u7686\u5728 gate \u806f\u96c6\u5167\uff1b\u4efb\u4e00\u65b0\u589e\u6e2c\u8a66\u6a94\u6539\u52d5\u5fc5\u9808\u4f7f\u5c0d\u61c9 revision \u6539\u8b8a\uff0c\u4e26\u4f7f\u820a receipt \u7121\u6cd5\u9a57\u6536\u3002"
+      }
+    ],
+    "prior_fix_disposition": {
+      "\u5546\u5bb6\u9801\u9762\u8207\u5efa\u7f6e\u8a2d\u5b9a\u4f86\u6e90\u6307\u7d0b\u7f3a\u6f0f": "\u5df2\u4fee\u6b63\uff1brunner \u5df2\u7d0d\u5165\u5fc5\u8981\u6a94\u6848\uff0c\u4e26\u6709\u4f86\u6e90\u8b8a\u52d5\u62d2\u7d55\u6e2c\u8a66\u3002",
+      "\u5176\u4ed6\u65b0\u589e\u7522\u54c1\u7a0b\u5f0f\u554f\u984c": "\u672a\u767c\u73fe\u53ef\u78ba\u8a8d\u7684\u65b0 finding\u3002"
+    },
+    "verification": {
+      "review_union_files": 179,
+      "non_document_diff_files": 59,
+      "uncovered_non_document_diff": [],
+      "runtime_source_files": 174,
+      "runtime_source_hash_mismatches": [],
+      "canonical_migrations_exact": 96,
+      "models": 142,
+      "evidence": "\u5df2\u6838\u5c0d48 DB\u3001177 unit\u30011 browser\u30011067 TAP\u53ca\u984d\u59165\u9805 inventory\u6e2c\u8a66\u7684\u8a18\u9304\u8207\u76f8\u95dc\u4f86\u6e90\uff1b\u672a\u81ea\u884c\u91cd\u8dd1\u6e2c\u8a66\uff0c\u672a\u5c07\u5408\u6210\u6062\u5fa9\u7576\u6210\u5916\u90e8\u6210\u529f\u3002"
+    },
+    "snapshots": [
+      {
+        "profile": 1,
+        "before": "sha256:6ba5d7d0efe3088b07923bbc2ee42254569d57fea5bb12f59fd711118d3ae2e4",
+        "after": "sha256:6ba5d7d0efe3088b07923bbc2ee42254569d57fea5bb12f59fd711118d3ae2e4"
+      },
+      {
+        "profile": 2,
+        "before": "sha256:0ad14e5e73f6ea5920636a79724489d735a57ea58d70c031afa0fa50adcaa4cb",
+        "after": "sha256:0ad14e5e73f6ea5920636a79724489d735a57ea58d70c031afa0fa50adcaa4cb"
+      },
+      {
+        "profile": 3,
+        "before": "sha256:3d33edb37cba0b59a445db5c15b53529606563ca237384424a8eee17ee1a41b5",
+        "after": "sha256:3d33edb37cba0b59a445db5c15b53529606563ca237384424a8eee17ee1a41b5"
+      }
+    ],
+    "ownership": {
+      "writer": "root",
+      "reviewer": "readonly",
+      "files_written": 0,
+      "spawned_agents": 0,
+      "external_operations": 0,
+      "git_status_before": [],
+      "git_status_after": []
+    },
+    "resolved": {
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "reason": "critical_review_no_equivalent"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "original_opus_failure": "\u672c\u8f2a\u672a\u7368\u7acb\u89c0\u6e2c\uff0c\u4e0d\u5c07 routing \u7684 unavailable \u8996\u70ba\u5be6\u969b\u6a21\u578b\u4e0d\u53ef\u7528\u8b49\u64da\u3002"
+    }
+  },
+  "root_disposition": {
+    "head": "6db24c3962a66d4b379c76ccae0acbd0755107b3",
+    "status": "BLOCKED",
+    "profiles": [
+      {
+        "profile": 1,
+        "status": "BLOCKED",
+        "blockers": [
+          "finding_unresolved",
+          "required_check_unverified:provider_recovery"
+        ],
+        "revision": "sha256:6ba5d7d0efe3088b07923bbc2ee42254569d57fea5bb12f59fd711118d3ae2e4"
+      },
+      {
+        "profile": 2,
+        "status": "BLOCKED",
+        "blockers": [
+          "finding_unresolved",
+          "required_check_unverified:provider_recovery"
+        ],
+        "revision": "sha256:0ad14e5e73f6ea5920636a79724489d735a57ea58d70c031afa0fa50adcaa4cb"
+      },
+      {
+        "profile": 3,
+        "status": "BLOCKED",
+        "blockers": [
+          "finding_unresolved",
+          "required_check_unverified:provider_recovery"
+        ],
+        "revision": "sha256:3d33edb37cba0b59a445db5c15b53529606563ca237384424a8eee17ee1a41b5"
+      }
+    ],
+    "source_files": 179,
+    "review4_completed": true,
+    "minor_source_coverage": "FIXED_VALIDATED",
+    "provider_recovery_major": "OPEN",
+    "delivered": false
+  },
+  "source_mutation_regressions": {
+    "kind": "synthetic_temp_source_mutation",
+    "status": "PASS",
+    "tests": [
+      {
+        "file": "scripts/g7-email-operations-browser-qa.test.mjs",
+        "revision_changes": true,
+        "old_gate_rejected": true
+      },
+      {
+        "file": "scripts/prisma-invariant-inventory.test.ts",
+        "revision_changes": true,
+        "old_gate_rejected": true
+      },
+      {
+        "file": "scripts/staging-migration-compat-preflight.test.mjs",
+        "revision_changes": true,
+        "old_gate_rejected": true
+      },
+      {
+        "file": "scripts/staging-migration-isolated-replay.test.mjs",
+        "revision_changes": true,
+        "old_gate_rejected": true
+      },
+      {
+        "file": "scripts/staging-payuni-management-migrate.test.ts",
+        "revision_changes": true,
+        "old_gate_rejected": true
+      }
+    ],
+    "actual_source_modified": false,
+    "historical_receipts_modified": false,
+    "cleanup": "PASS"
+  },
+  "evidence_root": "C:\\Users\\eden\\.codex\\worktrees\\remaining-post-purchase-commerce\\CelebrateDeal\\.ai-team\\tmp\\post-purchase-main-integration-20261008\\canonical-review4-complete"
+}
