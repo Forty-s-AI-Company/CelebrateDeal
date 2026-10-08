@@ -19,7 +19,7 @@ import AffiliatesPage from "./page";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1" });
+  mocks.requireVendorManager.mockResolvedValue({ id: "vendor-1", enabledFeatureModules: ["affiliate_program", "tax_remuneration"] });
   mocks.affiliateFindMany.mockResolvedValue([
     { id: "affiliate-1", name: "合作夥伴", code: "PARTNER1", source: "社群", isActive: true, commissionRateBps: 1250, _count: { clicks: 10 } },
     { id: "affiliate-2", name: "停用夥伴", code: "PARTNER2", source: null, isActive: false, commissionRateBps: 800, _count: { clicks: 0 } },

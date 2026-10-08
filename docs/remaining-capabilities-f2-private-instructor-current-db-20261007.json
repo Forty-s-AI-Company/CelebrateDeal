@@ -1,0 +1,43 @@
+{
+  "taskId": "f2-live-private-chat-purchase-broadcast",
+  "status": "PASS",
+  "tests": {
+    "total": 23,
+    "passed": 23,
+    "failed": 0,
+    "skipped": 0
+  },
+  "migrations": 86,
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "sourceFiles": {
+    "prisma/schema.prisma": "42bec6934e5e91a6803a798b7026172492471c4bc6a2bb9f52d362938e21bb53",
+    "prisma/migrations/20261007110000_live_private_chat_messages/migration.sql": "876c5a5a6d5ec1fd9b6db4b18488656533e402c315470635ce373cf04c2300a0",
+    "src/lib/live-private-chat-storage.ts": "bf17ea1b03666411b71214db8b4315331598c88aba17939e18b090dd02ab676a",
+    "src/lib/live-private-chat-storage.db.test.ts": "e2f2f023b5f5952427dd1128e3d3195ac1ddb59e85848cfed332f591db43bf7d",
+    "src/lib/live-chat.ts": "441cd98d1a7549f255ad8ea7ec7d1b748f9539b311780758e994115004500b4e",
+    "src/components/live-playback.tsx": "64731b9a94471bad57ca00e7dacc40c55db2d7e1ced94a0d3afa7bbaaca39e1c",
+    "src/components/live-purchase-broadcast-panel.tsx": "e01526e235d0167b450f041d5248195258f891447ff35dc316d3e30aa92e3ba3",
+    "src/lib/live-purchase-broadcast-contract.ts": "7e3c74e3bbf18d6cb7faf61ab7d88e6bf15c242a2bd3a395533e47afa7a1254d",
+    "src/lib/live-purchase-broadcasts.ts": "52697e1f8901883844dad25fb64f19dff996844ff687863e81f4866ef387f86b",
+    "src/lib/live-purchase-broadcasts.test.ts": "883127a5944ee9551e3a930d5cfce0bcbcd9598276144639930534aea1392f5a",
+    "src/lib/live-purchase-broadcasts.db.test.ts": "81d100123fde01305c41f04d015bac68197c09d0e6209fbe65e1d214a3c5da0e",
+    "src/app/api/live-purchase-broadcasts/route.ts": "324968123248a0b00501ecddcb3c8569077b59e93860f34f9a7507d34d324588",
+    "src/app/api/live-purchase-broadcasts/route.test.ts": "cad49c7f8ebd5b52406691cb8bb07054dc035cb49c46c2b86f358df477b294dd",
+    "vitest.live-private-commerce-db.config.ts": "f2aa21295b17bd5f15088fb47aa892fb6fe24a4a26626d88a47e771b7e5d8d22",
+    "scripts/live-private-commerce-disposable-qa.mjs": "19d6fb44502f5fd386392e6d811be3f0c427cf746399ee1c6fa5ec648cc35a65",
+    "scripts/prisma-loopback-disposable-migration-runner.mjs": "7732f5be5df18efb9d9cd4d9c48e466f76030db08a5371c9d40600ed0f64781e",
+    "prisma.playwright.config.ts": "78d379670b5e2b713a29c5d176b233eb12c1689c5840a76fa32ba3af1e2e1945",
+    "src/lib/live-private-chat.ts": "d23c815edefbaf5d566f3d09690bc5b99a62648b0663c0b637ddf1597a038e80",
+    "src/lib/live-private-chat-contract.ts": "07484d31048e7520b16300e4f00b7e1c2e2f79e198eff9ccd0a2802b0afd6b43",
+    "src/lib/live-chat-request-security.ts": "bd84dd9962c13157daca6c825c95e004e65155d977f7dc88c7a89894eb68525d",
+    "src/app/api/live-chat/messages/route.ts": "cfd88cc236a426aa5b13e41e8dad3d89a1b4cc6365b44d1397ced89a0aab01c1",
+    "src/app/api/live-chat/private/route.ts": "49aa57bec366f762b116a8366e5b159346f0a10128ca7eb8e312587e8c06e6c6",
+    "src/app/api/live-chat/private/route.test.ts": "8325f26bf11fc33c9f0a72ceab9f8da58ea5f7f7905e9095af2e1103f49fcad3",
+    "src/app/api/live-chat/instructor/route.ts": "31a247ba287049924a4616318c2b3ca77c02b19ed658c3df45963eda4f0c2eec",
+    "src/app/api/live-chat/instructor/route.test.ts": "a5d0ebb902289550fb84cc97816cc63a4bbef76a6ca699d361f9eb6992497295"
+  },
+  "sourceRevision": "sha256:5e1374b4adfc5425bb72cdf3877016dd5b28830ae39201d8a3c1250afb214975"
+}

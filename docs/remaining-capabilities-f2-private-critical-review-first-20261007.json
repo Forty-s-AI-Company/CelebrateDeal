@@ -1,0 +1,30 @@
+{
+  "task_id": "f2-live-private-chat-purchase-broadcast",
+  "requested_team": "ai-team-pro",
+  "effective_team": "ai-team-pro",
+  "dispatches": 2,
+  "max_dispatches": 4,
+  "source_revision": "sha256:bc9082cd51fa4e145792c7739da16ddf383ea7b67240aefc42819356f35e9c94",
+  "independent": true,
+  "reviewer": "/root/live_private_commerce_critical_fallback",
+  "resolved_model": "gpt-6-astra",
+  "resolved_effort": "high",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "fallback_events": [{ "requested_model": "claude-opus-5-5-high", "status": "TOOL_DENIED", "provider_exit_code": 0 }],
+  "findings": [
+    { "severity": "MAJOR", "file": "src/components/live-private-conversation-panel.tsx", "line": 13,
+      "issue": "Viewer identity changes within one live can redirect an earlier draft or retry into the new verified conversation.",
+      "required_test": "Opaque GET/POST conversation binding, same-live viewer switch, uncertain delivery, actor switch and stale responses." },
+    { "severity": "MAJOR", "file": "src/app/api/live-purchase-broadcasts/route.ts", "line": 21,
+      "issue": "Raw forwarding headers can select a different rate-limit bucket.",
+      "required_test": "Trusted identity and unknown identity retain one bucket despite forged forwarding headers and reach 429." },
+    { "severity": "MINOR", "file": "tests/e2e/live-purchase-broadcast-journey.spec.ts", "line": 53,
+      "issue": "The APIRequestContext fixture omits the required Origin header.",
+      "required_test": "All three current-source browser cases pass with zero skipped/flaky; actual refund-removal assertions execute." }
+  ],
+  "review_result": "CHANGES_REQUIRED",
+  "root_corrections": "Implemented after independent review finished; new 37 targeted units, TypeScript and ESLint pass. Updated 25 DB and three browser gate pending.",
+  "acceptance": "NOT_READY",
+  "limitations": ["No production or external payment/refund operations", "Synthetic ingress does not validate Cloudflare WAF", "Independent reviewer did not execute tests"]
+}

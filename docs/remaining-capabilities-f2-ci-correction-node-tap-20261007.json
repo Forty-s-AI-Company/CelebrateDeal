@@ -1,0 +1,34 @@
+{
+  "gate": "full_node_tap_lf_mirror",
+  "exit_code": 0,
+  "counts": [
+    "# tests 1067",
+    "# pass 1067",
+    "# fail 0",
+    "# skipped 0"
+  ],
+  "failedTitles": [],
+  "sourceEnvFilesRead": false,
+  "skippedSensitive": 3,
+  "task_id": "f2-merchant-remuneration",
+  "validated_at": "2026-10-07T02:07:58.627886+00:00",
+  "previous_head": "09d4e2b1d7bdb92402535a3922299f303ed5c6d6",
+  "previous_ci_run": 37558895177,
+  "previous_ci": {
+    "status": "FAILURE",
+    "vitest_passed": 4699,
+    "node_tap_passed": 1064,
+    "node_tap_failed": 3
+  },
+  "current_migrations": 91,
+  "historical_migrations": 79,
+  "historical_pending_replay": 21,
+  "history_checksums_changed": false,
+  "product_code_changed_since_browser": false,
+  "delivery_status": "CI_CORRECTED_CURRENT_REVIEW_AND_NEW_CI_PENDING",
+  "source_hashes": {
+    "scripts/g7-email-operations-browser-qa.test.mjs": "sha256:54d129bed3a4616bcfb8f5395beba2361f5c8166a5420f3688efc0497712e217",
+    "scripts/staging-migration-compat-preflight.test.mjs": "sha256:283b6f1b281f709f61609a53cbfadb42b1bd02233be2f3c7d6c5a120be2ddbfe",
+    "scripts/staging-migration-isolated-replay.test.mjs": "sha256:f6a42f07e1e811a99dbc4bc495b1674dc84f414a37dc0939fad3c3d9b7f550fd"
+  }
+}

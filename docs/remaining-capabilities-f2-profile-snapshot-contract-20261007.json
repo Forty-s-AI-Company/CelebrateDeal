@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "celebratedeal-f2-profile-snapshot-contract/v1",
+  "task_id": "f2-merchant-remuneration",
+  "goal_id": "remaining-capabilities-20261005",
+  "base_head": "23684a857dc96e40d414a80a5a153ab4ef1269cb",
+  "source_files": [
+    {
+      "sha256": "7360c58636555457dde688a526763f5930184a716b83b4cca97ec6162ecc38d4",
+      "path": "prisma/schema.prisma"
+    },
+    {
+      "sha256": "981d65af657bb51647355abf4cef930b657cf8a0b70f2e7ef38bea83ce3d1799",
+      "path": "prisma/migrations/20261007050000_affiliate_remuneration_snapshots/migration.sql"
+    },
+    {
+      "sha256": "fe8355c2336c43f939f6f2e1adba7c65274d6681bb4744774f87846d2482dde5",
+      "path": "scripts/affiliate-remuneration-disposable-qa.mjs"
+    },
+    {
+      "sha256": "5945c39d33b23cc12c15f0b16073305765cefdfdbc6cdc9fbecc031c26b190ba",
+      "path": "vitest.affiliate-remuneration-db.config.ts"
+    },
+    {
+      "sha256": "4aa58f636ae4ca482a534f77ecd2d947d0558c6921120a6c908c9d1cd989b7e1",
+      "path": "src/lib/affiliate-remuneration.db.test.ts"
+    }
+  ],
+  "prisma_validate": "PASS",
+  "lint": "PASS",
+  "typescript": "PASS",
+  "typescript_session": 68981,
+  "disposable": {
+    "schemaVersion": "affiliate-remuneration-disposable/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T00:17:26.599Z",
+    "failures": [],
+    "migrationCount": 87,
+    "finishedAt": "2026-10-07T00:17:46.396Z"
+  },
+  "prior_failure": "remaining-capabilities-f2-profile-db-failure-20261007.json",
+  "correction": "Generate current Prisma client explicitly using verified disposable URL/no dotenv before database regressions",
+  "writer": "root",
+  "dispatches": 0,
+  "max_dispatches": 4,
+  "independent_review": "NOT_COMPLETE",
+  "acceptance": "NOT_READY",
+  "delivered": false,
+  "remaining": [
+    "Tax identity encryption",
+    "Authorized profile mutations and current-member checks",
+    "Signed quote service/current ledger locks/refund invalidation/export idempotency",
+    "Actual UI and browser",
+    "Critical independent review, acceptance, exact-head CI and protected delivery"
+  ]
+}

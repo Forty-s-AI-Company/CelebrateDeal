@@ -10,7 +10,7 @@ describe("portal service worker privacy boundary",()=>{
  it("starts on a canonical document inside the narrow worker scope",()=>{
   const manifest=JSON.parse(fs.readFileSync("public/portal/manifest.webmanifest","utf8"));
   expect(manifest.scope).toBe("/portal/");
-  expect(manifest.start_url).toBe("/portal/start/welcome");
+  expect(manifest.start_url).toBe("/portal/start.html");
   expect(manifest.start_url.startsWith(manifest.scope)).toBe(true);
  });
  it("does not intercept RSC, API, POST, media or cross-origin traffic",()=>{const {handlers,match}=worker();for(const input of [{url:"/portal/teacher/learn/course_a/progress",method:"POST",mode:"cors",destination:""},{url:"/portal/teacher?_rsc=synthetic",method:"GET",mode:"cors",destination:""},{url:"/portal/teacher/learn/course_a/community/data",method:"GET",mode:"cors",destination:""},{url:"/portal/teacher/video.mp4",method:"GET",mode:"no-cors",destination:"video"},{url:"https://foreign.example.test/portal/offline.html",method:"GET",mode:"navigate",destination:"document"}]){const respondWith=vi.fn();handlers.get("fetch")!({request:{...input,url:new URL(input.url,"https://app.example.test").toString(),headers:new Headers()},respondWith});expect(respondWith).not.toHaveBeenCalled();}expect(match).not.toHaveBeenCalled();});
@@ -32,10 +32,10 @@ describe("received portal device notifications",()=>{
   expect(worker.showNotification).toHaveBeenCalledWith("合成通知",{body:"純文字內容",icon:"/portal/icon-192.png",data:{path:"/portal/academy/learn/course_a/community/post_a"}});expect(worker.openWindow).not.toHaveBeenCalled();expect(worker.matchAll).not.toHaveBeenCalled();
  });
  it.each([null,{}, {title:"x".repeat(201),body:"text"},{title:"title",body:"x".repeat(2001)},{title:"",body:"text"},{title:"title",body:{html:"unsafe"}}])("malformed messages show only generic content",async data=>{
-  const worker=notificationWorker();await worker.receive(data);expect(worker.showNotification).toHaveBeenCalledWith("學員通知",{body:"請登入學員中心查看最新消息。",icon:"/portal/icon-192.png",data:{path:"/portal/"}});
+  const worker=notificationWorker();await worker.receive(data);expect(worker.showNotification).toHaveBeenCalledWith("學員通知",{body:"請登入學員中心查看最新消息。",icon:"/portal/icon-192.png",data:{path:"/portal/start.html"}});
  });
  it.each(["https://foreign.example.test", "//foreign.example.test", "/api/jobs/email-deliveries", "/portal/access?token=synthetic", "/portal/../../admin", "/portal/%2e%2e/api/jobs/email-deliveries", "/portal/academy#token", "javascript:alert(1)", "/portal/academy/learn/course_a/community/data", "/portal/academy/learn/course_a/community/%64ata", "/portal/academy/learn/course_a/notifications/enroll", "/live/slug/access", "/live/slug?token=synthetic", null])("unsafe click path falls back to public portal root",async path=>{
-  const worker=notificationWorker();await worker.click(path);expect(worker.openWindow).toHaveBeenCalledWith("https://app.example.test/portal/");
+  const worker=notificationWorker();await worker.click(path);expect(worker.openWindow).toHaveBeenCalledWith("https://app.example.test/portal/start.html");
  });
  it("keeps the authenticated notification management link",async()=>{const worker=notificationWorker();await worker.click("/portal/academy/notifications");expect(worker.openWindow).toHaveBeenCalledWith("https://app.example.test/portal/academy/notifications");});
  it("focuses an exact existing page instead of duplicating it",async()=>{

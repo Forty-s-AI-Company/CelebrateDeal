@@ -48,6 +48,13 @@ test("fixed owner selects a private sandbox plan, reloads real entitlement/refun
   const payments = await db.paymentTransaction.findMany({ where: { vendorId: fixed.vendorId, providerName: "payuni" } });
   expect(payments).toHaveLength(1); const payment = payments[0]!;
   expect(payment).toMatchObject({ status: "pending", grossAmountCents: 100, currency: "TWD", paymentMode: "platform", metadata: expect.objectContaining({ billingPurpose: "platform_subscription_checkout", billingPlanId: fixed.planId, wp4SourceCommit: source }) });
+  // The intentionally aborted native POST can still commit Chromium's error
+  // document after requestfailed. Recover in a new tab of the same authenticated
+  // context so that pending navigation cannot interrupt the reload assertion.
+  const interruptedPaymentTab = page;
+  page = await interruptedPaymentTab.context().newPage();
+  await interruptedPaymentTab.close();
+  await page.route("**/*", route => new URL(route.request().url()).origin === baseURL ? route.continue() : route.abort());
   await page.goto("/billing/plans"); await page.reload();
   expect(await db.paymentTransaction.count({ where: { vendorId: fixed.vendorId } })).toBe(1);
   expect((await ops(page, "wp4-subscription-payment-attempt")).body).toMatchObject({ status: "SUBMIT_ALLOWED", reservationCreated: true });

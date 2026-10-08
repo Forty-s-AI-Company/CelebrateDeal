@@ -1,0 +1,26 @@
+{
+  "source_review": "PENDING",
+  "head": "385e646a0de080a23387276c9795ae57c04522a2",
+  "local_reproduction": {
+    "source": "src/lib/live-private-chat.ts",
+    "cause": "Unchecked split fields and array boundary row may be undefined",
+    "codes": [
+      "TS2345",
+      "TS2769"
+    ]
+  },
+  "task_id": "f2-live-private-chat-purchase-broadcast",
+  "exploratory_broad_index_check": {
+    "seed_and_test_diagnostics_retained": true,
+    "command": "tsc --noEmit --noUncheckedIndexedAccess",
+    "scope": "not the CI production-only strict-index config",
+    "status": "FAIL",
+    "no_assertions_or_config_changed": true
+  },
+  "status": "FAILURE",
+  "run_id": 37563649129,
+  "canonical_acceptance": "NOT_READY",
+  "quality_threshold_changed": false,
+  "fix": "Explicit split-field rejection and checked page.at(-1) before signed cursor encoding",
+  "failed_step": "Strict production index access"
+}

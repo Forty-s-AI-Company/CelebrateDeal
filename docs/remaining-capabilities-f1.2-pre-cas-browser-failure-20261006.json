@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "course-community-browser/v1",
+  "status": "BLOCKED_OR_FAILED",
+  "tests": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "cleanup": {
+    "container": "PASS",
+    "tempRoot": "PASS"
+  },
+  "startedAt": "2026-10-05T22:32:19.449Z",
+  "finishedAt": "2026-10-05T22:37:14.045Z",
+  "failedTitles": [],
+  "browserFailure": [
+    "::error file=tests/e2e/course-community.spec.ts,line=44::playwright status=failed retry=0 class=step_error category=expect duration_ms=30007",
+    "::error file=tests/e2e/course-community.spec.ts,line=44::playwright status=failed retry=0 class=test_error_location",
+    "::error file=tests/e2e/course-community.spec.ts,line=44::playwright status=failed retry=1 class=step_error category=expect duration_ms=30010",
+    "::error file=tests/e2e/course-community.spec.ts,line=44::playwright status=failed retry=1 class=test_error_location",
+    "::error file=tests/e2e/course-community.spec.ts,line=14::playwright status=failed retry=1 first_status=failed first_duration_ms=33039"
+  ],
+  "browser": {
+    "expected": 0,
+    "unexpected": 1,
+    "skipped": 0,
+    "flaky": 0
+  }
+}

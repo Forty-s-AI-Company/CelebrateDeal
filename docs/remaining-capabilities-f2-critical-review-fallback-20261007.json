@@ -1,0 +1,35 @@
+{
+  "task_id": "f2-merchant-remuneration",
+  "dispatch": 2,
+  "maximum_dispatches": 4,
+  "status": "FALLBACK_HANDOFF_REQUIRED",
+  "agy_discovery_process_status": "SUCCESS",
+  "attempts": [
+    {
+      "model": "claude-opus-5-5-high",
+      "status": "TOOL_DENIED"
+    }
+  ],
+  "resolved": {
+    "model": "gpt-6-astra",
+    "effort": "high",
+    "speed": "standard",
+    "source": "router_policy"
+  },
+  "observed": {
+    "source": "not_reported",
+    "effort": "unknown",
+    "model": "unknown"
+  },
+  "fallback_events": [
+    {
+      "model": "opus",
+      "reason": "repeated_failure"
+    }
+  ],
+  "gate_pass": false,
+  "next_dispatch": 3,
+  "next_model": "gpt-6-astra",
+  "next_effort": "high",
+  "astra_reason": "critical_review_no_equivalent"
+}

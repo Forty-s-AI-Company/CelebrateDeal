@@ -1,0 +1,409 @@
+{
+  "decision": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "f2-live-private-chat-purchase-broadcast",
+    "signals": {
+      "task_type": "cross_module",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 8,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "cross_module",
+        "payment",
+        "security"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [
+        "src/lib/live-private-chat.ts",
+        "src/app/api/live-chat/private/route.ts",
+        "src/app/api/live-chat/instructor/route.ts",
+        "src/app/api/live-purchase-broadcasts/route.ts"
+      ],
+      "context_size": 24000,
+      "expected_duration": 240,
+      "code_surface_area": 12,
+      "production_impact": "low",
+      "security_impact": "critical",
+      "data_integrity_impact": "high"
+    },
+    "task_type": "cross_module",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "required": true,
+        "fallback_events": [
+          {
+            "model": "opus",
+            "reason": "unavailable"
+          }
+        ],
+        "status": "planned",
+        "model_key": "astra",
+        "model": "gpt-6-astra",
+        "provider": "native_agent",
+        "reasoning_effort": "high",
+        "effort_floor": null,
+        "effort_reason": null,
+        "sandbox_mode": "read-only",
+        "execution": "native_agent_handoff_only",
+        "candidate_findings_only": false,
+        "may_spawn": false,
+        "astra_reason": "critical_review_no_equivalent"
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:e9d11aa42edb645aa211f895d8eedb116151dcf10363336c26733c2d676c05bf",
+    "snapshot_root": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal",
+    "snapshot_files": [
+      "next.config.ts",
+      "package.json",
+      "playwright.config.ts",
+      "playwright.live-private-commerce.config.ts",
+      "prisma.playwright.config.ts",
+      "prisma/migrations/20261007110000_live_private_chat_messages/migration.sql",
+      "prisma/schema.prisma",
+      "scripts/g7-email-operations-browser-qa.test.mjs",
+      "scripts/live-private-commerce-disposable-qa.mjs",
+      "scripts/live-private-loopback-ingress.mjs",
+      "scripts/prisma-invariant-inventory.test.ts",
+      "scripts/prisma-loopback-disposable-migration-runner.mjs",
+      "scripts/staging-migration-compat-preflight.test.mjs",
+      "scripts/staging-migration-isolated-replay.test.mjs",
+      "scripts/staging-payuni-management-migrate.test.ts",
+      "src/app/(app)/lives/[id]/chat/page.tsx",
+      "src/app/(app)/lives/page.tsx",
+      "src/app/api/live-chat/instructor/route.test.ts",
+      "src/app/api/live-chat/instructor/route.ts",
+      "src/app/api/live-chat/messages/route.ts",
+      "src/app/api/live-chat/private/route.test.ts",
+      "src/app/api/live-chat/private/route.ts",
+      "src/app/api/live-purchase-broadcasts/route.test.ts",
+      "src/app/api/live-purchase-broadcasts/route.ts",
+      "src/components/live-instructor-private-chat.tsx",
+      "src/components/live-playback.test.tsx",
+      "src/components/live-playback.tsx",
+      "src/components/live-private-chat-ui.test.tsx",
+      "src/components/live-private-conversation-panel.tsx",
+      "src/components/live-purchase-broadcast-panel.test.tsx",
+      "src/components/live-purchase-broadcast-panel.tsx",
+      "src/components/live-viewer-private-chat.tsx",
+      "src/lib/api-security.ts",
+      "src/lib/auth.ts",
+      "src/lib/commerce-orders.ts",
+      "src/lib/csrf.ts",
+      "src/lib/live-chat-request-security.ts",
+      "src/lib/live-chat.ts",
+      "src/lib/live-private-chat-access.test.ts",
+      "src/lib/live-private-chat-contract.ts",
+      "src/lib/live-private-chat-storage.db.test.ts",
+      "src/lib/live-private-chat-storage.test.ts",
+      "src/lib/live-private-chat-storage.ts",
+      "src/lib/live-private-chat.ts",
+      "src/lib/live-purchase-broadcast-contract.test.ts",
+      "src/lib/live-purchase-broadcast-contract.ts",
+      "src/lib/live-purchase-broadcasts.db.test.ts",
+      "src/lib/live-purchase-broadcasts.test.ts",
+      "src/lib/live-purchase-broadcasts.ts",
+      "src/lib/live-quota-admission.ts",
+      "src/lib/rate-limit.ts",
+      "src/lib/request-client-ip.ts",
+      "src/lib/sensitive-data.ts",
+      "tests/e2e/live-private-commerce-journey.spec.ts",
+      "tests/e2e/live-purchase-broadcast-journey.spec.ts",
+      "tests/e2e/wp88-direct-url-guard-matrix.spec.ts",
+      "tsconfig.json",
+      "tsconfig.strict-index.json",
+      "vitest.live-private-commerce-db.config.ts"
+    ],
+    "required_checks": [
+      "unit",
+      "typecheck",
+      "strict_index",
+      "lint",
+      "migration",
+      "database",
+      "browser"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "evidence": {
+    "execution": {
+      "kind": "execution",
+      "revision": "sha256:e9d11aa42edb645aa211f895d8eedb116151dcf10363336c26733c2d676c05bf",
+      "status": "COMPLETED",
+      "source": "desktop_native",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "observed_model": "unknown",
+      "observed_effort": "unknown",
+      "task_id": "f2-live-private-chat-purchase-broadcast",
+      "dispatches": 4,
+      "max_dispatches": 4,
+      "scope": "Root implementation and corrections; terminal disposable runner and current validation commands completed",
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\reports\\private-final-execution.json"
+    },
+    "checks": [
+      {
+        "kind": "validation",
+        "name": "unit",
+        "revision": "sha256:e9d11aa42edb645aa211f895d8eedb116151dcf10363336c26733c2d676c05bf",
+        "source": "validation_runner",
+        "status": "PASS",
+        "exit_code": 0,
+        "command": [
+          "node",
+          "node_modules/vitest/vitest.mjs",
+          "run",
+          "src/components/live-playback.test.tsx",
+          "src/components/live-private-chat-ui.test.tsx",
+          "src/components/live-purchase-broadcast-panel.test.tsx",
+          "src/components/live-chat-panel.test.tsx",
+          "src/components/live-advanced-interactions.test.tsx",
+          "src/lib/live-chat.test.ts",
+          "src/lib/live-chat-contract.test.ts",
+          "src/lib/request-client-ip.test.ts",
+          "src/lib/live-purchase-broadcasts.test.ts",
+          "src/lib/live-purchase-broadcast-contract.test.ts",
+          "src/lib/live-private-chat-storage.test.ts",
+          "src/lib/live-private-chat-access.test.ts",
+          "src/app/api/live-chat/private/route.test.ts",
+          "src/app/api/live-chat/instructor/route.test.ts",
+          "src/app/api/live-purchase-broadcasts/route.test.ts",
+          "src/app/api/live-chat/messages/route.test.ts",
+          "scripts/prisma-invariant-inventory.test.ts",
+          "scripts/api-contract-registry.test.ts",
+          "--reporter=json"
+        ],
+        "counts": {
+          "numTotalTests": 181,
+          "numPassedTests": 181,
+          "numFailedTests": 0,
+          "numPendingTests": 0
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\reports\\private-final-unit-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "name": "typecheck",
+        "revision": "sha256:e9d11aa42edb645aa211f895d8eedb116151dcf10363336c26733c2d676c05bf",
+        "source": "validation_runner",
+        "status": "PASS",
+        "exit_code": 0,
+        "command": [
+          "node",
+          "node_modules/typescript/bin/tsc",
+          "--noEmit",
+          "--pretty",
+          "false"
+        ],
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\reports\\private-final-typecheck-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "name": "strict_index",
+        "revision": "sha256:e9d11aa42edb645aa211f895d8eedb116151dcf10363336c26733c2d676c05bf",
+        "source": "validation_runner",
+        "status": "PASS",
+        "exit_code": 0,
+        "command": [
+          "node",
+          "node_modules/typescript/bin/tsc",
+          "--noEmit",
+          "--pretty",
+          "false",
+          "--project",
+          "tsconfig.strict-index.json"
+        ],
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\reports\\private-final-strict_index-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "name": "lint",
+        "revision": "sha256:e9d11aa42edb645aa211f895d8eedb116151dcf10363336c26733c2d676c05bf",
+        "source": "validation_runner",
+        "status": "PASS",
+        "exit_code": 0,
+        "command": [
+          "node",
+          "node_modules/eslint/bin/eslint.js"
+        ],
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\reports\\private-final-lint-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "name": "migration",
+        "revision": "sha256:e9d11aa42edb645aa211f895d8eedb116151dcf10363336c26733c2d676c05bf",
+        "source": "validation_runner",
+        "status": "PASS",
+        "exit_code": 0,
+        "underlying_source_revision": "sha256:43fdc99166bd59a0602ebb007ce76674dbf20b767c6153ed01e1043722119a81",
+        "underlying_evidence": "docs/remaining-capabilities-f2-private-commerce-current-browser-20261007.json",
+        "source_files_verified_unchanged": true,
+        "result": 86,
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\reports\\private-final-migration-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "name": "database",
+        "revision": "sha256:e9d11aa42edb645aa211f895d8eedb116151dcf10363336c26733c2d676c05bf",
+        "source": "validation_runner",
+        "status": "PASS",
+        "exit_code": 0,
+        "underlying_source_revision": "sha256:43fdc99166bd59a0602ebb007ce76674dbf20b767c6153ed01e1043722119a81",
+        "underlying_evidence": "docs/remaining-capabilities-f2-private-commerce-current-browser-20261007.json",
+        "source_files_verified_unchanged": true,
+        "result": {
+          "total": 25,
+          "passed": 25,
+          "failed": 0,
+          "skipped": 0
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\reports\\private-final-database-receipt.json"
+      },
+      {
+        "kind": "validation",
+        "name": "browser",
+        "revision": "sha256:e9d11aa42edb645aa211f895d8eedb116151dcf10363336c26733c2d676c05bf",
+        "source": "validation_runner",
+        "status": "PASS",
+        "exit_code": 0,
+        "underlying_source_revision": "sha256:43fdc99166bd59a0602ebb007ce76674dbf20b767c6153ed01e1043722119a81",
+        "underlying_evidence": "docs/remaining-capabilities-f2-private-commerce-current-browser-20261007.json",
+        "source_files_verified_unchanged": true,
+        "result": {
+          "expected": 3,
+          "unexpected": 0,
+          "skipped": 0,
+          "flaky": 0,
+          "ingress": "synthetic-loopback-not-cloudflare-validation",
+          "failureLocations": []
+        },
+        "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\.ai-team\\reports\\private-final-browser-receipt.json"
+      }
+    ],
+    "review": {
+      "kind": "review",
+      "revision": "sha256:e9d11aa42edb645aa211f895d8eedb116151dcf10363336c26733c2d676c05bf",
+      "status": "PASS",
+      "independent": true,
+      "source": "desktop_native",
+      "role": "critical_review",
+      "model": "gpt-6-astra",
+      "task_id": "f2-live-private-chat-purchase-broadcast",
+      "dispatches": 4,
+      "max_dispatches": 4,
+      "reviewer": "/root/live_private_commerce_critical_fallback",
+      "resolved_effort": "high",
+      "observed_model": "unknown",
+      "observed_effort": "unknown",
+      "review_manifest_revision": "sha256:ac9e97c91d38bd3885c2ad3e7127674e4be5a93b22df25f57c6b8a50911e9056",
+      "browser_source_revision": "sha256:43fdc99166bd59a0602ebb007ce76674dbf20b767c6153ed01e1043722119a81",
+      "source_check": {
+        "manifest_files": 1432,
+        "unchanged": true,
+        "browser_receipt_files": 38,
+        "canonical_snapshot_files": 59
+      },
+      "changes_since_dispatch_3": [
+        "scripts/live-private-commerce-disposable-qa.mjs",
+        "tests/e2e/live-private-commerce-journey.spec.ts"
+      ],
+      "findings": [],
+      "review_scope": "Final runner diagnostics and real fetch response-loss fixture; unchanged product, security and schema remain covered by independent dispatch 3. Actual POST 201 and four persisted messages, stale conversation binding rejection and draft clearing were verified.",
+      "limitations": [
+        "Readonly reviewer did not run tests independently",
+        "Synthetic ingress does not prove actual Cloudflare WAF",
+        "Synthetic reconciliation does not prove provider payment or refund"
+      ],
+      "fallback_events": [
+        {
+          "requested_model": "claude-opus-5-5-high",
+          "status": "TOOL_DENIED"
+        }
+      ],
+      "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-live-private-chat\\CelebrateDeal\\docs\\remaining-capabilities-f2-private-critical-review-final-20261007.json"
+    },
+    "findings": []
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:e9d11aa42edb645aa211f895d8eedb116151dcf10363336c26733c2d676c05bf"
+  },
+  "actual_dispatches": 4,
+  "max_dispatches": 4,
+  "delivery": "EXACT_HEAD_CI_AND_PROTECTED_PR_PENDING"
+}

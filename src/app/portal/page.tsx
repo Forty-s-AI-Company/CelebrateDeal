@@ -1,4 +1,2 @@
-import {redirect} from "next/navigation";
-/** Next canonicalizes /portal/ to /portal, outside the worker's /portal/ scope.
- * Keep the landing document inside that scope without broadening control. */
-export default function PortalStartPage(){redirect("/portal/start/welcome");}
+import {resolveStudentPortalLocale} from "@/lib/student-portal-locale";
+export default async function PortalStartPage(){const locale=await resolveStudentPortalLocale();return <main className="mx-auto max-w-xl px-5 py-12"><h1 className="text-3xl font-bold">{locale==="en"?"Your learning centre":"你的學習中心"}</h1><p className="mt-5">{locale==="en"?"Open the learner link provided by your merchant to sign in securely.":"請開啟商家提供的學員入口，安全登入後查看課程。"}</p></main>;}

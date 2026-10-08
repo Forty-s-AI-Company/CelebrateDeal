@@ -416,7 +416,12 @@ describe("lockSettlementAction PostgreSQL AffiliatePayout writer concurrency", (
     });
 
     mocks.assertServerActionSecurity.mockResolvedValue(undefined);
-    mocks.requireVendorFinance.mockResolvedValue({ vendor, member: { id: "fin84-synthetic-finance", role: "owner" } });
+    // The payment write boundary now rechecks the persisted, active finance membership.
+    const finance = await database.user.create({
+      data: { email: `fin84-owner-${suffix}@invalid.test`, name: "Synthetic finance", passwordHash: "synthetic-password-hash", memberships: { create: { vendorId: vendor.id, role: "owner", status: "active" } } },
+      include: { memberships: true },
+    });
+    mocks.requireVendorFinance.mockResolvedValue({ vendor, member: finance.memberships[0] });
 
     await expect(recordAffiliatePayoutOutcomeAction(affiliatePayoutOutcomeFormData(payout.id))).rejects.toThrow(
       "redirect:/affiliates/commissions",

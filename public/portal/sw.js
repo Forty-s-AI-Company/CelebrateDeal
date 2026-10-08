@@ -14,12 +14,13 @@ self.addEventListener("fetch",event=>{
 /** Provider content is plain text. A notification cannot choose an external
  * origin, an authenticated API, or a token-bearing URL to open on a click. */
 function notificationPath(value){
- if(typeof value!=="string"||value.length>512)return "/portal/";
+ if(typeof value!=="string"||value.length>512)return "/portal/start.html";
  // Domain producers use opaque ASCII IDs and public live slugs. An encoded
  // separator/name, dot segment, query or API endpoint is never a click target.
+ if(value==="/portal/start.html")return value;
  const page=/^\/portal\/(?:[a-z0-9]+(?:-[a-z0-9]+)*\/(?:notifications|learn\/[A-Za-z0-9_-]{1,128}(?:\/certificate|\/community\/(?!data$)[A-Za-z0-9_-]{1,128})?))?$/u;
  const publicLive=/^\/live\/[A-Za-z0-9_-]{1,128}$/u;
- return page.test(value)||publicLive.test(value)?value:"/portal/";
+ return page.test(value)||publicLive.test(value)?value:"/portal/start.html";
 }
 self.addEventListener("push",event=>{
  let payload;
