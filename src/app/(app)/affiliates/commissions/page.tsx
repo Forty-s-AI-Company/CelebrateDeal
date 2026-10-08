@@ -1,3 +1,4 @@
+import { formatAffiliateRemuneration } from "@/lib/affiliate-remuneration-format";
 import Link from "next/link";
 import { recordAffiliatePayoutOutcomeAction } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
@@ -25,7 +26,7 @@ export default async function AffiliateCommissionsPage({
 }) {
   const { vendor } = await requireVendorFinance("/affiliates/commissions");
   const query = await searchParams;
-  const [commissions, payouts] = await Promise.all([
+  const [commissions, payouts, payoutPolicy, snapshots] = await Promise.all([
     getDb().affiliateCommission.findMany({
       where: { vendorId: vendor.id },
       orderBy: { attributedAt: "desc" },
@@ -35,6 +36,12 @@ export default async function AffiliateCommissionsPage({
       where: { vendorId: vendor.id },
       orderBy: [{ monthKey: "desc" }, { createdAt: "desc" }],
       include: { affiliate: true },
+    }),
+    getDb().merchantAffiliatePayoutPolicy.findUnique({ where: { vendorId: vendor.id }, select: { enabled: true } }),
+    getDb().affiliateRemunerationSnapshot.findMany({
+      where: { vendorId: vendor.id, payout: { status: "pending" } },
+      orderBy: { revision: "desc" },
+      select: { id: true, payoutId: true, status: true, netPayoutAmountCents: true },
     }),
   ]);
 
@@ -132,11 +139,16 @@ export default async function AffiliateCommissionsPage({
           <Card className="mt-6">
             <h2 className="text-lg font-semibold text-slate-950">分潤月結</h2>
             <div className="mt-4 grid gap-3">
-              {payouts.map((payout) => (
+              {payouts.map((payout) => {
+                const snapshot = snapshots.find((item) => item.payoutId === payout.id);
+                const enrolled = Boolean(payoutPolicy?.enabled || snapshot);
+                const canRecordPayment = !enrolled || Boolean(payoutPolicy?.enabled && snapshot?.status === "exported");
+                return (
                 <div key={payout.id} className="grid gap-3 rounded-lg border border-border p-4 md:grid-cols-[1fr_auto_auto] md:items-center">
                   <div>
                     <p className="font-semibold text-slate-950">{payout.monthKey} · {payout.affiliate?.name ?? "未綁定推廣者"}</p>
                     <p className="mt-1 text-sm text-slate-500">調整 {formatCurrency(payout.adjustmentAmountCents)}</p>
+                    {payout.paidNetAmountCents != null ? <p className="mt-1 text-sm">已記錄實領金額：{formatAffiliateRemuneration(payout.paidNetAmountCents)}</p> : null}
                     <p className="mt-1 text-xs text-slate-500">出款 reference：{payout.outcomeReference ?? "未記錄"}</p>
                     <p className="mt-1 text-xs text-slate-500">付款備註／作廢原因：{payout.outcomeReason ?? "未記錄"}</p>
                     <Link href={`/affiliates/commissions/${encodeURIComponent(payout.id)}`} className="mt-2 inline-flex text-sm font-semibold text-primary hover:underline">
@@ -145,20 +157,27 @@ export default async function AffiliateCommissionsPage({
                   </div>
                   <div className="flex items-center gap-3">
                     <Badge tone={statusTone(payout.status)}>{payout.status}</Badge>
-                    <p className="text-lg font-bold text-slate-950">{formatCurrency(payout.finalAmountCents)}</p>
+                    {payout.heldAmountCents > 0 ? <p role="status">爭議暫扣：{formatCurrency(payout.heldAmountCents)}</p> : null}
+                    <p className="text-lg font-bold text-slate-950">{formatCurrency(Math.max(0, payout.finalAmountCents - payout.heldAmountCents))}</p>
                   </div>
                   {payout.status === "pending"
                     && payout.vendorId === vendor.id
                     && payout.payoutItemId === null
+                    && payout.heldAmountCents === 0
                     && payout.finalAmountCents > 0
                     && payout.finalAmountCents === payout.commissionAmountCents + payout.adjustmentAmountCents ? (
                     <div className="grid gap-2 md:col-span-3 md:grid-cols-[1fr_auto] md:items-end">
                       <p className="text-sm text-slate-600">商家完成自行付款後，請留下人工出款 reference 與付款備註；若作廢，系統會沖回尚未支付的佣金並同步更新聯盟月結狀態。</p>
                       <div className="flex flex-wrap gap-2">
-                        <form action={recordAffiliatePayoutOutcomeAction} className="flex flex-wrap items-end gap-2">
+                        {canRecordPayment ? <form action={recordAffiliatePayoutOutcomeAction} className="flex flex-wrap items-end gap-2">
                           <CsrfField />
                           <input type="hidden" name="id" value={payout.id} />
                           <input type="hidden" name="status" value="paid" />
+                          {enrolled && snapshot ? <>
+                            <input type="hidden" name="remunerationSnapshotId" value={snapshot.id} />
+                            <input type="hidden" name="paidNetAmountCents" value={snapshot.netPayoutAmountCents} />
+                            <label className="text-sm"><input type="checkbox" name="paidNetConfirmed" required /> 確認已實際支付實領金額 {formatAffiliateRemuneration(snapshot.netPayoutAmountCents)}</label>
+                          </> : null}
                           <input name="outcomeReference" required maxLength={200} placeholder="人工出款 reference" aria-label="人工出款 reference" className="h-9 w-40 rounded-md border border-border px-2 text-xs" />
                           <input name="reason" required maxLength={500} placeholder="付款備註" aria-label="付款備註" className="h-9 w-32 rounded-md border border-border px-2 text-xs" />
                           <FormSubmitButton
@@ -166,7 +185,7 @@ export default async function AffiliateCommissionsPage({
                             pendingMessage="正在記錄聯盟出款結果，請勿重複送出。"
                             className="h-9 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700"
                           >標記已付款</FormSubmitButton>
-                        </form>
+                        </form> : <Link href={`/affiliates/${payout.affiliateId}/remuneration`} className="text-sm text-primary">請先完成報酬簽署與匯出，再記錄付款</Link>}
                         <form action={recordAffiliatePayoutOutcomeAction} className="flex flex-wrap items-end gap-2">
                           <CsrfField />
                           <input type="hidden" name="id" value={payout.id} />
@@ -182,7 +201,7 @@ export default async function AffiliateCommissionsPage({
                     </div>
                   ) : null}
                 </div>
-              ))}
+              ); })}
             </div>
           </Card>
       )}

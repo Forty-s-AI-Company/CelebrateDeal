@@ -1,0 +1,41 @@
+{
+  "kind": "review",
+  "revision": "sha256:e9d11aa42edb645aa211f895d8eedb116151dcf10363336c26733c2d676c05bf",
+  "status": "PASS",
+  "independent": true,
+  "source": "desktop_native",
+  "role": "critical_review",
+  "model": "gpt-6-astra",
+  "task_id": "f2-live-private-chat-purchase-broadcast",
+  "dispatches": 4,
+  "max_dispatches": 4,
+  "reviewer": "/root/live_private_commerce_critical_fallback",
+  "resolved_effort": "high",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "review_manifest_revision": "sha256:ac9e97c91d38bd3885c2ad3e7127674e4be5a93b22df25f57c6b8a50911e9056",
+  "browser_source_revision": "sha256:43fdc99166bd59a0602ebb007ce76674dbf20b767c6153ed01e1043722119a81",
+  "source_check": {
+    "manifest_files": 1432,
+    "unchanged": true,
+    "browser_receipt_files": 38,
+    "canonical_snapshot_files": 59
+  },
+  "changes_since_dispatch_3": [
+    "scripts/live-private-commerce-disposable-qa.mjs",
+    "tests/e2e/live-private-commerce-journey.spec.ts"
+  ],
+  "findings": [],
+  "review_scope": "Final runner diagnostics and real fetch response-loss fixture; unchanged product, security and schema remain covered by independent dispatch 3. Actual POST 201 and four persisted messages, stale conversation binding rejection and draft clearing were verified.",
+  "limitations": [
+    "Readonly reviewer did not run tests independently",
+    "Synthetic ingress does not prove actual Cloudflare WAF",
+    "Synthetic reconciliation does not prove provider payment or refund"
+  ],
+  "fallback_events": [
+    {
+      "requested_model": "claude-opus-5-5-high",
+      "status": "TOOL_DENIED"
+    }
+  ]
+}

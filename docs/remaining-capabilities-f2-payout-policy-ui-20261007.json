@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "celebratedeal-f2-payout-policy-ui/v1",
+  "task_id": "f2-merchant-remuneration",
+  "goal_id": "remaining-capabilities-20261005",
+  "base_head": "aa25c0f8a9462d75be10dc372f7d98aa1ba2f7dd",
+  "source_files": [
+    {
+      "path": "prisma/schema.prisma",
+      "sha256": "dda66ae67c3ce90d305fed6cdb7951db56600cfbc5358ba7f20fcdecd04a2ba5"
+    },
+    {
+      "path": "prisma/migrations/20261007080000_merchant_affiliate_payout_policy/migration.sql",
+      "sha256": "cc8424a1abf8cfe5cac1af56c1d5ddccef7299b41bf42a411afce8dc0a5f36bf"
+    },
+    {
+      "path": "src/lib/merchant-affiliate-payout-policy.ts",
+      "sha256": "915b90f84d6dc2654a8fffd49681556d6b816eaa078882af33111e8daa9017c6"
+    },
+    {
+      "path": "src/lib/affiliate-remuneration-quotes.ts",
+      "sha256": "e82f4ceb31f85dea0d47488b4d0f1ed87c68e9fb0616feefc57a7770b8a67c5f"
+    },
+    {
+      "path": "src/lib/affiliate-remuneration.db.test.ts",
+      "sha256": "c64aab42d4f362520c26be545bdbc356cbcdc04d8315edf8bf1ba960320e4a5f"
+    },
+    {
+      "path": "scripts/affiliate-remuneration-disposable-qa.mjs",
+      "sha256": "6e50dbc87672f7252549e472f8fb0d374563e9fe196d5a05ac081b2336e0faa9"
+    },
+    {
+      "path": "src/app/actions/merchant-affiliate-payout-policy-actions.ts",
+      "sha256": "24fedb2cca0f4e47c369fa72fe9f65d4bfe432e9539e4cb804b40a88196d259d"
+    },
+    {
+      "path": "src/app/actions/merchant-affiliate-payout-policy-actions.test.ts",
+      "sha256": "087c5022df057c09678cf11515134ef57ecc1d9398653f09e9220d6d72f2a8f0"
+    },
+    {
+      "path": "src/app/(app)/affiliates/payout-policy/page.tsx",
+      "sha256": "7a4b2460e11a3ce3fc5e31b4b737c80fe6cb1359b1ad80d55895650479c4b4ee"
+    },
+    {
+      "path": "src/app/(app)/affiliates/page.tsx",
+      "sha256": "56ab7ab624f21680ec40886ff83de6b848185ea382f8bdf529e2d46c336d081a"
+    }
+  ],
+  "disposable": {
+    "schemaVersion": "affiliate-remuneration-disposable/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 22,
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T00:36:33.436Z",
+    "failures": [],
+    "migrationCount": 90,
+    "finishedAt": "2026-10-07T00:36:55.113Z"
+  },
+  "unit": {
+    "passed": 52,
+    "failed": 0,
+    "files": 6
+  },
+  "lint": "PASS",
+  "typescript": "PASS",
+  "typescript_session": 24210,
+  "browser": "NOT_RUN",
+  "implemented": [
+    "Persisted merchant-selected fee and enabled flag without default fallback",
+    "Active owner/admin membership and exact CAS",
+    "Quote/sign/export binds current policy revision",
+    "CSRF protected settings action and authenticated page linked from affiliate entry",
+    "Legacy/stale fee or revision cannot authorize export"
+  ],
+  "root_review": {
+    "readability": "Explicit cent-unit input and current revision/status",
+    "performance": "One scoped policy row; indexed pending snapshot invalidation",
+    "maintainability": "Forward policy migration, existing auth/CSRF contracts reused",
+    "security": "Session tenant/user only; current manager role rechecked in transaction; CSRF first; existing feature permissions preserved"
+  },
+  "independent_critical_review": "NOT_COMPLETE",
+  "dispatches": 0,
+  "max_dispatches": 4,
+  "acceptance": "NOT_READY",
+  "delivered": false,
+  "remaining": [
+    "Affiliate profile/quote/sign UI and manager approval/export attachment",
+    "Payout outcome current exported-snapshot contract",
+    "Actual browser and full financial regressions",
+    "Critical independent review/canonical acceptance/exact-head CI/protected delivery"
+  ],
+  "external_operations": false
+}

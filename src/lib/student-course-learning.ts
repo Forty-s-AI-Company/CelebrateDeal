@@ -29,7 +29,7 @@ function safePublicVideoUrl(value: string | null) {
 }
 
 /** The access check is intentionally reused before every read, mutation, and certificate issue. */
-async function authorizedCourseAccess(db: CourseLearningStore, scope: StudentPortalScope, courseId: string) {
+export async function authorizedCourseAccess(db: CourseLearningStore, scope: StudentPortalScope, courseId: string) {
   validScope(scope);
   if (!courseId || courseId.length > 160) return null;
   const orderItem = await db.commerceOrderItem.findFirst({

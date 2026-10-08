@@ -9,13 +9,14 @@
 - Handoff schema：`handoff-schema.md`
 - Goal protocol：`GOAL-PROTOCOL.md`
 - Goal state：`.ai-team/state/goal-state.json`
-- Router config：`.ai-team/config/router.json`
+- 唯一 routing policy：`.ai-team/config/routing-policy.json`；`router.json` 只保留相容 runtime 設定，不提供另一套模型路由。
 - Optional Claude plan review：`.ai-team/scripts/Invoke-AgyPlanReview.ps1`
 - Evidence：`.ai-team/reports/` 與 `docs/launch/evidence-index.md`
 - vNext implementation plan：`../ai-team-vnext-plan.md`
 - vNext routing policy：`../../.ai-team/config/routing-policy.json`
 - vNext routing tests：`../../.ai-team/mcp_server/test_routing.py`、`../../.ai-team/scripts/Test-AiTeamRouting.ps1`
 - Task acceptance：MCP `assess_task`／`.ai-team/mcp_server/route_cli.py` 的 `assess_acceptance` action；必要檢查收據由 `.ai-team/mcp_server/validation_runner.py` 產生。
+- 領域工作流程：[domain-workflows.md](domain-workflows.md)；六個專案技能只提供產品、歸因、租戶、browser、design 與交付的薄入口，沿用同一 vNext 與 acceptance。
 
 ## 目前模式
 

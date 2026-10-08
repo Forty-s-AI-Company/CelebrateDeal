@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "f1-course-delivery/v1",
+  "status": "DELIVERED",
+  "pr": 370,
+  "acceptedHead": "84cdb47567bbc85e3eee43b2557fc899507907d8",
+  "mergeCommit": "728f0e591c0a5d4a83fe98d6a98146f9d7d0d842",
+  "acceptedTree": "8cbbcc07a75af21815d57ec9b276517293fe1486",
+  "mergeTree": "8cbbcc07a75af21815d57ec9b276517293fe1486",
+  "mergedAt": "2026-10-05T22:09:36Z",
+  "ciRuns": [
+    37377301878,
+    37377307924
+  ],
+  "ciConclusion": "SUCCESS",
+  "scope": "F1.1 native course learning only; remaining F1 capabilities active"
+}

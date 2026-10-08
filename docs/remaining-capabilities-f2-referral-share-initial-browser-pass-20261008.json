@@ -1,0 +1,29 @@
+{
+  "status": "PASS_PRE_REVIEW_CORRECTIONS",
+  "migration_count": 87,
+  "receipt": {
+    "schemaVersion": "affiliate-portal-browser/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T16:43:28.907Z",
+    "finishedAt": "2026-10-07T16:47:36.850Z",
+    "failedTitles": [],
+    "browser": {
+      "expected": 1,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "scope": "affiliate clipboard readback, QR download PNG presence, public merchant attribution and revocation; QR decode/registration integration not yet covered",
+  "superseded_candidate": true
+}

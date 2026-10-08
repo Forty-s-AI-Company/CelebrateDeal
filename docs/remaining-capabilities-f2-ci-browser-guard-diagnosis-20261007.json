@@ -1,0 +1,39 @@
+{
+  "run_id": 37560533164,
+  "fix": "Update exact current page counts; preserve every guard family and direct-URL assertion",
+  "failure": {
+    "step": "Release browser gates",
+    "expected_manager_family_before": 51,
+    "actual_manager_family": 54,
+    "actual_protected_pages": 93,
+    "expected_protected_pages_before": 90,
+    "line": 79,
+    "path": "tests/e2e/wp88-direct-url-guard-matrix.spec.ts"
+  },
+  "task_id": "f2-merchant-remuneration",
+  "review": {
+    "extra_approval": "PENDING",
+    "limit": 4,
+    "latest_changed_product_review": "PENDING",
+    "dispatches": 4
+  },
+  "acceptance": "NOT_READY",
+  "validated_base_head": "b9aa3ac93a6469668bdc739fd6fd67d06ba98ccd",
+  "status": "CI_BROWSER_INVENTORY_CORRECTED_LOCAL_VALIDATED",
+  "delivery": "DRAFT_ONLY",
+  "runner_setup_failure": {
+    "fixed": true,
+    "cause": "temporary runner derived workspace from one-level directory instead of two",
+    "db_or_browser_started": false,
+    "category": "ENOENT"
+  },
+  "validation": {
+    "evidence": "docs/remaining-capabilities-f2-ci-browser-guard-correction-20261007.json",
+    "db_passed": 29,
+    "flaky": 0,
+    "source_unchanged": true,
+    "browser_passed": 2,
+    "skipped": 0,
+    "migrations": 91
+  }
+}

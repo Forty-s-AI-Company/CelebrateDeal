@@ -24,6 +24,7 @@ import {
   type CommerceOrderPii,
 } from "@/lib/commerce-order-pii";
 import { createCommerceOrderForCheckout } from "@/lib/commerce-orders";
+import { freezeMerchantAffiliateCheckout, MerchantAffiliatePolicyConflict, MerchantAffiliatePolicyDenied } from "@/lib/merchant-affiliate-policy-service";
 import {
   CommerceCustomCheckoutValidationError,
   createCustomCheckoutIdentityHash,
@@ -884,6 +885,10 @@ export async function POST(request: Request) {
           customCheckoutAnswers: customCheckout.answers,
           ...(hasExplicitInvoiceSelection ? { invoiceSelection } : {}),
         });
+        // Freeze verified attribution and immutable terms in the same order transaction.
+        if (affiliateAttribution?.affiliateId && affiliateAttribution.referralCode) {
+          await freezeMerchantAffiliateCheckout(tx, { vendorId: parsed.data.vendorId, transactionId: createdTransaction.id, orderId: commerceOrder.id, affiliateId: affiliateAttribution.affiliateId, referralCode: affiliateAttribution.referralCode });
+        }
         await consumeCheckoutVoucherClaim(tx, voucherClaim, {
           vendorId: parsed.data.vendorId,
           orderId: commerceOrder.id,
@@ -900,6 +905,9 @@ export async function POST(request: Request) {
         include: existingCheckoutInclude,
       });
       if (winner) return await existingCheckoutResponse({ request, transaction: winner, data: parsed.data });
+    }
+    if (error instanceof MerchantAffiliatePolicyConflict || error instanceof MerchantAffiliatePolicyDenied) {
+      return NextResponse.json({ error: "Affiliate terms changed; reload checkout" }, { status: 409 });
     }
     if (error instanceof InventoryUnavailableError) {
       return NextResponse.json({ error: "Product is sold out" }, { status: 409 });
@@ -1022,7 +1030,7 @@ async function affiliateAttributionFromRequest(request: Request, vendorId: strin
   if (!click || (!hasVerifiedAffiliate && !click.teamAttribution)) return null;
   return {
     affiliateClickId: click.id,
-    ...(hasVerifiedAffiliate && referralCode ? { referralCode } : {}),
+    ...(hasVerifiedAffiliate && referralCode && click.affiliateId ? { referralCode, affiliateId: click.affiliateId } : {}),
   };
 }
 

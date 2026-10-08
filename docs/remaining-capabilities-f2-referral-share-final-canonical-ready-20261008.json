@@ -1,0 +1,124 @@
+{
+  "task_id": "f2-referral-share-cards-20261008",
+  "source_revision": "sha256:4312b55a723fcee2d951fa9131c3f827fcfd035da1d31f4ea261a45ffd193fff",
+  "canonical": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:4312b55a723fcee2d951fa9131c3f827fcfd035da1d31f4ea261a45ffd193fff"
+  },
+  "actual_results": {
+    "unit_passed": 31,
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "migration_count": 87,
+    "database_passed": 6,
+    "browser_passed": 2,
+    "skipped": 0,
+    "flaky": 0,
+    "cleanup": "PASS"
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:4312b55a723fcee2d951fa9131c3f827fcfd035da1d31f4ea261a45ffd193fff",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 3.468
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:4312b55a723fcee2d951fa9131c3f827fcfd035da1d31f4ea261a45ffd193fff",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 6.657
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:4312b55a723fcee2d951fa9131c3f827fcfd035da1d31f4ea261a45ffd193fff",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 14.718
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "db_browser",
+      "revision": "sha256:4312b55a723fcee2d951fa9131c3f827fcfd035da1d31f4ea261a45ffd193fff",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 218.516
+    }
+  ],
+  "independent_review": {
+    "kind": "review",
+    "source": "desktop_native",
+    "revision": "sha256:4312b55a723fcee2d951fa9131c3f827fcfd035da1d31f4ea261a45ffd193fff",
+    "status": "PASS",
+    "independent": true,
+    "role": "critical_review",
+    "model": "gpt-6-astra",
+    "resolved_effort": "high",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "agent": "/root/referral_share_critical_review",
+    "dispatch": 4,
+    "findings": [],
+    "raw_report": []
+  },
+  "source_hashes": {
+    "src/lib/referral-share-card.ts": "94406da57f061ac7a288d145cbf08692f930640e41038883db1be05a9a5a65d9",
+    "src/lib/referral-share-card.test.ts": "8df6cdc604cba0b0bdd21d03ab79fbe4fc378828f895e7111c69aac1ca8f210b",
+    "src/components/referral-share-controls.tsx": "2ba97ad786ff34a6c1b753d4bd5f1395469578968aba283868559330f86e6427",
+    "src/components/verified-registration-share.tsx": "fa2563d08c7123fc15727e3fdfefc4293e4dcee5382cf700a888bf111222c295",
+    "src/components/verified-registration-share.test.tsx": "ac3462f409c00d7553e78cd09c53761adf1d70e2dc135eea82d70b7c2cb6aa05",
+    "src/app/verify-registration/page.tsx": "6f98cb6bc8a93d8b10a597afd79c8914cf962651f92a92c1ced5b4c165b9d15d",
+    "src/app/affiliate-portal/[vendorSlug]/[affiliateId]/page.tsx": "d39d0447e37a18d6fead04a81f9029c9696f1e1ec96edae2b3c84552678aaa55",
+    "tests/e2e/affiliate-portal.spec.ts": "3192fb2be4dd66ec917d5acac4e9b7446cd0a47de4cdef785cb80c32c7ef13d8",
+    "scripts/affiliate-portal-browser-qa.mjs": "f0c5a67f9c0ae7ee2745dcd2c99cff361c10a91d2b40adbc05073bacfd0c3bf7",
+    "playwright.affiliate-portal.config.ts": "902dfd38e34f48ea5f40c7e7a91c74d4089a1c7488b98413cc50cf513a688968",
+    "src/lib/affiliate-portal.ts": "b2b225b2ada585d71df93c1c4851ca99010b41eb549f2c1301e394f85192af4a",
+    "src/lib/public-registration-form.ts": "a9a42a6ddb75587c25dd4f44040862464f80ec5ca8a0076d363732d6b9b8cf55",
+    "src/lib/form-submission-chat-session.ts": "3106d95789d44075bbbdd12b2e00e79e144d62cbf8c166fdbfd2c9cf1bcd92da",
+    "src/lib/app-url.ts": "4b6aa6c5fcbf1c89eace2b8a420f33143ccf446dadcc2aca84192b73dfcbdae6",
+    "tests/e2e/verified-registration-share.spec.ts": "7e9c71f6b82ed438220d27f103e156a8da99a627cf1132850575a1e40eab98a6",
+    "tests/e2e/referral-card-assertions.ts": "66bc6c6626e8806ba3ae390252393c6b2fe5f9681d9ef57a4ac87d1cdaa96f6a",
+    "package.json": "38a2e10e5251e7796cd20043d39fbae1235ceed99c9fcdcfe01832a37b03fb2f",
+    "package-lock.json": "e0429d3d731a1573d964df9977f75712da0590a0a517fd76295c543662054dd1",
+    ".github/workflows/ci.yml": "d5932b3551fb9744b075f91ccc4ff4bdbffde0877f9509627d2571e9eec550ee",
+    "src/app/api/form-submissions/verify/route.ts": "7f3bd20a2308c4298685d71d9e4b91259b68329d51fad08209aea94990076a7f",
+    "src/app/api/form-submissions/verify/route.test.ts": "a85d0ccbb3dc1d223086a7b719496412f16a3bb2dea886b8634887e23e5dc712",
+    "src/lib/app-url.test.ts": "64c6e82c3cb431f2dda635b315ba4e74f2cae1d747e1bbb4e6ae8020bde16221"
+  },
+  "source_binding": "All 22 source bytes equal staged Git objects",
+  "receipt": {
+    "schemaVersion": "affiliate-portal-browser/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T17:17:54.957Z",
+    "finishedAt": "2026-10-07T17:21:32.890Z",
+    "failedTitles": [],
+    "browser": {
+      "expected": 2,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "production_operations": false,
+  "delivery": "NOT_DELIVERED_PENDING_EXACT_HEAD_CI_AND_PROTECTED_PR"
+}

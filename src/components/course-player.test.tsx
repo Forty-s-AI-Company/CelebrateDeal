@@ -33,6 +33,15 @@ const player = (durationSeconds = 100) => find(playerTree(durationSeconds), "vid
 afterEach(() => { hydration.active = true; vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
 
 describe("CoursePlayer progress requests", () => {
+  it("keeps translated controls behind the hydration barrier", () => {
+    const translatedPlayer = () => CoursePlayer({ vendorSlug: "academy", locale: "en", course: { id: "course-1", name: "Course" }, csrfToken: "synthetic", initialProgress: [], lessons: [{ id: "lesson-1", title: "Lesson", chapterTitle: "Chapter", position: 1, durationSeconds: 100, videoUrl: null }] });
+    hydration.active = false;
+    expect(find(translatedPlayer(), "button", "Mark complete")?.disabled).toBe(true);
+    expect(find(translatedPlayer(), "button")?.disabled).toBe(true);
+    hydration.active = true;
+    expect(find(translatedPlayer(), "button", "Mark complete")?.disabled).toBe(false);
+  });
+
   it("keeps both lesson controls disabled until the client handlers are attached", () => {
     hydration.active = false;
     expect(find(playerTree(), "button", "標記完成")?.disabled).toBe(true);

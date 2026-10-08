@@ -111,6 +111,9 @@ export default defineConfig({
       // This is intentionally accepted only for the matching local HTTP
       // origin by getCanonicalAppUrl; it cannot relax a deployed public URL.
       E2E_TEST_MODE: "true",
+      // Private chat journeys start an owned loopback ingress. All other
+      // requests still need the existing ingress proof; memory limits remain.
+      E2E_LIVE_CHAT_TRUSTED_INGRESS: "true",
       E2E_BASE_URL: baseURL,
       NEXT_PUBLIC_APP_URL: baseURL,
       PAYMENT_PROVIDER: process.env.PAYMENT_PROVIDER ?? "demo",

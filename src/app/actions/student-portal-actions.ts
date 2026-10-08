@@ -1,4 +1,6 @@
 "use server";
+import {normalizeStudentPortalLocale} from "@/lib/student-portal-locale";
+import {portalText} from "@/lib/student-portal-translations";
 
 import type { StudentPortalActionState } from "@/lib/student-portal-action-state";
 export type { StudentPortalActionState } from "@/lib/student-portal-action-state";
@@ -44,21 +46,23 @@ export async function requestMagicLinkAction(
   formData: FormData,
 ): Promise<StudentPortalActionState> {
   await assertServerActionSecurity(formData);
+  const locale=normalizeStudentPortalLocale(value(formData,"locale"));
+  const t=(text:string)=>portalText(locale,text);
   const email = EmailInput.safeParse(value(formData, "email"));
   const vendorSlug = SlugInput.safeParse(value(formData, "vendorSlug"));
   if (!email.success || !vendorSlug.success) {
-    return { status: "invalid", message: "請確認 Email 格式後再試一次。" };
+    return { status: "invalid", message: t("請確認 Email 格式後再試一次。") };
   }
 
   const limited = await checkRateLimit(await sourceRequest(), "student-portal-magic-link", 10, 15 * 60 * 1000);
-  if (limited) return { status: "rate_limited", message: "申請次數較多，請稍後再試。" };
+  if (limited) return { status: "rate_limited", message: t("申請次數較多，請稍後再試。") };
 
   const db = getDb();
   const vendor = await db.vendor.findUnique({
     where: { slug: vendorSlug.data },
     select: { id: true, slug: true, name: true, senderName: true, supportEmail: true, contactUrl: true },
   });
-  if (!vendor) return { status: "sent", message: genericSentMessage };
+  if (!vendor) return { status: "sent", message: t(genericSentMessage) };
 
   const customerKeyHash = automationCustomerKeyHash(vendor.id, email.data);
   // A second bucket intentionally uses no client-provided forwarding headers.
@@ -69,13 +73,13 @@ export async function requestMagicLinkAction(
     3,
     15 * 60 * 1000,
   );
-  if (recipientLimited) return { status: "rate_limited", message: "申請次數較多，請稍後再試。" };
+  if (recipientLimited) return { status: "rate_limited", message: t("申請次數較多，請稍後再試。") };
   const [orderCount, bookingCount, voucherCount] = await Promise.all([
     db.commerceOrder.count({ where: { vendorId: vendor.id, automationCustomerKeyHash: customerKeyHash, status: { in: ["paid", "partially_refunded", "refunded"] } } }),
     db.consultationBooking.count({ where: { vendorId: vendor.id, customerKeyHash } }),
     db.automationVoucherGrant.count({ where: { vendorId: vendor.id, customerKeyHash } }),
   ]);
-  if (orderCount + bookingCount + voucherCount === 0) return { status: "sent", message: genericSentMessage };
+  if (orderCount + bookingCount + voucherCount === 0) return { status: "sent", message: t(genericSentMessage) };
 
   const token = await createStudentPortalAccessToken(db, { vendorId: vendor.id, email: email.data, purpose: "magic_link" });
   const accessUrl = new URL(`/portal/${encodeURIComponent(vendor.slug)}/access`, getCanonicalAppUrl());
@@ -84,8 +88,8 @@ export async function requestMagicLinkAction(
   const deliveryId = `student_portal_${randomBytes(16).toString("hex")}`;
   const protectedPayload = protectEmailDeliveryPayload({
     recipientEmail: email.data,
-    subject: `${vendor.name}｜學員中心登入連結`,
-    body: `請在 15 分鐘內開啟以下連結進入學員中心：\n${accessUrl.toString()}\n\n若不是你本人申請，請直接忽略。`,
+    subject: locale==="en"?`${vendor.name} | Learner sign-in link`:`${vendor.name}｜學員中心登入連結`,
+    body: locale==="en"?`Open this link within 15 minutes to enter your learner centre:\n${accessUrl.toString()}\n\nIf you did not request it, ignore this message.`:`請在 15 分鐘內開啟以下連結進入學員中心：\n${accessUrl.toString()}\n\n若不是你本人申請，請直接忽略。`,
     brand: vendor,
   }, { vendorId: vendor.id, deliveryId });
   await db.emailDelivery.create({ data: {
@@ -98,7 +102,7 @@ export async function requestMagicLinkAction(
     status: "queued",
     nextAttemptAt: new Date(),
   } });
-  return { status: "sent", message: genericSentMessage };
+  return { status: "sent", message: t(genericSentMessage) };
 }
 
 export async function logoutStudentPortalAction(formData: FormData) {
