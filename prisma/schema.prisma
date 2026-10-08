@@ -116,6 +116,7 @@ model Vendor {
   affiliateCommissions             AffiliateCommission[]
   affiliateCommissionLedgerEntries AffiliateCommissionLedgerEntry[]
   affiliatePayouts                 AffiliatePayout[]
+  affiliatePayoutPolicy           MerchantAffiliatePayoutPolicy?
   courseCommissionAllocations      CourseCommissionAllocation[]
   courseCommissionLedgerEntries    CourseCommissionLedgerEntry[]
   coursePayouts                    CoursePayout[]
@@ -1136,6 +1137,7 @@ model Affiliate {
   commissions     AffiliateCommission[]
   payouts         AffiliatePayout[]
   portalAccess    AffiliatePortalAccess?
+  payeeProfile   AffiliatePayeeProfile?
   teamMemberships TeamMembership[]
 
   merchantCheckoutSnapshots MerchantAffiliateCheckoutSnapshot[]
@@ -2495,15 +2497,106 @@ model AffiliatePayout {
   status                  String    @default("pending")
   payoutItemId            String?
   paidAt                  DateTime?
+  /// Exact private exported snapshot and actual reported net; null is legacy.
+  remunerationSnapshotId String?
+  paidNetAmountCents Int?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
   vendor    Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   affiliate Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  remunerationSnapshots AffiliateRemunerationSnapshot[]
+  paidRemunerationSnapshot AffiliateRemunerationSnapshot? @relation("PaidAffiliateRemuneration", fields: [vendorId, affiliateId, id, remunerationSnapshotId], references: [vendorId, affiliateId, payoutId, id], onDelete: Restrict)
 
+  @@unique([vendorId, affiliateId, id])
   @@unique([vendorId, affiliateId, monthKey])
   @@index([vendorId, monthKey])
   @@index([affiliateId, status])
+}
+
+/// Private merchant payee data. Every edit invalidates classification approval;
+/// approval belongs to an exact revision, never a browser-declared tax status.
+model AffiliatePayeeProfile {
+  vendorId String
+  affiliateId String
+  revision Int @default(0)
+  bankEncrypted String
+  taxIdentityEncrypted String
+  recipientType String
+  nhiTreatment String
+  exemptionReference String?
+  invoiceReference String?
+  approvedRevision Int?
+  approvedByUserId String?
+  approvedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  affiliate Affiliate @relation(fields: [vendorId, affiliateId], references: [vendorId, id], onDelete: Restrict)
+  @@id([vendorId, affiliateId])
+}
+
+/// A signed quote snapshots the exact payable/profile/policy revision. A new
+/// refund or adjustment requires a new revision and signature before export.
+model AffiliateRemunerationSnapshot {
+  id String @id @default(cuid())
+  vendorId String
+  affiliateId String
+  payoutId String
+  revision Int
+  profileRevision Int
+  ruleVersion String
+  ledgerDigest String?
+  payoutPolicyRevision Int?
+  grossAmountCents Int
+  withholdingTaxCents Int
+  nhiSupplementaryTaxCents Int
+  bankFeeCents Int
+  netPayoutAmountCents Int
+  bankEncrypted String
+  taxIdentityEncrypted String
+  recipientType String
+  nhiTreatment String
+  exemptionReference String?
+  invoiceReference String?
+  status String @default("quoted")
+  signedByUserId String?
+  signedAt DateTime?
+  invalidatedAt DateTime?
+  exportedAt DateTime?
+  createdAt DateTime @default(now())
+  payout AffiliatePayout @relation(fields: [vendorId, affiliateId, payoutId], references: [vendorId, affiliateId, id], onDelete: Restrict)
+  exportReceipt AffiliateRemunerationExport?
+  paidPayouts AffiliatePayout[] @relation("PaidAffiliateRemuneration")
+  @@unique([vendorId, affiliateId, payoutId, id])
+  @@unique([vendorId, affiliateId, id])
+  @@unique([vendorId, payoutId, revision])
+  @@index([vendorId, affiliateId, status])
+}
+
+/// One immutable private export receipt per exact signed snapshot. Downloading
+/// a file records no transfer and never marks the merchant payout as paid.
+model AffiliateRemunerationExport {
+  snapshotId String @id
+  vendorId String
+  affiliateId String
+  exportedByUserId String
+  createdAt DateTime @default(now())
+  snapshot AffiliateRemunerationSnapshot @relation(fields: [vendorId, affiliateId, snapshotId], references: [vendorId, affiliateId, id], onDelete: Restrict)
+  @@unique([vendorId, affiliateId, snapshotId])
+  @@index([vendorId, createdAt])
+}
+
+/// Explicit merchant-selected fee; missing/disabled configuration blocks
+/// quotes and exports, with no guessed fee fallback.
+model MerchantAffiliatePayoutPolicy {
+  vendorId String @id
+  revision Int @default(0)
+  bankFeeCents Int
+  enabled Boolean @default(false)
+  updatedByUserId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
 }
 
 /// Merchant-owned course revenue-share snapshot. This is deliberately separate

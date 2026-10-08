@@ -1,0 +1,70 @@
+{
+  "task_id": "f2-merchant-remuneration",
+  "parent_goal_id": "remaining-capabilities-20261005",
+  "base_head": "37626c2305016213f6c07c79c6b695a9ded17020",
+  "status": "IMPLEMENTED_VALIDATION_IN_PROGRESS",
+  "delivered": false,
+  "changes": [
+    "Existing finance action validates current exported/signature/ledger/profile/policy proof inside the payout transaction",
+    "Manual payment confirmation binds exact snapshot and net amount; enrolled payouts cannot use the legacy form",
+    "Forward migration binds the payment record to the same tenant, affiliate and payout snapshot",
+    "Synthetic browser journey now covers refund, revised signature/export, manual payment recording and persisted net amount"
+  ],
+  "database_validation": {
+    "source_revision": "sha256:8bc6b02f15d9c7b8efba7e2e24057be29d4af4eeb539fd70993abc7391485381",
+    "migrations": 91,
+    "passed": 26,
+    "failed": 0,
+    "skipped": 0,
+    "cleanup": "PASS",
+    "scope": "Database proof service and schema; not a claim of complete action/browser acceptance"
+  },
+  "other_checks": {
+    "actions_and_finance_page_tests": {
+      "passed": 341,
+      "files": 2
+    },
+    "typescript": "PASS",
+    "scoped_lint": "PASS",
+    "browser": "RUNNING_SESSION_2167_AFTER_REVIEW_FIXES",
+    "latest_source_revision": "sha256:3181e15648c5a65601ad14e18c8427c73ad2158053e5c0c8dbd44fbd9142331b",
+    "latest_source_evidence": "docs/remaining-capabilities-f2-payment-browser-20261007.json"
+  },
+  "ownership": {
+    "writer": "root",
+    "task_dispatches": 3,
+    "maximum_dispatches": 4,
+    "maximum_readonly_helpers": 1,
+    "depth": 1
+  },
+  "independent_review": {
+    "status": "CRITICAL_FALLBACK_RUNNING",
+    "helper": "/root/remuneration_canonical_critical_fallback",
+    "requested_team": "ai-team-pro",
+    "effective_team": "ai-team-pro",
+    "resolved_model": "gpt-6-astra",
+    "resolved_effort": "high",
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "source": "canonical_router_after_opus_tool_denied",
+    "acceptance_gate_eligible": true,
+    "routing_limitation": "Gate still pending completed current-source review receipt; prior Sol high findings review retained separately",
+    "reason": "Independent Critical review of financial, permission and forward migration contracts",
+    "fallback_events": [
+      {
+        "model": "claude-opus-5-5-high",
+        "status": "TOOL_DENIED",
+        "evidence": "docs/remaining-capabilities-f2-critical-review-fallback-20261007.json"
+      }
+    ]
+  },
+  "remaining_gates": [
+    "Latest browser result and exact-source evidence",
+    "Payment binding constraints and concurrent refund/payment regression",
+    "Independent Critical review and findings correction",
+    "Canonical acceptance, exact-head CI and protected PR delivery",
+    "F2.2 dependency acceptance remains pending"
+  ],
+  "external_payment_executed": false,
+  "original_dirty_checkout_modified": false
+}

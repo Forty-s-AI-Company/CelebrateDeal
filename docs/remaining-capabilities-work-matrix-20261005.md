@@ -10,6 +10,7 @@ Goal：`remaining-capabilities-20261005`，狀態 **IN_PROGRESS**。承接既有
 | --- | --- | --- | --- | --- | --- | --- |
 | F1 | future-work F1；#210/#211：播放器、進度、證書、社群、多語/PWA/push、SMS/WhatsApp | 現行 portal session、租戶與購買權益 | 主代理，待分批路由 | 每個能力具完整 UI/API、跨租戶/權益回歸、DB 與瀏覽器旅程；provider 實測分開標記 | F1.1 本機 unit、7 PostgreSQL、1 Chromium、Critical review及canonical READY；其餘 F1 待續 | IN_PROGRESS |
 | F1.1 | #210/#211；`b7956d803f8dfebbbfdb3a4faeff497ab4bc140e` 的原生播放器/progress/certificate，依現行契約重建商家單元發布 | manager auth/CSRF、portal session、paid entitlement、前向 migration | 主代理唯一 writer；獨立 Critical reviewer（policy fallback Astra high） | 商家發布→學員權益學習→75秒持久化/reload續播→完課證書→退款撤權；跨租戶/跨課程/併發/CSRF回歸 | 本機 unit/typecheck/lint、84 migration、7 DB、1 Chromium PASS，canonical acceptance READY；`remaining-capabilities-f1.1-local-receipt-20261006.json`；精確head CI雙SUCCESS、#370 squash 728f0e59、tree一致 | DELIVERED |
+
 | F1.1 | #210/#211；`b7956d803f8dfebbbfdb3a4faeff497ab4bc140e` 的原生播放器/progress/certificate，依現行契約重建商家單元發布 | manager auth/CSRF、portal session、paid entitlement、前向 migration | 主代理唯一 writer；獨立 Critical reviewer（policy fallback Astra high） | 商家發布→學員權益學習→75秒持久化/reload續播→完課證書→退款撤權；跨租戶/跨課程/併發/CSRF回歸 | 本機 unit/typecheck/lint、84 migration、7 DB、1 Chromium PASS，canonical acceptance READY；`remaining-capabilities-f1.1-local-receipt-20261006.json`；精確 head CI PASS、#370 squash `728f0e59`，验收tree一致 | DELIVERED |
 | F1.2 | `b7956d803f8dfebbbfdb3a4faeff497ab4bc140e`：學員社群、商家置頂／公告；依現行課程權益重建 | F1.1、portal session、tenant scope、manager CSRF/CAS | root 唯一 writer；Astra high readonly Critical review（observed unknown），dispatch4/4 | 發文／回覆／按讚／分頁／管理公告／退款撤權完整瀏覽器、跨租戶及併發DB、精確CI/PR | 最新候選8unit、TS/lint、1067 Node TAP零skip；85migration9DB、完整實際manager/learner browser PASS，review無findings，canonical READY；PR/CI待交付 | LOCAL_ACCEPTED_REMOTE_CI_PENDING |
 | F1.3 | 現行 portal 多語與 PWA：繁中/英文登入、課程、社群、public-only離線提示 | #370 已交付；#373 社群待最新review/交付 | root唯一writer；獨立Critical reviewer dispatch3/4 | locale持久化、加密mailbox、跨租戶/退款撤權、禁止個資cache與offline writes | 17unit/1067TAP/85migrations/9DB/3Chromium/TS/strict-index/lint PASS；獨立精確review無findings；canonical READY | LOCAL_READY_DEPENDENCY_AND_CI_PENDING |
@@ -57,6 +58,13 @@ F2.1 `codex/remaining-affiliate-portal-20261006`：明確 tenant/member 授權�
 
 F2.1 latest source `sha256:4aec9256be9760e011a88cb6eb3dba17860a844db774e578ff0c292e5837e2b0`：9 targeted unit、TS/strict-index/lint、1067 Node TAP零skip、85migrations、6DB、1實際browser zero flaky全部PASS；第4/4獨立Critical複審精確25檔及hash一致無findings，canonical READY。精確head CI與protected PR待交付，其餘F2 scope未縮減。證據 `remaining-capabilities-f2.1-local-receipt-20261006.json`。
 
+F2.1 #374 已expected-head受保護squash merge `daa6372a6e0f060e93de2c2e10afa0c9c4d09c73`；push/PR quality與Preview全部SUCCESS，accepted/merged tree同為 `4f63c92d6c24e6585484912863704b3ecffd1f43`。交付證據 `remaining-capabilities-f2.1-delivery-20261006.json`。F2階梯/多層等完整剩餘範圍持續實作。
+
+F2.1已交付：#374 expected-head squash merge `daa6372a6e0f060e93de2c2e10afa0c9c4d09c73`，acceptedhead `ff9ea27896689d9983a203832993b22e4d33097b`，tree `4f63c92d6c24e6585484912863704b3ecffd1f43` 一致；精確push/PR CI雙SUCCESS。
+
+| F2.2 | F2剩餘階梯／多層佣金；以F2.1已交付契約為base | immutable收入快照、refund/provider/tenant契約 | root唯一writer、Critical readonlyreview task2/4 | 商家政策UI→exactcheckout→paid tier/counter→全部beneficiary refunds/disputes→portal；併發/冪等/跨租戶/DB/browser/review/canonical/CI | 106targetedunits、86migrations+53DB PASS；browser與獨立Critical review執行中 | IMPLEMENTED_PENDING_VALIDATION |
+
+F2.2 latest source `sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0`：4605 Vitest、1067 TAP零skip、86 migrations、61 DB、1實際browser、lint/TS/strict全部PASS。抽離純payout helper後canonical gate僅因最新獨立review缺證據BLOCKED；同task dispatch4/4已用盡，額外1次核准待回覆，不宣稱READY或交付。收據 `remaining-capabilities-f2.2-current-regression-20261006.json`。
 
 本次社群接入 master `daa6372a`；F2.1 #374已交付、tree一致。F1.2舊head c968 CI雙SUCCESS；整合後129models/86migrations需重新驗證。最新獨立review同task dispatch4/4已用滿，extension待owner回覆，不宣稱已交付。
 Q2 分支既有 checkpoint：
@@ -198,6 +206,10 @@ Q2 latest exact candidate `b0362e3a`：87 migrations、67/67 DB、2/2 browser、
 
 A1 domain workflow migration: exact source `bf45235f8b10fa1fded2da0a4c079e5b883cfef0`, current base `a10728f4147ce84ad6d33524ed0e412660602283`; root sole writer, one readonly reviewer, task `a1-canonical-domain-workflows` dispatch2/4. Six thin project adapters plus shared domain contracts preserve product actors, attribution/commission/refund/chargeback, tenant, browser console/network/privacy, design and canonical acceptance requirements. Six skill validations, links/anchors and 38 routing tests PASS; original MAJOR/MINOR fixed and independent incremental review findings=[]; observed unknown. Canonical revision `sha256:452d43d895b3fb606aed31ab8be39a8c50fe16fecd5a3f203133080f7a6688e6` READY. Evidence `remaining-capabilities-a1-domain-workflows-20261007.json`. Exact-head CI and protected PR delivery pending; remaining historical application/workflow scope retained, A1/Goal NOT COMPLETE.
 
+### F2 remuneration current main integration 2026-10-07
+
+Same task f2-merchant-remuneration, root sole writer. Integrated c72b5089; complete137-model/93-migration inventory, original migrations untouched. 29 remuneration DB + 61 webhook/commission DB + 1 actual financial browser + 39 unit + 5 inventory Vitest + 12 migration TAP PASS; TypeScript/lint PASS, zero skip/flaky, cleanup/sourceUnchanged PASS. Full1601-file source fingerprint retained in new proof `remaining-capabilities-f2-remuneration-main-integrated-validation-20261007.json`. Exact93-page guard inventory verified unchanged. Original untracked evidence preserved. Task dispatch4/4; extra independent review authorization pending, exact new-head CI pending, canonical NOT_READY and no delivery.
+
 ### F2.2 current main integration 2026-10-07
 
 Same task f2-commission-policy, root sole writer. Original dirty checkpoint worktree preserved; clean isolated integration includes main c72b5089. Complete 133 model / 88 migration inventory; 61 DB refund/commission regressions + 1 actual merchant browser + 142 unit + 5 inventory Vitest + 12 migration TAP, TypeScript/lint PASS; zero skip/flaky, cleanup PASS. Evidence: `remaining-capabilities-f2.2-main-integrated-browser-20261007.json`. Latest independent review and exact new-head CI pending; canonical NOT_READY, no delivery. Dispatch count is unchanged.
@@ -218,3 +230,7 @@ Commission integration with delivered community a5964d83: 136 models and 89 cano
 ### PWA integration with delivered community 2026-10-08
 
 Root resolved the current a5964d83 main integration without losing locale or community behavior: structural AST comparison after removing locale-only additions was identical for community component, community page and course page. Main guard-capable browser runner retained. Earlier PWA 88-migration/9-DB/3-browser PASS predates this integration and does not prove the new candidate. Sixth readonly final review explicitly approved by owner; fresh complete validation and exact-head CI still required. Community PR373 is delivered with accepted/merged tree equality. Goal IN_PROGRESS.
+
+### F2 withholding current delivered-main integration 20261008
+
+Preserved both documents and forward schema capabilities while integrating delivered community/PWA `e573a101`. Current 140 models / 94 migrations / 94 protected pages, vendorManager 55. Exact inventory assertions updated; historical migration windows/checksums and safety assertions retained. Previous fifth review applies to head `23b25045`; latest integrated candidate requires new current evidence, acceptance and review. Not delivered.

@@ -1,0 +1,33 @@
+{
+  "task_id": "f2-merchant-remuneration",
+  "dispatch": 1,
+  "maximum_dispatches": 4,
+  "independent": true,
+  "resolved_model": "gpt-6.1-sol",
+  "resolved_effort": "high",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "acceptance_gate_eligible": false,
+  "limitation": "Findings review only; canonical Critical fallback effort still required",
+  "findings": [
+    {
+      "severity": "MAJOR",
+      "file": "src/app/actions.ts",
+      "issue": "Payer finance authorization was not rechecked inside the payment write transaction",
+      "original_review_status": "code_resolved_pending_root_validation",
+      "remediation": "Transaction rechecks current tenant membership, finance role and active user before payout writes",
+      "unit_validation": "334 actions tests PASS including revoke-after-session with no payout/commission/audit writes",
+      "browser_after_fix": "PENDING"
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/lib/affiliate-remuneration-quotes.ts",
+      "issue": "Re-fetching unchanged exported terms created a new unsigned revision and blocked valid payment proof",
+      "original_review_status": "open",
+      "remediation": "Reuse exported snapshot when existing ledger/profile/policy/rule/money binding matches",
+      "database_after_fix": "RUNNING_SESSION_70533"
+    }
+  ],
+  "status": "REMEDIATION_VALIDATION_PENDING",
+  "delivered": false
+}
