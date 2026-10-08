@@ -17,6 +17,7 @@ import { saveStudentLessonProgress } from "../src/lib/student-course-learning.ts
 import { confirmLearnerConsultationReminder,listLearnerConsultationReminders } from "../src/lib/learner-consultation-reminders.ts";
 import { reserveConsultationBooking } from "../src/app/actions/consultation-actions.ts";
 import { recordLearnerLiveStartedSources } from "../src/lib/learner-live-notifications.ts";
+import { replaceLiveProductBindings } from "../src/lib/live-product-bindings.ts";
 import { recordLearnerNotificationSourceEvent, materializeLearnerNotificationSourceEvent } from "../src/lib/learner-notification-source-events.ts";
 import { recordLearnerPaymentNotificationSources } from "../src/lib/learner-payment-notifications.ts";
 const sourceFiles = ["src/lib/learner-notification-access.ts","src/lib/course-community.ts","prisma/migrations/20261006070000_course_community/migration.sql","src/lib/learner-consultation-reminders.ts","src/lib/learner-notification-job.ts","prisma/migrations/20261007040000_learner_notification_source_schedule/migration.sql","src/app/actions/consultation-actions.ts","src/app/actions.ts","src/lib/learner-live-notifications.ts","src/lib/learner-payment-notifications.ts","src/lib/learner-notification-source-events.ts", "src/lib/course-curriculum.ts", "prisma/migrations/20261007030000_learner_notification_source_events/migration.sql","src/lib/learner-verification-delivery.ts", "prisma/migrations/20261007020000_learner_verification_delivery/migration.sql","package.json", "package-lock.json", "prisma/schema.prisma", "prisma/migrations/20261007010000_learner_notifications/migration.sql",
@@ -26,6 +27,7 @@ function sourceSnapshot() {
  const hashes = Object.fromEntries(sourceFiles.map(file => [file,createHash("sha256").update(fs.readFileSync(path.resolve(file))).digest("hex")]));
  return { files: hashes, revision: `sha256:${createHash("sha256").update(JSON.stringify(hashes)).digest("hex")}` };
 }
+sourceFiles.push("src/lib/live-product-bindings.ts");
 const sourceAtStart = sourceSnapshot();
 let fixtureStage = "not_started";
 import { grantCommerceEntitlement } from "../src/lib/commerce-order-fulfillment.ts";
@@ -363,6 +365,16 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
     });
     const live = await db.live.create({data:{vendorId:vendor.id,title:"Synthetic purchased course live",slug:`synthetic-notify-live-${randomUUID()}`,scheduledAt:new Date(),status:"scheduled"}});
     await db.liveProduct.create({data:{vendorId:vendor.id,liveId:live.id,productId:product.id,isVisible:true}});
+    await check("extracted live binding replacement cannot delete another tenant bindings",async()=>{
+      const before=await db.liveProduct.findMany({where:{vendorId:vendor.id,liveId:live.id}});
+      await db.$transaction(tx=>replaceLiveProductBindings(tx,{vendorId:foreign.id,liveId:live.id,productIds:[]}));
+      assert.deepEqual(await db.liveProduct.findMany({where:{vendorId:vendor.id,liveId:live.id}}),before);
+    });
+    await check("extracted live binding replacement rolls back deletion and first insert on later failure",async()=>{
+      const before=await db.liveProduct.findMany({where:{vendorId:vendor.id,liveId:live.id}});
+      await assert.rejects(()=>db.$transaction(tx=>replaceLiveProductBindings(tx,{vendorId:vendor.id,liveId:live.id,productIds:[product.id,randomUUID()]})),error=>error.code==="P2003");
+      assert.deepEqual(await db.liveProduct.findMany({where:{vendorId:vendor.id,liveId:live.id}}),before);
+    });
     const liveStart=new Date();
     await check("live source insert failure rolls back owning lifecycle transition",async()=>{
       await db.$executeRawUnsafe(`CREATE FUNCTION learner_live_synthetic_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW."event"='live_started' THEN RAISE EXCEPTION 'synthetic live source fault' USING ERRCODE='40001'; END IF; RETURN NEW; END $$`);
@@ -665,9 +677,9 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl }) => {
   if (sourceSnapshot().revision !== sourceAtStart.revision) throw new Error("notification-source-changed-during-verification");
   } finally { await db.$disconnect(); }
 } });
-const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 80 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
+const receipt = { source: sourceAtStart, status: migration.status === "PASS" && results.length === 82 && results.every(test => test.status === "PASS") ? "PASS" : "FAIL", migrationCount: migration.migrationNames?.length, tests: results, cleanup: migration.cleanup, safety: { loopbackOnly: true, syntheticOnly: true, externalOperations: false, providerCallbacks: "synthetic-only;not actual provider delivery", rawLogsSaved: false } };
 fs.mkdirSync(path.resolve(".ai-team/reports"), { recursive: true });
 fs.writeFileSync(path.resolve(`.ai-team/reports/learner-notifications-${randomUUID()}.json`), JSON.stringify(receipt, null, 2)+"\n");
 fs.writeFileSync(path.resolve(".ai-team/reports/learner-notifications-db-latest.json"), JSON.stringify(receipt, null, 2)+"\n");
 process.stdout.write(JSON.stringify(receipt)+"\n");
-if (receipt.status !== "PASS" || results.length !== 80 || results.some(test => test.status !== "PASS")) process.exitCode = 1;
+if (receipt.status !== "PASS" || results.length !== 82 || results.some(test => test.status !== "PASS")) process.exitCode = 1;

@@ -2383,7 +2383,7 @@ describe("upsertLiveAction", () => {
       where: { id: "live-1", vendorId: "vendor-1" },
       data: expect.objectContaining({ status: "scheduled", replayEnabled: true }),
     });
-    expect(mocks.liveProductDeleteMany).toHaveBeenCalledWith({ where: { liveId: "live-1" } });
+    expect(mocks.liveProductDeleteMany).toHaveBeenCalledWith({ where: { vendorId: "vendor-1", liveId: "live-1" } });
     expect(mocks.liveProductCreate).toHaveBeenCalledWith({
       data: { vendorId: "vendor-1", liveId: "live-1", productId: "product-1", sortOrder: 1, isPinned: true },
     });
