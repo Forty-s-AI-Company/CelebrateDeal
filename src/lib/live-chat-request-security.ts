@@ -39,7 +39,6 @@ export function rateLimitRequestWithIdentity(request: Request, clientIp: string 
   headers.delete("x-forwarded-for");
   headers.delete("x-real-ip");
   headers.set("cf-connecting-ip", clientIp ?? "unknown");
-  // Construct the limiter-only request from a clone so reading this request's
-  // body later in POST does not compete with the stream owned by the route.
-  return new Request(request.body ? request.clone() : request, { headers });
+  // 限流只讀 metadata；不分岔 body，避免未消費的分支阻塞超量串流取消。
+  return new Request(request.url, { method: request.method, headers });
 }
