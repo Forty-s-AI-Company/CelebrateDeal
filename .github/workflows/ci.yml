@@ -198,6 +198,9 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
+      - name: Referral sharing database and browser gate
+        run: node scripts/affiliate-portal-browser-qa.mjs --browser
+
       - name: Funnel development harness browser gate
         run: node scripts/funnel-elements-browser-qa.mjs
 

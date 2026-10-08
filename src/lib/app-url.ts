@@ -64,7 +64,7 @@ export function getCanonicalAppUrl(env: NodeJS.ProcessEnv = process.env) {
  * accepted only when it exactly matches VERCEL_URL; all other deployments use
  * the configured canonical origin.
  */
-export function getPaymentReturnAppUrl(request: Request, env: NodeJS.ProcessEnv = process.env) {
+export function getBrowserReturnAppUrl(request: Request, env: NodeJS.ProcessEnv = process.env) {
   const canonical = getCanonicalAppUrl(env);
   const requestOrigin = new URL(request.url).origin;
   if (requestOrigin === canonical) return canonical;
@@ -74,4 +74,9 @@ export function getPaymentReturnAppUrl(request: Request, env: NodeJS.ProcessEnv 
 
   const expectedPreviewOrigin = new URL(`https://${vercelUrl}`).origin;
   return requestOrigin === expectedPreviewOrigin ? requestOrigin : canonical;
+}
+
+/** Preserve the payment API contract while sharing trusted browser-return origins. */
+export function getPaymentReturnAppUrl(request: Request, env: NodeJS.ProcessEnv = process.env) {
+  return getBrowserReturnAppUrl(request, env);
 }

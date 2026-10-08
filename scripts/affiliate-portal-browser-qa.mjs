@@ -9,6 +9,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const receipt = { schemaVersion: "affiliate-portal-browser/v1", status: "NOT_STARTED", tests: { total: 0, passed: 0, failed: 0, skipped: 0 }, cleanup: null, startedAt: new Date().toISOString(), finishedAt: null };
 const includeBrowser = process.argv.includes("--browser");
 const migration = await runMigration({ afterMigrate: async ({ databaseUrl, environment, tempRoot }) => {
+  // Generate against the runner-owned database without loading dotenv files.
+  const generated = spawnSync(process.execPath, [path.join(root, "node_modules/prisma/build/index.js"), "generate", "--config", "prisma.playwright.config.ts"], {
+    cwd: root, windowsHide: true, stdio: "ignore",
+    env: { ...environment, DATABASE_URL: databaseUrl, DIRECT_URL: databaseUrl },
+  });
+  if (generated.status !== 0) throw new Error("affiliate-portal-client-generation-failed");
   const output = path.join(tempRoot, "course-vitest.json");
   const child = spawnSync(process.execPath, [path.join(root, "node_modules/vitest/vitest.mjs"), "run", "--config", "vitest.affiliate-portal-db.config.ts", "--reporter=json", "--outputFile", output], {
     cwd: root, windowsHide: true, encoding: "utf8", maxBuffer: 4 * 1024 * 1024,
@@ -41,7 +47,7 @@ const migration = await runMigration({ afterMigrate: async ({ databaseUrl, envir
     if (browser.status !== 0) receipt.browserFailure = `${browser.stdout ?? ""}\n${browser.stderr ?? ""}`.split(/\r?\n/u).filter((line) => /^::error(?: file=tests\/e2e\/[A-Za-z0-9_.\/-]+,line=\d+)?::playwright /u.test(line)).slice(0, 10);
     const browserResult = JSON.parse(fs.readFileSync(browserReport, "utf8"));
     receipt.browser = { expected: browserResult.stats.expected, unexpected: browserResult.stats.unexpected, skipped: browserResult.stats.skipped, flaky: browserResult.stats.flaky };
-    if (browser.status !== 0 || receipt.browser.expected !== 1 || receipt.browser.unexpected !== 0 || receipt.browser.skipped !== 0 || receipt.browser.flaky !== 0) throw new Error("course-browser-gate-failed");
+    if (browser.status !== 0 || receipt.browser.expected !== 2 || receipt.browser.unexpected !== 0 || receipt.browser.skipped !== 0 || receipt.browser.flaky !== 0) throw new Error("course-browser-gate-failed");
   }
 } });
 receipt.status = migration.status;

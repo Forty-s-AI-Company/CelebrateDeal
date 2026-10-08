@@ -1,0 +1,41 @@
+{
+  "receipt": {
+    "schemaVersion": "affiliate-portal-browser/v1",
+    "status": "BLOCKED_OR_FAILED",
+    "tests": {
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T17:04:36.626Z",
+    "finishedAt": "2026-10-07T17:08:13.805Z",
+    "failedTitles": [],
+    "browserFailure": [
+      "::error file=tests/e2e/verified-registration-share.spec.ts,line=54::playwright status=failed retry=0 class=test_error_location",
+      "::error file=tests/e2e/verified-registration-share.spec.ts,line=54::playwright status=failed retry=1 class=test_error_location",
+      "::error file=tests/e2e/verified-registration-share.spec.ts,line=13::playwright status=failed retry=1 first_status=failed first_duration_ms=1501"
+    ],
+    "closedDiagnostics": [
+      "REFERRAL_SHARE:missing_session"
+    ],
+    "browser": {
+      "expected": 1,
+      "unexpected": 1,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "root_cause_confirmed": true,
+  "root_cause": "Installed NextRequest normalizes loopback 127.0.0.1 to localhost. Verification redirect used request.url, crossing cookie host scope.",
+  "deterministic_observation": {
+    "input_origin": "http://127.0.0.1:31028",
+    "next_request_origin": "http://localhost:31028",
+    "old_redirect_origin": "http://localhost:31028"
+  },
+  "fix": "Use existing server-owned canonical/explicit Preview return origin contract; preserve auth/CSRF; remove temporary diagnostics."
+}
