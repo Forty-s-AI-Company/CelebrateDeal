@@ -33,7 +33,7 @@ function pageFixture() {
   const page = { goto: vi.fn(), getByTestId: vi.fn(() => form), waitForURL: vi.fn(), close: vi.fn() };
   return { page, form, click };
 }
-function runnerFixture({ completed = true, refundStatus = "1", finalCount = 1 } = {}) {
+function runnerFixture({ completed = true, refundStatus = "2", finalCount = 1, providerPatch = {} } = {}) {
   const { receipt, proof } = fixture();
   const first = pageFixture(); const duplicate = pageFixture();
   const final = { ...proof, status: "refunded", refundedAmountCents: 100, refundRecordCount: 1,
@@ -43,7 +43,8 @@ function runnerFixture({ completed = true, refundStatus = "1", finalCount = 1 } 
   if (completed) loadProof.mockResolvedValueOnce(final).mockResolvedValueOnce({ ...final, refundRecordCount: finalCount });
   return { first, duplicate, options: { receipt, transactionId, expectedSourceSha: source,
     context: { newPage: vi.fn().mockResolvedValueOnce(first.page).mockResolvedValueOnce(duplicate.page) }, loadProof,
-    queryProvider: vi.fn(async () => ({ MerTradeNo: order, TradeNo: trade, TradeAmt: 1, RefundStatus: refundStatus })),
+    queryProvider: vi.fn(async () => ({ MerTradeNo: order, TradeNo: trade, TradeAmt: 1, RefundStatus: refundStatus,
+      TradeStatus: "1", PaymentType: "1", DataSource: "A", RefundAmt: 1, RemainAmt: 0, ...providerPatch })),
     now: () => now, sleep: vi.fn() } };
 }
 it("unit orchestration uses the same real form contract twice and returns only safe references", async () => {
@@ -65,9 +66,28 @@ it("stops on pending persistence without resubmitting the reserved refund", asyn
   expect(run.options.queryProvider).not.toHaveBeenCalled();
   expect(run.duplicate.page.close).toHaveBeenCalledTimes(1);
 });
-it.each(["0", "2", "8"])("does not accept incomplete/ambiguous provider state %s", async (refundStatus) => {
+it.each(["0", "1", "3", "8"])("does not accept incomplete/ambiguous provider state %s", async (refundStatus) => {
   const run = runnerFixture({ refundStatus });
   await expect(consumePendingRefund(run.options)).rejects.toThrow();
+  expect(run.duplicate.click).not.toHaveBeenCalled();
+  expect(run.options.queryProvider).toHaveBeenCalledTimes(20);
+});
+it("waits for terminal provider success without resubmitting a pending refund", async () => {
+  const run = runnerFixture();
+  run.options.queryProvider.mockResolvedValueOnce({ MerTradeNo: order, TradeNo: trade, TradeAmt: 1,
+    TradeStatus: "1", PaymentType: "1", DataSource: "A", RefundStatus: "1", RefundAmt: 1, RemainAmt: 0 });
+  await expect(consumePendingRefund(run.options)).resolves.toMatchObject({ status: "COMPLETED" });
+  expect(run.options.queryProvider).toHaveBeenCalledTimes(2);
+  expect(run.first.click).toHaveBeenCalledTimes(1);
+  expect(run.duplicate.click).toHaveBeenCalledTimes(1);
+});
+it.each([{ DataSource: "B" }, { PaymentType: "2" }, { TradeStatus: "4" }, { RefundAmt: 0 },
+  { RefundAmt: 2 }, { RemainAmt: 1 }, { TradeAmt: "1junk" }, { TradeNo: "other-trade" },
+  { MerTradeNo: "other-order" }, { MerTradeNo: undefined }, { TradeNo: undefined },
+  { MerTradeNo: ` ${order}` }])("rejects incomplete or mismatched terminal provider evidence %j", async (providerPatch) => {
+  const run = runnerFixture({ providerPatch });
+  await expect(consumePendingRefund(run.options)).rejects.toThrow();
+  expect(run.first.click).toHaveBeenCalledTimes(1);
   expect(run.duplicate.click).not.toHaveBeenCalled();
 });
 it("rejects an additional refund row after the duplicate action", async () => {

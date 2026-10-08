@@ -1,4 +1,5 @@
 import { SCHEMA_VERSION, reference } from "./payuni-sandbox-payment-handoff.mjs";
+import { isCompletedFullCreditRefund } from "./payuni-credit-refund-query-contract.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -76,9 +77,13 @@ async function consumePendingRefund({ receipt, transactionId, expectedSourceSha,
     }
     requireCondition(completed?.singleProcessedRefund === true && completed.refundRecordCount === 1
       && completed.status === "refunded" && completed.refundedAmountCents === completed.grossAmountCents);
-    const provider = await queryProvider();
-    requireCondition(reference(provider?.MerTradeNo) === receipt.orderRef && reference(provider?.TradeNo) === receipt.tradeRef
-      && Number(provider.TradeAmt) === receipt.amount && String(provider.RefundStatus) === "1");
+    let providerCompleted = false;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (isCompletedFullCreditRefund(await queryProvider(), receipt)) { providerCompleted = true; break; }
+      // Poll the exact provider trade; never submit a second refund while pending.
+      await sleep(1000);
+    }
+    requireCondition(providerCompleted);
     await duplicateForm.getByRole("button", { name: "退款", exact: true }).click();
     await duplicate.waitForURL(`${STAGING_ORIGIN}/admin/billing/dashboard?error=refund_already_processed`);
     const final = await loadProof(transactionId, expectedSourceSha);

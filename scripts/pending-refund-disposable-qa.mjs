@@ -18,7 +18,8 @@ const sourceFiles = ["prisma/schema.prisma", "prisma.playwright.config.ts", "vit
   "scripts/canonical-migration-source-fingerprint.mjs", "scripts/canonical-migration-source-fingerprint.test.mjs",
   "scripts/payuni-sandbox-payment-handoff.mjs", "scripts/payuni-sandbox-payment-handoff.test.mjs",
   "scripts/payuni-sandbox-pending-refund-consumer.mjs", "scripts/payuni-sandbox-pending-refund-consumer.test.mjs",
-  "scripts/payuni-sandbox-external-qa.mjs", "src/app/api/admin/ops/payuni/pending-refund-proof/route.ts",
+  "scripts/payuni-sandbox-external-qa.mjs", "scripts/payuni-credit-refund-query-contract.mjs",
+  "src/lib/payment-providers/payuni.test.ts", "src/app/api/admin/ops/payuni/pending-refund-proof/route.ts",
   "src/app/api/admin/ops/payuni/pending-refund-proof/route.test.ts", "src/lib/payuni-pending-refund-proof.ts",
   "src/lib/payuni-refund-execution.ts", "src/lib/payuni-refund-reconciliation.ts", "src/lib/payment-refund-accounting.ts",
   "src/lib/payment-webhooks.ts", "src/lib/platform-subscription-refund.ts", "src/lib/wp4-runtime-boundary.ts",
@@ -44,7 +45,7 @@ const migration = await runMigration({ afterMigrate: async ({ databaseUrl, envir
   const report = JSON.parse(fs.readFileSync(output, "utf8"));
   summary.tests = { total: report.numTotalTests, passed: report.numPassedTests, failed: report.numFailedTests, skipped: report.numPendingTests };
   const suites = report.testResults.map((suite) => path.basename(suite.name));
-  if (child.status !== 0 || !report.success || report.numPendingTests !== 0 || report.numTotalTests !== 8
+  if (child.status !== 0 || !report.success || report.numPendingTests !== 0 || report.numTotalTests !== 11
     || suites.length !== expectedSuites.length || expectedSuites.some((suite) => !suites.includes(suite))) throw new Error("refund-db-gate-failed");
   assertCanonicalMigrationStable(before, captureCanonicalMigrationFingerprint(root, sourceFiles));
 } });
