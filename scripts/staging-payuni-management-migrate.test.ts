@@ -42,8 +42,11 @@ describe("exact staging migration adapter", () => {
 
   it("rejects the expanded candidate instead of applying unrelated LINE or course migrations", () => {
     const current = inventory();
-    expect(current).toHaveLength(94);
+    expect(current).toHaveLength(95);
     expect(current.some((item) => item.name === "20261006070000_course_community")).toBe(true);
+    expect(current.some((item) => item.name === "20261006140000_subscription_refund_entitlement_state")).toBe(true);
+    expect(current.some((item) => item.name === "20261007002000_reconcile_legacy_subscription_refund_state")).toBe(true);
+    expect(current.some((item) => item.name === "20261007110000_live_private_chat_messages")).toBe(true);
     expect(current.some((item) => item.name === "20261004154500_student_portal_access_tokens")).toBe(true);
     expect(current.some((item) => item.name === "20261004140000_line_rich_menu_drafts")).toBe(true);
     expect(current.some((item) => item.name === "20261006040000_native_course_learning")).toBe(true);

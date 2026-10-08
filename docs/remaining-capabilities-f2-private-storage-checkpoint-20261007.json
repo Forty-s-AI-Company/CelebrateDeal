@@ -1,0 +1,45 @@
+{
+  "historical_integrity": {
+    "tests_skipped": false,
+    "checksums_changed": false,
+    "historical_migrations_changed": false,
+    "fixed_21_pending_preserved": true,
+    "fixed_79_prefix_preserved": true
+  },
+  "ownership": {
+    "writer": "root",
+    "max_dispatches": 4,
+    "dispatches": 0
+  },
+  "db_receipt": "docs/remaining-capabilities-f2-private-storage-db-20261007.json",
+  "parent_goal_id": "remaining-capabilities-20261005",
+  "status": "PRIVATE_STORAGE_DB_LOCAL_VALIDATED_FULL_TASK_INCOMPLETE",
+  "base_head": "76607c8c3df99dfc4f945817133ecd81eeae63fa",
+  "delivered": false,
+  "created_at": "2026-10-07T02:40:01.6302717Z",
+  "remaining": [
+    "transactional viewer/instructor API and CSRF",
+    "actual private UI",
+    "current-source full browser journeys",
+    "independent Critical review",
+    "canonical acceptance and exact-head CI",
+    "protected PR delivery"
+  ],
+  "tests": {
+    "db_skipped": 0,
+    "node_tap_passed": 12,
+    "targeted_vitest_files": 12,
+    "cleanup": "PASS",
+    "db_passed": 12,
+    "eslint": "PASS",
+    "targeted_vitest_passed": 121,
+    "typescript": "PASS"
+  },
+  "schema": {
+    "migrations": 86,
+    "models": 127,
+    "added_model": "LivePrivateChatMessage",
+    "added_migration": "20261007110000_live_private_chat_messages"
+  },
+  "task_id": "f2-live-private-chat-purchase-broadcast"
+}

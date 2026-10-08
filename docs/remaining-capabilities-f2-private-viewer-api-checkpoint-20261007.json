@@ -1,0 +1,99 @@
+{
+  "delivered": false,
+  "contracts": [
+    "active admission and verified fss1 bound conversation",
+    "scoped signed cursor and full50-page history",
+    "fresh authorization and moderation before each Serializable retry",
+    "current CSRF token issued only after authorized read",
+    "trusted write IP and same-origin client marker",
+    "strict body prevents submission override",
+    "public chat security helpers extracted without changing behavior"
+  ],
+  "status": "VIEWER_API_AND_TRANSACTION_SERVICE_LOCAL_VALIDATED_FULL_TASK_INCOMPLETE",
+  "sources": [
+    {
+      "path": "src/lib/live-private-chat.ts",
+      "sha256": "9c406618d906e000321b1fe883dc547de923537c18b49609905957bafcb7521f"
+    },
+    {
+      "path": "src/lib/live-private-chat-contract.ts",
+      "sha256": "07484d31048e7520b16300e4f00b7e1c2e2f79e198eff9ccd0a2802b0afd6b43"
+    },
+    {
+      "path": "src/lib/live-chat.ts",
+      "sha256": "8682537a22a6a706d8cd4e479bafc38f951e22d4bbd6c1f2408a1e67144acb0c"
+    },
+    {
+      "path": "src/lib/live-chat-request-security.ts",
+      "sha256": "8419f38ee746335e1508d78b13b06e3d9963bf79f3a364b2faa0114a9f248414"
+    },
+    {
+      "path": "src/lib/live-private-chat-storage.db.test.ts",
+      "sha256": "7648ead6156305fbbf290ab206b50e20a2673ccf515910ed428a2c831cd485b0"
+    },
+    {
+      "path": "src/app/api/live-chat/messages/route.ts",
+      "sha256": "9954f063cd21f3b5a39d8fa23ae663c7396b2edbbb34216025f163e36ce75a73"
+    },
+    {
+      "path": "src/app/api/live-chat/private/route.ts",
+      "sha256": "49aa57bec366f762b116a8366e5b159346f0a10128ca7eb8e312587e8c06e6c6"
+    },
+    {
+      "path": "src/app/api/live-chat/private/route.test.ts",
+      "sha256": "8325f26bf11fc33c9f0a72ceab9f8da58ea5f7f7905e9095af2e1103f49fcad3"
+    },
+    {
+      "path": "scripts/live-private-commerce-disposable-qa.mjs",
+      "sha256": "b3a8849f4d1149bbf5e0cd898b02078937d514fda7bdffa55ee636c5ec5564af"
+    },
+    {
+      "path": "docs/codex-goal/API_CONTRACT_REGISTRY.md",
+      "sha256": "4f15468b7e18476a0661969c5bc9e6a4bc90fa2ede80a7d401856bb4cc0d3730"
+    }
+  ],
+  "remaining": [
+    "instructor current role/tenant/project permission API",
+    "actual instructor and viewer UI",
+    "current source actual login browser and negative journeys",
+    "independent Critical review",
+    "canonical acceptance",
+    "exact head CI and protected delivery"
+  ],
+  "db_receipt": "docs/remaining-capabilities-f2-private-viewer-service-db-20261007.json",
+  "base_head": "e951810de4ea66a7df8047f60af0f9f4806c1d2b",
+  "task_id": "f2-live-private-chat-purchase-broadcast",
+  "tests": {
+    "unit_failed": 0,
+    "unit_skipped": 0,
+    "acceptance": "NOT_READY",
+    "browser": "NOT_RUN_CURRENT_VIEWER_API",
+    "db_skipped": 0,
+    "migrations": 86,
+    "typescript": "PASS",
+    "db_passed": 16,
+    "cleanup": "PASS",
+    "unit_passed": 136,
+    "db_failed": 0,
+    "independent_review": "PENDING",
+    "unit_files": 14,
+    "eslint": "PASS"
+  },
+  "created_at": "2026-10-07T02:47:11.8093698Z",
+  "parent_goal_id": "remaining-capabilities-20261005",
+  "initial_failure": {
+    "cause": "Strict encryption scope received extra displayName from verified viewer projection",
+    "evidence": "docs/remaining-capabilities-f2-private-service-initial-db-failure-20261007.json",
+    "db_passed": 13,
+    "db_failed": 3,
+    "fix": "Pass only vendor/live/submission/message/source to encryption"
+  },
+  "ownership": {
+    "writer": "root",
+    "observed_effort": "unknown",
+    "observed_model": "unknown",
+    "readonly_helpers": 0,
+    "max_dispatches": 4,
+    "dispatches": 0
+  }
+}

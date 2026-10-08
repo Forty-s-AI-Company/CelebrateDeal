@@ -169,6 +169,7 @@ model Vendor {
   emailDeliveries                  EmailDelivery[]
   liveReminderReconciliationJobs   LiveReminderReconciliationJob[]
   liveChatMessages                 LiveChatMessage[]
+  livePrivateChatMessages          LivePrivateChatMessage[]
   liveNotificationRules            LiveNotificationRule[]
   emailSuppressions                EmailSuppression[]
   lineRichMenuDraft                 LineRichMenuDraft?
@@ -310,6 +311,7 @@ model VendorMember {
   supportCaseEvents           SupportCaseEvent[]            @relation("SupportCaseEventActor")
   supportRefundsRequested     SupportRefundHandoff[]        @relation("SupportRefundRequestedBy")
   paymentMethodSetupConsents  PaymentMethodSetupIntent[]
+  authoredPrivateChatMessages LivePrivateChatMessage[]
 
   @@unique([vendorId, userId])
   @@unique([vendorId, id])
@@ -555,6 +557,7 @@ model FormSubmission {
   affiliateClick           AffiliateClick?           @relation(fields: [affiliateClickId], references: [id], onDelete: SetNull)
   teamAttribution          TeamLeadAttribution?
   chatMessages             LiveChatMessage[]
+  privateChatMessages      LivePrivateChatMessage[]
   liveInteractionResponses LiveInteractionResponse[]
   funnelSubmission         FunnelSubmission?
 
@@ -638,6 +641,7 @@ model Live {
   studioDrafts               LiveStudioDraft[]
   reminderReconciliationJobs LiveReminderReconciliationJob[]
   liveChatMessages           LiveChatMessage[]
+  privateChatMessages        LivePrivateChatMessage[]
   questions                  LiveQuestion[]
   interactionRuns            LiveInteractionRun[]
   interactionResponses       LiveInteractionResponse[]
@@ -880,6 +884,25 @@ model LineDelivery {
   @@index([status, nextAttemptAt, claimedAt])
   @@index([vendorId, trigger, createdAt])
   @@index([lineUserIdentityId, createdAt])
+}
+
+/// Separate encrypted conversations; public/scheduled chat remains unchanged.
+model LivePrivateChatMessage {
+  id               String   @id
+  vendorId         String
+  liveId           String
+  formSubmissionId String
+  source           String
+  authorMemberId   String?
+  bodyEncrypted    String
+  createdAt        DateTime @default(now())
+
+  vendor     Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  live       Live           @relation(fields: [vendorId, liveId], references: [vendorId, id], onDelete: Cascade)
+  submission FormSubmission @relation(fields: [liveId, formSubmissionId], references: [liveId, id], onDelete: Restrict)
+  author     VendorMember?  @relation(fields: [vendorId, authorMemberId], references: [vendorId, id], onDelete: Restrict)
+
+  @@index([vendorId, liveId, formSubmissionId, createdAt, id], map: "LivePrivateChatMessage_conversation_idx")
 }
 
 model LiveChatMessage {

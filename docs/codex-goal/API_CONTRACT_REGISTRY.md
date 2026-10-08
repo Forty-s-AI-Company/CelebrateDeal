@@ -154,6 +154,14 @@
 | `POST /api/live-interactions` | same-origin、client marker、rate limit、有效 viewer session | Zod action union：open／respond／ask_question；已發布且綁定該場的腳本與商品；購買抽獎另驗證簽署的已驗證報名身分及同場已付款訂單 | Serializable transaction 重新檢查互動版本與有效期間；重複回應及領券競爭回 409；成功領券設定 HttpOnly cookie；問題受頻率限制 | 400／401／403／404／409／429；同路徑 unit 與隔離 PostgreSQL 測試；完整瀏覽器付款流程待驗證 |
 
 
+### 2026-10-07 精確活動購買廣播
+
+| Route／method | Caller 與安全邊界 | Input／resource boundary | Side effect 與 response | 目前證據 |
+|---|---|---|---|---|
+| `GET /api/live-purchase-broadcasts` | same-origin client marker；有效本租戶／活動 viewer admission；rate limit | 嚴格且唯一 vendorId／liveId；2048-byte URL；server checkout sourceLiveId；本場可見商品 | 僅最近30分鐘未退款的已付款、非test訂單；最多8筆匿名卡片；opaque display id；private／CDN no-store／Vary Cookie；無外部操作 | 同路徑unit／domain；disposable PG；UI／browser／review／驗收尚待完成 |
+| `GET /api/live-chat/private`、`POST /api/live-chat/private` | Active viewer admission + verified fss1 conversation; same-origin web client; POST trusted ingress IP + CSRF; transactional current blacklist checks | Private encrypted conversation only; strict identity inputs, signed scoped cursor, 50-message pages, deterministic retries, no-store |
+| `GET /api/live-chat/instructor`、`POST /api/live-chat/instructor` | Authenticated current manager and enabled-factor MFA; tenant/member/session derived server-side; stable per-user rate key | Strict live/submission/cursor; transaction rechecks active session/membership, selected project and VERIFIED form binding; POST CSRF | Private encrypted conversations, 50-message/thread pages, idempotent replies, private no-store | unit and disposable PG; browser/review/gate pending |
+
 ### 2026-10-07 聯盟扣繳私人匯出
 
 | Route／method | Caller 與安全邊界 | Input／resource boundary | Side effect 與 response | 目前證據 |

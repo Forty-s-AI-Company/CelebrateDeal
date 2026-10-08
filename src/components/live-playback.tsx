@@ -8,6 +8,8 @@ import { LeadForm } from "@/components/lead-form";
 import { LiveMediaReceiver } from "@/components/live-media-receiver";
 import { canUseLiveAdvancedInteractions, LiveAdvancedInteractions } from "@/components/live-advanced-interactions";
 import { LiveChatPanel } from "@/components/live-chat-panel";
+import { LivePurchaseBroadcastPanel } from "@/components/live-purchase-broadcast-panel";
+import { LiveViewerPrivateChat } from "@/components/live-viewer-private-chat";
 import { trackClientAnalytics } from "@/lib/client-analytics";
 import { formatCurrency } from "@/lib/format";
 import { parseSafeExternalHttpUrl } from "@/lib/external-url";
@@ -326,7 +328,10 @@ export function useLiveAdmission({
   admissionRequired: boolean;
   refreshKey: number;
 }): LiveAdmissionStatus {
-  const [admissionStatus, setAdmissionStatus] = useState<LiveAdmissionStatus>(admissionRequired ? "checking" : "admitted");
+  const scope = JSON.stringify([vendorId, liveId, refreshKey]);
+  const [admission, setAdmission] = useState<{ scope: string; status: LiveAdmissionStatus }>(() => ({
+    scope, status: admissionRequired ? "checking" : "admitted",
+  }));
 
   useEffect(() => {
     if (!admissionRequired) return;
@@ -337,7 +342,7 @@ export function useLiveAdmission({
     const requestAdmission = async (showChecking: boolean) => {
       if (requestInFlight) return;
       requestInFlight = true;
-      if (showChecking) setAdmissionStatus("checking");
+      if (showChecking) setAdmission({ scope, status: "checking" });
       const controller = new AbortController();
       activeController = controller;
       try {
@@ -347,9 +352,9 @@ export function useLiveAdmission({
           body: JSON.stringify({ vendorId, liveId }),
           signal: controller.signal,
         });
-        if (!disposed) setAdmissionStatus(response.ok ? "admitted" : "blocked");
+        if (!disposed) setAdmission({ scope, status: response.ok ? "admitted" : "blocked" });
       } catch {
-        if (!disposed) setAdmissionStatus("blocked");
+        if (!disposed) setAdmission({ scope, status: "blocked" });
       } finally {
         if (activeController === controller) activeController = null;
         requestInFlight = false;
@@ -363,7 +368,7 @@ export function useLiveAdmission({
       activeController?.abort();
       window.clearInterval(interval);
     };
-  }, [admissionRequired, liveId, refreshKey, vendorId]);
+  }, [admissionRequired, liveId, refreshKey, scope, vendorId]);
 
   useEffect(() => {
     if (!admissionRequired) return;
@@ -377,7 +382,9 @@ export function useLiveAdmission({
     };
   }, [admissionRequired, liveId, vendorId]);
 
-  return admissionStatus;
+  // Do not publish an old admission during a scope change or explicit renewal,
+  // even for the render before the effect cleans up the previous request.
+  return !admissionRequired ? "admitted" : admission.scope === scope ? admission.status : "checking";
 }
 
 async function fetchLivePlaybackSource(vendorId: string, liveId: string, runtimeState: LiveRuntimeState) {
@@ -1365,7 +1372,9 @@ function LivePlaybackExperience({
           trackCta={trackCta}
           trackProduct={trackProduct}
         />
-        <div className="max-h-[46vh] min-h-0 overflow-hidden rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md">
+        <div className="max-h-[46vh] min-h-0 overflow-y-auto rounded-2xl border border-white/10 bg-black/30 backdrop-blur-md">
+          {canUseLiveAdvancedInteractions(true, admissionStatus, live.admissionRequired)
+            ? <LiveViewerPrivateChat key={`${live.vendorId}:${live.id}:${admissionStatus}`} vendorId={live.vendorId} liveId={live.id} /> : null}
           <LiveChatPanel
             enabled={live.chatEnabled === true}
             admissionStatus={admissionStatus}
@@ -1375,6 +1384,9 @@ function LivePlaybackExperience({
             onAdmissionInvalid={onAdmissionInvalid}
           />
         </div>
+        {productsAvailable && canUseLiveAdvancedInteractions(true, admissionStatus, live.admissionRequired)
+          ? <LivePurchaseBroadcastPanel key={`${live.vendorId}:${live.id}:${admissionStatus}`}
+            vendorId={live.vendorId} liveId={live.id} onAdmissionInvalid={onAdmissionInvalid} /> : null}
       </div>
 
       <PlaybackNavigation panel={visiblePanel} onPanelChange={onPanelChange} productsAvailable={productsAvailable} />

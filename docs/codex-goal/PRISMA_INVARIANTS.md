@@ -11,8 +11,8 @@
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 140 |
-| Migration directories | 94 |
+| Prisma models | 141 |
+| Migration directories | 95 |
 | Prisma models | 129 |
 | Migration directories | 88 |
 | Isolated PostgreSQL version | 18.3 |
@@ -274,3 +274,14 @@ Current integrated inventory: `20261006120000_merchant_affiliate_policy_snapshot
 Current integrated inventory:
 
 Commission integration with delivered community a5964d83: 136 models and 89 canonical forward migrations. Both community and immutable merchant-affiliate snapshot migrations retained. Updated exact inventory assertions without exclusions or reduced checks; fresh validation pending.
+
+
+## Preserved private-chat inventory notes
+
+> 下列「Inventory 基準」的 PostgreSQL 18.3 與 66/71 套用數是原始 revision 的歷史收據；此前候選曾於 PostgreSQL 17.10 disposable DB 完整套用當時的 80/80 migration，並將 `public` schema 還原至隔離容器。目前候選 chain 已增至 88，該歷史收據不代表新 migration、Staging 或 Production 已套用。
+| Prisma models | 127 |
+## 2026-10-07 本輪私訊資料層
+新增 `LivePrivateChatMessage` 與前向 migration `20261007110000_live_private_chat_messages`。獨立 AES-GCM 密文表；vendor/live、live/submission、vendor/author composite FK、作者來源與密文格式 CHECK、conversation 索引、64hex唯一訊息ID。Disposable PostgreSQL 完整86 migration及12 DB回歸 PASS，含既有廣播6項、私訊6項、併發唯一及跨租戶拒絕。尚無完整私訊 API/UI/browser/review/gate，不能宣稱交付；歷史migration清單與收據保留。
+Current integrated inventory:
+## Private messaging + delivered community/PWA candidate 20261008
+Current inventory: 130 models and 89 forward migrations, including `20261006070000_course_community` and `20261007110000_live_private_chat_messages`. Preserve every historical SQL/checksum and fixed staging replay window.

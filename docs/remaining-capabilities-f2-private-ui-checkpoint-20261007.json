@@ -1,0 +1,98 @@
+{
+  "delivered": false,
+  "sources": [
+    {
+      "sha256": "4b6eaac0ac168e9e4a950c641125efe617ea0a2c726119904f4578a9eaf73713",
+      "path": "src/components/live-private-conversation-panel.tsx"
+    },
+    {
+      "sha256": "1bcbb5d88460e9a863c4e42f4b77a16516dd6f44ff732c326b7aee4d9f681ad8",
+      "path": "src/components/live-instructor-private-chat.tsx"
+    },
+    {
+      "sha256": "e27c461b8cb4c9fe379fb3a4d1b460c8671755cb411e557227f99c450d2bc0a8",
+      "path": "src/components/live-viewer-private-chat.tsx"
+    },
+    {
+      "sha256": "0b3d5b999d8a0dc30b7e42b701e4d44a9d445109b00f9da98159206b8632552c",
+      "path": "src/components/live-private-chat-ui.test.tsx"
+    },
+    {
+      "sha256": "04a655c5161cce5d7092eeefcd348cc8ec37852eab725743410027666dc24dde",
+      "path": "src/components/live-playback.tsx"
+    },
+    {
+      "sha256": "232e79fc9d8dc4b9b2f94a42a7a9a206027a57dc0213baba76301b5eddba7999",
+      "path": "src/components/live-playback.test.tsx"
+    },
+    {
+      "sha256": "22d17a7c443eead6047737bcd253b52adcf8fb2619d40c2708949b5e1272d494",
+      "path": "src/lib/live-private-chat-contract.ts"
+    },
+    {
+      "sha256": "b7aecef46251c536095b29b1b7b0a767132acd235abf2c0a6290eae596753537",
+      "path": "src/app/(app)/lives/[id]/chat/page.tsx"
+    },
+    {
+      "sha256": "e556f09885c6983cb79326c3fec021bc18a2ef2392c408377158b100107f53cd",
+      "path": "src/app/(app)/lives/page.tsx"
+    },
+    {
+      "sha256": "8cba5b2565eff2be4c055e5ea9993539a333dd8f8ad8b20eb0e99dabb824c056",
+      "path": "tests/e2e/wp88-direct-url-guard-matrix.spec.ts"
+    },
+    {
+      "sha256": "36a9b51641dc913737d85f3b32fdd814e23f17710c5aa6bea17b717d8cae5d6b",
+      "path": "scripts/live-private-commerce-disposable-qa.mjs"
+    }
+  ],
+  "ownership": {
+    "max_dispatches": 4,
+    "observed_effort": "unknown",
+    "writer": "root",
+    "readonly_helpers": 0,
+    "dispatches": 0,
+    "observed_model": "unknown"
+  },
+  "features": [
+    "admitted viewer private disclosure retains existing public chat",
+    "scoped remount clears draft and retry state",
+    "GET polling with abort/unmount/revision guards and no browser storage",
+    "CSRF composer with same-UUID retry after uncertain transport",
+    "older message pages and instructor conversation pagination",
+    "live manager page and activity-list navigation"
+  ],
+  "tests": {
+    "db_passed": 23,
+    "db_failed": 0,
+    "eslint": "PASS",
+    "actual_browser": "NOT_RUN",
+    "skipped": 0,
+    "typescript": "PASS",
+    "canonical_acceptance": "NOT_READY",
+    "unit_files": 16,
+    "unit_passed": 146,
+    "cleanup": "PASS",
+    "independent_review": "PENDING",
+    "migrations": 86,
+    "strict_production_index": "PASS"
+  },
+  "base_head": "41fb71d49a9d2cb3d3382e3aecbef0fa453bf75b",
+  "guard_inventory": {
+    "manager_pages": 52,
+    "browser_guard_matrix": "NOT_RUN_LATEST_UI",
+    "all_pages_have_guard": true,
+    "protected_pages": 91
+  },
+  "created_at": "2026-10-07T03:08:40.8202964Z",
+  "db_receipt": "docs/remaining-capabilities-f2-private-ui-bound-db-20261007.json",
+  "remaining": [
+    "actual current-source viewer/instructor/browser journey and negative checks",
+    "independent Critical review and fixes",
+    "canonical acceptance",
+    "exact head CI and protected PR delivery"
+  ],
+  "parent_goal_id": "remaining-capabilities-20261005",
+  "status": "ACTUAL_UI_WIRED_LOCAL_UNIT_DB_VALIDATED_BROWSER_PENDING",
+  "task_id": "f2-live-private-chat-purchase-broadcast"
+}
