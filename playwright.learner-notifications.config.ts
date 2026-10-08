@@ -9,7 +9,8 @@ const server = base.webServer;
 if (!server || Array.isArray(server)) throw new Error("Learner notifications browser gate requires one isolated server.");
 export default defineConfig({
   ...base,
-  testMatch: "learner-notifications.spec.ts",
+  // Keep all seven notification journeys and the full locale/PWA integration.
+  testMatch: ["learner-notifications.spec.ts", "student-portal-localization-pwa.spec.ts"],
   reporter: [["./scripts/playwright-ci-reporter.ts"], ["json", { outputFile: report }]],
   webServer: { ...server, cwd: mirror },
 });

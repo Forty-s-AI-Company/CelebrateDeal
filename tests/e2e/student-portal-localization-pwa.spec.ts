@@ -41,11 +41,18 @@ test("English mailbox login, course and discussion persist locale; PWA stores on
   await expect(page.getByRole("heading",{name:"My courses",exact:true})).toBeVisible();
   await page.getByRole("link",{name:"Start course →",exact:true}).click();
   await expect(page.getByRole("heading",{name:product.name,exact:true})).toBeVisible();
+  const player=page.locator("section").filter({has:page.getByRole("heading",{name:product.name,exact:true})});
+  await expect(player).toHaveCount(1);
+  // The course and notification preference panel each have a live region.
+  // Keep the exact completion assertion scoped to the actual course player.
+  const notifications=page.getByRole("region",{name:"Purchase notifications",exact:true});
+  await notifications.getByRole("button",{name:"Load notification settings",exact:true}).click();
+  await expect(notifications.getByRole("status",{name:"Purchase notification status",exact:true})).toHaveText("Notification settings loaded.");
   await expect(page.getByText("Learning progress",{exact:true})).toBeVisible();
-  await page.getByRole("button",{name:"Mark complete",exact:true}).click();
-  await expect(page.getByRole("status")).toHaveText("Lesson complete. Keep it up!");
+  await player.getByRole("button",{name:"Mark complete",exact:true}).click();
+  await expect(player.getByRole("status")).toHaveText("Lesson complete. Keep it up!");
   await page.reload();
-  await expect(page.getByRole("button",{name:"Marked complete",exact:true})).toBeVisible();
+  await expect(player.getByRole("button",{name:"Marked complete",exact:true})).toBeVisible();
   await page.getByRole("link",{name:"Course discussion",exact:true}).click();
   const form=page.getByRole("form",{name:"Post your experience",exact:true});
   await form.getByLabel("Display name",{exact:true}).fill("保留原文學員");

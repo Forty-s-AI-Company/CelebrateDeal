@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { main as runMigration } from "./prisma-loopback-disposable-migration-runner.mjs";
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
-const buildFiles=["package.json","package-lock.json","tsconfig.json","next.config.ts","postcss.config.mjs","sentry.server.config.ts","sentry.edge.config.ts","prisma.playwright.config.ts","scripts/local-database-safety.ts","playwright.config.ts","playwright.learner-notifications.config.ts","tests/e2e/learner-notifications.spec.ts","scripts/learner-notification-browser-qa.mjs"];
+const buildFiles=["package.json","package-lock.json","tsconfig.json","next.config.ts","postcss.config.mjs","sentry.server.config.ts","sentry.edge.config.ts","prisma.playwright.config.ts","scripts/local-database-safety.ts","scripts/prisma-loopback-disposable-migration-runner.mjs","scripts/prisma-migrate-status-diagnostic.mjs","scripts/playwright-ci-reporter.ts","scripts/private-inbox-diagnostic.ts","playwright.config.ts","playwright.learner-notifications.config.ts","tests/e2e/learner-notifications.spec.ts","tests/e2e/student-portal-localization-pwa.spec.ts","scripts/learner-notification-browser-qa.mjs"];
 function walk(directory){return fs.readdirSync(path.join(root,directory),{withFileTypes:true}).flatMap(entry=>{const file=path.posix.join(directory,entry.name);if(entry.name.startsWith(".env"))return [];return entry.isDirectory()?walk(file):entry.isFile()?[file]:[];});}
 function snapshot(){const files=[...buildFiles,...["src","public","prisma"].flatMap(walk)].sort();const hashes=Object.fromEntries(files.map(file=>[file,createHash("sha256").update(fs.readFileSync(path.join(root,file))).digest("hex")]));return {revision:`sha256:${createHash("sha256").update(JSON.stringify(hashes)).digest("hex")}`,files:hashes};}
 const source=snapshot();
@@ -34,8 +34,8 @@ const migration=await runMigration({afterMigrate:async({databaseUrl,environment,
  collectWorkerLines(result.suites);
  receipt.workerDiagnostics=workerLines.filter(line=>/^::notice::portal-worker attempted=(true|false) accepted=(true|false) error=(none|TypeError|SecurityError|InvalidStateError|AbortError|other)$/u.test(line)).slice(0,2);
  if(child.status!==0)receipt.failureAnnotations=`${child.stdout??""}
-${child.stderr??""}`.split(/\r?\n/u).filter(line=>/^::error file=tests\/e2e\/learner-notifications\.spec\.ts,line=\d+::playwright /u.test(line)).slice(0,10);
- if(child.status!==0 || receipt.browser.expected!==7 || receipt.browser.unexpected!==0 || receipt.browser.skipped!==0 || receipt.browser.flaky!==0)throw new Error("notification-browser-gate-failed");
+${child.stderr??""}`.split(/\r?\n/u).filter(line=>/^::error file=tests\/e2e\/(?:learner-notifications|student-portal-localization-pwa)\.spec\.ts,line=\d+::playwright /u.test(line)).slice(0,10);
+ if(child.status!==0 || receipt.browser.expected!==8 || receipt.browser.unexpected!==0 || receipt.browser.skipped!==0 || receipt.browser.flaky!==0)throw new Error("notification-browser-gate-failed");
  if(snapshot().revision!==source.revision)throw new Error("notification-browser-source-changed");
 }});
 receipt.status=migration.status;receipt.migrationCount=migration.migrationNames?.length;receipt.cleanup=migration.cleanup;
