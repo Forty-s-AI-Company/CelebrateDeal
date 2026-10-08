@@ -12,6 +12,10 @@ function snapshot(){const files=[...buildFiles,...["src","public","prisma"].flat
 const source=snapshot();
 const receipt={schemaVersion:"learner-notification-browser/v1",source,status:"NOT_STARTED",browser:null,cleanup:null,safety:{loopbackOnly:true,syntheticOnly:true,actualProviderDelivery:false,alreadyVerifiedSyntheticFixture:true,externalOperations:false,trace:false,screenshot:false,rawLogsSaved:false}};
 const migration=await runMigration({afterMigrate:async({databaseUrl,environment,tempRoot})=>{
+ // Generate only after the disposable runner has verified its loopback database.
+ // The isolated browser must use this revision's schema, not a previous client.
+ const generation=spawnSync(process.execPath,[path.join(root,"node_modules/prisma/build/index.js"),"generate","--config","prisma.playwright.config.ts"],{cwd:root,windowsHide:true,stdio:"ignore",env:{...environment,DATABASE_URL:databaseUrl,DIRECT_URL:databaseUrl}});
+ if(generation.status!==0)throw new Error("notification-browser-client-generation-failed");
  const executable=chromium.executablePath();if(!fs.existsSync(executable))throw new Error("notification-browser-executable-missing");
  const mirror=path.join(tempRoot,"notification-browser-app");fs.mkdirSync(mirror,{recursive:true});
  for(const directory of ["src","public","prisma"])fs.cpSync(path.join(root,directory),path.join(mirror,directory),{recursive:true,filter:candidate=>!path.basename(candidate).startsWith(".env")});
