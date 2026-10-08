@@ -701,3 +701,7 @@ Preserved both documents and forward schema capabilities while integrating deliv
 ### Q1 current main integration 2026-10-07
 
 Q1 retains exact transaction scope and external browser requirement. Main a10728f integrated; 87 migrations, 8 DB cases, 144 unit tests, TypeScript and lint PASS. Independent review 4/4 has no findings after migration freshness correction. Canonical gate remains BLOCKED only on browser; no real provider refund attempted. Evidence: `remaining-capabilities-q1-main-integrated-validation-20261007.json`.
+
+### Q1 official CREDIT query correction / current main 20261008
+
+Original task `q1-exact-pending-refund`, root sole writer, patch `448359dd`, tested integrated head `c627ec6228a58179d97373362d7df2defd5900d2` includes actual main `aba65b4e`. Official query v2.0 contract confirms CREDIT RefundStatus 1/8 are pending and 2 successful; RefundAmt is the last refund, so cumulative totals use RemainAmt. Adapter, exact-transaction consumer and cleanup acceptance corrected; existing 8 DB cases retained plus 3 adapter-to-real-PG regressions. Fresh 95 migrations / 11 DB / 283 unit / 1067 full TAP zero skip, TS/strict-index/lint PASS. Current canonical source `sha256:8cb8e50777b71ff80aa23400bdb4d697f51a4c665c9a3558c7a36fd8627f11f7` BLOCKED for current independent review and actual sandbox browser/provider proof. Original dispatch4/4; additional review5 requested, not authorized or executed yet. Draft #371, exact-head CI pending, NOT DELIVERED. Evidence: `remaining-capabilities-q1-query-contract-correction-20261008.json`.
