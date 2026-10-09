@@ -2,6 +2,8 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { defaultRequest, readFixedInputs, validateInvocation, verifyMvpPayUniLineage, prepareIssuedRecoveryCheckout } from "./mvp-payuni-sandbox-e2e.mjs";
 import { observeIssuedRecoveryBrowser } from "./payuni-issued-recovery-browser.mjs";
+import { createPendingRefundHandoff, writePaymentHandoff } from "./payuni-sandbox-payment-handoff.mjs";
+import { assertProofMatchesHandoff, consumePendingRefund } from "./payuni-sandbox-pending-refund-consumer.mjs";
 
 const APP = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 const PATHS = new Set(["/api/admin/ops/payuni/wp4-fixture", "/api/payments/checkout/admission",
@@ -32,8 +34,51 @@ export async function runIssuedRecoveryProbe(input, dependencies) {
       return request({ ...operation, url: `${APP}${url.pathname}`, headers });
     },
   });
+  if (dependencies.onPrepared) await dependencies.onPrepared(prepared);
   const observe = dependencies.observeBrowser ?? observeIssuedRecoveryBrowser;
   return observe({ prepared: { ...prepared, canonicalStagingOrigin: true }, queryProvider: dependencies.queryProvider });
+}
+
+/** Paid observations must be handed to the existing exact refund UI. Finance
+ * session readiness is checked before checkout; no provider refund fallback.
+ */
+export async function runIssuedRecoveryQa(input, dependencies) {
+  requireSafe(validateInvocation(input).ok && dependencies?.context
+    && typeof dependencies.verifyFinanceSession === "function" && typeof dependencies.loadProof === "function");
+  requireSafe(await dependencies.verifyFinanceSession() === true);
+  const now = dependencies.now ?? (() => new Date());
+  const startedAt = now().toISOString();
+  let prepared;
+  const observation = await runIssuedRecoveryProbe(input, {
+    ...dependencies, onPrepared: value => { requireSafe(prepared === undefined); prepared = value; },
+  });
+  if (observation.result !== "SAME_TRADE_PAYMENT_OBSERVED") return { observation, refundCleanupVerified: false };
+  requireSafe(observation.sameTrade === true && observation.paid === true && prepared);
+  const checkout = prepared.checkout;
+  requireSafe(/^[A-Za-z0-9_-]{1,128}$/.test(checkout.transactionId ?? "")
+    && Number.isSafeInteger(checkout.amountCents) && checkout.amountCents > 0 && checkout.amountCents % 100 === 0);
+  const paid = await dependencies.queryProvider(checkout.orderNumber);
+  requireSafe(paid?.MerTradeNo === checkout.orderNumber && String(paid.PaymentType) === "1"
+    && /^[A-Za-z0-9_-]{1,128}$/.test(paid.TradeNo ?? ""));
+  const receipt = createPendingRefundHandoff({ startedAt, completedAt: now().toISOString(), appUrl: APP,
+    checkout: { ...checkout, amount: checkout.amountCents / 100 }, paid });
+  // Match the provider identity from the observed original trade, not just the
+  // order. A replacement trade can never be selected for refund acceptance.
+  const { createHash } = await import("node:crypto");
+  requireSafe(observation.tradeRef === `sha256:${createHash("sha256").update(String(paid.TradeNo)).digest("hex")}`);
+  const proof = await dependencies.loadProof(checkout.transactionId, input.sourceSha);
+  assertProofMatchesHandoff(receipt, proof, checkout.transactionId, input.sourceSha, now());
+  requireSafe(proof.status === "paid" && proof.refundRecordCount === 0 && proof.refundedAmountCents === 0);
+  await (dependencies.writeHandoff ?? writePaymentHandoff)({ ...receipt, sourceCommit: input.sourceSha });
+  const cleanup = await (dependencies.consumeRefund ?? consumePendingRefund)({ receipt,
+    transactionId: checkout.transactionId, expectedSourceSha: input.sourceSha, context: dependencies.context,
+    loadProof: dependencies.loadProof, queryProvider: () => dependencies.queryProvider(checkout.orderNumber), now });
+  requireSafe(cleanup?.status === "COMPLETED" && cleanup.transactionRef === receipt.transactionRef
+    && cleanup.tradeRef === receipt.tradeRef && cleanup.sourceCommit === input.sourceSha);
+  for (const check of ["sandboxRefundAccepted", "refundVisibleInProviderQuery", "refundIdempotency",
+    "paymentTransactionRefunded", "refundRecordProcessed", "singleRefundRecord"])
+    requireSafe(cleanup.checks?.[check] === "passed");
+  return { observation, cleanup, refundCleanupVerified: true };
 }
 
 export async function executeIssuedRecoveryProbe() {
