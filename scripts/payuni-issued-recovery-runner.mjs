@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import { defaultRequest, readFixedInputs, validateInvocation, verifyMvpPayUniLineage, prepareIssuedRecoveryCheckout, fixedBrowserEnvironment } from "./mvp-payuni-sandbox-e2e.mjs";
 import { observeIssuedRecoveryBrowser } from "./payuni-issued-recovery-browser.mjs";
 import { createPendingRefundHandoff, reference } from "./payuni-sandbox-payment-handoff.mjs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, rename, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { assertProofMatchesHandoff, consumePendingRefund } from "./payuni-sandbox-pending-refund-consumer.mjs";
 
 const APP = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
@@ -13,6 +14,18 @@ const PROOF_BLOBS = Object.freeze({
   "src/app/api/admin/ops/payuni/pending-refund-proof/route.ts": "5b90f3d557cb3f1fbee0d1af9b20189df9acc8cf",
   "src/lib/payuni-pending-refund-proof.ts": "3cb7b6541551df4f4565f7e0f89ec84d6126f535",
 });
+
+/** Replace only after a complete write; failure preserves the previous receipt. */
+export async function persistIssuedRecoveryPending(directory, pending, io = { mkdir, writeFile, rename, unlink }) {
+  await io.mkdir(directory, { recursive: true });
+  const temporary = resolve(directory, `.pending-${randomUUID()}.tmp`);
+  try {
+    await io.writeFile(temporary, `${JSON.stringify(pending)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    await io.rename(temporary, resolve(directory, "pending.json"));
+  } finally {
+    await io.unlink(temporary).catch(() => {});
+  }
+}
 function requireSafe(condition) {
   if (!condition) throw new Error("PAYUNI_ISSUED_RECOVERY_RUNNER_REJECTED");
 }
@@ -206,7 +219,7 @@ export async function executeIssuedRecoveryProbe() {
         stage = pending.stage;
         const directory = resolve(process.env.RUNNER_TEMP, "issued-recovery");
         await mkdir(directory, { recursive: true });
-        await writeFile(resolve(directory, "pending.json"), `${JSON.stringify(pending)}\n`, { encoding: "utf8", mode: 0o600 });
+        await persistIssuedRecoveryPending(directory, pending);
       },
       verifyFinanceSession: async () => {
         const check = await context.newPage();

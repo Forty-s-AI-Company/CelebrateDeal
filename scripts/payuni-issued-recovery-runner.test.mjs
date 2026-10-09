@@ -1,10 +1,33 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runIssuedRecoveryProbe, runIssuedRecoveryQa, verifyIssuedRecoveryProofSource } from "./payuni-issued-recovery-runner.mjs";
+import { runIssuedRecoveryProbe, runIssuedRecoveryQa, verifyIssuedRecoveryProofSource, persistIssuedRecoveryPending } from "./payuni-issued-recovery-runner.mjs";
+import { mkdtemp, readFile, writeFile, mkdir, rename, unlink, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+
+test("interrupted pending write preserves the previous conservative receipt", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "issued-recovery-receipt-"));
+  const previous = { transactionRef: "a".repeat(64), refundSubmissionMayHaveOccurred: true };
+  try {
+    await persistIssuedRecoveryPending(directory, previous);
+    await assert.rejects(persistIssuedRecoveryPending(directory, { status: "CLEANUP_VERIFIED" }, {
+      mkdir, rename, unlink,
+      writeFile: async (path, contents, options) => {
+        await writeFile(path, contents.slice(0, 8), options);
+        throw new Error("synthetic disk write failure");
+      },
+    }), /synthetic disk write failure/);
+    assert.deepEqual(JSON.parse(await readFile(join(directory, "pending.json"), "utf8")), previous);
+    assert.deepEqual(await readdir(directory), ["pending.json"]);
+    const next = { ...previous, status: "CLEANUP_VERIFIED" };
+    await persistIssuedRecoveryPending(directory, next);
+    assert.deepEqual(JSON.parse(await readFile(join(directory, "pending.json"), "utf8")), next);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
 
 const input = { sourceSha: "a".repeat(40), previewHost: "synthetic-preview.vercel.app", payuniEnv: "sandbox",
   jobSecret: "synthetic-job", cardNumber: "4147631000000001", cardExpiry: "1230", cardCvv: "123" };
