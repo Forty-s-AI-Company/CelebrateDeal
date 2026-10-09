@@ -9,9 +9,9 @@
 - Planner 不再受「一次、30～90 分鐘、完成後停止」限制；只有 scope、風險、授權或架構改變時才重新規劃。
 - 主代理具備 Direct Autonomous 端到端直通模式，可直接規劃、實作、自測並建立 checkpoint commit。
 - 日常 70% 任務（UI、文案、簡單 Bug）通過本地 `typecheck` 與 targeted tests 即可交付，直接跳過 AI 複審以極限節省 Token 額度。
-- 高風險 review 依 vNext `review_plan` 路由：Gemini 先做廣域 candidate scan，Sonnet 做深度判斷；Critical security/payment/auth 直接使用 Opus 或其明確 Codex fallback。Review 不得因固定階梯而跳過必要審查。
+- 高風險 review 依 vNext `review_plan` 路由：Gemini 先做廣域 candidate scan，Sonnet 做深度判斷；Critical security/payment/auth 直接使用合格 Claude reviewer；不能靜默由 GPT 最終裁決。Review 不得因固定階梯而跳過必要審查。
 - 一般模型由 `.ai-team/config/routing-policy.json` 的 `MODEL_ROUTING` 按任務 signals 選擇：超簡單工作用 GPT-6 Luna，一般工程用 GPT-6.1 Sol，effort 依共享政策提高；GPT-6 Astra 需具體例外理由。
-- Explorer／Analyst 是唯讀邏輯職位，實際模型由 router 選擇；agy 只在需要且 discovery 成功時使用，未登入時走 native fallback。
+- Explorer／Analyst 是唯讀邏輯職位，實際模型由 router 選擇；agy 只在需要且 discovery 成功時使用，未登入時可繼續 native 工程；最終審查缺席仍阻擋驗收。
 - 推理程度由 complexity/risk/role 決定，不能把所有 Worker 固定成 Luna high/max，也不能因 Pro invocation 固定使用 Astra。
 - 只要同一檔案、資料資源或外部資源沒有 writer 衝突，不同 scope 可以並行。
 - 每個 checkpoint 只需保存精確結果、證據、回滾方式與下一步；不因 checkpoint 自動停止 Goal。
@@ -46,7 +46,7 @@
 ## AGY fallback
 
 - 重要產品／安全／release 工作先由 router 選擇適合的 reviewer；需要 agy 時只做一次 bounded discovery，依實際 slug 呼叫。
-- Provider 狀態必須保存 `PASS`、`TOOL_BLOCKED`、`LOGIN_REQUIRED` 或 `FALLBACK_HANDOFF_REQUIRED`；agy 不可用時 Codex fallback 仍可完成必要 native handoff。
+- Provider 狀態必須保存 `PASS`、`TOOL_BLOCKED`、`LOGIN_REQUIRED` 或 `FALLBACK_HANDOFF_REQUIRED`；agy 不可用時可完成 native 工程 handoff，不能因此取得最終模型裁決資格。
 - 允許有限 fallback；禁止對同一失敗命令無限重試，且 routing 與 fallback 必須分開記錄。
 
 ## Git 與 checkpoint
@@ -82,4 +82,6 @@
 
 `PRELAUNCH_DEV` 仍遵守 `RELEASE_HARDENING` 的 Production 邊界。`UNKNOWN = 0` 不成立：未知 quota 不可當成耗盡或可用。任務邊界使用 `NEXT_TASK_REQUIRED`、`PLAN_REMEDIATION`、`CONTINUE_CURRENT_WP`、`USER_AUTHORIZATION_REQUIRED` 與 `MIXED_HUNKS` 明確表示。相同工作最多 3 輪修正、最多 2 次外部模型 attempt、最多 8 個候選 agents；實際 vNext policy 另限制每 task 4 次 dispatch、child depth 1、active agents 2，並以 sanitized self-hash／evidence 保存決策。
 
-agy failure 必須保留實際分類：`AUTH_REQUIRED`、`HOST_PERMISSION_BLOCKED`、`AGY_NOT_INSTALLED`、`MODEL_UNAVAILABLE` 或 `AGY_RUNTIME_ERROR`。Host-side 已驗證登入時，Codex sandbox 的 Access Denied 屬於 `HOST_PERMISSION_BLOCKED`／`HOST_AUTH_CONTEXT_UNAVAILABLE`，不等於要求重新登入；所有分類都仍走適當的 Codex fallback。
+agy failure 必須保留實際分類：`AUTH_REQUIRED`、`HOST_PERMISSION_BLOCKED`、`AGY_NOT_INSTALLED`、`MODEL_UNAVAILABLE` 或 `AGY_RUNTIME_ERROR`。Host-side 已驗證登入時，Codex sandbox 的 Access Denied 屬於 `HOST_PERMISSION_BLOCKED`／`HOST_AUTH_CONTEXT_UNAVAILABLE`，不等於要求重新登入；工程／候選 QA 可依政策 fallback；最終裁決不得靜默換成 GPT。
+
+Claude 訂閱 CLI 可在 AGY Claude 失敗後承接相同 reviewer 角色；資格與備援條件只讀 canonical policy。探測、審查皆使用無工具、無持久會話入口，且遵守既有 bounded dispatch；CLI 失敗不得靜默轉 GPT 最終裁決。
