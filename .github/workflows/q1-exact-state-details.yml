@@ -1,0 +1,117 @@
+name: Q1 exact synthetic state details
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact reviewed Sandbox Preview source SHA
+        required: true
+        type: string
+      deployment_host:
+        description: Exact Sandbox Preview hostname
+        required: true
+        type: string
+permissions:
+  contents: read
+  deployments: read
+concurrency:
+  group: q1-exact-synthetic-state-details
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
+    environment: Preview – celebrate-deal-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx prisma generate
+      - name: Validate fixed read-only contract before secrets
+        run: npx vitest run scripts/q1-exact-state-details.test.ts src/lib/staging-qa-finance-bootstrap.test.ts
+      - name: Validate CLI startup and sanitized receipts before secrets
+        run: node --test scripts/q1-exact-state-details-workflow.test.mjs
+      - name: Verify exact deployment lineage before secrets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
+          CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+        run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
+      - name: Read fixed synthetic transaction state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
+          CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+          PAYUNI_ENV: sandbox
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/q1-exact-state-details"
+          printf '%s\n' '{"schemaVersion":"celebratedeal-q1-exact-state-details/v1","status":"BLOCKED_OR_FAILED","stage":"network-configuration","productionOperations":false,"databaseWrites":false,"paymentSubmitted":false,"refundSubmitted":false}' > "$RUNNER_TEMP/q1-exact-state-details/completion.json"
+          ip4="$RUNNER_TEMP/q1-state-ip4"
+          ip6="$RUNNER_TEMP/q1-state-ip6"
+          hosts="$RUNNER_TEMP/q1-state-hosts"
+          destinations="$RUNNER_TEMP/q1-state-destinations"
+          node <<'NODE' > "$destinations"
+          const db = new URL(process.env.STAGING_DATABASE_URL);
+          const ref = 'ocbugvgojrunvenozsbx';
+          if (!['postgres:', 'postgresql:'].includes(db.protocol)
+            || !(db.hostname === `db.${ref}.supabase.co`
+              || (db.hostname.endsWith('.pooler.supabase.com') && decodeURIComponent(db.username) === `postgres.${ref}`))) process.exit(2);
+          const port = db.port || '5432';
+          if (!/^\d{2,5}$/.test(port)) process.exit(2);
+          const preview = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST;
+          if (!/^[a-z0-9][a-z0-9-]{0,251}\.vercel\.app$/.test(preview || '')) process.exit(2);
+          if ([...db.searchParams.keys()].some(key => key === 'host')) process.exit(2);
+          process.stdout.write(`api.github.com\t443\ncelebrate-deal-staging.carry-digital-nomad.in.net\t443\n${preview}\t443\n${db.hostname}\t${port}\n`);
+          NODE
+          : > "$hosts"
+          while IFS=$'\t' read -r host port; do
+            mapfile -t addresses < <(getent ahostsv4 "$host" | awk '{print $1}' | sort -u)
+            (( ${#addresses[@]} > 0 )) || exit 2
+            for address in "${addresses[@]}"; do
+              printf '%s\t%s\t%s\n' "$host" "$address" "$port" >> "$hosts"
+            done
+          done < "$destinations"
+          sudo iptables-save > "$ip4"
+          sudo ip6tables-save > "$ip6"
+          sudo cp /etc/hosts "$hosts.original"
+          restore_network() {
+            sudo iptables-restore < "$ip4"
+            sudo ip6tables-restore < "$ip6"
+            sudo cp "$hosts.original" /etc/hosts
+            rm -f "$ip4" "$ip6" "$hosts" "$hosts.original" "$destinations"
+          }
+          trap restore_network EXIT
+          while IFS=$'\t' read -r host address port; do
+            printf '%s %s\n' "$address" "$host" | sudo tee -a /etc/hosts > /dev/null
+          done < "$hosts"
+          sudo iptables -F OUTPUT
+          sudo iptables -P OUTPUT DROP
+          sudo iptables -A OUTPUT -o lo -j ACCEPT
+          sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+          sudo ip6tables -F OUTPUT
+          sudo ip6tables -P OUTPUT DROP
+          sudo ip6tables -A OUTPUT -o lo -j ACCEPT
+          sudo ip6tables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+          while IFS=$'\t' read -r host address port; do
+            sudo iptables -A OUTPUT -p tcp -d "$address" --dport "$port" -j ACCEPT
+          done < "$hosts"
+          ./node_modules/.bin/tsx scripts/q1-exact-state-details-cli.ts
+      - name: Upload fixed sanitized bootstrap result only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: q1-exact-state-details-${{ inputs.source_sha }}
+          path: ${{ runner.temp }}/q1-exact-state-details/completion.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+
