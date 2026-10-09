@@ -38,7 +38,8 @@ describe("exact existing synthetic transaction read-only diagnosis", () => {
   });
   it("converts unknown private status values to closed OTHER", async () => {
     const row = payment(); row.status = "private-status";
-    expect((await readExactSyntheticState(fixture([row]).db)).paymentState).toBe("OTHER");
+    const result = await readExactSyntheticState(fixture([row]).db);
+    expect("paymentState" in result && result.paymentState).toBe("OTHER");
   });
   it("stops if PostgreSQL refuses the read-only transaction", async () => {
     const { tx, db } = fixture(); tx.$executeRaw.mockRejectedValueOnce(new Error("synthetic"));
@@ -53,7 +54,7 @@ describe("fixed original provider query classification", () => {
     const query = vi.fn(async () => ({ MerTradeNo: "private-original-reference", TradeNo: "private-provider", TradeStatus: "0", TradeAmt: 1, Message: "private-message" }));
     const result = await readExactSyntheticState(fixture().db, query);
     expect(query).toHaveBeenCalledExactlyOnceWith("private-original-reference");
-    expect(result.provider).toMatchObject({ providerQuery: "OBSERVED", providerTradeState: "0", providerAmountMatches: true });
+    expect("provider" in result && result.provider).toMatchObject({ providerQuery: "OBSERVED", providerTradeState: "0", providerAmountMatches: true });
     expect(JSON.stringify(result)).not.toContain("private-");
   });
   it.each([{ rows: [] }, { rows: [payment(), payment()] }])("never queries absent or ambiguous candidates", async ({ rows }) => {
@@ -62,7 +63,8 @@ describe("fixed original provider query classification", () => {
   });
   it("rejects changed amount before any provider query", async () => {
     const row = payment(); row.grossAmountCents = 200; const query = vi.fn(async () => ({}));
-    expect((await readExactSyntheticState(fixture([row]).db, query)).provider).toEqual({ providerQuery: "EXACT_IDENTITY_UNAVAILABLE" });
+    const result = await readExactSyntheticState(fixture([row]).db, query);
+    expect("provider" in result && result.provider).toEqual({ providerQuery: "EXACT_IDENTITY_UNAVAILABLE" });
     expect(query).not.toHaveBeenCalled();
   });
   it("rejects a provider response for a different reference", async () => {
