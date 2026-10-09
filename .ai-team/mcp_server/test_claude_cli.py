@@ -19,6 +19,9 @@ class ClaudeCliRoutingTests(unittest.TestCase):
         self.assertEqual(decision['model'],'claude-opus-5-5')
         self.assertEqual(decision['model_key'],'opus')
         self.assertEqual(decision['observed']['model'],'unknown')
+        failed_agy=route({'task_summary':'payment review'},{**self.runtime(),'agy_failure_category':'AUTH_REQUIRED'})
+        self.assertEqual(failed_agy['provider_availability'],'AVAILABLE')
+        self.assertEqual(failed_agy['provider_failure_category'],'AUTH_REQUIRED')
 
     def test_same_model_distinct_transport_after_failed_agy_attempt(self):
         runtime={**self.runtime(),'attempted_models':['opus'],'models':{'opus':{'failure':'cli_failure'}}}
@@ -63,6 +66,10 @@ class ClaudeCliRoutingTests(unittest.TestCase):
             evidence={'execution':execution,'checks':[check],'review':review}
             self.assertEqual(assess_acceptance(decision,evidence)['status'],'READY')
             review.pop('observed_model');record('review',review)
+            self.assertIn('final_reviewer_not_qualified',assess_acceptance(decision,evidence)['blockers'])
+            # An AGY-shaped slug must not bypass the CLI's required terminal proof.
+            decision['review_plan'][0]['model']='claude-opus-5-5-high'
+            review['model']='claude-opus-5-5-high';record('review',review)
             self.assertIn('final_reviewer_not_qualified',assess_acceptance(decision,evidence)['blockers'])
 
 

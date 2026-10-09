@@ -41,6 +41,33 @@ class FinalReviewTests(unittest.TestCase):
             route({**task,"review_dependencies":["new.py"]},available())
         expanded=route({**task,"review_dependencies":["new.py"],"authorized_scope_expansion":["new.py"]},available())
         self.assertEqual(expanded["review_scope_files"],["a.py","new.py"])
+        for outside in ('/root.py','\\root.py','\\\\host\\share\\file.py'):
+            with self.assertRaisesRegex(ValueError,'Invalid review scope path'):
+                route({**task,'snapshot_files':[outside],'review_changed_files':[outside],'review_dependencies':[]},available())
+
+    def test_final_review_roles_resolve_and_medium_candidates_need_sonnet(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'source.py').write_text('value=1\n',encoding='utf-8')
+            revision=snapshot_revision(root,['source.py'])
+            def record(name,value):
+                value['evidence_path']=str(root/(name+'.json'))
+                Path(value['evidence_path']).write_text(json.dumps(value),encoding='utf-8')
+                return value
+            execution=record('execution',{'kind':'execution','revision':revision,'status':'COMPLETED',
+                'source':'desktop_native','provider_terminal':True,'tool_operations':'completed'})
+            check=record('unit',{'kind':'validation','revision':revision,'status':'PASS',
+                'source':'validation_runner','exit_code':0,'name':'unit'})
+            for kind,risk in (('security_review','critical'),('arbiter','low'),('review','medium')):
+                decision=route({'task_summary':'bounded review','task_type':kind,'risk':risk,
+                    'source_revision':revision,'snapshot_root':directory,'snapshot_files':['source.py'],'required_checks':['unit']},available())
+                self.assertEqual(decision['status'],'planned')
+                stage=decision['review_plan'][0] if decision['review_plan'] else decision
+                if risk=='medium':
+                    self.assertEqual(stage['model_key'],'sonnet')
+                    self.assertEqual(assess_acceptance(decision,{'execution':execution,'checks':[check]})['status'],'BLOCKED')
+                review=record('review',{'kind':'review','revision':revision,'status':'PASS','independent':True,
+                    'source':'agy_wrapper','role':stage['role'],'model':stage['model']})
+                self.assertEqual(assess_acceptance(decision,{'execution':execution,'checks':[check],'review':review})['status'],'READY')
 
     def test_gate_minor_not_blocking_major_and_stale_are_blocking(self):
         with tempfile.TemporaryDirectory() as directory:

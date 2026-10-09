@@ -414,6 +414,7 @@ def route(task: dict[str, Any], runtime: dict[str, Any] | None = None, team: str
               "requested": {"model_key": selected, "effort": task.get("reasoning_effort", "auto"), "speed": "standard"},
               "observed": {"model": "unknown", "effort": "unknown", "source": "not_executed"}}
     result["provider_availability"] = ("NOT_CHECKED" if any(e["reason"] == "discovery_required" for e in events)
+                                       else "AVAILABLE" if resolved and use_claude_cli(resolved, runtime, policy)
                                        else "CALL_FAILED" if runtime.get("agy_failure_category")
                                        else "UNAVAILABLE" if not resolved else "AVAILABLE")
     result["provider_failure_category"] = runtime.get("agy_failure_category")
@@ -458,7 +459,7 @@ def route(task: dict[str, Any], runtime: dict[str, Any] | None = None, team: str
         final = policy["final_review"]
         stages = [("critical_review", final["critical_model"])] if risk == "critical" else [("senior_review", final["ordinary_model"])] if (risk in {"medium", "high"} or (role == "developer" and selected == "sol")) else []
         if signals["task_type"] in REVIEW_TASKS:
-            stages = [(r, m) for r, m in stages if r != role and risk == "high"]
+            stages = [(r, m) for r, m in stages if r != role and risk in {"medium", "high"}]
         for review_role, review_model in stages:
             chosen, failures = resolve_model(review_role, review_model, runtime, policy)
             stage = {"role": review_role, "required": True, "fallback_events": failures,
@@ -572,7 +573,9 @@ def assess_acceptance(decision: dict[str, Any], evidence: dict[str, Any],
             key in policy.get("claude_cli", {}).get("models", {})
             and re.fullmatch(policy["claude_cli"]["models"][key]["observed_pattern"], str(review_model), re.I)
             for key in qualified)
-        if not cli_qualified and not any(re.fullmatch(policy["models"][key]["discovery_pattern"], str(review_model), re.I) for key in qualified):
+        agy_qualified = not cli_review and any(
+            re.fullmatch(policy["models"][key].get("discovery_pattern", ""), str(review_model), re.I) for key in qualified)
+        if not cli_qualified and not agy_qualified:
             blockers.append("final_reviewer_not_qualified")
     for finding in evidence.get("findings", []):
         if not isinstance(finding, dict) or finding.get("severity") not in {"BLOCKER", "MAJOR", "MINOR", "NIT"} or finding.get("disposition") not in {"confirmed", "rejected_with_reason", "unresolved", "resolved"}:
@@ -601,7 +604,7 @@ def bounded_review_scope(snapshot_files: list[str], changed_files: list[str],
         raise ValueError("Invalid review scope")
     for name in set(p for group in groups for p in group):
         parts = name.replace("\\", "/").split("/")
-        if Path(name).is_absolute() or re.match(r"^[a-zA-Z]:", name) or any(
+        if Path(name).is_absolute() or name.startswith(("/", "\\")) or re.match(r"^[a-zA-Z]:", name) or any(
                 part == ".." or part.startswith(".env") or part in {".git", "node_modules"} for part in parts):
             raise ValueError("Invalid review scope path")
     requested = set(changed_files + affected_dependencies)
