@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from validation_runner import run_check
 from routing import snapshot_revision
+from test_routing import available, offline_review
 
 
 HERE = Path(__file__).resolve().parent
@@ -59,7 +60,7 @@ class RouterServerTest(unittest.TestCase):
             result = module.route_task("one line payment webhook", "bug_fix", "trivial")
             self.assertEqual(result["signals"]["risk"], "critical")
             self.assertEqual(result["model"], "gpt-6.1-sol")
-            self.assertEqual(result["review_plan"][0]["model"], "gpt-6-astra")
+            self.assertEqual(result["review_plan"][0]["status"], "AGY_DISCOVERY_REQUIRED")
             self.assertEqual(result["execution"], "recommendation_only")
 
     def test_server_never_spawns(self):
@@ -76,6 +77,7 @@ class RouterServerTest(unittest.TestCase):
             signals_only = module.route_task(
                 "bounded security review",
                 task_signals={"task_type": "security_review", "complexity": "low"},
+                runtime=available(),
             )
             self.assertEqual(signals_only["signals"]["task_type"], "security_review")
             self.assertEqual(signals_only["signals"]["risk"], "critical")
@@ -144,7 +146,7 @@ class RouterServerTest(unittest.TestCase):
             run_check("unit", revision, [sys.executable, "-c", "import sys; sys.exit(0)"], validation_path)
             decision = module.route_task("bounded implementation", "implement", task_signals={
                 "task_id": "lite-test", "source_revision": revision, "snapshot_root": temporary,
-                "snapshot_files": ["source.py"], "required_checks": ["unit"]})
+                "snapshot_files": ["source.py"], "required_checks": ["unit"]}, runtime=available())
             execution = {"revision": revision, "status": "COMPLETED",
                                       "source": "desktop_native", "provider_terminal": True,
                                       "tool_operations": "completed", "evidence_path": str(receipt)}
@@ -152,6 +154,7 @@ class RouterServerTest(unittest.TestCase):
             evidence = {"execution": execution,
                         "checks": [{"kind": "validation", "name": "unit", "revision": revision, "source": "validation_runner",
                                     "status": "PASS", "exit_code": 0, "evidence_path": str(validation_path)}]}
+            evidence["review"] = offline_review(decision, Path(temporary))
             self.assertEqual(module.goal_finalize("done", decision, evidence)["status"], "completed")
 
     def test_goal_does_not_overwrite_active_state(self) -> None:
@@ -175,7 +178,7 @@ class RouterServerTest(unittest.TestCase):
             decision = module.route_task("payment posting edit", "implement", "trivial", {
                 "task_id": "critical-goal", "source_revision": revision, "snapshot_root": temporary,
                 "snapshot_files": ["source.py"], "required_checks": ["unit"],
-                "risk_categories": ["payment"]})
+                "risk_categories": ["payment"]}, runtime=available())
             execution = {"revision": revision, "status": "COMPLETED", "source": "desktop_native",
                          "provider_terminal": True, "tool_operations": "completed",
                          "evidence_path": str(receipt)}

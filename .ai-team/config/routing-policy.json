@@ -246,15 +246,11 @@
     },
     "senior_review": {
       "sonnet": [
-        "sol",
-        "astra"
+        "gemini_high"
       ]
     },
     "critical_review": {
-      "opus": [
-        "astra",
-        "sol"
-      ]
+      "opus": []
     },
     "broad_review": {
       "gemini_medium": ["luna", "sol"],
@@ -265,8 +261,42 @@
       "gemini_high": ["sol", "luna"]
     },
     "arbiter": {
-      "astra": []
+      "sonnet": [
+        "gemini_high"
+      ],
+      "opus": []
     }
+  },
+  "claude_cli": {
+    "enabled": true,
+    "trigger": "agy_failure_or_quota",
+    "models": {
+      "sonnet": {
+        "alias": "sonnet",
+        "observed_pattern": "claude-sonnet-\\d+(?:[.-]\\d+)+(?:-[a-zA-Z0-9]+)*"
+      },
+      "opus": {
+        "alias": "opus",
+        "observed_pattern": "claude-opus-\\d+(?:[.-]\\d+)+(?:-[a-zA-Z0-9]+)*"
+      }
+    },
+    "effort": "high",
+    "tools": false,
+    "session_persistence": false
+  },
+  "final_review": {
+    "ordinary_model": "sonnet",
+    "critical_model": "opus",
+    "noncritical_fallback": [
+      "gemini_high"
+    ],
+    "critical_fallback": [],
+    "gpt_final_verdict": false,
+    "scope_expansion": "explicit_user_authorization",
+    "blocking_severities": [
+      "BLOCKER",
+      "MAJOR"
+    ]
   },
   "fallback_reasons": [
     "unavailable",
