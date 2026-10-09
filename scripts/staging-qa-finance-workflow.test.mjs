@@ -33,12 +33,14 @@ test("network destination builder admits only the fixed staging database identit
   function evaluate(url) {
     let output = "";
     try {
-      vm.runInNewContext(code, { URL, process: { env: { STAGING_DATABASE_URL: url },
+      vm.runInNewContext(code, { URL, process: { env: { STAGING_DATABASE_URL: url, CELEBRATEDEAL_DEPLOYMENT_HOST: "synthetic-preview.vercel.app" },
         exit: () => { throw new Error("rejected"); }, stdout: { write: text => { output += text; } } } });
     } catch { return null; }
     return output;
   }
   assert.match(evaluate("postgresql://synthetic@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres"), /db\.ocbugvgojrunvenozsbx\.supabase\.co\t5432/u);
+  assert.match(evaluate("postgresql://synthetic@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres"), /synthetic-preview\.vercel\.app\t443/u);
   assert.match(evaluate("postgresql://postgres.ocbugvgojrunvenozsbx@aws-0.example.pooler.supabase.com:6543/postgres"), /\t6543/u);
-  for (const url of ["postgresql://synthetic@db.production.supabase.co/postgres", "postgresql://postgres.production@aws-0.example.pooler.supabase.com/postgres", "https://db.ocbugvgojrunvenozsbx.supabase.co"]) assert.equal(evaluate(url), null);
+  for (const url of ["postgresql://synthetic@db.production.supabase.co/postgres", "postgresql://postgres.production@aws-0.example.pooler.supabase.com/postgres", "https://db.ocbugvgojrunvenozsbx.supabase.co",
+    "postgresql://synthetic@db.ocbugvgojrunvenozsbx.supabase.co/postgres?%68ost=127.0.0.1"]) assert.equal(evaluate(url), null);
 });

@@ -64,7 +64,10 @@ jobs:
               || (db.hostname.endsWith('.pooler.supabase.com') && decodeURIComponent(db.username) === `postgres.${ref}`))) process.exit(2);
           const port = db.port || '5432';
           if (!/^\d{2,5}$/.test(port)) process.exit(2);
-          process.stdout.write(`api.github.com\t443\ncelebrate-deal-staging.carry-digital-nomad.in.net\t443\n${db.hostname}\t${port}\n`);
+          const preview = process.env.CELEBRATEDEAL_DEPLOYMENT_HOST;
+          if (!/^[a-z0-9][a-z0-9-]{0,251}\.vercel\.app$/.test(preview || '')) process.exit(2);
+          if ([...db.searchParams.keys()].some(key => key === 'host')) process.exit(2);
+          process.stdout.write(`api.github.com\t443\ncelebrate-deal-staging.carry-digital-nomad.in.net\t443\n${preview}\t443\n${db.hostname}\t${port}\n`);
           NODE
           : > "$hosts"
           while IFS=$'\t' read -r host port; do

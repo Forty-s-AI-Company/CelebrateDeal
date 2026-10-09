@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { ensureStagingQaFinance } from "../src/lib/staging-qa-finance-bootstrap";
+import { ensureStagingQaFinance, qaFinanceDatabaseUrl } from "../src/lib/staging-qa-finance-bootstrap";
 import { isStagingDatabaseUrl } from "../src/lib/database-identity";
 import { verifyMvpPayUniLineage } from "./mvp-payuni-sandbox-e2e.mjs";
 
@@ -15,6 +15,7 @@ async function main() {
       || env.GITHUB_REF_PROTECTED !== "true" || env.PAYUNI_ENV !== "sandbox"
       || !env.JOB_SECRET || !env.PAYUNI_QA_FINANCE_PASSWORD
       || !isStagingDatabaseUrl(env.STAGING_DATABASE_URL)) throw new Error();
+    const databaseUrl = qaFinanceDatabaseUrl(env.STAGING_DATABASE_URL!);
     stage = "deployment-lineage";
     if (!await verifyMvpPayUniLineage({ NODE_ENV: "test", CELEBRATEDEAL_SOURCE_SHA: env.CELEBRATEDEAL_SOURCE_SHA,
       CELEBRATEDEAL_DEPLOYMENT_HOST: env.CELEBRATEDEAL_DEPLOYMENT_HOST, GITHUB_TOKEN: env.GITHUB_TOKEN })) throw new Error();
@@ -27,8 +28,8 @@ async function main() {
     const readiness = await response.json();
     if (readiness.ready !== true || readiness.buyerOrder !== true) throw new Error();
     stage = "fixed-synthetic-account";
-    db = new PrismaClient({ datasources: { db: { url: env.STAGING_DATABASE_URL! } } });
-    const result = await ensureStagingQaFinance(db, { databaseUrl: env.STAGING_DATABASE_URL!, sourceSha: env.CELEBRATEDEAL_SOURCE_SHA!,
+    db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    const result = await ensureStagingQaFinance(db, { databaseUrl, sourceSha: env.CELEBRATEDEAL_SOURCE_SHA!,
       password: env.PAYUNI_QA_FINANCE_PASSWORD, runtimeReady: true, payuniEnv: env.PAYUNI_ENV });
     console.log(JSON.stringify({ schemaVersion: "celebratedeal-staging-qa-finance-bootstrap/v1", ...result,
       productionOperations: false, providerOperations: false }));
