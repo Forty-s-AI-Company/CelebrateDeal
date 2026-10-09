@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { launchRefundBrowser, runCurrentSourceRefundQa } from "./payuni-current-source-refund-qa.mjs";
+import { classifyFinanceLoginFailure, launchRefundBrowser, runCurrentSourceRefundQa } from "./payuni-current-source-refund-qa.mjs";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
 
 const host = "celebrate-deal-staging.carry-digital-nomad.in.net";
@@ -8,6 +8,23 @@ const order = "CD-SYNTHETIC-Q1";
 const transaction = "wp4-synthetic-q1";
 const trade = "synthetic-provider-q1";
 const clock = () => new Date("2026-10-09T02:00:00Z");
+it.each([
+  ["/login?error=1", "AUTHENTICATION_REJECTED"],
+  ["/login?error=rate_limited", "LOGIN_RATE_LIMITED"],
+  ["/login?error=temporarily_unavailable", "LOGIN_PROTECTION_UNAVAILABLE"],
+  ["/login?error=no_vendor", "FINANCE_PERMISSION_REJECTED"],
+  ["/mfa/verify", "MFA_NOT_COMPLETED"],
+  ["/admin/billing/dashboard", "FINANCE_DASHBOARD_NOT_VERIFIED"],
+  ["/login?error=__proto__&private=synthetic-private", "LOGIN_NOT_COMPLETED"],
+  ["/login?error=synthetic-private", "LOGIN_NOT_COMPLETED"],
+])("returns only a closed login category for %s", (path, expected) => {
+  expect(classifyFinanceLoginFailure(`https://${host}${path}`)).toBe(expected);
+});
+it("never trusts foreign destinations or emits private query values", () => {
+  expect(classifyFinanceLoginFailure("https://attacker.example/login?error=1")).toBe("LOGIN_DESTINATION_REJECTED");
+  expect(classifyFinanceLoginFailure("synthetic-private")).toBe("LOGIN_NOT_COMPLETED");
+  expect(classifyFinanceLoginFailure(`https://${host}/unexpected?token=synthetic-private`)).toBe("LOGIN_DESTINATION_REJECTED");
+});
 function setup() {
   let refunded = false;
   const clicks = [];
