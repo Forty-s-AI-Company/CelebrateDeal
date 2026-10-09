@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "vitest";
 
 import {
+  assertPendingRefundTarget,
   createPendingRefundHandoff,
   reference,
   writePaymentHandoff,
@@ -16,6 +17,46 @@ const fixture = Object.freeze({
   appUrl: "https://staging.example.test",
   checkout: { orderNumber: "cd_sandbox_fixture_order", transactionId: "fixture-transaction", amount: 125 },
   paid: { TradeStatus: "1", TradeNo: "fixture-trade", TradeAmt: 125 },
+});
+
+function exactTargetFixture() {
+  return {
+    receipt: createPendingRefundHandoff({ ...fixture, appUrl: "https://celebrate-deal-staging.carry-digital-nomad.in.net" }),
+    now: new Date("2026-07-30T01:00:00.000Z"),
+    runtime: { environment: "preview", payuniEnvironment: "sandbox", providerHost: "sandbox-api.payuni.com.tw",
+      appHost: "celebrate-deal-staging.carry-digital-nomad.in.net", sourceCommit: "a".repeat(40), vendorId: "synthetic-vendor" },
+    target: { id: fixture.checkout.transactionId, orderNumber: fixture.checkout.orderNumber,
+      providerTradeNo: fixture.paid.TradeNo, vendorId: "synthetic-vendor", providerName: "payuni",
+      status: "paid", refundedAmountCents: 0, grossAmountCents: 12500 },
+  };
+}
+
+test("pending refund binds the exact transaction without exposing raw identifiers", () => {
+  const input = exactTargetFixture();
+  const bound = assertPendingRefundTarget(input);
+  assert.equal(bound.transactionRef, input.receipt.transactionRef);
+  assert.equal(bound.amountCents, 12500);
+  assert.equal(JSON.stringify(bound).includes(input.target.id), false);
+});
+
+test("pending refund rejects other tenants, transactions, trades, orders and amounts", () => {
+  for (const mismatch of [{ vendorId: "other" }, { id: "other" }, { orderNumber: "other" },
+    { providerTradeNo: "other" }, { grossAmountCents: 100 }, { status: "refunded" }, { refundedAmountCents: 1 }]) {
+    const input = exactTargetFixture();
+    assert.throws(() => assertPendingRefundTarget({ ...input, target: { ...input.target, ...mismatch } }));
+  }
+});
+
+test("pending refund rejects Production, live provider, another deployment and stale receipts", () => {
+  for (const mismatch of [{ environment: "production" }, { payuniEnvironment: "live" },
+    { providerHost: "api.payuni.com.tw" }, { appHost: "another.example.test" }, { sourceCommit: "unknown" }]) {
+    const input = exactTargetFixture();
+    assert.throws(() => assertPendingRefundTarget({ ...input, runtime: { ...input.runtime, ...mismatch } }));
+  }
+  const input = exactTargetFixture();
+  assert.throws(() => assertPendingRefundTarget({ ...input, now: new Date("2026-08-01T00:00:00Z") }));
+  assert.throws(() => assertPendingRefundTarget({ ...input, now: new Date("2026-07-29T00:00:00Z") }));
+  assert.throws(() => assertPendingRefundTarget({ ...input, receipt: { ...input.receipt, checks: {} } }));
 });
 
 test("payment handoff retains only hashed identifiers and pending Chrome refund gates", () => {
