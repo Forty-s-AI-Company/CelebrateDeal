@@ -128,6 +128,23 @@ test("Q1 exact refund retains the protected runner guard and isolates secret inj
   const lineage = steps.findIndex((step) => step.name === "Validate Q1 exact deployment identity before secret injection");
   const execute = steps.findIndex((step) => step.name === "Execute Q1 exact synthetic payment and refund");
   assert.ok(preload >= 0 && preload < lineage && lineage < execute);
+  const contract = steps.findIndex((step) => step.name === "Verify secure runner contract");
+  assert.ok(contract >= 0 && contract < execute);
+  const run = steps[execute].run;
+  assert.match(run, /sudo iptables -P OUTPUT DROP/u);
+  assert.match(run, /sudo ip6tables -P OUTPUT DROP/u);
+  assert.match(run, /sudo iptables-save/u);
+  assert.match(run, /sudo ip6tables-save/u);
+  assert.match(run, /sudo iptables-restore/u);
+  assert.match(run, /sudo ip6tables-restore/u);
+  assert.match(run, /trap restore_network EXIT/u);
+  assert.match(run, /celebrate-deal-staging\.carry-digital-nomad\.in\.net/u);
+  assert.match(run, /ocbugvgojrunvenozsbx\.supabase\.co/u);
+  const heredoc = run.match(/node <<'NODE' > "\$destinations"\n([\s\S]*?)\n\s*NODE/u);
+  assert.ok(heredoc?.[1]);
+  assert.doesNotThrow(() => new vm.Script(heredoc[1]));
+  assert.ok(run.indexOf("sudo ip6tables -P OUTPUT DROP") < run.indexOf("node scripts/payuni-current-source-refund-qa.mjs"));
+
   assert.equal(steps[lineage].env.JOB_SECRET, undefined);
   assert.equal(steps[execute].if, "${{ inputs.task == 'q1-exact-pending-refund' }}");
   assert.equal(steps[execute].env.PAYUNI_ENV, "sandbox");
@@ -184,10 +201,10 @@ test("secret-aware step preloads tools and installs fixed-host egress", () => {
   const wp4Runner = fs.readFileSync(path.join(root, "scripts", "secure-staging-wp4-payuni.mjs"), "utf8");
   assert.match(source, /docker pull postgres:17-alpine/u);
   assert.match(source, /npx playwright install --with-deps chromium/u);
-  assert.equal((source.match(/iptables -P OUTPUT DROP/gu) ?? []).length, 7);
-  assert.equal((source.match(/ip6tables -P OUTPUT DROP/gu) ?? []).length, 6);
+  assert.equal((source.match(/iptables -P OUTPUT DROP/gu) ?? []).length, 8);
+  assert.equal((source.match(/ip6tables -P OUTPUT DROP/gu) ?? []).length, 7);
   assert.match(source, /api\.github\.com/u);
-  assert.equal((source.match(/sandbox-api\.payuni\.com\.tw/gu) ?? []).length, 1);
+  assert.equal((source.match(/sandbox-api\.payuni\.com\.tw/gu) ?? []).length, 2);
   assert.match(source, /getent ahostsv4/u);
   assert.equal((source.match(/awk '!seen\[\$1\]\+\+ \{ print \$1 \}'/gu) ?? []).length, 5);
   assert.match(source, /iptables-restore/u);
