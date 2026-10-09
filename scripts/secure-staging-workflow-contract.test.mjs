@@ -100,6 +100,7 @@ test("workflow exposes only fixed allowlisted tasks with pinned actions", () => 
     "wp4-payuni-buyer-existing-continuation",
     "wp4-payuni-sandbox-subscription",
     "line-notifications-e2e",
+    "q1-exact-pending-refund",
   ]);
   assert.match(source, /npm run secure:staging:wp2/u);
   assert.match(source, /npm run secure:staging:wp4/u);
@@ -114,8 +115,29 @@ test("workflow exposes only fixed allowlisted tasks with pinned actions", () => 
   assert.doesNotMatch(source, /vercel\s+env\s+(?:pull|run)|toJSON\(secrets\)|secrets:\s*inherit|workflow_call|pull_request_target/iu);
   assert.doesNotMatch(source, /PAYUNI_(?:API|BASE|PRODUCTION)_URL|(?<!sandbox-)api\.payuni\.com\.tw/iu);
   const actionUses = [...source.matchAll(/^\s*uses:\s*([^\s#]+).*$/gmu)].map((match) => match[1]);
-  assert.equal(actionUses.length, 11);
+  assert.equal(actionUses.length, 12);
   assert.equal(actionUses.every((value) => /@[a-f0-9]{40}$/u.test(value)), true);
+});
+
+test("Q1 exact refund retains the protected runner guard and isolates secret injection after lineage", () => {
+  const workflow = yaml.load(fs.readFileSync(workflowPath, "utf8"));
+  const runner = workflow.jobs["trusted-runner"];
+  assert.match(runner.if, /github\.ref == 'refs\/heads\/master' && github\.ref_protected/u);
+  const steps = runner.steps;
+  const preload = steps.findIndex((step) => step.name === "Preload Q1 Chromium before secret injection");
+  const lineage = steps.findIndex((step) => step.name === "Validate Q1 exact deployment identity before secret injection");
+  const execute = steps.findIndex((step) => step.name === "Execute Q1 exact synthetic payment and refund");
+  assert.ok(preload >= 0 && preload < lineage && lineage < execute);
+  assert.equal(steps[lineage].env.JOB_SECRET, undefined);
+  assert.equal(steps[execute].if, "${{ inputs.task == 'q1-exact-pending-refund' }}");
+  assert.equal(steps[execute].env.PAYUNI_ENV, "sandbox");
+  assert.equal(steps[execute].env.PAYUNI_SANDBOX_QA_ENABLED, "true");
+  assert.equal(steps[execute].env.PAYUNI_SANDBOX_REFUND_ENABLED, "true");
+  assert.match(steps[execute].run, /node scripts\/payuni-current-source-refund-qa\.mjs/u);
+  assert.doesNotMatch(steps[execute].run, /--transaction-id|latest|curl|eval|printenv|env\s*>/u);
+  const upload = steps.find((step) => step.name === "Upload Q1 sanitized exact transaction evidence");
+  assert.equal(upload.with.path, "${{ runner.temp }}/q1-exact-refund/completion.json");
+  assert.equal(upload.with["if-no-files-found"], "error");
 });
 
 test("LINE task verifies lineage before receiving fixed staging bindings", () => {
