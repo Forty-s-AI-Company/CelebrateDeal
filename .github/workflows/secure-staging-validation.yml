@@ -184,6 +184,7 @@ jobs:
           sudo iptables -P OUTPUT DROP
           sudo iptables -A OUTPUT -o lo -j ACCEPT
           sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+          sudo ip6tables -F OUTPUT
           sudo ip6tables -P OUTPUT DROP
           sudo ip6tables -A OUTPUT -o lo -j ACCEPT
           sudo ip6tables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
