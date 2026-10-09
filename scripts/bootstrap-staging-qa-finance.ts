@@ -1,13 +1,13 @@
 import { PrismaClient } from "@prisma/client";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { ensureStagingQaFinance, qaFinanceDatabaseUrl } from "../src/lib/staging-qa-finance-bootstrap";
+import { ensureStagingQaFinance, qaFinanceDatabaseUrl, QaFinanceBootstrapFailure } from "../src/lib/staging-qa-finance-bootstrap";
 import { isStagingDatabaseUrl } from "../src/lib/database-identity";
 
 const APP_ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 
 /** Persist the same closed result, never provider errors or injected values. */
-async function report(result: { status?: string; stage?: string; email?: string; outcome?: string }) {
+async function report(result: { status?: string; stage?: string; email?: string; outcome?: string; failureCategory?: string }) {
   const receipt = { schemaVersion: "celebratedeal-staging-qa-finance-bootstrap/v1", ...result,
     productionOperations: false, providerOperations: false };
   if (process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_REF === "refs/heads/master"
@@ -49,8 +49,9 @@ async function main() {
     const result = await ensureStagingQaFinance(db, { databaseUrl, sourceSha: env.CELEBRATEDEAL_SOURCE_SHA!,
       password: env.PAYUNI_QA_FINANCE_PASSWORD, runtimeReady: true, payuniEnv: env.PAYUNI_ENV });
     await report(result);
-  } catch {
-    await report({ status: "BLOCKED_OR_FAILED", stage });
+  } catch (error) {
+    await report({ status: "BLOCKED_OR_FAILED", stage,
+      ...(error instanceof QaFinanceBootstrapFailure ? { failureCategory: error.category } : {}) });
     process.exitCode = 1;
   } finally {
     await db?.$disconnect();

@@ -7,6 +7,24 @@ export const QA_FINANCE_EMAIL = "q1-synthetic-finance-v1@invalid.example";
 const NAME = "Q1 Synthetic Sandbox Finance";
 const rejected = () => new Error("STAGING_QA_FINANCE_BOOTSTRAP_REJECTED");
 
+/** Closed categories only: never expose a database message, URL or error metadata. */
+export function qaFinanceFailureCategory(error: unknown) {
+  if (!error || typeof error !== "object") return "ACCOUNT_OR_DATABASE_REJECTED";
+  const categories: Record<string, string> = {
+    P1000: "DATABASE_AUTHENTICATION", P1001: "DATABASE_UNREACHABLE", P1002: "DATABASE_TIMEOUT",
+    P1011: "DATABASE_TLS", P2024: "DATABASE_POOL_TIMEOUT", P2021: "DATABASE_SCHEMA_MISSING",
+    P2022: "DATABASE_SCHEMA_MISSING", P2002: "ACCOUNT_CONFLICT",
+  };
+  const code = "code" in error && typeof error.code === "string" ? error.code
+    : "errorCode" in error && typeof error.errorCode === "string" ? error.errorCode : undefined;
+  return code && Object.hasOwn(categories, code)
+    ? categories[code] ?? "ACCOUNT_OR_DATABASE_REJECTED" : "ACCOUNT_OR_DATABASE_REJECTED";
+}
+
+export class QaFinanceBootstrapFailure extends Error {
+  constructor(public readonly category: string) { super("STAGING_QA_FINANCE_BOOTSTRAP_REJECTED"); }
+}
+
 /** Prisma honors query host overrides. Permit only bounded operational options,
  * and force encrypted, certificate-verified transport without logging the URL.
  */
@@ -64,8 +82,8 @@ export async function ensureStagingQaFinance(
         after: { synthetic: true, sourceSha: input.sourceSha } } });
       return { email: QA_FINANCE_EMAIL, outcome: "CREATED" as const };
     });
-  } catch {
+  } catch (error) {
     // No raw Prisma diagnostics or account credentials escape this boundary.
-    throw rejected();
+    throw new QaFinanceBootstrapFailure(qaFinanceFailureCategory(error));
   }
 }
