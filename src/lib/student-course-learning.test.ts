@@ -41,6 +41,36 @@ describe("student course learning repository", () => {
 });
 
 describe("concurrent lesson saves", () => {
+  it("survives repeated serialization conflicts and rechecks purchase rights", async () => {
+    const db = storeFixture();
+    const error = new Prisma.PrismaClientKnownRequestError("synthetic serialization", { code: "P2034", clientVersion: "test" });
+    const transactions = vi.spyOn(db, "$transaction");
+    for (let i = 0; i < 3; i += 1) transactions.mockRejectedValueOnce(error);
+    await expect(saveStudentLessonProgress(db, scope, { courseId: "course-1", lessonId: "lesson-1", watchedSeconds: 90, markedComplete: false })).resolves.toMatchObject({ watchedSeconds: 95 });
+    expect(transactions).toHaveBeenCalledTimes(4);
+    expect(db.commerceOrderItem.findFirst).toHaveBeenCalled();
+    for (const call of transactions.mock.calls) {
+      expect((call as readonly unknown[])[1]).toMatchObject({ isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }
+  });
+
+  it("denies a revoked entitlement on the fresh retry instead of writing stale progress", async () => {
+    const db = storeFixture();
+    const error = new Prisma.PrismaClientKnownRequestError("synthetic serialization", { code: "P2034", clientVersion: "test" });
+    vi.spyOn(db, "$transaction").mockRejectedValueOnce(error);
+    db.commerceOrderItem.findFirst.mockResolvedValue(null as never);
+    await expect(saveStudentLessonProgress(db, scope, { courseId: "course-1", lessonId: "lesson-1", watchedSeconds: 90, markedComplete: false })).resolves.toBeNull();
+    expect(db.courseLessonProgress.upsert).not.toHaveBeenCalled();
+  });
+
+  it("propagates persistent serialization conflicts after its bounded retry budget", async () => {
+    const db = storeFixture();
+    const error = new Prisma.PrismaClientKnownRequestError("synthetic serialization", { code: "P2034", clientVersion: "test" });
+    const transactions = vi.spyOn(db, "$transaction").mockRejectedValue(error);
+    await expect(saveStudentLessonProgress(db, scope, { courseId: "course-1", lessonId: "lesson-1", watchedSeconds: 90, markedComplete: false })).rejects.toBe(error);
+    expect(transactions).toHaveBeenCalledTimes(6);
+    expect(db.courseLessonProgress.upsert).not.toHaveBeenCalled();
+  });
   it("retains completion when an older checkpoint finishes last", async () => {
     const db = storeFixture();
     let state = { lessonId: "lesson-1", watchedSeconds: 60, completedAt: null as Date | null };
