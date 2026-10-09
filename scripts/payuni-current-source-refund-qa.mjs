@@ -34,7 +34,8 @@ export async function diagnoseCurrentSourcePayment(input, dependencies = {}) {
   const category = Object.hasOwn(categories, status ?? "") && response.status === expectedStatus[status]
     ? categories[status] : "EXACT_STATE_UNAVAILABLE";
   return { schemaVersion: "celebratedeal-current-source-diagnostic/v1", status: "READ_ONLY_DIAGNOSTIC",
-    sourceCommit: invocation.sourceSha, category, productionOperations: false,
+    sourceCommit: invocation.sourceSha, category,
+    canonicalSandboxBoundaryVerified: category !== "EXACT_STATE_UNAVAILABLE", productionOperations: false,
     paymentSubmitted: false, refundSubmitted: false, alternateTransactionSelected: false };
 }
 
@@ -164,7 +165,7 @@ export async function waitFinanceLoginRedirect(page, afterMfa = false) {
 }
 
 /** Protected CI entry point: process injection only; no dotenv or raw logs. */
-export async function executeCurrentSourceRefundQa() {
+export async function executeCurrentSourceRefundQa(dependencies = {}) {
   let browser;
   let loginPage;
   let stage = "configuration";
@@ -177,23 +178,28 @@ export async function executeCurrentSourceRefundQa() {
     const input = readFixedInputs();
     requireSafe(validateInvocation(input).ok);
     stage = "deployment-lineage";
-    requireSafe(await verifyMvpPayUniLineage({ CELEBRATEDEAL_SOURCE_SHA: input.sourceSha,
+    requireSafe(await (dependencies.verifyLineage ?? verifyMvpPayUniLineage)({ CELEBRATEDEAL_SOURCE_SHA: input.sourceSha,
       CELEBRATEDEAL_DEPLOYMENT_HOST: input.previewHost, GITHUB_TOKEN: process.env.GITHUB_TOKEN }));
+    if (process.env.Q1_EXISTING_STATE_DIAGNOSTIC === "true") {
+      stage = "exact-existing-state-diagnostic";
+      // This existing endpoint authorizes the exact Preview/Sandbox/database
+      // boundary before any read. Paid orders may have exhausted inventory;
+      // they must not depend on readiness to create another payment.
+      const receipt = await diagnoseCurrentSourcePayment(input, { request: dependencies.diagnosticRequest });
+      console.log(JSON.stringify(receipt));
+      if (!receipt.canonicalSandboxBoundaryVerified) process.exitCode = 1;
+      return;
+    }
     // The mutable canonical alias must independently prove the same runtime
     // identity before finance credentials are entered or a payment is created.
     stage = "canonical-runtime-preflight";
-    const preflight = await fetch(`${APP_ORIGIN}/api/admin/ops/payuni/wp4-preflight`, {
+    const preflight = await (dependencies.preflightFetch ?? fetch)(`${APP_ORIGIN}/api/admin/ops/payuni/wp4-preflight`, {
       method: "POST", redirect: "error", signal: AbortSignal.timeout(10000),
       headers: { authorization: `Bearer ${input.jobSecret}`, "x-celebratedeal-source-sha": input.sourceSha },
     });
     requireSafe(preflight.status === 200);
     const readiness = await preflight.json();
     requireSafe(readiness.ready === true && readiness.buyerOrder === true);
-    if (process.env.Q1_EXISTING_STATE_DIAGNOSTIC === "true") {
-      stage = "exact-existing-state-diagnostic";
-      console.log(JSON.stringify(await diagnoseCurrentSourcePayment(input)));
-      return;
-    }
     const { chromium } = await import("@playwright/test");
     const { queryTransaction } = await import("./payuni-sandbox-external-qa.mjs");
     browser = await launchRefundBrowser(chromium);
