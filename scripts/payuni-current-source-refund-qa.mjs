@@ -56,6 +56,26 @@ export function classifyFinanceLoginFailure(value) {
   } catch { return "LOGIN_NOT_COMPLETED"; }
 }
 
+/** An absent or malformed nested receipt must never break the failure report. */
+export function currentSourceFailureReceipt(stage, error, loginUrl) {
+  const stages = new Set(["configuration", "deployment-lineage", "canonical-runtime-preflight",
+    "exact-existing-state-diagnostic", "platform-login-page", "platform-login-form",
+    "platform-login-submit", "platform-login-redirect", "platform-mfa",
+    "platform-finance-dashboard", "exact-payment-and-refund"]);
+  let paymentReceipt;
+  try {
+    if (validatePaymentOnlyReceipt(error?.paymentReceipt).ok) paymentReceipt = error.paymentReceipt;
+  } catch {
+    // The legacy validator expects a complete object. Drop untrusted shapes;
+    // neither the exception nor the raw error is suitable for CI evidence.
+  }
+  return { schemaVersion: "celebratedeal-current-source-refund-qa/v1", status: "BLOCKED_OR_FAILED",
+    stage: stages.has(stage) ? stage : "configuration",
+    ...(loginUrl !== undefined ? { failureCategory: classifyFinanceLoginFailure(loginUrl) } : {}),
+    ...(paymentReceipt ? { paymentReceipt } : {}),
+    productionOperations: false, alternateTransactionSelected: false };
+}
+
 /** Connect the existing fixed synthetic payment runner to the exact refund UI.
  * The immutable Preview identifies the source; application requests use only
  * the existing canonical staging origin. Its server checks the source, project,
@@ -216,10 +236,7 @@ export async function executeCurrentSourceRefundQa() {
     { writeHandoff: writePaymentHandoff });
     console.log(JSON.stringify(receipt));
   } catch (error) {
-    console.log(JSON.stringify({ schemaVersion: "celebratedeal-current-source-refund-qa/v1", status: "BLOCKED_OR_FAILED", stage,
-      ...(loginPage ? { failureCategory: classifyFinanceLoginFailure(loginPage.url()) } : {}),
-      ...(validatePaymentOnlyReceipt(error?.paymentReceipt).ok ? { paymentReceipt: error.paymentReceipt } : {}),
-      productionOperations: false, alternateTransactionSelected: false }));
+    console.log(JSON.stringify(currentSourceFailureReceipt(stage, error, loginPage?.url())));
     process.exitCode = 1;
   } finally {
     if (browser) await browser.close();
