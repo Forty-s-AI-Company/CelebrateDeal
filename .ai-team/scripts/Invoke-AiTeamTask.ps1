@@ -28,6 +28,7 @@ $script:agyDiscoveryProcessStatus = 'NOT_STARTED'
 function Write-TaskReceipt([hashtable]$Receipt) {
     $Receipt['normalized_status'] = $Receipt.status
     $Receipt['reviewed'] = $Receipt.status -eq 'REVIEW_COMPLETED'
+    if (-not $Receipt.ContainsKey('completed')) { $Receipt['completed'] = $false }
     if ($script:agyDiscoveryProcessStatus -ne 'NOT_STARTED') {
         # Preserve the bounded process outcome without disclosing AGY output.
         $Receipt['agy_discovery_process_status'] = $script:agyDiscoveryProcessStatus
@@ -36,7 +37,7 @@ function Write-TaskReceipt([hashtable]$Receipt) {
     $Receipt['observed'] = @{model='unknown'; effort='unknown'; source='not_reported'}
     if ($Receipt.ContainsKey('route') -and $Receipt.route) {
         $Receipt['requested'] = $Receipt.route.requested
-        $Receipt['resolved'] = $Receipt.route.resolved
+        $Receipt['resolved'] = if ($Receipt.route.ContainsKey('resolved')) { $Receipt.route.resolved } else { @{model='unknown'; effort='unknown'; source='not_resolved'} }
     }
     $Receipt['verification'] = @{kind='local_wrapper'; status=$Receipt.status; source='process_and_schema'}
     if ($DeprecatedParameters.Count -gt 0) {
@@ -112,8 +113,8 @@ try {
     $agy = Get-Command agy -ErrorAction SilentlyContinue
     $wantsExternal = $preview.selected_model -in @('gemini_medium','gemini_high','sonnet','opus')
     if (-not $PlanOnly -and $wantsExternal) {
-        # Discovery failures are classified separately from authentication. Any failure
-        # still follows the deterministic Codex fallback; it never fails the task by itself.
+        # Discovery failures remain distinct. Final-review roles cannot silently
+        # substitute a native GPT reviewer when the external provider fails.
         $runtimeState['agy_available'] = $false
         $runtimeState['agy_models'] = @{}
         $runtimeState['discovered_slugs'] = @()
@@ -148,6 +149,9 @@ try {
                 $knownAgyStatuses = @('AUTH_REQUIRED', 'HOST_PERMISSION_BLOCKED', 'MODEL_UNAVAILABLE', 'AGY_RUNTIME_ERROR')
                 $agyDiscoveryStatus = if ($knownAgyStatuses -contains [string]$discovery.status) { [string]$discovery.status } else { 'AGY_RUNTIME_ERROR' }
             }
+        }
+        if ($agyDiscoveryStatus -ne 'DISCOVERY_VERIFIED') {
+            $runtimeState['agy_failure_category'] = $agyDiscoveryStatus
         }
     }
     # Only external attempts are executed here. Native fallback always returns to the host.
@@ -230,6 +234,7 @@ try {
         # A model gets one attempt. No Gemini -> Gemini or Sonnet -> Opus quota ladder.
         if (-not $runtimeState.ContainsKey('models')) { $runtimeState['models'] = @{} }
         $runtimeState.models[$decision.model_key] = @{failure='cli_failure'}
+        $runtimeState['agy_failure_category'] = if ($status -in @('AUTH_REQUIRED','HOST_PERMISSION_BLOCKED','AGY_NOT_INSTALLED','MODEL_UNAVAILABLE','AGY_RUNTIME_ERROR')) { $status } else { 'AGY_RUNTIME_ERROR' }
         $prior = if ($runtimeState.ContainsKey('attempted_models')) { @($runtimeState.attempted_models) } else { @() }
         $runtimeState['attempted_models'] = @($prior) + @($decision.model_key)
     }

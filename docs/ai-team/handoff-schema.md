@@ -79,3 +79,7 @@ NEXT_PROMPT_END
 - 回滾必須只作用於本輪明確 ownership，不得碰既有使用者變更。
 - Claude plan review 額度不足時記錄 `NOT_REQUESTED_QUOTA`，不可寫成 `PASS`；它不會阻擋 deterministic tests 或 Goal。
 - Git promotion 只允許 `codex/*` 分支與受保護 PR；Production deploy 永遠維持 `MANUAL_APPROVAL_REQUIRED`。
+
+## 最終外部審查
+
+Handoff 保留 provider_availability（NOT_CHECKED／AVAILABLE／CALL_FAILED／UNAVAILABLE）、provider_failure_category、review_scope_files、snapshot revision、實際 provider terminal 與 findings。GPT native reviewer preset 僅提供候選 findings，最終資格由 canonical policy 檢查。修正後只委派受影響 scope，但仍產生匹配新來源的收據；未變更來源的證據須先確認內容與適用範圍。

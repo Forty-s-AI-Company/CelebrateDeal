@@ -8,7 +8,7 @@ import sys
 import subprocess
 import unittest
 
-from routing import route, load_config, load_policy, discover_slugs, validate_review, assess_acceptance, snapshot_revision
+from routing import route, load_config, load_policy, discover_slugs, validate_review, assess_acceptance, snapshot_revision, bounded_review_scope
 from route_cli import record_native_execution
 from validation_runner import run_check
 
@@ -19,6 +19,16 @@ def available():
         "sonnet": "claude-sonnet-5-5-high", "opus": "claude-opus-5-5-high",
     }
     return {"agy_available": True, "agy_models": mapping, "discovered_slugs": list(mapping.values())}
+
+
+def offline_review(decision, root):
+    """Synthetic boundary receipt only; no live provider execution claimed."""
+    stage = decision["review_plan"][0]
+    path = Path(root) / "review.json"
+    review = {"kind":"review", "revision":decision["source_revision"], "status":"PASS", "independent":True,
+              "source":"agy_wrapper", "role":stage["role"], "model":stage["model"], "evidence_path":str(path)}
+    path.write_text(json.dumps(review), encoding="utf-8")
+    return review
 
 
 class AcceptanceTests(unittest.TestCase):
@@ -132,7 +142,7 @@ class AcceptanceTests(unittest.TestCase):
             run_check("unit", revision, [sys.executable, "-c", "import sys; sys.exit(0)"], validation_path)
             decision = route({"task_summary": "payment posting fix", "risk_categories": ["payment"],
                               "source_revision": revision, "snapshot_root": d, "snapshot_files": ["source.py"],
-                              "required_checks": ["unit"]})
+                              "required_checks": ["unit"]}, available())
             check = {"kind": "validation", "name": "unit", "revision": revision, "source": "validation_runner",
                      "status": "PASS", "exit_code": 0, "evidence_path": str(validation_path)}
             review = {"revision": revision, "status": "PASS", "independent": True,
@@ -206,7 +216,7 @@ class AcceptanceTests(unittest.TestCase):
             request = {"task": {"task_summary": "fix bounded add implementation", "task_type": "implement",
                                 "source_revision": revision, "snapshot_root": str(project_root),
                                 "snapshot_files": snapshot_files, "required_checks": ["unit"]},
-                       "config_path": str(Path(__file__).resolve().parents[1] / "config/router.json")}
+                       "runtime": available(), "config_path": str(Path(__file__).resolve().parents[1] / "config/router.json")}
             routed = subprocess.run([sys.executable, str(cli)], input=json.dumps(request),
                                     text=True, capture_output=True, check=True)
             decision = json.loads(routed.stdout)
@@ -226,7 +236,7 @@ class AcceptanceTests(unittest.TestCase):
                      "evidence_path": str(receipt_path)}
             accepted = subprocess.run([sys.executable, str(cli)],
                 input=json.dumps({"action": "assess_acceptance", "decision": decision,
-                                  "evidence": {"execution": execution, "checks": [check]}}),
+                                  "evidence": {"execution": execution, "checks": [check], "review": offline_review(decision, root)}}),
                 text=True, capture_output=True, check=True)
             self.assertEqual(json.loads(accepted.stdout)["status"], "READY")
 
@@ -314,7 +324,7 @@ class AcceptanceTests(unittest.TestCase):
             ("05-large-diff", {"task_summary": "ordinary large diff review"}, "auto", available(), "ai-team", "gemini_high"),
             ("06-business-review", {"task_summary": "business logic review"}, "auto", available(), "ai-team", "sonnet"),
             ("07-critical", {"task_summary": "Payment Auth Security review"}, "auto", available(), "ai-team-pro", "opus"),
-            ("08-claude-zero", {"task_summary": "business logic review"}, "auto", {**available(), "quota": {"claude": 0}}, "ai-team", "sol"),
+            ("08-claude-zero", {"task_summary": "business logic review"}, "auto", {**available(), "quota": {"claude": 0}}, "ai-team", "gemini_high"),
             ("09-gemini-zero", {"task_summary": "ordinary large diff review"}, "auto", {**available(), "quota": {"gemini": 0}}, "ai-team", "sol"),
             ("10-no-agy", {"task_summary": "Payment review"}, "auto", {"agy_available": False}, "ai-team-pro", "astra"),
             ("11-pro-copy", {"task_summary": "修改文案"}, "ai-team-pro", available(), "ai-team-pro", "luna"),
@@ -323,6 +333,10 @@ class AcceptanceTests(unittest.TestCase):
         for name, task, team, runtime, expected_team, expected_model in cases:
             with self.subTest(case=name):
                 result = route(task, runtime, team)
+                if name == "10-no-agy":
+                    self.assertEqual(result["status"], "REVIEW_BLOCKED")
+                    self.assertNotIn("model_key", result)
+                    continue
                 self.assertEqual(result["status"], "planned")
                 self.assertEqual(result["team"], expected_team)
                 self.assertEqual(result["model_key"], expected_model)
@@ -401,7 +415,7 @@ class AcceptanceTests(unittest.TestCase):
 
     def test_review_routing_not_a_fixed_ladder(self):
         low = route({"task_summary": "simple review", "complexity": "low"}, available())
-        self.assertEqual(low["model_key"], "luna")
+        self.assertEqual(low["model_key"], "sonnet")
         self.assertFalse(low["review_plan"])
         medium = route({"task_summary": "ordinary review", "risk": "medium"}, available())
         self.assertEqual(medium["model_key"], "gemini_high")
@@ -414,8 +428,8 @@ class AcceptanceTests(unittest.TestCase):
 
     def test_general_review_consumes_effective_complexity_and_availability(self):
         expected = {
-            "low": ("self_review", "luna"),
-            "medium": ("self_review", "sol"),
+            "low": ("senior_review", "sonnet"),
+            "medium": ("senior_review", "sonnet"),
             "high": ("senior_review", "sonnet"),
             "very_high": ("senior_review", "sonnet"),
         }
@@ -433,13 +447,13 @@ class AcceptanceTests(unittest.TestCase):
                     {"task_summary": "bounded review", "task_type": "review", "complexity": complexity},
                     no_claude,
                 )
-                self.assertEqual((result["role"], result["model_key"]), ("senior_review", "sol"))
+                self.assertEqual((result["role"], result["model_key"]), ("senior_review", "gemini_high"))
 
     def test_roles(self):
         for kind, model in [("manager","luna"),("explore","luna"),("plan","sol"),("release","luna"),("architecture","sol"),("root_cause","sol")]:
             self.assertEqual(route({"task_summary": "bounded task", "task_type": kind})["model_key"], model)
-        self.assertEqual(route({"task_summary":"dispute", "task_type":"arbiter"})["status"], "ASTRA_REASON_REQUIRED")
-        self.assertEqual(route({"task_summary":"dispute", "task_type":"arbiter", "astra_reason":"major_reviewer_conflict"})["model_key"], "astra")
+        self.assertEqual(route({"task_summary":"dispute", "task_type":"arbiter"})["status"], "AGY_DISCOVERY_REQUIRED")
+        self.assertEqual(route({"task_summary":"dispute", "task_type":"arbiter", "astra_reason":"major_reviewer_conflict"}, available())["model_key"], "sonnet")
 
     def test_native_fallback_is_capability_preserving(self):
         result = route({"task_summary": "copy edit", "task_type": "copy"}, {"models": {"luna": {"quota_remaining": 0}}})
@@ -503,24 +517,27 @@ class AcceptanceTests(unittest.TestCase):
 
     def test_sonnet_and_opus_fallback_effort(self):
         no_claude = {**available(), "quota": {"claude": 0}}
-        self.assertEqual(route({"task_summary": "deep review"}, no_claude)["reasoning_effort"], "high")
+        ordinary = route({"task_summary": "deep review"}, no_claude)
+        self.assertEqual((ordinary["model_key"], ordinary["reasoning_effort"]), ("gemini_high", "high"))
+        self.assertFalse(ordinary["candidate_findings_only"])
         critical = route({"task_summary": "payment review"}, no_claude)
-        self.assertEqual((critical["model_key"],critical["reasoning_effort"]), ("astra","high"))
-        no_claude["models"] = {"astra": {"available": False}}
-        self.assertEqual(route({"task_summary": "payment review"}, no_claude)["model_key"], "sol")
-        no_claude["models"]["sol"] = {"available": False}
-        self.assertEqual(route({"task_summary": "payment review"}, no_claude)["status"], "NO_CAPABLE_MODEL")
-        self.assertEqual(route({"task_summary": "payment edit"}, no_claude)["status"], "REVIEW_BLOCKED")
+        self.assertEqual(critical["status"], "REVIEW_BLOCKED")
+        self.assertNotIn("model_key", critical)
+        self.assertEqual(route({"task_summary": "payment edit"}, no_claude)["model_key"], "sol")
 
-    def test_all_agy_unavailable_still_supports_all_work(self):
+    def test_all_agy_unavailable_still_supports_implementation_not_final_verdict(self):
         for runtime in ({"agy_available": False}, {**available(), "quota": {"gemini":0,"claude":0}}):
-            for kind in ("plan","implement","review","qa","release","security_review","architecture"):
-                with self.subTest(kind=kind):
-                    result=route({"task_summary":"bounded task","task_type":kind}, runtime)
-                    self.assertEqual(result["status"], "planned")
-                    self.assertEqual(result["provider"], "native_agent")
+            for kind in ("plan", "implement", "release", "architecture"):
+                result = route({"task_summary":"bounded task","task_type":kind}, runtime)
+                self.assertEqual(result["provider"], "native_agent")
+                self.assertIn(result["status"], {"planned", "REVIEW_BLOCKED"})
+            for kind in ("review", "security_review"):
+                result = route({"task_summary":"bounded task","task_type":kind}, runtime)
+                self.assertEqual(result["status"], "REVIEW_BLOCKED")
+                self.assertNotIn("model_key", result)
             qa = route({"task_summary":"bounded task","task_type":"qa"}, runtime)
-            self.assertEqual(qa["model_key"],"luna")
+            self.assertEqual(qa["model_key"], "luna")
+            self.assertTrue(qa["candidate_findings_only"])
 
     def test_attempts_recursion_and_budget(self):
         self.assertEqual(route({"task_summary":"copy edit","parent_depth":1})["status"], "BLOCKED_RECURSION")
@@ -551,11 +568,11 @@ class AcceptanceTests(unittest.TestCase):
         for runtime in ({"attempted_models": ["sol"]},
                         {"models": {"sol": {"failure": "cli_failure"}}},
                         {"models": {"gpt-6.1-sol": {"available": False}}}):
-            result = route({"task_summary": "reviewer dispute", "task_type": "arbiter",
-                            "astra_reason": "major_reviewer_conflict"}, runtime, policy=alias_policy)
+            result = route({"task_summary": "exceptional engineering", "task_type": "implement",
+                            "astra_reason": "unresolved_architecture"}, runtime, policy=alias_policy)
             self.assertEqual(result["status"], "NO_CAPABLE_MODEL")
-            independent = route({"task_summary": "reviewer dispute", "task_type": "arbiter",
-                                 "astra_reason": "major_reviewer_conflict"}, runtime)
+            independent = route({"task_summary": "exceptional engineering", "task_type": "implement",
+                                 "astra_reason": "unresolved_architecture"}, runtime)
             self.assertEqual(independent["model"], "gpt-6-astra")
         reverse = route({"task_summary": "ordinary implementation"}, {"attempted_models": ["astra"]}, policy=alias_policy)
         self.assertEqual(reverse["status"], "NO_CAPABLE_MODEL")

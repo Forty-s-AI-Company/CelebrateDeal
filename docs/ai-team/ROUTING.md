@@ -47,12 +47,12 @@ Task type floor、caller complexity 與 size requirement 決定實作 complexity
 
 | review 類型 | 路由 |
 | --- | --- |
-| Low scope | Luna self-review；有價值時 Gemini Medium |
+| 簡單 copy／UI 自測 | 可單代理實作與確定性測試；不是 GPT 最終模型裁決 |
 | 普通廣域 diff／QA | Gemini Medium/High，輸出 candidate findings |
-| Medium risk 或重要 candidate finding | 視需要選一次合格的獨立審查 |
+| 一般工程最終審查／重要 findings | Claude；需保留來源與實際執行收據 |
 | 複雜 plan／business logic | Claude Sonnet 5.5 High |
 | Critical security、payment、auth、billing、production data | Claude Opus 5.5 High，可直接跳過普通掃描 |
-| Technical Arbiter | 有具體 `astra_reason` 時 Astra low 起；只有重大未解問題才啟動 |
+| 範圍與 findings 仲裁 | Claude；非 Critical 才可由已驗證 Gemini 承接 |
 
 Reviewer 統一輸出 `BLOCKER`、`MAJOR`、`MINOR`、`NIT`，每個 finding 必須包含 severity、file、line/area、issue、evidence、impact、recommended_fix、required_test、confidence。Reviewer 預設只回報，不直接改 code。
 
@@ -66,12 +66,12 @@ Routing 與 fallback 是兩個獨立決策。Fallback chain 不得重複已失�
 | Sol engineering | 無合格替代則阻擋；有具體例外理由才考慮 Astra |
 | Gemini broad review | Luna 或 Sol，依審查能力需求 |
 | Gemini QA | Luna；困難 QA 可用 Sol |
-| Sonnet deep review | Sol High → Astra High |
-| Opus Critical review | Astra XHigh → Sol XHigh |
+| Sonnet final review | 已驗證 Gemini 可承接非 Critical 裁決；不能落到 GPT |
+| Opus Critical review | 缺席則 REVIEW_BLOCKED，無靜默 GPT fallback |
 
-`quota=0` 只會跳過該 provider；unknown/null 不等於 0。Gemini 與 Claude 都不可用時，必要工作回到 Codex；agy 整體不可用也不能阻斷 native routing。Critical 若沒有任何合格模型，回傳 `NO_CAPABLE_MODEL` 或 `REVIEW_BLOCKED`，不可 skip required review。
+`quota=0` 只會跳過該 provider；unknown/null 不等於 0。AGY 狀態缺省為 NOT_CHECKED，回傳 AGY_DISCOVERY_REQUIRED，不能當成 unavailable。實際 discovery／呼叫失敗才記 CALL_FAILED 與失敗分類。工程與候選 QA 可繼續使用 Codex；最終外部審查缺席時不能 READY，Critical 回傳 REVIEW_BLOCKED。
 
-agy failure receipt 必須保留分類：`AUTH_REQUIRED`、`HOST_PERMISSION_BLOCKED`、`AGY_NOT_INSTALLED`、`MODEL_UNAVAILABLE`、`AGY_RUNTIME_ERROR`。Host-side 已登入但 Codex sandbox 讀取 agy 狀態遭拒時，使用 `HOST_PERMISSION_BLOCKED`/`HOST_AUTH_CONTEXT_UNAVAILABLE`；不可直接推論成 `AUTH_REQUIRED`。所有上述 provider failure 都只影響外部 review/QA，必要工作仍依 `MODEL_FALLBACK` 回到足夠的 Codex 模型。
+agy failure receipt 必須保留分類：`AUTH_REQUIRED`、`HOST_PERMISSION_BLOCKED`、`AGY_NOT_INSTALLED`、`MODEL_UNAVAILABLE`、`AGY_RUNTIME_ERROR`。Host-side 已登入但 Codex sandbox 讀取 agy 狀態遭拒時，使用 `HOST_PERMISSION_BLOCKED`/`HOST_AUTH_CONTEXT_UNAVAILABLE`；不可直接推論成 `AUTH_REQUIRED`。上述 provider failure 不授予 GPT 最終裁決資格；實作與測試可繼續，最終審查仍依 canonical policy。
 
 ## Team tier
 
@@ -103,3 +103,7 @@ Receipt 區分 `requested`、`resolved` 與 `observed`。CLI 未回報實際模�
 Project MCP 由 `.ai-team/scripts/Start-AiTeamMcp.ps1` 啟動。Launcher 從 repository 解析所有路徑，並可依 `.ai-team/mcp_server/requirements.txt` 重建 ignored `.ai-team/.venv`；`.codex/config.toml` 不保存使用者或 checkout 絕對路徑。
 
 完整驗收矩陣與執行狀態見 [`docs/ai-team-vnext-plan.md`](../ai-team-vnext-plan.md) 與 [`vnext-validation.md`](vnext-validation.md)。
+
+## 精確複審與裁決
+
+review_scope_files 由既定 snapshot、review_changed_files 與 review_dependencies 計算；未經 authorized_scope_expansion 的新增來源拒絕。這只限制讀取範圍，不讓修正後沿用 stale revision 收據。MINOR／NIT 不自動阻擋或要求整輪重審；confirmed／unresolved BLOCKER／MAJOR 必須處理。爭議交外部合格 reviewer 裁決，新需求另記 scope proposal。
