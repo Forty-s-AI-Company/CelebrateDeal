@@ -33,6 +33,16 @@ function fixture() {
 }
 
 describe("fixed PayUni buyer order proof", () => {
+  it("verifies an exact paid order after the last unit is committed, but rejects invalid inventory", async () => {
+    const { db, tx } = fixture();
+    const product = { vendorId: WP4_SANDBOX_FIXTURE.vendorId, priceCents: 100, currency: "TWD",
+      commerceDomain: "merchant", fulfillmentType: "physical", inventory: 0 };
+    tx.product.findUnique.mockResolvedValueOnce(product);
+    expect(await readWp4PayUniBuyerOrderProof(db as never, sourceSha)).toMatchObject({
+      status: "VERIFIED", paymentStatus: "paid", remainingInventory: 0, reservationStatus: "committed" });
+    tx.product.findUnique.mockResolvedValueOnce({ ...product, inventory: -1 });
+    expect(await readWp4PayUniBuyerOrderProof(db as never, sourceSha)).toEqual({ status: "STATE_MISMATCH" });
+  });
   it("attests the persisted synthetic order and permits comparison after an identical callback", async () => {
     const { db, tx } = fixture();
     const first = await readWp4PayUniBuyerOrderProof(db as never, sourceSha);
