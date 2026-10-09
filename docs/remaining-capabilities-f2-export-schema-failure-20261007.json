@@ -1,0 +1,18 @@
+{
+  "errorCode": "P1012",
+  "failure_category": "schema-configuration",
+  "cause": "Prisma one-to-one relation requires unique composite defining fields",
+  "receipt": {
+    "schemaVersion": "affiliate-remuneration-disposable/v1",
+    "status": "FAIL",
+    "tests": null,
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T00:29:19.7Z",
+    "migrationCount": 89,
+    "finishedAt": "2026-10-07T00:29:26.228Z"
+  },
+  "original_assertions_preserved": true
+}

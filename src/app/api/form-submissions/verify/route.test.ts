@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
   db: { marker: "verification-db" },
@@ -56,6 +57,7 @@ function request(value = token, origin: string | null = "https://app.example.tes
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
   vi.stubEnv("CSRF_SECRET", "form-chat-session-route-test-secret-longer-than-thirty-two-bytes");
   mocks.checkRateLimit.mockResolvedValue(null);
   mocks.verifyFormSubmission.mockResolvedValue({ status: "invalid" });
@@ -64,6 +66,21 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("POST /api/form-submissions/verify", () => {
+  it("keeps the canonical loopback cookie host when NextRequest normalizes its URL", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://127.0.0.1:31028");
+    vi.stubEnv("E2E_TEST_MODE", "true");
+    vi.stubEnv("E2E_BASE_URL", "http://127.0.0.1:31028");
+    mocks.verifyFormSubmission.mockResolvedValue({status:"already_verified",chatSession:{submissionId:"formsub_test"}});
+    const normalized = new NextRequest("http://127.0.0.1:31028/api/form-submissions/verify", {
+      method:"POST", headers:{origin:"http://127.0.0.1:31028",host:"127.0.0.1:31028","content-type":"application/x-www-form-urlencoded"},
+      body:new URLSearchParams({token}),
+    });
+    expect(new URL(normalized.url).hostname).toBe("localhost");
+    const response=await POST(normalized);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe("http://127.0.0.1:31028/verify-registration?status=verified");
+    expect(response.cookies.get(FORM_SUBMISSION_CHAT_SESSION_COOKIE)?.path).toBe("/");
+  });
   it("拒絕缺少或跨網域的來源，且不執行驗證", async () => {
     for (const origin of [null, "https://attacker.example.test"]) {
       const response = await POST(request(token, origin));

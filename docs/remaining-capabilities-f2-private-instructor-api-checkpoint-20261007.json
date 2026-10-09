@@ -1,0 +1,72 @@
+{
+  "sources": [
+    {
+      "sha256": "d23c815edefbaf5d566f3d09690bc5b99a62648b0663c0b637ddf1597a038e80",
+      "path": "src/lib/live-private-chat.ts"
+    },
+    {
+      "sha256": "e2f2f023b5f5952427dd1128e3d3195ac1ddb59e85848cfed332f591db43bf7d",
+      "path": "src/lib/live-private-chat-storage.db.test.ts"
+    },
+    {
+      "sha256": "d8242080ac6baafbd83feb3b8828563027e0c3b9d6ecfc401f1ec80a69e2b639",
+      "path": "src/lib/live-chat-request-security.ts"
+    },
+    {
+      "sha256": "31a247ba287049924a4616318c2b3ca77c02b19ed658c3df45963eda4f0c2eec",
+      "path": "src/app/api/live-chat/instructor/route.ts"
+    },
+    {
+      "sha256": "a5d0ebb902289550fb84cc97816cc63a4bbef76a6ca699d361f9eb6992497295",
+      "path": "src/app/api/live-chat/instructor/route.test.ts"
+    },
+    {
+      "sha256": "19d6fb44502f5fd386392e6d811be3f0c427cf746399ee1c6fa5ec648cc35a65",
+      "path": "scripts/live-private-commerce-disposable-qa.mjs"
+    }
+  ],
+  "contracts": [
+    "actor and session derived from authenticated manager",
+    "current session revocation/expiry and enrolled MFA rechecked in transaction",
+    "canonical current membership selection includes legacy default but rejects arbitrary membership",
+    "current owner/admin and selected project; aggregate read-only",
+    "verified form bound conversation and encrypted instructor provenance",
+    "signed kind-scoped message/thread pagination",
+    "CSRF and stable authenticated-user rate buckets"
+  ],
+  "tests": {
+    "browser": "NOT_RUN_CURRENT_API",
+    "migrations": 86,
+    "unit_files": 15,
+    "review": "PENDING",
+    "cleanup": "PASS",
+    "unit_passed": 141,
+    "typescript": "PASS",
+    "skipped": 0,
+    "acceptance": "NOT_READY",
+    "strict_production_index": "PASS",
+    "db_passed": 23,
+    "eslint": "PASS"
+  },
+  "status": "INSTRUCTOR_API_LOCAL_VALIDATED_FULL_TASK_INCOMPLETE",
+  "delivered": false,
+  "base_head": "385e646a0de080a23387276c9795ae57c04522a2",
+  "created_at": "2026-10-07T02:57:58.2136246Z",
+  "db_evidence": "docs/remaining-capabilities-f2-private-instructor-current-db-20261007.json",
+  "task_id": "f2-live-private-chat-purchase-broadcast",
+  "remaining": [
+    "actual viewer/instructor UI and navigation",
+    "full current-source DB and real browser journeys",
+    "independent Critical review",
+    "canonical acceptance",
+    "exact-head CI and protected PR delivery"
+  ],
+  "ownership": {
+    "observed_effort": "unknown",
+    "dispatches": 0,
+    "max_dispatches": 4,
+    "observed_model": "unknown",
+    "writer": "root"
+  },
+  "parent_goal_id": "remaining-capabilities-20261005"
+}

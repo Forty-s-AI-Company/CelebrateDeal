@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readFormDataBody, requireSameOriginRequest } from "@/lib/api-security";
+import { getBrowserReturnAppUrl } from "@/lib/app-url";
 import { getDb } from "@/lib/db";
 import {
   ensureLiveReminderDelivery,
@@ -25,7 +26,7 @@ function redirectResult(
   status: "verified" | "invalid",
   chatSession?: { submissionId: string },
 ) {
-  const url = new URL("/verify-registration", request.url);
+  const url = new URL("/verify-registration", getBrowserReturnAppUrl(request));
   url.searchParams.set("status", status);
   const response = NextResponse.redirect(url, {
     status: 303,

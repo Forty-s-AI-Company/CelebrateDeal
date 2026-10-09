@@ -1,0 +1,38 @@
+{
+  "task_id": "f2-live-private-chat-purchase-broadcast",
+  "status": "HISTORICAL_FAILURE_PRESERVED",
+  "confirmed_cause": [
+    "nested Prisma LiveProduct create vendorId incompatible with relation input",
+    "LiveViewerSession fixture missing required lastSeenAt"
+  ],
+  "receipts": [
+    {
+      "taskId": "f2-live-private-chat-purchase-broadcast",
+      "status": "BLOCKED_OR_FAILED",
+      "tests": {
+        "total": 5,
+        "passed": 0,
+        "failed": 5,
+        "skipped": 0
+      },
+      "migrations": 85,
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      },
+      "sourceFiles": {
+        "src/lib/live-purchase-broadcasts.ts": "5b5171d8c5b706af2e38dbdfd549699ab14ed565babbc2e7b7197e8424464613",
+        "src/lib/live-purchase-broadcasts.test.ts": "62e8e4763ccad9791474cbb59ae765c0ed8d3e689155f5e48a6a792c3d12b7db",
+        "src/lib/live-purchase-broadcasts.db.test.ts": "86b8b28a6ba1896151e1461154142262cc9ab1fb1c3c2a1861a70a1c94f15d72",
+        "src/app/api/live-purchase-broadcasts/route.ts": "324968123248a0b00501ecddcb3c8569077b59e93860f34f9a7507d34d324588",
+        "src/app/api/live-purchase-broadcasts/route.test.ts": "cad49c7f8ebd5b52406691cb8bb07054dc035cb49c46c2b86f358df477b294dd",
+        "vitest.live-private-commerce-db.config.ts": "4bc7333cf149b95a5a505a7c2abd5b37f7739b5b23b6a144eb9afbc0c2dba399",
+        "scripts/live-private-commerce-disposable-qa.mjs": "88f3ae99e7d679fd4992e626c7dd4c5fa8fa4207c9fa716e752ab2822febf568",
+        "scripts/prisma-loopback-disposable-migration-runner.mjs": "7732f5be5df18efb9d9cd4d9c48e466f76030db08a5371c9d40600ed0f64781e",
+        "prisma.playwright.config.ts": "78d379670b5e2b713a29c5d176b233eb12c1689c5840a76fa32ba3af1e2e1945"
+      },
+      "sourceRevision": "sha256:460fe9f1ad2b6357138c6bf0ca5bf680dafca7b352e7733b45e44caf468d15ac"
+    }
+  ],
+  "assertions_weakened": false
+}

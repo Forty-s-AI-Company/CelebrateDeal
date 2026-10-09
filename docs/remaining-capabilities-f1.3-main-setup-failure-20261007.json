@@ -1,0 +1,32 @@
+{
+  "base": "c72b5089a0a87e63ebb5cea6a09fdb28deb2b93d",
+  "status": "FAILED_BEFORE_BROWSER_JOURNEYS",
+  "receipt": {
+    "schemaVersion": "portal-localization-browser/v1",
+    "status": "BLOCKED_OR_FAILED",
+    "tests": {
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T11:45:16.446Z",
+    "finishedAt": "2026-10-07T11:48:56.943Z",
+    "failedTitles": [],
+    "browserFailure": [
+      "::error::playwright status=failed class=global_error"
+    ],
+    "browser": {
+      "expected": 0,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    }
+  },
+  "root_cause": "UNKNOWN",
+  "browser_pass": false
+}

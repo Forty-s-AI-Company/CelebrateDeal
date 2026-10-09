@@ -1,0 +1,15 @@
+{
+  "purpose": "Check installed Playwright serialization without product/server/database",
+  "expectedFailureExit": 1,
+  "syntheticMarker": "PRIVATE_LOGIN:login:rate_limited",
+  "firstLineClosed": true,
+  "serializedFields": [
+    "location",
+    "message"
+  ],
+  "messageHasMarker": true,
+  "unexpected": 1,
+  "applicationBrowserResult": "NOT_APPLICABLE",
+  "explanation": "Probe confirms closed message serialization works; inbox failures did not enter login catch because login passed",
+  "externalOperations": false
+}

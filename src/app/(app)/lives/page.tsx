@@ -35,6 +35,7 @@ export default async function LivesPage() {
                 <div className="flex flex-wrap gap-2">
                   <ButtonLink href={`/lives/${live.id}/edit`} tone="secondary">編輯</ButtonLink>
                   <ButtonLink href={`/lives/${live.id}/presenter`} tone="secondary">講師排版</ButtonLink>
+                  <ButtonLink href={`/lives/${live.id}/chat`} tone="secondary">講師私訊</ButtonLink>
                   <ButtonLink href={`/lives/${live.id}/preview`} tone="secondary"><Eye size={16} />預覽</ButtonLink>
                   <ButtonLink href={`/lives/${live.id}/analytics`} tone="secondary"><BarChart3 size={16} />分析</ButtonLink>
                 </div>

@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "celebratedeal-f2-remuneration-quote-sign/v1",
+  "task_id": "f2-merchant-remuneration",
+  "goal_id": "remaining-capabilities-20261005",
+  "base_head": "ba32681ef6c436a0170c34774b6afd5aae73fb36",
+  "source_files": [
+    {
+      "sha256": "0b60cd1c92d61fb354a72c3f784b4b2de2609811ca99c7b74ae1d25620397144",
+      "path": "prisma/schema.prisma"
+    },
+    {
+      "sha256": "e828618ab46106fe98ae2ea86af489374a8fe0d727f8aeb2829a6a0b281ae7b6",
+      "path": "prisma/migrations/20261007060000_affiliate_remuneration_ledger_binding/migration.sql"
+    },
+    {
+      "sha256": "9c1dfb8b5a40a47e164cb0af5fdd5a1e448c7cdce228b15851608d33cb9938aa",
+      "path": "src/lib/affiliate-remuneration-quotes.ts"
+    },
+    {
+      "sha256": "ae2bceab3c5058fbf4e0075096c20f64eee7bef460255cf5532d56c7941dc72c",
+      "path": "src/lib/affiliate-remuneration.db.test.ts"
+    },
+    {
+      "sha256": "bfb9fc128abbdbce1aa285c4b13add0046b01a81c03283e530a9f08d6a9eb4f4",
+      "path": "scripts/affiliate-remuneration-disposable-qa.mjs"
+    }
+  ],
+  "disposable": {
+    "schemaVersion": "affiliate-remuneration-disposable/v1",
+    "status": "PASS",
+    "tests": {
+      "total": 15,
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "startedAt": "2026-10-07T00:26:03.876Z",
+    "failures": [],
+    "migrationCount": 88,
+    "finishedAt": "2026-10-07T00:26:24.074Z"
+  },
+  "lint": "PASS",
+  "typescript": "PASS",
+  "typescript_session": 59528,
+  "implemented": [
+    "Current authorized member and approved profile revision",
+    "Ledger count/sum/event lifecycle binding",
+    "Current ledger gross and server fee policy deductions",
+    "Idempotent quote/sign; refunds invalidate stale quote",
+    "Cross-tenant/revoked access rejected",
+    "Immutable payload/signature/history database guard"
+  ],
+  "root_review": {
+    "maintainability": "Forward migration and explicit immutable transitions; existing accounting reconciler reused",
+    "performance": "Ledger aggregate binds append-only events; serializable transactions preserve accounting snapshot",
+    "readability": "Separate current-state validation, quote creation and signature operation",
+    "security": "No encrypted identity returned; strict tenant qualification and current grant; server-derived money/classification; state transitions enforced by database"
+  },
+  "independent_critical_review": "NOT_COMPLETE",
+  "dispatches": 0,
+  "max_dispatches": 4,
+  "acceptance": "NOT_READY",
+  "delivered": false,
+  "remaining": [
+    "Export service with current ledger/profile/policy revalidation and idempotency",
+    "Refund/sign/export concurrent regression",
+    "Authenticated CSRF-protected API and actual UI/browser",
+    "Critical independent review and canonical acceptance",
+    "Exact-head CI and protected delivery"
+  ],
+  "external_operations": false
+}

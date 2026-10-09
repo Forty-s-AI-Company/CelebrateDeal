@@ -1,0 +1,18 @@
+{
+  "task_id": "f2-referral-share-cards-20261008",
+  "source_revision": "sha256:0b400f8c52331ab3ee23f031f5115568ee44289b7f6219a90fcd8368ba544230",
+  "dispatch": 2,
+  "report": [],
+  "resolved_model": "gpt-6-astra",
+  "resolved_effort": "high",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "canonical": {
+    "status": "BLOCKED",
+    "blockers": [
+      "required_check_unverified:browser",
+      "required_check_unverified:db"
+    ],
+    "revision": "sha256:0b400f8c52331ab3ee23f031f5115568ee44289b7f6219a90fcd8368ba544230"
+  }
+}

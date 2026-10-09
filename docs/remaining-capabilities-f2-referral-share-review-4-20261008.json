@@ -1,0 +1,18 @@
+{
+  "task_id": "f2-referral-share-cards-20261008",
+  "source_revision": "sha256:4312b55a723fcee2d951fa9131c3f827fcfd035da1d31f4ea261a45ffd193fff",
+  "dispatch": 4,
+  "report": [],
+  "resolved_model": "gpt-6-astra",
+  "resolved_effort": "high",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "canonical": {
+    "status": "BLOCKED",
+    "blockers": [
+      "required_check_unverified:db_browser"
+    ],
+    "revision": "sha256:4312b55a723fcee2d951fa9131c3f827fcfd035da1d31f4ea261a45ffd193fff"
+  },
+  "source_binding": "22 working files byte-identical to staged Git objects"
+}

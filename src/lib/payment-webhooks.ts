@@ -1,3 +1,5 @@
+import { reconcileAffiliatePendingPayout } from "@/lib/affiliate-payout-accounting";
+import { accrueMerchantAffiliatePlan } from "@/lib/merchant-affiliate-policy-service";
 import { applyPlatformSubscriptionRefundProjection } from "@/lib/platform-subscription-refund";
 import { Prisma, type PaymentTransaction, type WebhookEvent } from "@prisma/client";
 import { z } from "zod";
@@ -278,7 +280,13 @@ async function upsertAffiliateCommission(
   hasRefundedOrder: boolean,
   referralCode: string | null | undefined,
 ) {
-  if (!referralCode || payload.eventType !== "paid") return null;
+  if (payload.eventType !== "paid") return null;
+  const prior = await db.affiliateCommission.findFirst({ where: { vendorId, sourceType: "webhook", sourceId: transactionId } });
+  if (prior) {
+    if (prior.orderAmountCents !== grossAmountCents || prior.orderNumber !== payload.orderNumber) throw new Error("付款重試不符合原始佣金快照。");
+    return prior; // Rate/activation edits never rewrite an already-paid legacy commission.
+  }
+  if (!referralCode) return null;
 
   const normalizedReferralCode = referralCode.toUpperCase();
   const affiliate = await db.affiliate.findFirst({
@@ -495,21 +503,22 @@ async function upsertCourseCommissionAllocations(
 }
 
 async function applyDisputeToCommission(
-  db: Pick<Prisma.TransactionClient, "affiliateCommission" | "affiliateCommissionLedgerEntry">,
+  db: Pick<Prisma.TransactionClient, "affiliateCommission" | "affiliateCommissionLedgerEntry" | "affiliatePayout">,
   payload: PaymentWebhookPayloadInput,
   vendorId: string,
   transactionId: string,
 ) {
   if (!isDisputeEvent(payload.eventType)) return null;
   if (!payload.disputeCaseId) throw new Error("synthetic dispute webhook 缺少 disputeCaseId。");
-  const commission = await db.affiliateCommission.findFirst({
+  const commissions = await db.affiliateCommission.findMany({
     // A vendor may legitimately receive the same order number from multiple
     // providers. The server-owned transaction identity is the only safe
     // boundary for applying a dispute to the matching commission.
     where: { vendorId, sourceType: "webhook", sourceId: transactionId },
   });
-  if (!commission) return null;
-  return appendDisputeLedgerEntry(db, {
+  const entries = [];
+  for (const commission of commissions) {
+    entries.push(await appendDisputeLedgerEntry(db, {
     vendorId,
     affiliateCommissionId: commission.id,
     entryType: payload.eventType,
@@ -517,7 +526,10 @@ async function applyDisputeToCommission(
     eventIdentity: payload.eventId,
     disputeCaseId: payload.disputeCaseId,
     occurredAt: new Date(payload.occurredAt ?? new Date().toISOString()),
-  });
+    }));
+    if (commission.status === "locked" && commission.affiliateId) await reconcileAffiliatePendingPayout(db, { vendorId, affiliateId: commission.affiliateId, monthKey: commission.monthKey });
+  }
+  return entries[0] ?? null;
 }
 
 async function applyDisputeToCourseAllocations(
@@ -1128,7 +1140,10 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
 
     // Keep commission creation in the same serializable transaction as the
     // logical payment row so concurrent callbacks cannot both commit it.
-    const commission = await upsertAffiliateCommission(
+    const merchantPlan = payload.eventType === "paid"
+      ? await accrueMerchantAffiliatePlan(tx, { vendorId: vendor.id, transactionId: savedTransaction.id, providerName: payload.provider, occurredAt })
+      : null;
+    const commission = merchantPlan ? (merchantPlan.commissions[0] ?? null) : await upsertAffiliateCommission(
       tx,
       payload,
       vendor.id,
