@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { describe, expect, it, vi } from "vitest";
-import { ensureStagingQaFinance, qaFinanceDatabaseUrl, QA_FINANCE_EMAIL, QA_FINANCE_ID } from "./staging-qa-finance-bootstrap";
+import { ensureStagingQaFinance, qaFinanceDatabaseUrl, qaFinanceFailureCategory, QA_FINANCE_EMAIL, QA_FINANCE_ID } from "./staging-qa-finance-bootstrap";
 import { hashPasswordAsync, verifyPasswordAsync } from "./password";
 
 const input = { databaseUrl: "postgresql://synthetic@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
@@ -11,6 +11,20 @@ function fixture(existing: unknown = null) {
   return { tx, transaction, db: { $transaction: transaction } as unknown as PrismaClient };
 }
 describe("fixed staging QA finance account", () => {
+  it("categorizes known database failures without copying diagnostic fields", async () => {
+    for (const [code, category] of [["P1000", "DATABASE_AUTHENTICATION"], ["P1001", "DATABASE_UNREACHABLE"],
+      ["P1011", "DATABASE_TLS"], ["P2021", "DATABASE_SCHEMA_MISSING"], ["P2002", "ACCOUNT_CONFLICT"]]) {
+      const f = fixture();
+      f.tx.user.findFirst.mockRejectedValue({ code, message: "private database details", meta: { private: true } });
+      try { await ensureStagingQaFinance(f.db, input); throw new Error("must reject"); }
+      catch (error) {
+        expect(error).toMatchObject({ message: "STAGING_QA_FINANCE_BOOTSTRAP_REJECTED", category });
+        expect(JSON.stringify(error)).not.toContain("private");
+      }
+    }
+    expect(qaFinanceFailureCategory({ code: "private-code", message: "private" })).toBe("ACCOUNT_OR_DATABASE_REJECTED");
+    expect(qaFinanceFailureCategory({ code: "__proto__" })).toBe("ACCOUNT_OR_DATABASE_REJECTED");
+  });
   it("upgrades omitted TLS parameters to encryption and strict certificate verification", () => {
     const url = new URL(qaFinanceDatabaseUrl(input.databaseUrl));
     expect(url.searchParams.get("sslmode")).toBe("require");
