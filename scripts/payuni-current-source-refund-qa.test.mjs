@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { classifyFinanceLoginFailure, launchRefundBrowser, openFinanceLoginPage, runCurrentSourceRefundQa, waitFinanceLoginRedirect } from "./payuni-current-source-refund-qa.mjs";
+import { classifyFinanceLoginFailure, diagnoseCurrentSourcePayment, launchRefundBrowser, openFinanceLoginPage, runCurrentSourceRefundQa, waitFinanceLoginRedirect } from "./payuni-current-source-refund-qa.mjs";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
 
 const host = "celebrate-deal-staging.carry-digital-nomad.in.net";
@@ -8,6 +8,30 @@ const order = "CD-SYNTHETIC-Q1";
 const transaction = "wp4-synthetic-q1";
 const trade = "synthetic-provider-q1";
 const clock = () => new Date("2026-10-09T02:00:00Z");
+it.each([[200,"VERIFIED","EXACT_PAID_ORDER_VERIFIED"],[404,"FIXTURE_UNAVAILABLE","EXACT_FIXTURE_ABSENT"],
+  [409,"CANDIDATE_AMBIGUOUS","EXACT_FIXTURE_AMBIGUOUS"],[409,"STATE_MISMATCH","EXACT_STATE_MISMATCH"],
+  [200,"synthetic-private","EXACT_STATE_UNAVAILABLE"],[409,"VERIFIED","EXACT_STATE_UNAVAILABLE"]])(
+  "diagnoses only the fixed existing state with status %s/%s", async (httpStatus, status, category) => {
+    const run=setup();
+    const request=vi.fn(async operation=>{
+      expect(operation.url).toBe(`https://${host}/api/admin/ops/payuni/wp4-buyer-order-proof`);
+      expect(operation.body).toBeUndefined();
+      expect(operation.headers["x-celebratedeal-source-sha"]).toBe(source);
+      return {status:httpStatus,body:{status,private:"synthetic-private"}};
+    });
+    const receipt=await diagnoseCurrentSourcePayment(run.options.input,{request});
+    expect(receipt).toMatchObject({category,paymentSubmitted:false,refundSubmitted:false,sourceCommit:source});
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(receipt)).not.toContain("synthetic-private");
+    expect(run.dependencies.browserSubmit).not.toHaveBeenCalled();
+  });
+it("rejects invalid source before a diagnostic request and propagates network failure",async()=>{
+  const run=setup(); const request=vi.fn(async()=>{throw new Error("synthetic transport failure");});
+  await expect(diagnoseCurrentSourcePayment({...run.options.input,sourceSha:"invalid"},{request})).rejects.toThrow();
+  expect(request).not.toHaveBeenCalled();
+  await expect(diagnoseCurrentSourcePayment(run.options.input,{request})).rejects.toThrow("synthetic transport failure");
+  expect(request).toHaveBeenCalledTimes(1);
+});
 it("opens the fixed login DOM without requiring unrelated asset completion", async () => {
   const page = { goto: vi.fn(async (_url, options) => {
     if (options.waitUntil !== "domcontentloaded") throw new Error("synthetic stalled external asset");
@@ -142,6 +166,13 @@ it("stops on rejected source/tenant fixture before checkout or provider submissi
   expect(run.dependencies.request).toHaveBeenCalledTimes(1);
   expect(run.dependencies.browserSubmit).not.toHaveBeenCalled();
   expect(run.options.queryProvider).not.toHaveBeenCalled();
+});
+it("retains the validated closed payment failure receipt without response bodies or secrets",async()=>{
+  const run=setup();run.dependencies.request.mockResolvedValue({status:404,body:{error:"synthetic-private"}});
+  let failure;try{await runCurrentSourceRefundQa(run.options,run.dependencies);}catch(error){failure=error;}
+  expect(failure.paymentReceipt).toMatchObject({result:"BLOCKED",sourceSha:source,sideEffects:{fixturePosts:1,checkoutPosts:0,browserPaymentSubmissions:0}});
+  expect(JSON.stringify(failure.paymentReceipt)).not.toContain("synthetic-private");
+  expect(run.dependencies.browserSubmit).not.toHaveBeenCalled();
 });
 it("persists only the exact sanitized handoff before the refund consumer writes", async () => {
   const run = setup();
