@@ -26,10 +26,18 @@ export async function observeIssuedRecoveryBrowser({ prepared, queryProvider }, 
   let retries = 0;
   try {
     const context = await browser.newContext({ locale: "zh-TW" });
-    const origin = `https://${invocation.previewHost}`;
-    const allowed = new Set([invocation.previewHost, "sandbox-api.payuni.com.tw", "sandbox-vendor.payuni.com.tw"]);
+    const origin = prepared.canonicalStagingOrigin === true
+      ? "https://celebrate-deal-staging.carry-digital-nomad.in.net" : `https://${invocation.previewHost}`;
+    const allowed = new Set([new URL(origin).hostname, invocation.previewHost, "sandbox-api.payuni.com.tw", "sandbox-vendor.payuni.com.tw"]);
+    let blockedReplacementUpp = false;
     await context.route("**/*", route => {
       const url = new URL(route.request().url());
+      if (url.href === UPP && route.request().method() === "POST") {
+        // The initial encrypted UPP document is obtained once via APIRequest.
+        // A later browser UPP POST would rebuild the provider checkout.
+        blockedReplacementUpp = true;
+        return route.abort();
+      }
       return url.protocol === "https:" && allowed.has(url.hostname) ? route.continue() : route.abort();
     });
     const separator = supportCookie.indexOf("=");
@@ -43,7 +51,7 @@ export async function observeIssuedRecoveryBrowser({ prepared, queryProvider }, 
     await page.goto(UPP, { waitUntil: "commit", timeout: 10000 });
     requireSafe(page.url() === UPP);
     await page.getByText("一次付清", { exact: true }).click();
-    await page.locator('input[name="radioOptionpayGroupCredit"]').check();
+    await page.locator('input[name="radioOptionpayGroupCredit"]').check({ force: true });
     const card = page.getByPlaceholder("16 碼或 19 碼");
     const expiry = page.getByPlaceholder("MM/YY");
     const cvv = page.getByPlaceholder("***");
@@ -61,6 +69,7 @@ export async function observeIssuedRecoveryBrowser({ prepared, queryProvider }, 
     initialSubmissions = 1;
     await submit.click();
     await page.waitForTimeout(5000);
+    requireSafe(!blockedReplacementUpp);
     const receipt = await observeIssuedRecovery({
       expected: { orderNumber: checkout.orderNumber, amount: checkout.amountCents / 100 }, queryProvider,
       originalPage: {
@@ -73,6 +82,7 @@ export async function observeIssuedRecoveryBrowser({ prepared, queryProvider }, 
           await fillCard(invocation.cardNumber);
           await submit.click();
           await page.waitForTimeout(5000);
+          requireSafe(!blockedReplacementUpp);
         },
       },
     });

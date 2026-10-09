@@ -7,17 +7,24 @@ const prepared = { invocation: { sourceSha: "a".repeat(40), previewHost: "synthe
 checkout: { formAction: "https://sandbox-api.payuni.com.tw/api/upp", formMethod: "POST", amountCents: 100,
   orderNumber: "synthetic_order", formPayload: { MerID: "synthetic", Version: "2.0", EncryptInfo: "synthetic", HashInfo: "synthetic" } },
 supportCookie: "celebrate_support_synthetic=synthetic" };
-function fixture({ available = true, status = "1", tradeNo = "synthetic_trade", httpOk = true, queryFails = false } = {}) {
+function fixture({ available = true, status = "1", tradeNo = "synthetic_trade", httpOk = true, queryFails = false, replacementUpp = false } = {}) {
   const state = { uppPosts: 0, cardSubmissions: 0, closed: 0, cards: [], queries: 0, launch: null };
   const locator = { click: async () => {}, check: async () => {}, fill: async () => {}, pressSequentially: async () => {},
     isVisible: async () => available, isEnabled: async () => available };
   const card = { ...locator, pressSequentially: async value => state.cards.push(value) };
-  const submit = { ...locator, click: async () => { state.cardSubmissions++; } };
+  let routeHandler;
+  const submit = { ...locator, click: async () => {
+    state.cardSubmissions++;
+    if (replacementUpp && state.cardSubmissions === 2) await routeHandler({
+      request: () => ({ url: () => prepared.checkout.formAction, method: () => "POST" }),
+      abort: async () => {}, continue: async () => { throw new Error("replacement must not be sent"); },
+    });
+  } };
   const page = { setDefaultTimeout() {}, route: async () => {}, goto: async () => {},
     url: () => prepared.checkout.formAction, getByText: () => locator, getByRole: () => submit,
     getByPlaceholder: label => label === "16 碼或 19 碼" ? card : locator,
     locator: () => ({ ...locator, filter: () => ({ count: async () => 0 }) }), waitForTimeout: async () => {} };
-  const context = { route: async () => {}, addCookies: async () => {}, newPage: async () => page,
+  const context = { route: async (pattern, handler) => { routeHandler = handler; }, addCookies: async () => {}, newPage: async () => page,
     request: { post: async () => { state.uppPosts++; return { ok: () => httpOk }; } } };
   const chromium = { launch: async input => { state.launch = input; return { newContext: async () => context,
     close: async () => { state.closed++; } }; } };
@@ -72,4 +79,11 @@ test("rejects Production invocation before launching a browser", async () => {
   f.input.prepared = { ...prepared, invocation: { ...prepared.invocation, payuniEnv: "production" } };
   await assert.rejects(observeIssuedRecoveryBrowser(f.input, f.dependencies), /BROWSER_REJECTED/);
   assert.equal(f.state.launch, null);
+});
+test("blocks a provider retry that attempts to rebuild the UPP checkout", async () => {
+  const f = fixture({ replacementUpp: true });
+  await assert.rejects(observeIssuedRecoveryBrowser(f.input, f.dependencies), /BROWSER_REJECTED/);
+  assert.equal(f.state.uppPosts, 1);
+  assert.equal(f.state.queries, 1);
+  assert.equal(f.state.closed, 1);
 });
