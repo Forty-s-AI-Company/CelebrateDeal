@@ -44,7 +44,7 @@ function assertProofMatchesHandoff(receipt, proof, transactionId, expectedSource
 }
 
 async function fillExactRefundForm(page, transactionId, amount) {
-  await page.goto(`${STAGING_ORIGIN}/admin/billing/dashboard`);
+  await page.goto(`${STAGING_ORIGIN}/admin/billing/dashboard`, { waitUntil: "domcontentloaded" });
   const form = page.getByTestId(`billing-refund-${transactionId}`);
   // If login/MFA or the bounded dashboard omits this transaction, stop here.
   // Never widen the selector to a latest/refundable transaction.
@@ -97,7 +97,7 @@ async function consumePendingRefund({ receipt, transactionId, expectedSourceSha,
     requireCondition(providerCompleted);
     await onStage?.({ stage: "refund-duplicate-check", refundSubmissionMayHaveOccurred: true });
     await duplicateForm.getByRole("button", { name: "退款", exact: true }).click();
-    await duplicate.waitForURL(`${STAGING_ORIGIN}/admin/billing/dashboard?error=refund_already_processed`);
+    await duplicate.waitForURL(`${STAGING_ORIGIN}/admin/billing/dashboard?error=refund_already_processed`, { waitUntil: "domcontentloaded" });
     const final = await loadProof(transactionId, expectedSourceSha);
     assertProofMatchesHandoff(receipt, final, transactionId, expectedSourceSha, now());
     requireCondition(final.refundPersistencePassed === true && final.refundRecordCount === 1
@@ -163,16 +163,16 @@ async function executePendingRefund() {
     context.setDefaultTimeout(15000);
     const login = await context.newPage();
     stage = "platform-login-and-mfa";
-    await login.goto(`${STAGING_ORIGIN}/login?next=/admin/billing/dashboard`);
+    await login.goto(`${STAGING_ORIGIN}/login?next=/admin/billing/dashboard`, { waitUntil: "domcontentloaded" });
     await login.locator('input[name="email"]').fill(process.env.PAYUNI_QA_FINANCE_EMAIL);
     await login.locator('input[name="password"]').fill(process.env.PAYUNI_QA_FINANCE_PASSWORD);
     await login.getByRole("button", { name: "登入", exact: true }).click();
-    await login.waitForURL((url) => url.pathname !== "/login");
+    await login.waitForURL((url) => url.pathname !== "/login", { waitUntil: "domcontentloaded" });
     if (new URL(login.url()).pathname === "/mfa/verify") {
       requireCondition(/^\d{6}$/.test(process.env.PAYUNI_QA_FINANCE_OTP ?? ""));
       await login.locator('input[name="code"]').fill(process.env.PAYUNI_QA_FINANCE_OTP);
       await login.getByRole("button", { name: "確認並繼續", exact: true }).click();
-      await login.waitForURL((url) => !url.pathname.startsWith("/mfa/"));
+      await login.waitForURL((url) => !url.pathname.startsWith("/mfa/"), { waitUntil: "domcontentloaded" });
     }
     await login.close();
     stage = "refund-ui-and-persistence";
