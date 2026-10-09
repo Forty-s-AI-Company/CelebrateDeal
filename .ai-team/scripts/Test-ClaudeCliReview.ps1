@@ -46,6 +46,13 @@ $hostTerminal.Remove('permission_denials');$script:fixture.stdout=$hostTerminal|
 $hostTerminal.permission_denials=@();$tool='{"type":"assistant","message":{"content":[{"type":"tool_use","name":"synthetic"}]}}'
 $script:fixture.stdout=$tool+"`n"+($hostTerminal|ConvertTo-Json -Depth 8 -Compress);$null=Check HOST_PERMISSION_BLOCKED
 $hostTerminal.is_error=$true;$script:fixture.stdout=$hostTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check HOST_PERMISSION_BLOCKED
+foreach ($output in @('', '{"type":"system","subtype":"init"}', 'permission denied', $valid+"`n"+$valid)) {
+    $script:fixture.stdout=$output;$null=Check HOST_PERMISSION_BLOCKED
+}
+$hostTerminal.is_error=$false;$hostTerminal.subtype='error_max_turns';$script:fixture.stdout=$hostTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check HOST_PERMISSION_BLOCKED
+$hostTerminal.subtype='success';$hostTerminal.permission_denials=$null;$script:fixture.stdout=$hostTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check HOST_PERMISSION_BLOCKED
+$hostTerminal.permission_denials=@();$hostTerminal.Remove('is_error');$script:fixture.stdout=$hostTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check HOST_PERMISSION_BLOCKED
+$hostTerminal.is_error=$false;$hostTerminal.modelUsage=@{'claude-sonnet-5-5'=@{}};$script:fixture.stdout=$hostTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check MODEL_UNAVAILABLE
 $script:fixture=@{status='SUCCESS';exitCode=0;stdoutTruncated=$false;stdout=$valid}
 $script:fixture.stdout=$valid+"`n"+$valid
 $null=Check INVALID_REVIEW

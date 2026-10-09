@@ -54,6 +54,8 @@ function Invoke-ClaudeCliReview {
     }
     if ($result.status -match 'TIMEOUT|FAILED_TO_START' -or
         ($result.status -match 'BLOCKED' -and $result.status -ne 'HOST_PERMISSION_BLOCKED')) { return $receipt }
+    $hostBlocked = $result.status -eq 'HOST_PERMISSION_BLOCKED'
+    if ($hostBlocked) { $receipt.status='HOST_PERMISSION_BLOCKED' }
     try {
         $terminals = @()
         $toolActivity = $false
@@ -69,7 +71,10 @@ function Invoke-ClaudeCliReview {
                 }
             }
         }
-        if ($terminals.Count -ne 1) { $receipt.status='INVALID_REVIEW'; return $receipt }
+        if ($terminals.Count -ne 1) {
+            if (-not $hostBlocked) { $receipt.status='INVALID_REVIEW' }
+            return $receipt
+        }
         $terminal = $terminals[0]
         # Text classification can match a finding quoting "permission denied".
         # Recover only a complete native success with explicit zero denials,
@@ -104,6 +109,6 @@ function Invoke-ClaudeCliReview {
         } else { [string]$terminal.result }
         $receipt.status='SUCCESS'
         if ($textOnlyHostClassification) { $receipt['classification_note']='HOST_TEXT_FALSE_POSITIVE_VERIFIED_TERMINAL' }
-    } catch { $receipt.status='INVALID_REVIEW' }
+    } catch { if (-not $hostBlocked) { $receipt.status='INVALID_REVIEW' } }
     return $receipt
 }
