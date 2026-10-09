@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { classifyFinanceLoginFailure, launchRefundBrowser, openFinanceLoginPage, runCurrentSourceRefundQa } from "./payuni-current-source-refund-qa.mjs";
+import { classifyFinanceLoginFailure, launchRefundBrowser, openFinanceLoginPage, runCurrentSourceRefundQa, waitFinanceLoginRedirect } from "./payuni-current-source-refund-qa.mjs";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
 
 const host = "celebrate-deal-staging.carry-digital-nomad.in.net";
@@ -21,6 +21,23 @@ it("rejects a foreign login redirect and preserves navigation failure", async ()
   const error = new Error("synthetic blocked navigation");
   page.goto.mockRejectedValueOnce(error);
   await expect(openFinanceLoginPage(page)).rejects.toBe(error);
+});
+it.each([false, true])("waits for a same-origin login redirect DOM with MFA=%s", async (afterMfa) => {
+  const page = { url: () => `https://${host}/admin/billing/dashboard`, waitForURL: vi.fn(async (predicate, options) => {
+    expect(options.waitUntil).toBe("domcontentloaded");
+    expect(predicate(new URL(`https://${host}/admin/billing/dashboard`))).toBe(true);
+    expect(predicate(new URL("https://attacker.example/admin/billing/dashboard"))).toBe(false);
+    expect(predicate(new URL(`https://${host}${afterMfa ? "/mfa/verify" : "/login"}`))).toBe(false);
+  }) };
+  await expect(waitFinanceLoginRedirect(page, afterMfa)).resolves.toBeUndefined();
+  expect(page.waitForURL).toHaveBeenCalledTimes(1);
+});
+it("rejects a foreign final redirect and preserves redirect timeout", async () => {
+  const page = { url: () => "https://attacker.example/dashboard", waitForURL: vi.fn() };
+  await expect(waitFinanceLoginRedirect(page)).rejects.toThrow();
+  const error = new Error("synthetic redirect timeout");
+  page.waitForURL.mockRejectedValueOnce(error);
+  await expect(waitFinanceLoginRedirect(page, true)).rejects.toBe(error);
 });
 it.each([
   ["/login?error=1", "AUTHENTICATION_REJECTED"],

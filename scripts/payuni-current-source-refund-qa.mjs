@@ -112,6 +112,14 @@ export async function openFinanceLoginPage(page) {
   requireSafe(new URL(page.url()).origin === APP_ORIGIN);
 }
 
+/** Restricted QA egress may stall unrelated assets after a valid redirect. */
+export async function waitFinanceLoginRedirect(page, afterMfa = false) {
+  await page.waitForURL((url) => url.origin === APP_ORIGIN
+    && (afterMfa ? !url.pathname.startsWith("/mfa/") : url.pathname !== "/login"),
+  { waitUntil: "domcontentloaded" });
+  requireSafe(new URL(page.url()).origin === APP_ORIGIN);
+}
+
 /** Protected CI entry point: process injection only; no dotenv or raw logs. */
 export async function executeCurrentSourceRefundQa() {
   let browser;
@@ -152,13 +160,13 @@ export async function executeCurrentSourceRefundQa() {
     stage = "platform-login-submit";
     await page.getByRole("button", { name: "登入", exact: true }).click();
     stage = "platform-login-redirect";
-    await page.waitForURL((url) => url.origin === APP_ORIGIN && url.pathname !== "/login");
+    await waitFinanceLoginRedirect(page);
     if (new URL(page.url()).pathname === "/mfa/verify") {
       stage = "platform-mfa";
       requireSafe(/^\d{6}$/.test(process.env.PAYUNI_QA_FINANCE_OTP ?? ""));
       await page.locator('input[name="code"]').fill(process.env.PAYUNI_QA_FINANCE_OTP);
       await page.getByRole("button", { name: "確認並繼續", exact: true }).click();
-      await page.waitForURL((url) => url.origin === APP_ORIGIN && !url.pathname.startsWith("/mfa/"));
+      await waitFinanceLoginRedirect(page, true);
     }
     stage = "platform-finance-dashboard";
     requireSafe(new URL(page.url()).pathname === "/admin/billing/dashboard");
