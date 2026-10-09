@@ -104,6 +104,14 @@ export function launchRefundBrowser(chromium) {
   return chromium.launch({ headless: true, env: fixedBrowserEnvironment() });
 }
 
+/** Restricted CI must not wait for unrelated external assets to finish loading.
+ * Form locators still wait for hydration; origin validation precedes credentials.
+ */
+export async function openFinanceLoginPage(page) {
+  await page.goto(`${APP_ORIGIN}/login?next=/admin/billing/dashboard`, { waitUntil: "domcontentloaded" });
+  requireSafe(new URL(page.url()).origin === APP_ORIGIN);
+}
+
 /** Protected CI entry point: process injection only; no dotenv or raw logs. */
 export async function executeCurrentSourceRefundQa() {
   let browser;
@@ -137,8 +145,7 @@ export async function executeCurrentSourceRefundQa() {
     context.setDefaultTimeout(15000);
     stage = "platform-login-page";
     const page = loginPage = await context.newPage();
-    await page.goto(`${APP_ORIGIN}/login?next=/admin/billing/dashboard`);
-    requireSafe(new URL(page.url()).origin === APP_ORIGIN);
+    await openFinanceLoginPage(page);
     stage = "platform-login-form";
     await page.locator('input[name="email"]').fill(process.env.PAYUNI_QA_FINANCE_EMAIL);
     await page.locator('input[name="password"]').fill(process.env.PAYUNI_QA_FINANCE_PASSWORD);
