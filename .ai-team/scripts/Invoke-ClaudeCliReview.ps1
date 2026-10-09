@@ -39,14 +39,14 @@ function Invoke-ClaudeCliReview {
         '--effort','high','--safe-mode','--tools','','--strict-mcp-config',
         '--no-session-persistence','--no-chrome','--disable-slash-commands',
         '--json-schema',$schema,
-        '--permission-mode','plan','--permission-prompts','none',
+        '--permission-mode','dontAsk','--permission-prompts','none',
         '--system-prompt','Review only the supplied text. Return the requested JSON. No tools or external actions.')
     $result = Invoke-AiTeamProcess -FilePath $launch.file -ArgumentList $arguments `
         -StandardInputText ($Prompt + "`n") -Profile 'claude-cli-readonly' -Model $Alias `
         -ReasoningEffort 'high' -MarkAsChild -FirstOutputTimeoutSeconds 120 `
         -IdleTimeoutSeconds 300 -HardTimeoutSeconds $HardTimeoutSeconds `
         -MaxOutputChars 120000 -MaxOutputLines 1000
-    $receipt = @{status='AGY_RUNTIME_ERROR'; process_status=$result.status;
+    $receipt = @{status='CLAUDE_CLI_RUNTIME_ERROR'; process_status=$result.status;
         exit_code=$result.exitCode; observed_model='unknown'; observed_effort='unknown'; review_output=$null}
     if ($result.stdoutTruncated) { $receipt.status='TRUNCATED_REVIEW'; return $receipt }
     if ($result.status -in @('AUTH_REQUIRED','HOST_PERMISSION_BLOCKED','MODEL_UNAVAILABLE')) {
@@ -68,7 +68,7 @@ function Invoke-ClaudeCliReview {
             $receipt.status = if ($diagnostic -match '(?i)not logged in|authentication|login required|invalid.*key') {'AUTH_REQUIRED'}
                 elseif ($diagnostic -match '(?i)rate.limit|usage.limit|quota') {'QUOTA_EXHAUSTED'}
                 elseif ($diagnostic -match '(?i)permission denied|not permitted') {'HOST_PERMISSION_BLOCKED'}
-                elseif ($diagnostic -match '(?i)model.*(?:unavailable|not found)') {'MODEL_UNAVAILABLE'} else {'AGY_RUNTIME_ERROR'}
+                elseif ($diagnostic -match '(?i)model.*(?:unavailable|not found)') {'MODEL_UNAVAILABLE'} else {'CLAUDE_CLI_RUNTIME_ERROR'}
             return $receipt
         }
         if ($result.status -ne 'SUCCESS' -or $terminal.type -ne 'result' -or $terminal.subtype -ne 'success') { return $receipt }

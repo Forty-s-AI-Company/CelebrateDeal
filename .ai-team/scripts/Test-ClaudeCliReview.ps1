@@ -13,6 +13,7 @@ function Invoke-AiTeamProcess {
     if (-not $MarkAsChild -or '--safe-mode' -notin $ArgumentList -or '--strict-mcp-config' -notin $ArgumentList -or
         '--no-session-persistence' -notin $ArgumentList -or '--permission-prompts' -notin $ArgumentList -or
         '--dangerously-skip-permissions' -in $ArgumentList -or
+        $ArgumentList[[Array]::IndexOf($ArgumentList,'--permission-mode')+1] -ne 'dontAsk' -or
         $ArgumentList[[Array]::IndexOf($ArgumentList,'--tools')+1] -ne '') { throw 'UNSAFE_CLI_ARGUMENTS' }
     return $script:fixture
 }
@@ -44,7 +45,7 @@ $null=Check QUOTA_EXHAUSTED
 $script:fixture.stdout='non-json';$null=Check INVALID_REVIEW
 $script:fixture.stdoutTruncated=$true;$null=Check TRUNCATED_REVIEW
 $script:fixture.stdoutTruncated=$false;$script:fixture.status='IDLE_TIMEOUT';$script:fixture.stdout=$terminal|ConvertTo-Json -Depth 8 -Compress
-$null=Check AGY_RUNTIME_ERROR
+$null=Check CLAUDE_CLI_RUNTIME_ERROR
 function Get-ClaudeCliLaunch { return $null }
 $missing=Check CLAUDE_CLI_NOT_INSTALLED
 foreach($field in @('status','process_status','exit_code','observed_model','observed_effort','review_output')) {

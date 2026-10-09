@@ -274,7 +274,9 @@ try {
         # A model gets one attempt. No Gemini -> Gemini or Sonnet -> Opus quota ladder.
         if (-not $runtimeState.ContainsKey('models')) { $runtimeState['models'] = @{} }
         $runtimeState.models[$decision.model_key] = @{failure='cli_failure'}
-        $runtimeState['agy_failure_category'] = if ($status -in @('AUTH_REQUIRED','HOST_PERMISSION_BLOCKED','AGY_NOT_INSTALLED','MODEL_UNAVAILABLE','AGY_RUNTIME_ERROR')) { $status } else { 'AGY_RUNTIME_ERROR' }
+        if ($decision.provider -ne 'claude_cli') {
+            $runtimeState['agy_failure_category'] = if ($status -in @('AUTH_REQUIRED','HOST_PERMISSION_BLOCKED','AGY_NOT_INSTALLED','MODEL_UNAVAILABLE','AGY_RUNTIME_ERROR')) { $status } else { 'AGY_RUNTIME_ERROR' }
+        }
         if ($decision.provider -ne 'claude_cli') { Find-ClaudeCliTransport $decision.model_key }
         $prior = if ($runtimeState.ContainsKey('attempted_models')) { @($runtimeState.attempted_models) } else { @() }
         $runtimeState['attempted_models'] = @($prior) + @($decision.model_key)

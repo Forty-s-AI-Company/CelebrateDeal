@@ -23,13 +23,16 @@ try {
     }
     # Disable live subscription discovery only in this disposable offline fixture.
     $fixtureTask = Join-Path $fixtureScripts 'Invoke-AiTeamTask.ps1'
-    $fixtureSource = [IO.File]::ReadAllText($fixtureTask).Replace("if (`$DisableClaudeCli -or", "if ((Get-Content (Join-Path `$PSScriptRoot 'scenario.txt') -Raw) -ne 'cli-transport' -or `$DisableClaudeCli -or")
+    $fixtureSource = [IO.File]::ReadAllText($fixtureTask).Replace("if (`$DisableClaudeCli -or", "if ((Get-Content (Join-Path `$PSScriptRoot 'scenario.txt') -Raw) -notin @('cli-transport','cli-failure') -or `$DisableClaudeCli -or")
     [IO.File]::WriteAllText($fixtureTask, $fixtureSource)
     # Explicit offline subscription fixture exercises the real wrapper/router path.
     $cliMock = @'
 function Invoke-ClaudeCliReview {
     param($Prompt,$Alias,$ObservedPattern,$HardTimeoutSeconds)
     Add-Content -LiteralPath (Join-Path $PSScriptRoot 'cli-attempts.txt') -Value $Alias
+    if ((Get-Content (Join-Path $PSScriptRoot 'scenario.txt') -Raw) -eq 'cli-failure' -and $Prompt -notmatch 'Availability probe') {
+        return @{status='CLAUDE_CLI_RUNTIME_ERROR';exit_code=-1;observed_model='unknown';observed_effort='unknown';review_output=$null}
+    }
     return @{status='SUCCESS';exit_code=0;observed_model='claude-opus-5-5';observed_effort='unknown';review_output='{"summary":"Offline fixture only","findings":[]}'}
 }
 '@
@@ -52,7 +55,7 @@ function Invoke-AiTeamProcess {
     if ($FilePath -ne 'synthetic-agy') { return (& $script:RealAiTeamProcess @PSBoundParameters) }
     $scenario = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'scenario.txt') -Raw
     if ($ArgumentList[0] -eq 'models') {
-        if ($scenario -in @('no-agy','cli-transport')) { return [pscustomobject]@{status='AUTH_REQUIRED';stdout='';stdoutTruncated=$false} }
+        if ($scenario -in @('no-agy','cli-transport','cli-failure')) { return [pscustomobject]@{status='AUTH_REQUIRED';stdout='';stdoutTruncated=$false} }
         if ($scenario -eq 'host-permission') { return [pscustomobject]@{status='HOST_PERMISSION_BLOCKED';stdout='';stdoutTruncated=$false} }
         if ($scenario -eq 'discovery-first-output-timeout') { return [pscustomobject]@{status='FIRST_OUTPUT_TIMEOUT';stdout='';stdoutTruncated=$false} }
         if ($scenario -eq 'discovery-idle-timeout') { return [pscustomobject]@{status='IDLE_TIMEOUT';stdout='';stdoutTruncated=$false} }
@@ -90,6 +93,9 @@ function Invoke-AiTeamProcess {
     Assert-Route ($cli.agy_discovery_status -eq 'AUTH_REQUIRED' -and $cli.claude_cli_discovery_status -eq 'SUCCESS') 'transport outcomes were conflated'
     $cliCalls = @(Get-Content (Join-Path $fixtureScripts 'cli-attempts.txt'))
     Assert-Route ($cliCalls.Count -eq 2) 'subscription transport did not use exactly one probe and one review'
+    $cliFailure = Run-Wrapper 'cli-failure' 'Invoke-AgyPlanReview.ps1' 'one line payment webhook review'
+    Assert-Route ($cliFailure.status -eq 'REVIEW_BLOCKED' -and $cliFailure.route.provider_failure_category -eq 'AUTH_REQUIRED') 'CLI failure overwrote original AGY failure'
+    Assert-Route ($cliFailure.attempts[-1].provider -eq 'claude_cli' -and $cliFailure.attempts[-1].status -eq 'CLAUDE_CLI_RUNTIME_ERROR') 'CLI failure lost its transport provenance'
     $major = Run-Wrapper 'major-finding' 'Invoke-AgyFast.ps1' 'ordinary large diff review'
     Assert-Route (-not $major.accepted -and $major.review.findings[0].severity -eq 'MAJOR') 'finding was incorrectly accepted as PASS'
     foreach ($scenario in @('cli-failure','invalid-output','no-agy','host-permission','no-installed','discovery-first-output-timeout','discovery-idle-timeout')) {
