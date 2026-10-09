@@ -2,7 +2,10 @@ $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Invoke-ClaudeCliReview.ps1')
 # No provider call: aliases must not shadow an installed application launch.
 Set-Alias -Name claude -Value Get-Date
-try { $null=Get-ClaudeCliLaunch } finally { Remove-Item Alias:claude -Force }
+try {
+    $launch=Get-ClaudeCliLaunch
+    if ($launch -and $launch.file -isnot [string]) { throw 'CLI_LAUNCH_MUST_BE_ONE_EXECUTABLE' }
+} finally { Remove-Item Alias:claude -Force }
 function Get-ClaudeCliLaunch { return @{file='offline-claude';prefix=@()} }
 function Invoke-AiTeamProcess {
     param($FilePath,$ArgumentList,$StandardInputText,$Profile,$Model,$ReasoningEffort,

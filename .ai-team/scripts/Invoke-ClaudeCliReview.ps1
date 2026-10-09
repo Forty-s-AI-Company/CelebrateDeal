@@ -1,6 +1,6 @@
 # Standalone transport adapter: no routing, spawning, tools or secret inspection.
 function Get-ClaudeCliLaunch {
-    $command = Get-Command claude -CommandType Application -ErrorAction SilentlyContinue
+    $command = Get-Command claude -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $command) { return $null }
     if ($command.Source -like '*.exe' -or -not $IsWindows) {
         return @{file=$command.Source; prefix=@()}
