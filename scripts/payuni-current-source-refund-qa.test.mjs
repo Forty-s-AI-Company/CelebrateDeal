@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { classifyFinanceLoginFailure, launchRefundBrowser, runCurrentSourceRefundQa } from "./payuni-current-source-refund-qa.mjs";
+import { classifyFinanceLoginFailure, launchRefundBrowser, openFinanceLoginPage, runCurrentSourceRefundQa } from "./payuni-current-source-refund-qa.mjs";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
 
 const host = "celebrate-deal-staging.carry-digital-nomad.in.net";
@@ -8,6 +8,20 @@ const order = "CD-SYNTHETIC-Q1";
 const transaction = "wp4-synthetic-q1";
 const trade = "synthetic-provider-q1";
 const clock = () => new Date("2026-10-09T02:00:00Z");
+it("opens the fixed login DOM without requiring unrelated asset completion", async () => {
+  const page = { goto: vi.fn(async (_url, options) => {
+    if (options.waitUntil !== "domcontentloaded") throw new Error("synthetic stalled external asset");
+  }), url: () => `https://${host}/login` };
+  await expect(openFinanceLoginPage(page)).resolves.toBeUndefined();
+  expect(page.goto).toHaveBeenCalledWith(`https://${host}/login?next=/admin/billing/dashboard`, { waitUntil: "domcontentloaded" });
+});
+it("rejects a foreign login redirect and preserves navigation failure", async () => {
+  const page = { goto: vi.fn(), url: () => "https://attacker.example/login" };
+  await expect(openFinanceLoginPage(page)).rejects.toThrow();
+  const error = new Error("synthetic blocked navigation");
+  page.goto.mockRejectedValueOnce(error);
+  await expect(openFinanceLoginPage(page)).rejects.toBe(error);
+});
 it.each([
   ["/login?error=1", "AUTHENTICATION_REJECTED"],
   ["/login?error=rate_limited", "LOGIN_RATE_LIMITED"],
