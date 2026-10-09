@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { PrismaClientInitializationError } from "@prisma/client/runtime/library";
 import { describe, expect, it, vi } from "vitest";
 import { ensureStagingQaFinance, qaFinanceDatabaseUrl, qaFinanceFailureCategory, QA_FINANCE_EMAIL, QA_FINANCE_ID } from "./staging-qa-finance-bootstrap";
 import { hashPasswordAsync, verifyPasswordAsync } from "./password";
@@ -11,6 +12,17 @@ function fixture(existing: unknown = null) {
   return { tx, transaction, db: { $transaction: transaction } as unknown as PrismaClient };
 }
 describe("fixed staging QA finance account", () => {
+  it("categorizes actual Prisma initialization failures at transaction startup", async () => {
+    for (const [code, category] of [["P1000", "DATABASE_AUTHENTICATION"], ["P1001", "DATABASE_UNREACHABLE"],
+      ["P1011", "DATABASE_TLS"]]) {
+      const f = fixture();
+      f.transaction.mockRejectedValue(new PrismaClientInitializationError("private database details", "6.19.3", code));
+      await expect(ensureStagingQaFinance(f.db, input)).rejects.toMatchObject({
+        message: "STAGING_QA_FINANCE_BOOTSTRAP_REJECTED", category,
+      });
+      expect(f.tx.user.create).not.toHaveBeenCalled();
+    }
+  });
   it("categorizes known database failures without copying diagnostic fields", async () => {
     for (const [code, category] of [["P1000", "DATABASE_AUTHENTICATION"], ["P1001", "DATABASE_UNREACHABLE"],
       ["P1011", "DATABASE_TLS"], ["P2021", "DATABASE_SCHEMA_MISSING"], ["P2002", "ACCOUNT_CONFLICT"]]) {

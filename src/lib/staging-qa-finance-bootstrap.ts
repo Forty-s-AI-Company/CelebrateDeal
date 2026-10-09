@@ -9,14 +9,16 @@ const rejected = () => new Error("STAGING_QA_FINANCE_BOOTSTRAP_REJECTED");
 
 /** Closed categories only: never expose a database message, URL or error metadata. */
 export function qaFinanceFailureCategory(error: unknown) {
-  if (!error || typeof error !== "object" || !("code" in error)) return "ACCOUNT_OR_DATABASE_REJECTED";
+  if (!error || typeof error !== "object") return "ACCOUNT_OR_DATABASE_REJECTED";
   const categories: Record<string, string> = {
     P1000: "DATABASE_AUTHENTICATION", P1001: "DATABASE_UNREACHABLE", P1002: "DATABASE_TIMEOUT",
     P1011: "DATABASE_TLS", P2024: "DATABASE_POOL_TIMEOUT", P2021: "DATABASE_SCHEMA_MISSING",
     P2022: "DATABASE_SCHEMA_MISSING", P2002: "ACCOUNT_CONFLICT",
   };
-  return typeof error.code === "string" && Object.hasOwn(categories, error.code)
-    ? categories[error.code] : "ACCOUNT_OR_DATABASE_REJECTED";
+  const code = "code" in error && typeof error.code === "string" ? error.code
+    : "errorCode" in error && typeof error.errorCode === "string" ? error.errorCode : undefined;
+  return code && Object.hasOwn(categories, code)
+    ? categories[code] ?? "ACCOUNT_OR_DATABASE_REJECTED" : "ACCOUNT_OR_DATABASE_REJECTED";
 }
 
 export class QaFinanceBootstrapFailure extends Error {
