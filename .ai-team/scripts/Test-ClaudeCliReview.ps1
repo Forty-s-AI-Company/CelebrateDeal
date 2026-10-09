@@ -1,5 +1,8 @@
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'Invoke-ClaudeCliReview.ps1')
+# No provider call: aliases must not shadow an installed application launch.
+Set-Alias -Name claude -Value Get-Date
+try { $null=Get-ClaudeCliLaunch } finally { Remove-Item Alias:claude -Force }
 function Get-ClaudeCliLaunch { return @{file='offline-claude';prefix=@()} }
 function Invoke-AiTeamProcess {
     param($FilePath,$ArgumentList,$StandardInputText,$Profile,$Model,$ReasoningEffort,
@@ -39,4 +42,9 @@ $script:fixture.stdout='non-json';$null=Check INVALID_REVIEW
 $script:fixture.stdoutTruncated=$true;$null=Check TRUNCATED_REVIEW
 $script:fixture.stdoutTruncated=$false;$script:fixture.status='IDLE_TIMEOUT';$script:fixture.stdout=$terminal|ConvertTo-Json -Depth 8 -Compress
 $null=Check AGY_RUNTIME_ERROR
+function Get-ClaudeCliLaunch { return $null }
+$missing=Check CLAUDE_CLI_NOT_INSTALLED
+foreach($field in @('status','process_status','exit_code','observed_model','observed_effort','review_output')) {
+    if (-not $missing.ContainsKey($field)) { throw "MISSING_RECEIPT_FIELD:$field" }
+}
 'CLAUDE_CLI_TRANSPORT_TESTS=PASS'

@@ -1,8 +1,8 @@
 # Standalone transport adapter: no routing, spawning, tools or secret inspection.
 function Get-ClaudeCliLaunch {
-    $command = Get-Command claude -ErrorAction SilentlyContinue
+    $command = Get-Command claude -CommandType Application -ErrorAction SilentlyContinue
     if (-not $command) { return $null }
-    if ($command.Source.EndsWith('.exe') -or -not $IsWindows) {
+    if ($command.Source -like '*.exe' -or -not $IsWindows) {
         return @{file=$command.Source; prefix=@()}
     }
     # Launch npm's installed JS entry directly; ProcessStartInfo cannot execute a shim.
@@ -23,7 +23,7 @@ function Invoke-ClaudeCliReview {
           [Parameter(Mandatory)][string]$ObservedPattern,
           [ValidateRange(10,900)][int]$HardTimeoutSeconds=360)
     $launch = Get-ClaudeCliLaunch
-    if (-not $launch) { return @{status='CLAUDE_CLI_NOT_INSTALLED'; observed_model='unknown'; review_output=$null} }
+    if (-not $launch) { return @{status='CLAUDE_CLI_NOT_INSTALLED'; process_status='NOT_STARTED'; exit_code=$null; observed_model='unknown'; observed_effort='unknown'; review_output=$null} }
     # Wire schema is an adapter for the canonical validator, not acceptance itself.
     $properties = @{}
     foreach ($name in @('severity','file','area','issue','evidence','impact','recommended_fix','required_test')) {
