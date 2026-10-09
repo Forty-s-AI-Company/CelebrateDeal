@@ -6,16 +6,25 @@ import yaml from "js-yaml";
 
 const workflow = yaml.load(fs.readFileSync(new URL("../.github/workflows/staging-qa-finance-bootstrap.yml", import.meta.url), "utf8"));
 const job = workflow.jobs.bootstrap;
-const execution = job.steps.at(-1);
+const execution = job.steps.find(step => step.name === "Create or verify fixed synthetic account");
 test("finance bootstrap secrets remain protected and never enter dependency installation", () => {
   assert.equal(job.environment, "Preview – celebrate-deal-staging");
   assert.match(job.if, /github.ref == 'refs\/heads\/master' && github.ref_protected/u);
   assert.equal(workflow.permissions.contents, "read");
   assert.equal(workflow.permissions.deployments, "read");
   assert.ok(job.steps.findIndex(step => step.name === "Verify exact deployment lineage before secrets") < job.steps.indexOf(execution));
-  for (const step of job.steps.slice(0, -1)) assert.equal(/secrets\./u.test(JSON.stringify(step)), false);
+  for (const step of job.steps.filter(step => step !== execution)) assert.equal(/secrets\./u.test(JSON.stringify(step)), false);
   assert.equal(execution.env.PAYUNI_ENV, "sandbox");
   assert.equal(/\bnpx\b|\bnpm\b/u.test(execution.run), false);
+});
+
+test("bootstrap publishes only its fixed sanitized result after success or failure", () => {
+  const upload = job.steps.at(-1);
+  assert.match(upload.if, /always\(\)/u);
+  assert.equal(upload.with.path, "${{ runner.temp }}/qa-finance-bootstrap/completion.json");
+  assert.equal(upload.with['retention-days'], 7);
+  assert.match(execution.run, /"stage":"network-configuration"/u);
+  assert.equal(/\*|\.log/u.test(upload.with.path), false);
 });
 test("finance bootstrap blocks unrestricted IPv4 and IPv6 before credentials are used", () => {
   const run = execution.run;
