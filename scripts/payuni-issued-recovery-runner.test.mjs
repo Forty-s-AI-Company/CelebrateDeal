@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runIssuedRecoveryProbe, runIssuedRecoveryQa, verifyIssuedRecoveryProofSource, persistIssuedRecoveryPending } from "./payuni-issued-recovery-runner.mjs";
+import { runIssuedRecoveryProbe, runIssuedRecoveryQa, verifyIssuedRecoveryProofSource, persistIssuedRecoveryPending, verifyFixedFinanceDashboard } from "./payuni-issued-recovery-runner.mjs";
 import { mkdtemp, readFile, writeFile, mkdir, rename, unlink, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,32 @@ import { createHash } from "node:crypto";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+
+test("finance readiness uses fixed dashboard DOM and always closes its page", async () => {
+  let closed = 0;
+  const url = "https://celebrate-deal-staging.carry-digital-nomad.in.net/admin/billing/dashboard";
+  const page = { goto: async (target, options) => {
+    assert.equal(target, url);
+    assert.equal(options.waitUntil, "domcontentloaded");
+  }, url: () => url, close: async () => { closed++; } };
+  assert.equal(await verifyFixedFinanceDashboard({ newPage: async () => page }), true);
+  assert.equal(closed, 1);
+});
+test("finance readiness rejects foreign and unexpected fixed-origin destinations", async () => {
+  for (const destination of ["https://attacker.example/admin/billing/dashboard", "https://celebrate-deal-staging.carry-digital-nomad.in.net/login", "https://celebrate-deal-staging.carry-digital-nomad.in.net/admin/billing/dashboard?unexpected=1"]) {
+    let closed = false;
+    const page = { goto: async () => {}, url: () => destination, close: async () => { closed = true; } };
+    assert.equal(await verifyFixedFinanceDashboard({ newPage: async () => page }), false);
+    assert.equal(closed, true);
+  }
+});
+test("finance readiness propagates navigation failure while closing its page", async () => {
+  let closed = false;
+  const error = new Error("synthetic navigation failure");
+  const page = { goto: async () => { throw error; }, close: async () => { closed = true; } };
+  await assert.rejects(verifyFixedFinanceDashboard({ newPage: async () => page }), (received) => received === error);
+  assert.equal(closed, true);
+});
 
 test("interrupted pending write preserves the previous conservative receipt", async () => {
   const directory = await mkdtemp(join(tmpdir(), "issued-recovery-receipt-"));

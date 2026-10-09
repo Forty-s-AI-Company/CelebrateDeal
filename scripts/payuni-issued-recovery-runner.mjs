@@ -6,8 +6,18 @@ import { createPendingRefundHandoff, reference } from "./payuni-sandbox-payment-
 import { mkdir, writeFile, rename, unlink } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { assertProofMatchesHandoff, consumePendingRefund } from "./payuni-sandbox-pending-refund-consumer.mjs";
+import { openFinanceLoginPage, waitFinanceLoginRedirect } from "./payuni-current-source-refund-qa.mjs";
 
 const APP = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
+
+/** Confirm the fixed finance destination without waiting for blocked assets. */
+export async function verifyFixedFinanceDashboard(context) {
+  const page = await context.newPage();
+  try {
+    await page.goto(`${APP}/admin/billing/dashboard`, { waitUntil: "domcontentloaded" });
+    return page.url() === `${APP}/admin/billing/dashboard`;
+  } finally { await page.close(); }
+}
 const PATHS = new Set(["/api/admin/ops/payuni/wp4-fixture", "/api/payments/checkout/admission",
   "/api/payments/checkout", "/api/admin/ops/payuni/wp4-payment-attempt"]);
 const PROOF_BLOBS = Object.freeze({
@@ -188,17 +198,17 @@ export async function executeIssuedRecoveryProbe() {
     });
     stage = "fixed-synthetic-finance-login";
     const page = await context.newPage();
-    await page.goto(`${APP}/login?next=/admin/billing/dashboard`);
+    await openFinanceLoginPage(page);
     requireSafe(new URL(page.url()).origin === APP);
     await page.locator('input[name="email"]').fill(process.env.PAYUNI_QA_FINANCE_EMAIL);
     await page.locator('input[name="password"]').fill(process.env.PAYUNI_QA_FINANCE_PASSWORD);
     await page.getByRole("button", { name: "登入", exact: true }).click();
-    await page.waitForURL(url => url.origin === APP && url.pathname !== "/login");
+    await waitFinanceLoginRedirect(page);
     if (new URL(page.url()).pathname === "/mfa/verify") {
       requireSafe(/^\d{6}$/.test(process.env.PAYUNI_QA_FINANCE_OTP ?? ""));
       await page.locator('input[name="code"]').fill(process.env.PAYUNI_QA_FINANCE_OTP);
       await page.getByRole("button", { name: "確認並繼續", exact: true }).click();
-      await page.waitForURL(url => url.origin === APP && !url.pathname.startsWith("/mfa/"));
+      await waitFinanceLoginRedirect(page, true);
     }
     requireSafe(new URL(page.url()).pathname === "/admin/billing/dashboard");
     await page.close();
@@ -221,11 +231,8 @@ export async function executeIssuedRecoveryProbe() {
         await mkdir(directory, { recursive: true });
         await persistIssuedRecoveryPending(directory, pending);
       },
-      verifyFinanceSession: async () => {
-        const check = await context.newPage();
-        try { await check.goto(`${APP}/admin/billing/dashboard`); return check.url() === `${APP}/admin/billing/dashboard`; }
-        finally { await check.close(); }
-      }, queryProvider: order => queryTransaction(order, { signal: AbortSignal.timeout(10000) }) });
+      verifyFinanceSession: () => verifyFixedFinanceDashboard(context),
+      queryProvider: order => queryTransaction(order, { signal: AbortSignal.timeout(10000) }) });
     console.log(JSON.stringify({ ...receipt, acceptanceScope: "provider_original_trade_observation_only",
       applicationRecoveryAccepted: false }));
     // A provider observation alone never marks commerce acceptance READY.
