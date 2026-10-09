@@ -20,6 +20,24 @@ function requireSafe(condition) {
   if (!condition) throw new Error("Current-source Sandbox refund QA rejected.");
 }
 
+/** Diagnose only the existing deployment-owned fixture. Never create or retry a payment. */
+export async function diagnoseCurrentSourcePayment(input, dependencies = {}) {
+  const invocation = validateInvocation(input);
+  requireSafe(invocation.ok);
+  const request = dependencies.request ?? defaultRequest;
+  const response = await request({ url: `${APP_ORIGIN}/api/admin/ops/payuni/wp4-buyer-order-proof`,
+    headers: { authorization: `Bearer ${input.jobSecret}`, "x-celebratedeal-source-sha": invocation.sourceSha }, body: undefined });
+  const categories = { VERIFIED: "EXACT_PAID_ORDER_VERIFIED", FIXTURE_UNAVAILABLE: "EXACT_FIXTURE_ABSENT",
+    CANDIDATE_AMBIGUOUS: "EXACT_FIXTURE_AMBIGUOUS", STATE_MISMATCH: "EXACT_STATE_MISMATCH" };
+  const expectedStatus = { VERIFIED: 200, FIXTURE_UNAVAILABLE: 404, CANDIDATE_AMBIGUOUS: 409, STATE_MISMATCH: 409 };
+  const status = response?.body?.status;
+  const category = Object.hasOwn(categories, status ?? "") && response.status === expectedStatus[status]
+    ? categories[status] : "EXACT_STATE_UNAVAILABLE";
+  return { schemaVersion: "celebratedeal-current-source-diagnostic/v1", status: "READ_ONLY_DIAGNOSTIC",
+    sourceCommit: invocation.sourceSha, category, productionOperations: false,
+    paymentSubmitted: false, refundSubmitted: false, alternateTransactionSelected: false };
+}
+
 /** Only closed login outcomes escape CI; never return a URL, body or cookie. */
 export function classifyFinanceLoginFailure(value) {
   try {
@@ -77,6 +95,11 @@ export async function runCurrentSourceRefundQa({ input, context, loadProof, quer
       return browserSubmit({ ...operation, previewHost: APP_HOST });
     },
   });
+  if (validatePaymentOnlyReceipt(payment).ok && payment.result === "BLOCKED") {
+    const failure = new Error("Current-source payment blocked.");
+    failure.paymentReceipt = payment;
+    throw failure;
+  }
   requireSafe(validatePaymentOnlyReceipt(payment).ok && payment?.result === "PASS" && payment.sourceSha === invocation.sourceSha
     && payment.checks?.returnCallbackMapped === true && payment.checks?.duplicateCallbackVerified === true);
   requireSafe(typeof exactCheckout?.transactionId === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(exactCheckout.transactionId)
@@ -146,6 +169,11 @@ export async function executeCurrentSourceRefundQa() {
     requireSafe(preflight.status === 200);
     const readiness = await preflight.json();
     requireSafe(readiness.ready === true && readiness.buyerOrder === true);
+    if (process.env.Q1_EXISTING_STATE_DIAGNOSTIC === "true") {
+      stage = "exact-existing-state-diagnostic";
+      console.log(JSON.stringify(await diagnoseCurrentSourcePayment(input)));
+      return;
+    }
     const { chromium } = await import("@playwright/test");
     const { queryTransaction } = await import("./payuni-sandbox-external-qa.mjs");
     browser = await launchRefundBrowser(chromium);
@@ -187,9 +215,10 @@ export async function executeCurrentSourceRefundQa() {
       queryProvider: (orderNumber) => queryTransaction(orderNumber, { signal: AbortSignal.timeout(10000) }) },
     { writeHandoff: writePaymentHandoff });
     console.log(JSON.stringify(receipt));
-  } catch {
+  } catch (error) {
     console.log(JSON.stringify({ schemaVersion: "celebratedeal-current-source-refund-qa/v1", status: "BLOCKED_OR_FAILED", stage,
       ...(loginPage ? { failureCategory: classifyFinanceLoginFailure(loginPage.url()) } : {}),
+      ...(validatePaymentOnlyReceipt(error?.paymentReceipt).ok ? { paymentReceipt: error.paymentReceipt } : {}),
       productionOperations: false, alternateTransactionSelected: false }));
     process.exitCode = 1;
   } finally {

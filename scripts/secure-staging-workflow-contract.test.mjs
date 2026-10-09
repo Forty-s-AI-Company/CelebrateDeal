@@ -101,6 +101,7 @@ test("workflow exposes only fixed allowlisted tasks with pinned actions", () => 
     "wp4-payuni-sandbox-subscription",
     "line-notifications-e2e",
     "q1-exact-pending-refund",
+    "q1-exact-state-diagnostic",
   ]);
   assert.match(source, /npm run secure:staging:wp2/u);
   assert.match(source, /npm run secure:staging:wp4/u);
@@ -148,7 +149,10 @@ test("Q1 exact refund retains the protected runner guard and isolates secret inj
   assert.ok(run.indexOf("sudo ip6tables -P OUTPUT DROP") < run.indexOf("node scripts/payuni-current-source-refund-qa.mjs"));
 
   assert.equal(steps[lineage].env.JOB_SECRET, undefined);
-  assert.equal(steps[execute].if, "${{ inputs.task == 'q1-exact-pending-refund' }}");
+  assert.equal(steps[execute].if, "${{ (inputs.task == 'q1-exact-pending-refund' || inputs.task == 'q1-exact-state-diagnostic') }}");
+  assert.equal(steps[execute].env.Q1_EXISTING_STATE_DIAGNOSTIC, "${{ inputs.task == 'q1-exact-state-diagnostic' }}");
+  assert.ok(workflow.on.workflow_dispatch.inputs.task.options.includes("q1-exact-state-diagnostic"));
+  assert.ok(String(steps[lineage].if).includes("q1-exact-state-diagnostic"));
   assert.equal(steps[execute].env.PAYUNI_ENV, "sandbox");
   assert.equal(steps[execute].env.PAYUNI_SANDBOX_QA_ENABLED, "true");
   assert.equal(steps[execute].env.PAYUNI_SANDBOX_REFUND_ENABLED, "true");
