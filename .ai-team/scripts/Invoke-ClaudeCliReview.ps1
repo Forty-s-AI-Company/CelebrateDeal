@@ -49,19 +49,39 @@ function Invoke-ClaudeCliReview {
     $receipt = @{status='CLAUDE_CLI_RUNTIME_ERROR'; process_status=$result.status;
         exit_code=$result.exitCode; observed_model='unknown'; observed_effort='unknown'; review_output=$null}
     if ($result.stdoutTruncated) { $receipt.status='TRUNCATED_REVIEW'; return $receipt }
-    if ($result.status -in @('AUTH_REQUIRED','HOST_PERMISSION_BLOCKED','MODEL_UNAVAILABLE')) {
+    if ($result.status -in @('AUTH_REQUIRED','MODEL_UNAVAILABLE')) {
         $receipt.status=$result.status; return $receipt
     }
-    if ($result.status -match 'TIMEOUT|BLOCKED|FAILED_TO_START') { return $receipt }
+    if ($result.status -match 'TIMEOUT|FAILED_TO_START' -or
+        ($result.status -match 'BLOCKED' -and $result.status -ne 'HOST_PERMISSION_BLOCKED')) { return $receipt }
     try {
         $terminals = @()
+        $toolActivity = $false
         foreach ($line in ($result.stdout -split "`r?`n")) {
             if (-not $line.Trim()) { continue }
             $event = $line | ConvertFrom-Json -AsHashtable
             if ($event.type -eq 'result') { $terminals += ,$event }
+            if ($event.type -eq 'assistant' -and $event.message) {
+                foreach ($content in $event.message.content) {
+                    # --json-schema uses the native output formatter even with
+                    # --tools ''. It has no repository/network/shell capability.
+                    if ($content.type -eq 'tool_use' -and $content.name -ne 'StructuredOutput') { $toolActivity=$true }
+                }
+            }
         }
         if ($terminals.Count -ne 1) { $receipt.status='INVALID_REVIEW'; return $receipt }
         $terminal = $terminals[0]
+        # Text classification can match a finding quoting "permission denied".
+        # Recover only a complete native success with explicit zero denials,
+        # no tool calls, no stderr, and exit zero. Real host failures stay blocked.
+        $textOnlyHostClassification = $result.status -eq 'HOST_PERMISSION_BLOCKED' -and
+            $result.exitCode -eq 0 -and [string]::IsNullOrWhiteSpace([string]$result.stderr) -and
+            $terminal.subtype -eq 'success' -and $terminal.is_error -eq $false -and
+            $terminal.ContainsKey('permission_denials') -and @($terminal.permission_denials).Count -eq 0 -and
+            -not $toolActivity
+        if ($result.status -eq 'HOST_PERMISSION_BLOCKED' -and -not $textOnlyHostClassification) {
+            $receipt.status='HOST_PERMISSION_BLOCKED'; return $receipt
+        }
         if ($terminal.is_error -eq $true) {
             # Classify in memory; never emit diagnostics, credentials or raw logs.
             $diagnostic = [string]$terminal.result
@@ -71,7 +91,8 @@ function Invoke-ClaudeCliReview {
                 elseif ($diagnostic -match '(?i)model.*(?:unavailable|not found)') {'MODEL_UNAVAILABLE'} else {'CLAUDE_CLI_RUNTIME_ERROR'}
             return $receipt
         }
-        if ($result.status -ne 'SUCCESS' -or $terminal.type -ne 'result' -or $terminal.subtype -ne 'success') { return $receipt }
+        if (($result.status -ne 'SUCCESS' -and -not $textOnlyHostClassification) -or
+            $terminal.type -ne 'result' -or $terminal.subtype -ne 'success') { return $receipt }
         $models = @($terminal.modelUsage.Keys)
         # A success/alias alone cannot qualify a reviewer; reject silent model fallback.
         if ($models.Count -ne 1 -or $models[0] -notmatch ('^(?:' + $ObservedPattern + ')$')) {
@@ -82,6 +103,7 @@ function Invoke-ClaudeCliReview {
             $terminal.structured_output | ConvertTo-Json -Depth 20 -Compress
         } else { [string]$terminal.result }
         $receipt.status='SUCCESS'
+        if ($textOnlyHostClassification) { $receipt['classification_note']='HOST_TEXT_FALSE_POSITIVE_VERIFIED_TERMINAL' }
     } catch { $receipt.status='INVALID_REVIEW' }
     return $receipt
 }

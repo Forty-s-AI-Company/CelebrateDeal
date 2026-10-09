@@ -33,6 +33,20 @@ $structuredResult=Check SUCCESS
 if (($structuredResult.review_output | ConvertFrom-Json).summary -ne 'structured fixture') { throw 'STRUCTURED_OUTPUT_NOT_EXTRACTED' }
 $script:fixture.stdout='{"type":"system","subtype":"init"}'+"`n"+$valid
 $null=Check SUCCESS
+$hostTerminal=$terminal.Clone();$hostTerminal['permission_denials']=@();$hostTerminal.result='{"summary":"Finding quotes permission denied; no actual denied operation","findings":[]}'
+$script:fixture=@{status='HOST_PERMISSION_BLOCKED';exitCode=0;stdoutTruncated=$false;stderr='';stdout=($hostTerminal|ConvertTo-Json -Depth 8 -Compress)}
+$recovered=Check SUCCESS
+if ($recovered.classification_note -ne 'HOST_TEXT_FALSE_POSITIVE_VERIFIED_TERMINAL') { throw 'MISSING_CLASSIFICATION_PROVENANCE' }
+$formatter='{"type":"assistant","message":{"content":[{"type":"tool_use","name":"StructuredOutput"}]}}'
+$script:fixture.stdout=$formatter+"`n"+($hostTerminal|ConvertTo-Json -Depth 8 -Compress);$null=Check SUCCESS
+$script:fixture.stderr='permission denied';$null=Check HOST_PERMISSION_BLOCKED
+$script:fixture.stderr='';$script:fixture.exitCode=1;$null=Check HOST_PERMISSION_BLOCKED
+$script:fixture.exitCode=0;$hostTerminal.permission_denials=@(@{tool_name='synthetic'});$script:fixture.stdout=$hostTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check HOST_PERMISSION_BLOCKED
+$hostTerminal.Remove('permission_denials');$script:fixture.stdout=$hostTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check HOST_PERMISSION_BLOCKED
+$hostTerminal.permission_denials=@();$tool='{"type":"assistant","message":{"content":[{"type":"tool_use","name":"synthetic"}]}}'
+$script:fixture.stdout=$tool+"`n"+($hostTerminal|ConvertTo-Json -Depth 8 -Compress);$null=Check HOST_PERMISSION_BLOCKED
+$hostTerminal.is_error=$true;$script:fixture.stdout=$hostTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check HOST_PERMISSION_BLOCKED
+$script:fixture=@{status='SUCCESS';exitCode=0;stdoutTruncated=$false;stdout=$valid}
 $script:fixture.stdout=$valid+"`n"+$valid
 $null=Check INVALID_REVIEW
 $terminal.modelUsage=@{'claude-sonnet-5-5'=@{}}
