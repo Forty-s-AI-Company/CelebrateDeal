@@ -1,8 +1,14 @@
+import { fixedBrowserEnvironment } from "./mvp-payuni-sandbox-e2e.mjs";
 import { SCHEMA_VERSION, reference } from "./payuni-sandbox-payment-handoff.mjs";
 import { isCompletedFullCreditRefund } from "./payuni-credit-refund-query-contract.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+
+/** Keep finance and provider credentials inside Node, outside Chromium. */
+export function launchPendingRefundBrowser(chromium) {
+  return chromium.launch({ headless: true, env: fixedBrowserEnvironment() });
+}
 
 const STAGING_ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 const PROVIDER_HOST = "sandbox-api.payuni.com.tw";
@@ -146,7 +152,7 @@ async function executePendingRefund() {
     assertProofMatchesHandoff(receipt, await loadProof(), transactionId, sourceSha);
     const { chromium } = await import("@playwright/test");
     const { queryTransaction } = await import("./payuni-sandbox-external-qa.mjs");
-    browser = await chromium.launch({ headless: true });
+    browser = await launchPendingRefundBrowser(chromium);
     const context = await browser.newContext({ locale: "zh-TW" });
     context.setDefaultTimeout(15000);
     const login = await context.newPage();

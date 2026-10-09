@@ -81,5 +81,15 @@
   "checks": "PENDING_CURRENT_BOOTSTRAP_SOURCE",
   "external_payment_refund": "NOT_EXECUTED",
   "whole_goal_complete": false,
-  "production": "NOT_AUTHORIZED"
+  "production": "NOT_AUTHORIZED",
+  "copied_exact_git_blobs_apply_to_initial_checkpoint": "c13aec38c08c233d8a217b19c3cb4780d815f9a1",
+  "review9_corrections": {
+    "standalone_consumer_browser_environment": "Fixed using shared minimal OS environment; current CI launcher was already isolated",
+    "affected_files": [
+      "scripts/payuni-sandbox-pending-refund-consumer.mjs",
+      "scripts/payuni-sandbox-pending-refund-consumer.test.mjs"
+    ],
+    "independent_review": "IN_PROGRESS_SAME_AUTHORIZED_REVIEW9",
+    "checks": "PENDING_CURRENT_DELTA"
+  }
 }

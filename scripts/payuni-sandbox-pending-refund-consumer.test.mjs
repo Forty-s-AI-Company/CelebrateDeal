@@ -1,3 +1,4 @@
+import { launchPendingRefundBrowser } from "./payuni-sandbox-pending-refund-consumer.mjs";
 import { expect, it, vi } from "vitest";
 import { createPendingRefundHandoff, reference } from "./payuni-sandbox-payment-handoff.mjs";
 import { assertProofMatchesHandoff, consumePendingRefund } from "./payuni-sandbox-pending-refund-consumer.mjs";
@@ -100,4 +101,23 @@ it("does not fall back to another dashboard transaction when the exact target is
   await expect(consumePendingRefund(run.options)).rejects.toThrow();
   expect(run.first.page.getByTestId).toHaveBeenCalledExactlyOnceWith(`billing-refund-${transactionId}`);
   expect(run.first.click).not.toHaveBeenCalled();
+});
+
+it("keeps injected finance and provider credentials out of the standalone CLI browser", async () => {
+  const names = ["JOB_SECRET", "GITHUB_TOKEN", "PAYUNI_SANDBOX_HASH_KEY", "PAYUNI_SANDBOX_HASH_IV",
+    "PAYUNI_QA_FINANCE_EMAIL", "PAYUNI_QA_FINANCE_PASSWORD", "PAYUNI_QA_FINANCE_OTP"];
+  try {
+    for (const name of names) vi.stubEnv(name, "synthetic-cli-secret-sentinel");
+    const chromium = { launch: vi.fn(async (options) => {
+      expect(options.headless).toBe(true);
+      expect(options.env).toBeDefined();
+      expect(Object.keys(options.env).sort()).toEqual(process.platform === "win32"
+        ? ["PATH", "SystemRoot", "TEMP", "TMP"].sort() : ["PATH", "HOME", "TMPDIR"].sort());
+      for (const name of names) expect(options.env).not.toHaveProperty(name);
+      expect(JSON.stringify(options.env)).not.toContain("synthetic-cli-secret-sentinel");
+      return "isolated-cli-browser";
+    }) };
+    await expect(launchPendingRefundBrowser(chromium)).resolves.toBe("isolated-cli-browser");
+    expect(chromium.launch).toHaveBeenCalledTimes(1);
+  } finally { vi.unstubAllEnvs(); }
 });
