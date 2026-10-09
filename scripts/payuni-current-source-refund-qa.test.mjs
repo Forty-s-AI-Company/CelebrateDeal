@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { launchRefundBrowser, runCurrentSourceRefundQa } from "./payuni-current-source-refund-qa.mjs";
+import { classifyFinanceLoginFailure, launchRefundBrowser, openFinanceLoginPage, runCurrentSourceRefundQa, waitFinanceLoginRedirect } from "./payuni-current-source-refund-qa.mjs";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
 
 const host = "celebrate-deal-staging.carry-digital-nomad.in.net";
@@ -8,6 +8,54 @@ const order = "CD-SYNTHETIC-Q1";
 const transaction = "wp4-synthetic-q1";
 const trade = "synthetic-provider-q1";
 const clock = () => new Date("2026-10-09T02:00:00Z");
+it("opens the fixed login DOM without requiring unrelated asset completion", async () => {
+  const page = { goto: vi.fn(async (_url, options) => {
+    if (options.waitUntil !== "domcontentloaded") throw new Error("synthetic stalled external asset");
+  }), url: () => `https://${host}/login` };
+  await expect(openFinanceLoginPage(page)).resolves.toBeUndefined();
+  expect(page.goto).toHaveBeenCalledWith(`https://${host}/login?next=/admin/billing/dashboard`, { waitUntil: "domcontentloaded" });
+});
+it("rejects a foreign login redirect and preserves navigation failure", async () => {
+  const page = { goto: vi.fn(), url: () => "https://attacker.example/login" };
+  await expect(openFinanceLoginPage(page)).rejects.toThrow();
+  const error = new Error("synthetic blocked navigation");
+  page.goto.mockRejectedValueOnce(error);
+  await expect(openFinanceLoginPage(page)).rejects.toBe(error);
+});
+it.each([false, true])("waits for a same-origin login redirect DOM with MFA=%s", async (afterMfa) => {
+  const page = { url: () => `https://${host}/admin/billing/dashboard`, waitForURL: vi.fn(async (predicate, options) => {
+    expect(options.waitUntil).toBe("domcontentloaded");
+    expect(predicate(new URL(`https://${host}/admin/billing/dashboard`))).toBe(true);
+    expect(predicate(new URL("https://attacker.example/admin/billing/dashboard"))).toBe(false);
+    expect(predicate(new URL(`https://${host}${afterMfa ? "/mfa/verify" : "/login"}`))).toBe(false);
+  }) };
+  await expect(waitFinanceLoginRedirect(page, afterMfa)).resolves.toBeUndefined();
+  expect(page.waitForURL).toHaveBeenCalledTimes(1);
+});
+it("rejects a foreign final redirect and preserves redirect timeout", async () => {
+  const page = { url: () => "https://attacker.example/dashboard", waitForURL: vi.fn() };
+  await expect(waitFinanceLoginRedirect(page)).rejects.toThrow();
+  const error = new Error("synthetic redirect timeout");
+  page.waitForURL.mockRejectedValueOnce(error);
+  await expect(waitFinanceLoginRedirect(page, true)).rejects.toBe(error);
+});
+it.each([
+  ["/login?error=1", "AUTHENTICATION_REJECTED"],
+  ["/login?error=rate_limited", "LOGIN_RATE_LIMITED"],
+  ["/login?error=temporarily_unavailable", "LOGIN_PROTECTION_UNAVAILABLE"],
+  ["/login?error=no_vendor", "FINANCE_PERMISSION_REJECTED"],
+  ["/mfa/verify", "MFA_NOT_COMPLETED"],
+  ["/admin/billing/dashboard", "FINANCE_DASHBOARD_NOT_VERIFIED"],
+  ["/login?error=__proto__&private=synthetic-private", "LOGIN_NOT_COMPLETED"],
+  ["/login?error=synthetic-private", "LOGIN_NOT_COMPLETED"],
+])("returns only a closed login category for %s", (path, expected) => {
+  expect(classifyFinanceLoginFailure(`https://${host}${path}`)).toBe(expected);
+});
+it("never trusts foreign destinations or emits private query values", () => {
+  expect(classifyFinanceLoginFailure("https://attacker.example/login?error=1")).toBe("LOGIN_DESTINATION_REJECTED");
+  expect(classifyFinanceLoginFailure("synthetic-private")).toBe("LOGIN_NOT_COMPLETED");
+  expect(classifyFinanceLoginFailure(`https://${host}/unexpected?token=synthetic-private`)).toBe("LOGIN_DESTINATION_REJECTED");
+});
 function setup() {
   let refunded = false;
   const clicks = [];

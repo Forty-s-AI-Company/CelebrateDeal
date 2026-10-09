@@ -20,6 +20,24 @@ function requireSafe(condition) {
   if (!condition) throw new Error("Current-source Sandbox refund QA rejected.");
 }
 
+/** Only closed login outcomes escape CI; never return a URL, body or cookie. */
+export function classifyFinanceLoginFailure(value) {
+  try {
+    const url = new URL(value);
+    if (url.origin !== APP_ORIGIN) return "LOGIN_DESTINATION_REJECTED";
+    if (url.pathname === "/login") {
+      const categories = { "1": "AUTHENTICATION_REJECTED", rate_limited: "LOGIN_RATE_LIMITED",
+        temporarily_unavailable: "LOGIN_PROTECTION_UNAVAILABLE", no_vendor: "FINANCE_PERMISSION_REJECTED",
+        mfa_required: "MFA_REQUIRED" };
+      const error = url.searchParams.get("error");
+      return Object.hasOwn(categories, error ?? "") ? categories[error] : "LOGIN_NOT_COMPLETED";
+    }
+    if (url.pathname.startsWith("/mfa/")) return "MFA_NOT_COMPLETED";
+    if (url.pathname === "/admin/billing/dashboard") return "FINANCE_DASHBOARD_NOT_VERIFIED";
+    return "LOGIN_DESTINATION_REJECTED";
+  } catch { return "LOGIN_NOT_COMPLETED"; }
+}
+
 /** Connect the existing fixed synthetic payment runner to the exact refund UI.
  * The immutable Preview identifies the source; application requests use only
  * the existing canonical staging origin. Its server checks the source, project,
@@ -86,9 +104,26 @@ export function launchRefundBrowser(chromium) {
   return chromium.launch({ headless: true, env: fixedBrowserEnvironment() });
 }
 
+/** Restricted CI must not wait for unrelated external assets to finish loading.
+ * Form locators still wait for hydration; origin validation precedes credentials.
+ */
+export async function openFinanceLoginPage(page) {
+  await page.goto(`${APP_ORIGIN}/login?next=/admin/billing/dashboard`, { waitUntil: "domcontentloaded" });
+  requireSafe(new URL(page.url()).origin === APP_ORIGIN);
+}
+
+/** Restricted QA egress may stall unrelated assets after a valid redirect. */
+export async function waitFinanceLoginRedirect(page, afterMfa = false) {
+  await page.waitForURL((url) => url.origin === APP_ORIGIN
+    && (afterMfa ? !url.pathname.startsWith("/mfa/") : url.pathname !== "/login"),
+  { waitUntil: "domcontentloaded" });
+  requireSafe(new URL(page.url()).origin === APP_ORIGIN);
+}
+
 /** Protected CI entry point: process injection only; no dotenv or raw logs. */
 export async function executeCurrentSourceRefundQa() {
   let browser;
+  let loginPage;
   let stage = "configuration";
   try {
     requireSafe(process.argv.length === 2 && process.env.GITHUB_ACTIONS === "true"
@@ -116,23 +151,27 @@ export async function executeCurrentSourceRefundQa() {
     browser = await launchRefundBrowser(chromium);
     const context = await browser.newContext({ locale: "zh-TW" });
     context.setDefaultTimeout(15000);
-    stage = "platform-login";
-    const page = await context.newPage();
-    await page.goto(`${APP_ORIGIN}/login?next=/admin/billing/dashboard`);
-    requireSafe(new URL(page.url()).origin === APP_ORIGIN);
+    stage = "platform-login-page";
+    const page = loginPage = await context.newPage();
+    await openFinanceLoginPage(page);
+    stage = "platform-login-form";
     await page.locator('input[name="email"]').fill(process.env.PAYUNI_QA_FINANCE_EMAIL);
     await page.locator('input[name="password"]').fill(process.env.PAYUNI_QA_FINANCE_PASSWORD);
+    stage = "platform-login-submit";
     await page.getByRole("button", { name: "登入", exact: true }).click();
-    await page.waitForURL((url) => url.origin === APP_ORIGIN && url.pathname !== "/login");
+    stage = "platform-login-redirect";
+    await waitFinanceLoginRedirect(page);
     if (new URL(page.url()).pathname === "/mfa/verify") {
       stage = "platform-mfa";
       requireSafe(/^\d{6}$/.test(process.env.PAYUNI_QA_FINANCE_OTP ?? ""));
       await page.locator('input[name="code"]').fill(process.env.PAYUNI_QA_FINANCE_OTP);
       await page.getByRole("button", { name: "確認並繼續", exact: true }).click();
-      await page.waitForURL((url) => url.origin === APP_ORIGIN && !url.pathname.startsWith("/mfa/"));
+      await waitFinanceLoginRedirect(page, true);
     }
+    stage = "platform-finance-dashboard";
     requireSafe(new URL(page.url()).pathname === "/admin/billing/dashboard");
     await page.close();
+    loginPage = undefined;
     const loadProof = async (transactionId, sourceSha) => {
       const url = new URL("/api/admin/ops/payuni/pending-refund-proof", APP_ORIGIN);
       url.searchParams.set("transactionId", transactionId);
@@ -150,6 +189,7 @@ export async function executeCurrentSourceRefundQa() {
     console.log(JSON.stringify(receipt));
   } catch {
     console.log(JSON.stringify({ schemaVersion: "celebratedeal-current-source-refund-qa/v1", status: "BLOCKED_OR_FAILED", stage,
+      ...(loginPage ? { failureCategory: classifyFinanceLoginFailure(loginPage.url()) } : {}),
       productionOperations: false, alternateTransactionSelected: false }));
     process.exitCode = 1;
   } finally {
