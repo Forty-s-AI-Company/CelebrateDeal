@@ -133,6 +133,7 @@ test("Q1 exact refund retains the protected runner guard and isolates secret inj
   const run = steps[execute].run;
   assert.match(run, /sudo iptables -P OUTPUT DROP/u);
   assert.match(run, /sudo ip6tables -P OUTPUT DROP/u);
+  assert.match(run, /sudo ip6tables -F OUTPUT/u);
   assert.ok(run.indexOf("sudo ip6tables -F OUTPUT") < run.indexOf("sudo ip6tables -P OUTPUT DROP"));
   assert.match(run, /sudo iptables-save/u);
   assert.match(run, /sudo ip6tables-save/u);
