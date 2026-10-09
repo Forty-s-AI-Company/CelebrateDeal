@@ -49,7 +49,7 @@ export async function observeIssuedRecovery({ expected, queryProvider, originalP
   const sameTrade = afterTradeNo === tradeNo;
   const paid = String(after.TradeStatus) === "1";
   return {
-    ...common, retryAttempts: 1, finalProviderQueries: 1, sameTrade, paid,
+    ...common, retryAttempts: 1, finalProviderQueries: 1, sameTrade, paid, finalTradeRef: digest(afterTradeNo),
     result: !sameTrade ? "REPLACEMENT_TRADE_DETECTED"
       : paid ? "SAME_TRADE_PAYMENT_OBSERVED" : "SAME_TRADE_NOT_PAID",
   };

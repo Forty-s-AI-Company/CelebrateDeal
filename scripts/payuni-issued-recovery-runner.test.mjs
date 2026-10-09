@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runIssuedRecoveryProbe, runIssuedRecoveryQa } from "./payuni-issued-recovery-runner.mjs";
+import { runIssuedRecoveryProbe, runIssuedRecoveryQa, verifyIssuedRecoveryProofSource } from "./payuni-issued-recovery-runner.mjs";
 import { createHash } from "node:crypto";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
 import { spawnSync } from "node:child_process";
@@ -61,12 +61,15 @@ test("Production input never accesses the application or provider", async () => 
 function cleanupFixture() {
   const f = fixture();
   const history = [];
+  const pending = [];
   const trade = "synthetic_trade";
   const refs = { transactionRef: reference("synthetic_transaction"), orderRef: reference("synthetic_order"), tradeRef: reference(trade) };
   const checks = Object.fromEntries(["sandboxRefundAccepted", "refundVisibleInProviderQuery", "refundIdempotency",
     "paymentTransactionRefunded", "refundRecordProcessed", "singleRefundRecord"].map(key => [key, "passed"]));
   Object.assign(f.dependencies, {
     context: {}, verifyFinanceSession: async () => { history.push("finance"); return true; },
+    verifyRefundCapability: async sourceSha => { assert.equal(sourceSha, input.sourceSha); history.push("capability"); return true; },
+    persistPending: async record => pending.push(structuredClone(record)),
     now: () => new Date("2026-10-09T00:00:00Z"),
     observeBrowser: async () => { history.push("observe"); return { result: "SAME_TRADE_PAYMENT_OBSERVED", sameTrade: true,
       paid: true, tradeRef: `sha256:${createHash("sha256").update(trade).digest("hex")}` }; },
@@ -84,29 +87,29 @@ function cleanupFixture() {
       assert.equal(operation.expectedSourceSha, input.sourceSha);
       return { status: "COMPLETED", ...refs, sourceCommit: input.sourceSha, checks }; },
   });
-  return { ...f, history };
+  return { ...f, history, pending };
 }
 test("finance readiness rejection precedes all application and provider writes", async () => {
   const f = cleanupFixture(); f.dependencies.verifyFinanceSession = async () => false;
   await assert.rejects(runIssuedRecoveryQa(input, f.dependencies), /RUNNER_REJECTED/);
-  assert.equal(f.calls.length, 0); assert.deepEqual(f.history, []);
+  assert.equal(f.calls.length, 0); assert.deepEqual(f.history, ["capability"]);
 });
 test("a paid original trade is handed to exact application refund and proof only", async () => {
   const f = cleanupFixture();
   assert.equal((await runIssuedRecoveryQa(input, f.dependencies)).refundCleanupVerified, true);
-  assert.deepEqual(f.history, ["finance", "observe", "query", "proof", "handoff", "refund"]);
+  assert.deepEqual(f.history, ["capability", "finance", "observe", "query", "proof", "handoff", "refund"]);
   assert.equal(f.calls.filter(call => new URL(call.url).pathname === "/api/payments/checkout").length, 1);
 });
 test("unavailable original retry cannot be relabeled as paid or cleaned up", async () => {
   const f = cleanupFixture(); f.dependencies.observeBrowser = async () => ({ result: "ORIGINAL_PAGE_RETRY_UNAVAILABLE" });
   assert.equal((await runIssuedRecoveryQa(input, f.dependencies)).refundCleanupVerified, false);
-  assert.deepEqual(f.history, ["finance"]);
+  assert.deepEqual(f.history, ["capability", "finance"]);
 });
 test("changed provider trade cannot become the refund target", async () => {
   const f = cleanupFixture(); const query = f.dependencies.queryProvider;
   f.dependencies.queryProvider = async order => ({ ...await query(order), TradeNo: "replacement_trade" });
   await assert.rejects(runIssuedRecoveryQa(input, f.dependencies), /RUNNER_REJECTED/);
-  assert.deepEqual(f.history, ["finance", "observe", "query"]);
+  assert.deepEqual(f.history, ["capability", "finance", "observe", "query"]);
 });
 test("unmapped callback cannot produce a successful handoff or refund", async () => {
   const f = cleanupFixture(); const proof = f.dependencies.loadProof;
@@ -119,6 +122,64 @@ test("incomplete cleanup evidence never marks refund cleanup verified", async ()
   f.dependencies.consumeRefund = async operation => ({ ...await consume(operation), checks: {} });
   await assert.rejects(runIssuedRecoveryQa(input, f.dependencies), /RUNNER_REJECTED/);
 });
+
+test("missing exact-source proof capability rejects before finance, checkout or card submission", async () => {
+  const f = cleanupFixture(); f.dependencies.verifyRefundCapability = async () => false;
+  await assert.rejects(runIssuedRecoveryQa(input, f.dependencies), /RUNNER_REJECTED/);
+  assert.equal(f.calls.length, 0); assert.deepEqual(f.history, []); assert.deepEqual(f.pending, []);
+});
+test("failure to persist the prepared target prevents all card submission", async () => {
+  const f = cleanupFixture(); f.dependencies.persistPending = async () => { throw new Error("synthetic persistence failure"); };
+  await assert.rejects(runIssuedRecoveryQa(input, f.dependencies));
+  assert.equal(f.history.includes("observe"), false); assert.equal(f.history.includes("refund"), false);
+});
+for (const [stage, submitted] of [["refund-ui-preparation", false], ["refund-submit-pending-confirmation", true]]) {
+  test(`cleanup failure at ${stage} retains the exact sanitized pending target`, async () => {
+    const f = cleanupFixture();
+    f.dependencies.consumeRefund = async operation => {
+      await operation.onStage({ stage, refundSubmissionMayHaveOccurred: submitted });
+      throw new Error("synthetic cleanup failure");
+    };
+    await assert.rejects(runIssuedRecoveryQa(input, f.dependencies));
+    const pending = f.pending.at(-1);
+    assert.equal(pending.stage, stage); assert.equal(pending.refundSubmissionMayHaveOccurred, submitted);
+    assert.equal(pending.status, "PENDING_REFUND"); assert.equal(pending.sourceCommit, input.sourceSha);
+    assert.equal(pending.transactionRef, reference("synthetic_transaction"));
+    assert.equal(pending.tradeRef, reference("synthetic_trade"));
+    for (const raw of ["synthetic_transaction", "synthetic_order", "synthetic_trade", "synthetic-job", "4147631000000001"])
+      assert.equal(JSON.stringify(pending).includes(raw), false);
+    assert.equal(f.history.filter(value => value === "observe").length, 1);
+  });
+}
+test("a paid original trade remains durable when its first application proof fails", async () => {
+  const f = cleanupFixture(); f.dependencies.loadProof = async () => { throw new Error("synthetic proof failure"); };
+  await assert.rejects(runIssuedRecoveryQa(input, f.dependencies));
+  assert.equal(f.pending.at(-1).stage, "paid-original-trade-proof");
+  assert.equal(f.pending.at(-1).providerPaid, true);
+  assert.equal(f.pending.at(-1).applicationCallbackVerified, false);
+  assert.equal(f.pending.at(-1).refundSubmissionMayHaveOccurred, false);
+});
+
+test("proof source capability requires both exact reviewed route and service blobs", async () => {
+  const calls = [];
+  const shas = ["5b90f3d557cb3f1fbee0d1af9b20189df9acc8cf", "3cb7b6541551df4f4565f7e0f89ec84d6126f535"];
+  assert.equal(await verifyIssuedRecoveryProofSource({ sourceSha: input.sourceSha, token: "synthetic-github" }, async url => {
+    calls.push(url); assert.equal(url.searchParams.get("ref"), input.sourceSha);
+    return new Response(JSON.stringify({ type: "file", path: url.pathname.split("/contents/")[1], sha: shas[calls.length - 1] }));
+  }), true);
+  assert.equal(calls.length, 2);
+});
+for (const outcome of ["missing", "changed-sha", "wrong-path", "oversized"]) {
+  test(`proof capability rejects ${outcome} without accepting a different source`, async () => {
+    const passed = await verifyIssuedRecoveryProofSource({ sourceSha: input.sourceSha, token: "synthetic-github" }, async url => {
+      if (outcome === "missing") return new Response("{}", { status: 404 });
+      if (outcome === "oversized") return new Response("x".repeat(65537));
+      return new Response(JSON.stringify({ type: "file", path: outcome === "wrong-path" ? "unrelated.ts" : url.pathname.split("/contents/")[1],
+        sha: outcome === "changed-sha" ? "b".repeat(40) : "5b90f3d557cb3f1fbee0d1af9b20189df9acc8cf" }));
+    });
+    assert.equal(passed, false);
+  });
+}
 
 for (const [mode, email] of [["production", "q1-synthetic-finance-v1@invalid.example"], ["sandbox", "unrelated-synthetic@invalid.example"]]) {
   test(`real CLI rejects ${mode} / ${email} before any network or browser`, () => {

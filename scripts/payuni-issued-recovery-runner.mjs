@@ -2,14 +2,44 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { defaultRequest, readFixedInputs, validateInvocation, verifyMvpPayUniLineage, prepareIssuedRecoveryCheckout, fixedBrowserEnvironment } from "./mvp-payuni-sandbox-e2e.mjs";
 import { observeIssuedRecoveryBrowser } from "./payuni-issued-recovery-browser.mjs";
-import { createPendingRefundHandoff, writePaymentHandoff } from "./payuni-sandbox-payment-handoff.mjs";
+import { createPendingRefundHandoff, reference } from "./payuni-sandbox-payment-handoff.mjs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { assertProofMatchesHandoff, consumePendingRefund } from "./payuni-sandbox-pending-refund-consumer.mjs";
 
 const APP = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 const PATHS = new Set(["/api/admin/ops/payuni/wp4-fixture", "/api/payments/checkout/admission",
   "/api/payments/checkout", "/api/admin/ops/payuni/wp4-payment-attempt"]);
+const PROOF_BLOBS = Object.freeze({
+  "src/app/api/admin/ops/payuni/pending-refund-proof/route.ts": "5b90f3d557cb3f1fbee0d1af9b20189df9acc8cf",
+  "src/lib/payuni-pending-refund-proof.ts": "3cb7b6541551df4f4565f7e0f89ec84d6126f535",
+});
 function requireSafe(condition) {
   if (!condition) throw new Error("PAYUNI_ISSUED_RECOVERY_RUNNER_REJECTED");
+}
+
+/** Require the independently reviewed proof contract in the exact app source;
+ * a missing endpoint or changed implementation rejects before any payment.
+ */
+export async function verifyIssuedRecoveryProofSource({ sourceSha, token }, request = fetch) {
+  if (typeof sourceSha !== "string" || !/^[a-f0-9]{40}$/.test(sourceSha)
+    || typeof token !== "string" || !token.trim()) return false;
+  try {
+    for (const [file, sha] of Object.entries(PROOF_BLOBS)) {
+      const url = new URL(`https://api.github.com/repos/Forty-s-AI-Company/CelebrateDeal/contents/${file}`);
+      url.searchParams.set("ref", sourceSha);
+      const response = await request(url, { headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
+        redirect: "error", signal: AbortSignal.timeout(10000) });
+      if (response.status !== 200 || !response.body) return false;
+      const reader = response.body.getReader(); const chunks = []; let bytes = 0;
+      try {
+        for (;;) { const item = await reader.read(); if (item.done) break;
+          bytes += item.value.byteLength; if (bytes > 65536) return false; chunks.push(item.value); }
+      } finally { await reader.cancel().catch(() => undefined); }
+      const metadata = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      if (metadata.path !== file || metadata.type !== "file" || metadata.sha !== sha) return false;
+    }
+    return true;
+  } catch { return false; }
 }
 
 /** One fixed synthetic checkout; exact source and Sandbox server preflight
@@ -44,15 +74,34 @@ export async function runIssuedRecoveryProbe(input, dependencies) {
  */
 export async function runIssuedRecoveryQa(input, dependencies) {
   requireSafe(validateInvocation(input).ok && dependencies?.context
+    && typeof dependencies.verifyRefundCapability === "function"
+    && typeof dependencies.persistPending === "function"
     && typeof dependencies.verifyFinanceSession === "function" && typeof dependencies.loadProof === "function");
+  requireSafe(await dependencies.verifyRefundCapability(input.sourceSha) === true);
   requireSafe(await dependencies.verifyFinanceSession() === true);
   const now = dependencies.now ?? (() => new Date());
   const startedAt = now().toISOString();
   let prepared;
+  let pending;
+  async function persist(update) {
+    pending = Object.freeze({ ...pending, ...update });
+    await dependencies.persistPending(pending);
+  }
   const observation = await runIssuedRecoveryProbe(input, {
-    ...dependencies, onPrepared: value => { requireSafe(prepared === undefined); prepared = value; },
+    ...dependencies, onPrepared: async value => {
+      requireSafe(prepared === undefined); prepared = value;
+      await persist({ schemaVersion: "celebratedeal-payuni-original-trade-pending-cleanup/v1",
+        status: "PAYMENT_OUTCOME_UNCONFIRMED", stage: "original-payment-observation", environment: "sandbox",
+        sourceCommit: input.sourceSha, transactionRef: reference(value.checkout.transactionId),
+        orderRef: reference(value.checkout.orderNumber), amount: value.checkout.amountCents / 100,
+        paymentSubmissionMayHaveOccurred: true, refundSubmissionMayHaveOccurred: false, productionOperations: false });
+    },
   });
-  if (observation.result !== "SAME_TRADE_PAYMENT_OBSERVED") return { observation, refundCleanupVerified: false };
+  if (observation.result !== "SAME_TRADE_PAYMENT_OBSERVED") {
+    await persist({ status: "ORIGINAL_RETRY_NOT_VERIFIED", stage: "original-trade-observation-complete",
+      providerPaid: observation.paid === true, refundCleanupVerified: false, observation });
+    return { observation, refundCleanupVerified: false };
+  }
   requireSafe(observation.sameTrade === true && observation.paid === true && prepared);
   const checkout = prepared.checkout;
   requireSafe(/^[A-Za-z0-9_-]{1,128}$/.test(checkout.transactionId ?? "")
@@ -66,18 +115,30 @@ export async function runIssuedRecoveryQa(input, dependencies) {
   // order. A replacement trade can never be selected for refund acceptance.
   const { createHash } = await import("node:crypto");
   requireSafe(observation.tradeRef === `sha256:${createHash("sha256").update(String(paid.TradeNo)).digest("hex")}`);
+  await persist({ status: "PENDING_PROOF_AND_REFUND", stage: "paid-original-trade-proof",
+    tradeRef: receipt.tradeRef, providerPaid: true, applicationCallbackVerified: false, observation });
   const proof = await dependencies.loadProof(checkout.transactionId, input.sourceSha);
   assertProofMatchesHandoff(receipt, proof, checkout.transactionId, input.sourceSha, now());
   requireSafe(proof.status === "paid" && proof.refundRecordCount === 0 && proof.refundedAmountCents === 0);
-  await (dependencies.writeHandoff ?? writePaymentHandoff)({ ...receipt, sourceCommit: input.sourceSha });
+  await persist({ status: "PENDING_REFUND", stage: "refund-initial-proof", applicationCallbackVerified: true,
+    handoff: { ...receipt, sourceCommit: input.sourceSha } });
+  if (dependencies.writeHandoff) await dependencies.writeHandoff({ ...receipt, sourceCommit: input.sourceSha });
   const cleanup = await (dependencies.consumeRefund ?? consumePendingRefund)({ receipt,
     transactionId: checkout.transactionId, expectedSourceSha: input.sourceSha, context: dependencies.context,
-    loadProof: dependencies.loadProof, queryProvider: () => dependencies.queryProvider(checkout.orderNumber), now });
+    loadProof: dependencies.loadProof, queryProvider: () => dependencies.queryProvider(checkout.orderNumber), now,
+    onStage: async phase => {
+      requireSafe(["refund-initial-proof", "refund-ui-preparation", "refund-submit-pending-confirmation",
+        "refund-provider-confirmation", "refund-duplicate-check"].includes(phase?.stage)
+        && typeof phase.refundSubmissionMayHaveOccurred === "boolean"
+        && (!pending.refundSubmissionMayHaveOccurred || phase.refundSubmissionMayHaveOccurred));
+      await persist({ stage: phase.stage, refundSubmissionMayHaveOccurred: phase.refundSubmissionMayHaveOccurred });
+    } });
   requireSafe(cleanup?.status === "COMPLETED" && cleanup.transactionRef === receipt.transactionRef
     && cleanup.tradeRef === receipt.tradeRef && cleanup.sourceCommit === input.sourceSha);
   for (const check of ["sandboxRefundAccepted", "refundVisibleInProviderQuery", "refundIdempotency",
     "paymentTransactionRefunded", "refundRecordProcessed", "singleRefundRecord"])
     requireSafe(cleanup.checks?.[check] === "passed");
+  await persist({ status: "CLEANUP_VERIFIED", stage: "cleanup-completed", refundSubmissionMayHaveOccurred: true });
   return { observation, cleanup, refundCleanupVerified: true };
 }
 
@@ -89,6 +150,7 @@ export async function executeIssuedRecoveryProbe() {
       && process.env.GITHUB_REF === "refs/heads/master" && process.env.GITHUB_REF_PROTECTED === "true"
       && process.env.PAYUNI_ENV === "sandbox" && process.env.PAYUNI_SANDBOX_QA_ENABLED === "true"
       && process.env.PAYUNI_SANDBOX_REFUND_ENABLED === "true"
+      && Boolean(process.env.RUNNER_TEMP)
       && process.env.PAYUNI_QA_FINANCE_EMAIL === "q1-synthetic-finance-v1@invalid.example");
     for (const name of ["JOB_SECRET", "PAYUNI_SANDBOX_MERCHANT_ID", "PAYUNI_SANDBOX_HASH_KEY", "PAYUNI_SANDBOX_HASH_IV", "PAYUNI_QA_FINANCE_PASSWORD"])
       requireSafe(Boolean(process.env[name]?.trim()));
@@ -97,6 +159,8 @@ export async function executeIssuedRecoveryProbe() {
     stage = "deployment-lineage";
     requireSafe(await verifyMvpPayUniLineage({ CELEBRATEDEAL_SOURCE_SHA: input.sourceSha,
       CELEBRATEDEAL_DEPLOYMENT_HOST: input.previewHost, GITHUB_TOKEN: process.env.GITHUB_TOKEN }));
+    stage = "exact-source-refund-capability";
+    requireSafe(await verifyIssuedRecoveryProofSource({ sourceSha: input.sourceSha, token: process.env.GITHUB_TOKEN }));
     stage = "canonical-runtime-preflight";
     const readiness = await defaultRequest({ url: `${APP}/api/admin/ops/payuni/wp4-preflight`, body: undefined,
       headers: { authorization: `Bearer ${input.jobSecret}`, "x-celebratedeal-source-sha": input.sourceSha } });
@@ -137,7 +201,13 @@ export async function executeIssuedRecoveryProbe() {
     };
     const { queryTransaction } = await import("./payuni-sandbox-external-qa.mjs");
     stage = "sandbox-failure-original-retry";
-    const receipt = await runIssuedRecoveryQa(input, { context, loadProof,
+    const receipt = await runIssuedRecoveryQa(input, { context, loadProof, verifyRefundCapability: async () => true,
+      persistPending: async pending => {
+        stage = pending.stage;
+        const directory = resolve(process.env.RUNNER_TEMP, "issued-recovery");
+        await mkdir(directory, { recursive: true });
+        await writeFile(resolve(directory, "pending.json"), `${JSON.stringify(pending)}\n`, { encoding: "utf8", mode: 0o600 });
+      },
       verifyFinanceSession: async () => {
         const check = await context.newPage();
         try { await check.goto(`${APP}/admin/billing/dashboard`); return check.url() === `${APP}/admin/billing/dashboard`; }
@@ -155,4 +225,14 @@ export async function executeIssuedRecoveryProbe() {
     if (browser) await browser.close();
   }
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await executeIssuedRecoveryProbe();
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  if (process.argv[2] === "--verify-refund-proof-source") {
+    const protectedCi = process.argv.length === 3 && process.env.GITHUB_ACTIONS === "true"
+      && process.env.GITHUB_REF === "refs/heads/master" && process.env.GITHUB_REF_PROTECTED === "true";
+    const passed = protectedCi && await verifyIssuedRecoveryProofSource({ sourceSha: process.env.CELEBRATEDEAL_SOURCE_SHA,
+      token: process.env.GITHUB_TOKEN });
+    console.log(JSON.stringify({ schemaVersion: "celebratedeal-issued-recovery-proof-capability/v1",
+      status: passed ? "PASS" : "BLOCKED", productionOperations: false, providerOperations: false }));
+    if (!passed) process.exitCode = 1;
+  } else await executeIssuedRecoveryProbe();
+}

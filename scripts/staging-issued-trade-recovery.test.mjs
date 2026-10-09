@@ -13,6 +13,7 @@ test("issued trade observation uses protected staging bindings after all install
   assert.equal(execute.env.PAYUNI_ENV, "sandbox");
   assert.equal(execute.env.PAYUNI_SANDBOX_REFUND_ENABLED, "true");
   assert.ok(job.steps.findIndex(step => step.name === "Verify immutable deployment lineage before secrets") < job.steps.indexOf(execute));
+  assert.ok(job.steps.findIndex(step => step.name === "Verify exact reviewed refund proof capability before secrets") < job.steps.indexOf(execute));
   assert.ok(job.steps.findIndex(step => step.run === "npx playwright install --with-deps chromium") < job.steps.indexOf(execute));
 });
 test("both IP families are restricted throughout secret-aware payment and refund execution", () => {
@@ -28,7 +29,7 @@ test("both IP families are restricted throughout secret-aware payment and refund
 test("artifact upload is limited to the closed sanitized completion file", () => {
   const upload = job.steps.at(-1);
   assert.match(upload.if, /always\(\)/u);
-  assert.equal(upload.with.path, "${{ runner.temp }}/issued-recovery/completion.json");
+  assert.deepEqual(upload.with.path.trim().split("\n"), ["${{ runner.temp }}/issued-recovery/completion.json", "${{ runner.temp }}/issued-recovery/pending.json"]);
   assert.equal(upload.with["retention-days"], 7);
   assert.equal(/\*|\.log/u.test(upload.with.path), false);
 });

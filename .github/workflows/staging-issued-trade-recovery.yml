@@ -41,6 +41,11 @@ jobs:
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
         run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
+      - name: Verify exact reviewed refund proof capability before secrets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: node scripts/payuni-issued-recovery-runner.mjs --verify-refund-proof-source
       - name: Observe failed original Sandbox trade and exact refund cleanup
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -130,6 +135,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: issued-trade-recovery-${{ inputs.source_sha }}
-          path: ${{ runner.temp }}/issued-recovery/completion.json
+          path: |
+            ${{ runner.temp }}/issued-recovery/completion.json
+            ${{ runner.temp }}/issued-recovery/pending.json
           if-no-files-found: ignore
           retention-days: 7
