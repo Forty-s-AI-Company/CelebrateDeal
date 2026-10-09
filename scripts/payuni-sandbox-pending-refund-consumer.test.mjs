@@ -67,6 +67,26 @@ it("stops on pending persistence without resubmitting the reserved refund", asyn
   expect(run.options.queryProvider).not.toHaveBeenCalled();
   expect(run.duplicate.page.close).toHaveBeenCalledTimes(1);
 });
+
+it("durable stage failure before the refund click prevents submission", async () => {
+  const run = runnerFixture();
+  run.options.onStage = vi.fn(async phase => {
+    if (phase.stage === "refund-submit-pending-confirmation") throw new Error("synthetic persistence failure");
+  });
+  await expect(consumePendingRefund(run.options)).rejects.toThrow();
+  expect(run.first.click).not.toHaveBeenCalled();
+  expect(run.duplicate.click).not.toHaveBeenCalled();
+  expect(run.first.page.close).toHaveBeenCalledTimes(1);
+});
+it("refund confirmation failure retains conservative submission state without resubmitting", async () => {
+  const run = runnerFixture({ completed: false });
+  const stages = [];
+  run.options.onStage = async phase => { stages.push(phase); };
+  await expect(consumePendingRefund(run.options)).rejects.toThrow();
+  expect(stages.at(-1)).toEqual({ stage: "refund-submit-pending-confirmation", refundSubmissionMayHaveOccurred: true });
+  expect(run.first.click).toHaveBeenCalledTimes(1);
+  expect(run.duplicate.click).not.toHaveBeenCalled();
+});
 it.each(["0", "1", "3", "8"])("does not accept incomplete/ambiguous provider state %s", async (refundStatus) => {
   const run = runnerFixture({ refundStatus });
   await expect(consumePendingRefund(run.options)).rejects.toThrow();
