@@ -1,5 +1,7 @@
 import { expect, it, vi } from "vitest";
-import { classifyFinanceLoginFailure, diagnoseCurrentSourcePayment, launchRefundBrowser, openFinanceLoginPage, runCurrentSourceRefundQa, waitFinanceLoginRedirect } from "./payuni-current-source-refund-qa.mjs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { classifyFinanceLoginFailure, currentSourceFailureReceipt, diagnoseCurrentSourcePayment, launchRefundBrowser, openFinanceLoginPage, runCurrentSourceRefundQa, waitFinanceLoginRedirect } from "./payuni-current-source-refund-qa.mjs";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
 
 const host = "celebrate-deal-staging.carry-digital-nomad.in.net";
@@ -8,6 +10,31 @@ const order = "CD-SYNTHETIC-Q1";
 const transaction = "wp4-synthetic-q1";
 const trade = "synthetic-provider-q1";
 const clock = () => new Date("2026-10-09T02:00:00Z");
+it.each([undefined, null, {}, { paymentReceipt: null }, { paymentReceipt: {} },
+  { paymentReceipt: { result: "PASS", private: "synthetic-private" } }])(
+  "always emits closed failure evidence for an absent or malformed receipt %j", error => {
+    const receipt = currentSourceFailureReceipt("exact-existing-state-diagnostic", error);
+    expect(receipt).toEqual({ schemaVersion: "celebratedeal-current-source-refund-qa/v1",
+      status: "BLOCKED_OR_FAILED", stage: "exact-existing-state-diagnostic",
+      productionOperations: false, alternateTransactionSelected: false });
+    expect(JSON.stringify(receipt)).not.toContain("synthetic-private");
+  });
+it("never copies an unrecognized stage, raw error or login URL into failure evidence", () => {
+  const receipt = currentSourceFailureReceipt("synthetic-private", new Error("synthetic-private"),
+    `https://${host}/login?error=mfa_required&private=synthetic-private`);
+  expect(receipt.stage).toBe("configuration");
+  expect(receipt.failureCategory).toBe("MFA_REQUIRED");
+  expect(JSON.stringify(receipt)).not.toContain("synthetic-private");
+});
+it("writes a parseable failure receipt from the real CLI without any injected credentials", () => {
+  const child = spawnSync(process.execPath, [fileURLToPath(new URL("./payuni-current-source-refund-qa.mjs", import.meta.url))],
+    { env: { GITHUB_ACTIONS: "false", ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
+      encoding: "utf8", timeout: 10000, windowsHide: true });
+  expect(child.status).toBe(1);
+  expect(child.stderr).toBe("");
+  expect(JSON.parse(child.stdout)).toMatchObject({ status: "BLOCKED_OR_FAILED", stage: "configuration",
+    productionOperations: false, alternateTransactionSelected: false });
+});
 it.each([[200,"VERIFIED","EXACT_PAID_ORDER_VERIFIED"],[404,"FIXTURE_UNAVAILABLE","EXACT_FIXTURE_ABSENT"],
   [409,"CANDIDATE_AMBIGUOUS","EXACT_FIXTURE_AMBIGUOUS"],[409,"STATE_MISMATCH","EXACT_STATE_MISMATCH"],
   [200,"synthetic-private","EXACT_STATE_UNAVAILABLE"],[409,"VERIFIED","EXACT_STATE_UNAVAILABLE"]])(
@@ -172,6 +199,7 @@ it("retains the validated closed payment failure receipt without response bodies
   let failure;try{await runCurrentSourceRefundQa(run.options,run.dependencies);}catch(error){failure=error;}
   expect(failure.paymentReceipt).toMatchObject({result:"BLOCKED",sourceSha:source,sideEffects:{fixturePosts:1,checkoutPosts:0,browserPaymentSubmissions:0}});
   expect(JSON.stringify(failure.paymentReceipt)).not.toContain("synthetic-private");
+  expect(currentSourceFailureReceipt("exact-payment-and-refund", failure).paymentReceipt).toEqual(failure.paymentReceipt);
   expect(run.dependencies.browserSubmit).not.toHaveBeenCalled();
 });
 it("persists only the exact sanitized handoff before the refund consumer writes", async () => {
