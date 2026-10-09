@@ -35,7 +35,7 @@ class ClaudeCliRoutingTests(unittest.TestCase):
         runtime=self.runtime();runtime.pop('quota')
         self.assertEqual(route({'task_summary':'payment review'},runtime)['provider'],'agy_wrapper')
         runtime['agy_available']=False;runtime['claude_cli']['available']=None
-        self.assertEqual(route({'task_summary':'payment review'},runtime)['status'],'REVIEW_BLOCKED')
+        self.assertEqual(route({'task_summary':'payment review'},runtime)['status'],'CLI_DISCOVERY_REQUIRED')
 
     def test_critical_rejects_sonnet_or_spoofed_probe(self):
         for model in ('sonnet','claude-sonnet-5-5','gpt-6-astra','claude-opus-5-5;command'):
@@ -45,6 +45,20 @@ class ClaudeCliRoutingTests(unittest.TestCase):
         decision=route({'task_summary':'ordinary scope dispute','task_type':'arbiter'},self.runtime())
         self.assertEqual(decision['model'],'claude-sonnet-5-5')
         self.assertEqual(decision['provider'],'claude_cli')
+
+    def test_unchecked_cli_precedes_noncritical_gemini_fallback(self):
+        runtime={**available(),'quota':{'claude':0}}
+        runtime.pop('claude_cli')
+        for kind in ('review','arbiter'):
+            decision=route({'task_summary':'ordinary final review','task_type':kind},runtime)
+            self.assertEqual(decision['status'],'CLI_DISCOVERY_REQUIRED')
+            self.assertEqual(decision['provider_availability'],'NOT_CHECKED')
+            self.assertNotIn('model',decision)
+            known={**runtime,'claude_cli':{'available':False,'status':'CLAUDE_CLI_NOT_INSTALLED'}}
+            self.assertEqual(route({'task_summary':'ordinary final review','task_type':kind},known)['model_key'],'gemini_high')
+        repeated={**runtime,'attempted_models':['sonnet']}
+        self.assertEqual(route({'task_summary':'ordinary final review'},repeated)['status'],'CLI_DISCOVERY_REQUIRED')
+        self.assertEqual(route({'task_summary':'ordinary final review'},{**runtime,'claude_cli':None})['status'],'CLI_DISCOVERY_REQUIRED')
 
     def test_gate_requires_persisted_terminal_model_observation(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -65,6 +79,8 @@ class ClaudeCliRoutingTests(unittest.TestCase):
                 'source':'claude_cli','role':'critical_review','model':'claude-opus-5-5','observed_model':'claude-opus-5-5'})
             evidence={'execution':execution,'checks':[check],'review':review}
             self.assertEqual(assess_acceptance(decision,evidence)['status'],'READY')
+            review['observed_model']='claude-sonnet-5-5';record('review',review)
+            self.assertIn('final_reviewer_not_qualified',assess_acceptance(decision,evidence)['blockers'])
             review.pop('observed_model');record('review',review)
             self.assertIn('final_reviewer_not_qualified',assess_acceptance(decision,evidence)['blockers'])
             # An AGY-shaped slug must not bypass the CLI's required terminal proof.

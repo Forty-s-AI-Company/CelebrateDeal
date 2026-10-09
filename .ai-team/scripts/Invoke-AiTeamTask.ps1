@@ -110,7 +110,11 @@ function Invoke-RoutingAdapter([hashtable]$Request) {
 }
 
 function Find-ClaudeCliTransport([string]$ModelKey) {
-    if ($DisableClaudeCli -or $runtimeState.ContainsKey('claude_cli')) { return }
+    if ($DisableClaudeCli) { return }
+    if ($runtimeState.ContainsKey('claude_cli') -and $null -ne $runtimeState.claude_cli -and $runtimeState.claude_cli.ContainsKey('available') -and $runtimeState.claude_cli.available -is [bool]) {
+        if (-not $runtimeState.claude_cli.available) { return }
+        if ($runtimeState.claude_cli.ContainsKey('models') -and $runtimeState.claude_cli.models.ContainsKey($ModelKey)) { return }
+    }
     $cliPolicy = Invoke-RoutingAdapter @{action='claude_cli_config'; config_path=$ConfigPath}
     if (-not $cliPolicy.enabled -or -not $cliPolicy.models.ContainsKey($ModelKey)) { return }
     $entry = $cliPolicy.models[$ModelKey]

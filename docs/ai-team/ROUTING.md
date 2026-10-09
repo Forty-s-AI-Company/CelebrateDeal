@@ -111,3 +111,5 @@ review_scope_files 由既定 snapshot、review_changed_files 與 review_dependen
 ### Claude 訂閱 CLI 備援
 
 AGY Claude 發生額度不足、模型缺席或呼叫失敗時，canonical `claude_cli` 政策允許獨立的訂閱 CLI transport；角色仍使用原 Sonnet／Opus 資格，不新增模型階梯。先以停用工具的最小 probe 驗證實際 `modelUsage`，再送固定快照。AGY 與 CLI 的 quota／attempt 狀態分開；未登入、CLI 未安裝、模型不符或逾時都不等於審查通過。CLI 的 alias 是 requested，終端實際 model 是 observed；未回報 effort 記 unknown。Critical 兩個 Claude transport 都失敗仍為 REVIEW_BLOCKED。`--safe-mode`、空 tools、strict MCP、停用 session persistence 為必要參數，禁止 permission bypass。
+
+CLI 尚未檢查時先要求 `CLI_DISCOVERY_REQUIRED`；確認 CLI 失敗／不可用後才允許既定非 Critical Gemini fallback。工程路由可維持 `planned` 以執行不依賴裁決的工作，但 `review_status` 與 required review stage 仍保留 discovery／blocked 狀態，acceptance 不會因此變成 READY。

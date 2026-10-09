@@ -189,3 +189,5 @@ Codex sandbox discovery 仍為 `HOST_PERMISSION_BLOCKED`，sandbox model smoke �
 新增回歸覆蓋 unknown discovery、AGY 失敗分類、Critical 不落到 GPT、非 Critical Gemini 仲裁、複審 scope 限制、MINOR/NIT 與未解 MAJOR 的 gate，以及修改 snapshot 後拒絕 stale evidence。Offline fixtures 不代表 AGY 實際執行；當次 provider 呼叫與精確 CI／交付證據另存 sanitized receipt。歷史驗證結果保留，不代表目前模型可用性。
 
 2026-10-09 Claude CLI 增補：回歸涵蓋獨立額度、同模型跨 transport 的一次備援、AGY 優先、未驗證 CLI 不冒認、Critical 拒絕 Sonnet／偽造模型，以及工具／MCP／持久化安全參數、終端模型驗證、登入／額度／截斷／逾時分類。實際 probe 只記可用性，不記為已完成工程 review。
+
+CLI 未檢查（含 null）不得跳過而交給 Gemini；已確認 unavailable 才可 fallback。58 項 Python 測試另涵蓋 model observation mismatch、review path traversal／drive paths，並以明確 known-unavailable offline fixtures 保留原 AGY 失敗回歸。工程 `planned` 與 review blocked 分開驗證，不放寬 acceptance。

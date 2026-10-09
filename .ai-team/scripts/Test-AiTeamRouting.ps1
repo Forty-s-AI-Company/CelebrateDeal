@@ -23,7 +23,14 @@ try {
     }
     # Disable live subscription discovery only in this disposable offline fixture.
     $fixtureTask = Join-Path $fixtureScripts 'Invoke-AiTeamTask.ps1'
-    $fixtureSource = [IO.File]::ReadAllText($fixtureTask).Replace("if (`$DisableClaudeCli -or", "if ((Get-Content (Join-Path `$PSScriptRoot 'scenario.txt') -Raw) -notin @('cli-transport','cli-review-failure') -or `$DisableClaudeCli -or")
+    $originalSource = [IO.File]::ReadAllText($fixtureTask)
+    $fixtureSource = $originalSource.Replace("if (`$DisableClaudeCli) { return }", "if (`$DisableClaudeCli -or (Get-Content (Join-Path `$PSScriptRoot 'scenario.txt') -Raw) -notin @('cli-transport','cli-review-failure')) { return }")
+    Assert-Route ($fixtureSource -ne $originalSource) 'offline CLI fixture patch was not applied'
+    $runtimeAnchor = '$runtimeState = @{} + $Runtime'
+    $offlineState = $runtimeAnchor + "`nif ((Get-Content (Join-Path `$PSScriptRoot 'scenario.txt') -Raw) -notin @('cli-transport','cli-review-failure')) { `$runtimeState['claude_cli'] = @{available=`$false; status='OFFLINE_UNAVAILABLE'} }"
+    $beforeStatePatch = $fixtureSource
+    $fixtureSource = $fixtureSource.Replace($runtimeAnchor, $offlineState)
+    Assert-Route ($fixtureSource -ne $beforeStatePatch) 'offline CLI availability fixture was not applied'
     [IO.File]::WriteAllText($fixtureTask, $fixtureSource)
     # Explicit offline subscription fixture exercises the real wrapper/router path.
     $cliMock = @'

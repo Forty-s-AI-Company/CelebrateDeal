@@ -18,7 +18,7 @@ def available():
         "gemini_medium": "gemini-3.8-flash-medium", "gemini_high": "gemini-3.8-flash-high",
         "sonnet": "claude-sonnet-5-5-high", "opus": "claude-opus-5-5-high",
     }
-    return {"agy_available": True, "agy_models": mapping, "discovered_slugs": list(mapping.values())}
+    return {"agy_available": True, "agy_models": mapping, "discovered_slugs": list(mapping.values()), "claude_cli": {"available": False, "status": "OFFLINE_UNAVAILABLE"}}
 
 
 def offline_review(decision, root):
@@ -326,7 +326,7 @@ class AcceptanceTests(unittest.TestCase):
             ("07-critical", {"task_summary": "Payment Auth Security review"}, "auto", available(), "ai-team-pro", "opus"),
             ("08-claude-zero", {"task_summary": "business logic review"}, "auto", {**available(), "quota": {"claude": 0}}, "ai-team", "gemini_high"),
             ("09-gemini-zero", {"task_summary": "ordinary large diff review"}, "auto", {**available(), "quota": {"gemini": 0}}, "ai-team", "sol"),
-            ("10-no-agy", {"task_summary": "Payment review"}, "auto", {"agy_available": False}, "ai-team-pro", "astra"),
+            ("10-no-agy", {"task_summary": "Payment review"}, "auto", {"agy_available": False, "claude_cli": {"available": False}}, "ai-team-pro", None),
             ("11-pro-copy", {"task_summary": "修改文案"}, "ai-team-pro", available(), "ai-team-pro", "luna"),
             ("12-one-line", {"task_summary": "one line payment webhook", "complexity": "low"}, "auto", available(), "ai-team-pro", "sol"),
         ]
@@ -526,11 +526,11 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(route({"task_summary": "payment edit"}, no_claude)["model_key"], "sol")
 
     def test_all_agy_unavailable_still_supports_implementation_not_final_verdict(self):
-        for runtime in ({"agy_available": False}, {**available(), "quota": {"gemini":0,"claude":0}}):
+        for runtime in ({"agy_available": False, "claude_cli": {"available": False}}, {**available(), "quota": {"gemini":0,"claude":0}}):
             for kind in ("plan", "implement", "release", "architecture"):
                 result = route({"task_summary":"bounded task","task_type":kind}, runtime)
                 self.assertEqual(result["provider"], "native_agent")
-                self.assertIn(result["status"], {"planned", "REVIEW_BLOCKED"})
+                self.assertEqual(result["status"], "planned")
             for kind in ("review", "security_review"):
                 result = route({"task_summary":"bounded task","task_type":kind}, runtime)
                 self.assertEqual(result["status"], "REVIEW_BLOCKED")

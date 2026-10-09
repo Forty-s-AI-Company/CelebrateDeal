@@ -18,7 +18,7 @@ class FinalReviewTests(unittest.TestCase):
 
     def test_failure_categories_preserved_and_critical_never_gpt(self):
         for category in ("AUTH_REQUIRED", "HOST_PERMISSION_BLOCKED", "AGY_NOT_INSTALLED", "MODEL_UNAVAILABLE", "AGY_RUNTIME_ERROR"):
-            decision=route({"task_summary":"payment review"}, {"agy_available":False,"agy_failure_category":category})
+            decision=route({"task_summary":"payment review"}, {"agy_available":False,"agy_failure_category":category,"claude_cli":{"available":False}})
             self.assertEqual(decision["status"], "REVIEW_BLOCKED")
             self.assertEqual(decision["provider_availability"], "CALL_FAILED")
             self.assertEqual(decision["provider_failure_category"], category)
@@ -41,7 +41,7 @@ class FinalReviewTests(unittest.TestCase):
             route({**task,"review_dependencies":["new.py"]},available())
         expanded=route({**task,"review_dependencies":["new.py"],"authorized_scope_expansion":["new.py"]},available())
         self.assertEqual(expanded["review_scope_files"],["a.py","new.py"])
-        for outside in ('/root.py','\\root.py','\\\\host\\share\\file.py'):
+        for outside in ('/root.py','\\root.py','\\\\host\\share\\file.py','../x.py','a/../../x.py','C:\\x.py','C:x.py'):
             with self.assertRaisesRegex(ValueError,'Invalid review scope path'):
                 route({**task,'snapshot_files':[outside],'review_changed_files':[outside],'review_dependencies':[]},available())
 

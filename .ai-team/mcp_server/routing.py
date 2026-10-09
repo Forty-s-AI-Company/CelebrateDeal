@@ -230,7 +230,7 @@ def select_route(signals: dict[str, Any], policy: dict[str, Any]) -> tuple[str, 
 def claude_cli_model(model: str, runtime: dict, policy: dict) -> str | None:
     """Only a completed, model-reporting CLI probe enables this independent transport."""
     entry = policy.get("claude_cli", {}).get("models", {}).get(model)
-    state = runtime.get("claude_cli", {})
+    state = runtime.get("claude_cli") or {}
     observed = state.get("models", {}).get(model)
     if (entry and policy["claude_cli"].get("enabled") is True and state.get("available") is True
             and model not in state.get("attempted_models", [])
@@ -239,17 +239,33 @@ def claude_cli_model(model: str, runtime: dict, policy: dict) -> str | None:
     return None
 
 
-def use_claude_cli(model: str, runtime: dict, policy: dict) -> bool:
-    # AGY and the subscription CLI have separate quota and attempt state.
-    return bool(claude_cli_model(model, runtime, policy) and (
+def requires_claude_cli(model: str, runtime: dict, policy: dict) -> bool:
+    return bool(model in policy.get("claude_cli", {}).get("models", {}) and (
         runtime.get("agy_available") is False or runtime.get("agy_failure_category")
         or runtime.get("quota", {}).get("claude") == 0
         or (runtime.get("agy_available") is True and model not in runtime.get("agy_models", {}))
         or runtime.get("models", {}).get(model, {}).get("failure")
-        or runtime.get("models", {}).get(model, {}).get("quota_remaining") == 0))
+        or runtime.get("models", {}).get(model, {}).get("available") is False
+        or runtime.get("models", {}).get(model, {}).get("quota_remaining") == 0
+        or model in runtime.get("attempted_models", [])))
+
+
+def cli_discovery_needed(model: str, runtime: dict, policy: dict) -> bool:
+    state = runtime.get("claude_cli") or {}
+    return bool(policy.get("claude_cli", {}).get("enabled") is True
+                and requires_claude_cli(model, runtime, policy)
+                and (state.get("available") is None
+                     or (state.get("available") is True and model not in state.get("models", {}))))
+
+
+def use_claude_cli(model: str, runtime: dict, policy: dict) -> bool:
+    # AGY and the subscription CLI have separate quota and attempt state.
+    return bool(claude_cli_model(model, runtime, policy) and requires_claude_cli(model, runtime, policy))
 
 
 def unavailable(model: str, runtime: dict[str, Any], policy: dict[str, Any]) -> str | None:
+    if cli_discovery_needed(model, runtime, policy):
+        return "claude_cli_discovery_required"
     if use_claude_cli(model, runtime, policy):
         return None
     entry = policy["models"][model]
@@ -292,11 +308,11 @@ def resolve_model(role: str, selected: str, runtime: dict[str, Any], policy: dic
     attempted_slugs = {policy["models"][key].get("slug") for key in attempted} - {None}
     for model in [selected, *fallback_candidates(role, selected, policy)]:
         repeated = (model in attempted or policy["models"][model].get("slug") in attempted_slugs) and not use_claude_cli(model, runtime, policy)
-        reason = "repeated_failure" if repeated else unavailable(model, runtime, policy)
+        reason = "claude_cli_discovery_required" if cli_discovery_needed(model, runtime, policy) else "repeated_failure" if repeated else unavailable(model, runtime, policy)
         if reason:
             events.append({"model": model, "reason": reason})
             # Unknown is a request to inspect the provider, never failure evidence.
-            if reason == "discovery_required":
+            if reason in {"discovery_required", "claude_cli_discovery_required"}:
                 return None, events
         else:
             return model, events
@@ -413,7 +429,7 @@ def route(task: dict[str, Any], runtime: dict[str, Any] | None = None, team: str
               "required_checks": task.get("required_checks", []),
               "requested": {"model_key": selected, "effort": task.get("reasoning_effort", "auto"), "speed": "standard"},
               "observed": {"model": "unknown", "effort": "unknown", "source": "not_executed"}}
-    result["provider_availability"] = ("NOT_CHECKED" if any(e["reason"] == "discovery_required" for e in events)
+    result["provider_availability"] = ("NOT_CHECKED" if any(e["reason"] in {"discovery_required", "claude_cli_discovery_required"} for e in events)
                                        else "AVAILABLE" if resolved and use_claude_cli(resolved, runtime, policy)
                                        else "CALL_FAILED" if runtime.get("agy_failure_category")
                                        else "UNAVAILABLE" if not resolved else "AVAILABLE")
@@ -424,7 +440,7 @@ def route(task: dict[str, Any], runtime: dict[str, Any] | None = None, team: str
         task.get("review_dependencies", []),
         task.get("authorized_scope_expansion", []))
     if not resolved and policy["models"][selected]["provider"] != "codex":
-        result["status"] = "AGY_DISCOVERY_REQUIRED" if result["provider_availability"] == "NOT_CHECKED" else "REVIEW_BLOCKED"
+        result["status"] = "CLI_DISCOVERY_REQUIRED" if any(e["reason"] == "claude_cli_discovery_required" for e in events) else "AGY_DISCOVERY_REQUIRED" if result["provider_availability"] == "NOT_CHECKED" else "REVIEW_BLOCKED"
     if resolved:
         rec = recommendation(role, resolved, signals, runtime, policy)
         requested_effort = task.get("reasoning_effort")
@@ -463,7 +479,7 @@ def route(task: dict[str, Any], runtime: dict[str, Any] | None = None, team: str
         for review_role, review_model in stages:
             chosen, failures = resolve_model(review_role, review_model, runtime, policy)
             stage = {"role": review_role, "required": True, "fallback_events": failures,
-                     "status": "planned" if chosen else "AGY_DISCOVERY_REQUIRED" if any(e["reason"] == "discovery_required" for e in failures) else "REVIEW_BLOCKED"}
+                     "status": "planned" if chosen else "CLI_DISCOVERY_REQUIRED" if any(e["reason"] == "claude_cli_discovery_required" for e in failures) else "AGY_DISCOVERY_REQUIRED" if any(e["reason"] == "discovery_required" for e in failures) else "REVIEW_BLOCKED"}
             if chosen:
                 stage.update(recommendation(review_role, chosen, signals, runtime, policy))
                 if chosen == "astra":
@@ -473,8 +489,10 @@ def route(task: dict[str, Any], runtime: dict[str, Any] | None = None, team: str
                     add_escalation_reason("required_review")
                 if failures:
                     add_escalation_reason("fallback")
-            elif stage["status"] != "AGY_DISCOVERY_REQUIRED":
-                result["status"] = "REVIEW_BLOCKED"
+            else:
+                result["review_status"] = stage["status"]
+                if role not in {"developer", "planner", "explorer", "release", "manager"}:
+                    result["status"] = stage["status"]
             result["review_plan"].append(stage)
     if task.get("hard_team_cap", False) and team != "auto" and TEAMS.index(result["team"]) > TEAMS.index(team):
         result["status"] = "TEAM_CAP_BLOCKED"
