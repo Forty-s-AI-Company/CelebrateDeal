@@ -57,10 +57,17 @@ describe("concurrent lesson saves", () => {
   it("denies a revoked entitlement on the fresh retry instead of writing stale progress", async () => {
     const db = storeFixture();
     const error = new Prisma.PrismaClientKnownRequestError("synthetic serialization", { code: "P2034", clientVersion: "test" });
-    vi.spyOn(db, "$transaction").mockRejectedValueOnce(error);
+    // The first attempt actually verifies access before serialization aborts;
+    // the next transaction must query again and observe the revoked purchase.
+    db.commerceOrderItem.findFirst.mockResolvedValueOnce({ order: { id: "order-1", buyerEncryptedEnvelope: "encrypted", shippingEncryptedEnvelope: null } });
     db.commerceOrderItem.findFirst.mockResolvedValue(null as never);
+    db.courseLesson.findFirst.mockRejectedValueOnce(error);
+    const transactions = vi.spyOn(db, "$transaction");
     await expect(saveStudentLessonProgress(db, scope, { courseId: "course-1", lessonId: "lesson-1", watchedSeconds: 90, markedComplete: false })).resolves.toBeNull();
     expect(db.courseLessonProgress.upsert).not.toHaveBeenCalled();
+    expect(transactions).toHaveBeenCalledTimes(2);
+    expect(db.commerceOrderItem.findFirst).toHaveBeenCalledTimes(2);
+    expect(db.courseLessonProgress.updateMany).not.toHaveBeenCalled();
   });
 
   it("propagates persistent serialization conflicts after its bounded retry budget", async () => {
