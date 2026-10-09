@@ -1,6 +1,8 @@
 import type { PrismaClient } from "@prisma/client";
+import { PrismaClientInitializationError } from "@prisma/client/runtime/library";
 import { describe, expect, it, vi } from "vitest";
-import { ensureStagingQaFinance, qaFinanceDatabaseUrl, QA_FINANCE_EMAIL, QA_FINANCE_ID } from "./staging-qa-finance-bootstrap";
+import { readFileSync } from "node:fs";
+import { ensureStagingQaFinance, qaFinanceDatabaseUrl, qaFinanceFailureCategory, QA_FINANCE_EMAIL, QA_FINANCE_ID, verifyQaFinanceCertificate } from "./staging-qa-finance-bootstrap";
 import { hashPasswordAsync, verifyPasswordAsync } from "./password";
 
 const input = { databaseUrl: "postgresql://synthetic@db.ocbugvgojrunvenozsbx.supabase.co:5432/postgres",
@@ -11,13 +13,46 @@ function fixture(existing: unknown = null) {
   return { tx, transaction, db: { $transaction: transaction } as unknown as PrismaClient };
 }
 describe("fixed staging QA finance account", () => {
+  it("trusts only the pinned public Supabase CA and rejects substituted bytes", () => {
+    const certificate = readFileSync("prisma/supabase-public-ca-2021.crt");
+    expect(() => verifyQaFinanceCertificate(certificate)).not.toThrow();
+    expect(() => verifyQaFinanceCertificate(Buffer.concat([certificate, Buffer.from("tampered")]))).toThrow("STAGING_QA_FINANCE_BOOTSTRAP_REJECTED");
+  });
+  it("categorizes actual Prisma initialization failures at transaction startup", async () => {
+    for (const [code, category] of [["P1000", "DATABASE_AUTHENTICATION"], ["P1001", "DATABASE_UNREACHABLE"],
+      ["P1011", "DATABASE_TLS"]]) {
+      const f = fixture();
+      f.transaction.mockRejectedValue(new PrismaClientInitializationError("private database details", "6.19.3", code));
+      await expect(ensureStagingQaFinance(f.db, input)).rejects.toMatchObject({
+        message: "STAGING_QA_FINANCE_BOOTSTRAP_REJECTED", category,
+      });
+      expect(f.tx.user.create).not.toHaveBeenCalled();
+    }
+  });
+  it("categorizes known database failures without copying diagnostic fields", async () => {
+    for (const [code, category] of [["P1000", "DATABASE_AUTHENTICATION"], ["P1001", "DATABASE_UNREACHABLE"],
+      ["P1011", "DATABASE_TLS"], ["P2021", "DATABASE_SCHEMA_MISSING"], ["P2002", "ACCOUNT_CONFLICT"]]) {
+      const f = fixture();
+      f.tx.user.findFirst.mockRejectedValue({ code, message: "private database details", meta: { private: true } });
+      try { await ensureStagingQaFinance(f.db, input); throw new Error("must reject"); }
+      catch (error) {
+        expect(error).toMatchObject({ message: "STAGING_QA_FINANCE_BOOTSTRAP_REJECTED", category });
+        expect(JSON.stringify(error)).not.toContain("private");
+      }
+    }
+    expect(qaFinanceFailureCategory({ code: "private-code", message: "private" })).toBe("ACCOUNT_OR_DATABASE_REJECTED");
+    expect(qaFinanceFailureCategory({ code: "__proto__" })).toBe("ACCOUNT_OR_DATABASE_REJECTED");
+  });
   it("upgrades omitted TLS parameters to encryption and strict certificate verification", () => {
     const url = new URL(qaFinanceDatabaseUrl(input.databaseUrl));
     expect(url.searchParams.get("sslmode")).toBe("require");
     expect(url.searchParams.get("sslaccept")).toBe("strict");
+    expect(url.searchParams.get("sslcert")).toBe("supabase-public-ca-2021.crt");
+    expect(qaFinanceDatabaseUrl(url.href)).toBe(url.href);
   });
   for (const query of ["host=127.0.0.1", "%68ost=127.0.0.1", "host=foo&host=bar", "sslmode=disable",
-    "sslmode=prefer", "sslaccept=accept_invalid_certs", "sslmode=require&sslmode=disable", "schema=private", "sslrootcert=untrusted"]) {
+    "sslmode=prefer", "sslaccept=accept_invalid_certs", "sslmode=require&sslmode=disable", "schema=private", "sslrootcert=untrusted",
+    "sslcert=/tmp/untrusted.crt", "sslcert=../untrusted.crt", "sslcert=supabase-public-ca-2021.crt&sslcert=other"]) {
     it(`rejects overridden identity or TLS downgrade before DB access: ${query}`, async () => {
       const f = fixture();
       await expect(ensureStagingQaFinance(f.db, { ...input, databaseUrl: `${input.databaseUrl}?${query}` })).rejects.toThrow("STAGING_QA_FINANCE_BOOTSTRAP_REJECTED");
