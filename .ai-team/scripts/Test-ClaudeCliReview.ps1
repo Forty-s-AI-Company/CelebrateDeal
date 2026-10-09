@@ -53,6 +53,24 @@ $hostTerminal.is_error=$false;$hostTerminal.subtype='error_max_turns';$script:fi
 $hostTerminal.subtype='success';$hostTerminal.permission_denials=$null;$script:fixture.stdout=$hostTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check HOST_PERMISSION_BLOCKED
 $hostTerminal.permission_denials=@();$hostTerminal.Remove('is_error');$script:fixture.stdout=$hostTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check HOST_PERMISSION_BLOCKED
 $hostTerminal.is_error=$false;$hostTerminal.modelUsage=@{'claude-sonnet-5-5'=@{}};$script:fixture.stdout=$hostTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check MODEL_UNAVAILABLE
+# Offline regression only: a review discussing registry429 is not provider quota.
+$rateTerminal=$terminal.Clone();$rateTerminal['permission_denials']=@();$rateTerminal.result='{"summary":"Docker registry 429 / rate limit observed, not Claude quota","findings":[]}'
+$rateValid=$rateTerminal|ConvertTo-Json -Depth 8 -Compress
+$script:fixture=@{status='RATE_LIMITED';exitCode=0;stdoutTruncated=$false;stderr='';stdout=$rateValid}
+$rateRecovered=Check SUCCESS
+if ($rateRecovered.process_status -ne 'RATE_LIMITED' -or $rateRecovered.classification_note -ne 'RATE_TEXT_FALSE_POSITIVE_VERIFIED_TERMINAL') { throw 'RATE_CLASSIFICATION_PROVENANCE_MISSING' }
+$script:fixture.stderr='synthetic-error';$null=Check CLAUDE_CLI_RUNTIME_ERROR
+$script:fixture.stderr='';$script:fixture.exitCode=1;$null=Check CLAUDE_CLI_RUNTIME_ERROR
+$script:fixture.exitCode=0;$rateTerminal.permission_denials=@(@{tool_name='synthetic'});$script:fixture.stdout=$rateTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check CLAUDE_CLI_RUNTIME_ERROR
+$rateTerminal.Remove('permission_denials');$script:fixture.stdout=$rateTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check CLAUDE_CLI_RUNTIME_ERROR
+$rateTerminal.permission_denials=@();$script:fixture.stdout=$tool+"`n"+($rateTerminal|ConvertTo-Json -Depth 8 -Compress);$null=Check CLAUDE_CLI_RUNTIME_ERROR
+$rateTerminal.is_error=$true;$rateTerminal.result='usage limit reached';$script:fixture.stdout=$rateTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check QUOTA_EXHAUSTED
+$rateDuplicate=$rateValid+"`n"+$rateValid
+foreach ($output in @('', '{"type":"system","subtype":"init"}', '429', $rateDuplicate)) { $script:fixture.stdout=$output;$null=Check INVALID_REVIEW }
+$rateTerminal.is_error=$false;$rateTerminal.subtype='error_max_turns';$script:fixture.stdout=$rateTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check CLAUDE_CLI_RUNTIME_ERROR
+$rateTerminal.subtype='success';$rateTerminal.modelUsage=@{'claude-sonnet-5-5'=@{}};$script:fixture.stdout=$rateTerminal|ConvertTo-Json -Depth 8 -Compress;$null=Check MODEL_UNAVAILABLE
+$script:fixture.stdout=$rateValid;$script:fixture.stdoutTruncated=$true;$null=Check TRUNCATED_REVIEW
+
 $script:fixture=@{status='SUCCESS';exitCode=0;stdoutTruncated=$false;stdout=$valid}
 $script:fixture.stdout=$valid+"`n"+$valid
 $null=Check INVALID_REVIEW
