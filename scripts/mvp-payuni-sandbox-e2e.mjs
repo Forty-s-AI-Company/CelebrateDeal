@@ -1204,7 +1204,7 @@ export async function prepareIssuedRecoveryCheckout(input, dependencies = {}) {
     const reservation = responseJson(await request({ url: fixedUrl(invocation.previewHost, "/api/admin/ops/payuni/wp4-payment-attempt"),
       headers: guarded, body: undefined }));
     if (!assertPaymentAttemptResponse(reservation) || reservation.body.status !== "SUBMIT_ALLOWED") throw new Error();
-    return { invocation, checkout: checkout.body, supportCookie: checkout.supportCookie, sideEffects };
+    return { invocation: { ...invocation, payuniEnv: FIXED_PAYUNI_ENV }, checkout: checkout.body, supportCookie: checkout.supportCookie, sideEffects };
   } catch {
     throw new Error("ISSUED_RECOVERY_PREPARATION_REJECTED");
   }
