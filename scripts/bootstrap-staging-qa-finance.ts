@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { ensureStagingQaFinance, qaFinanceDatabaseUrl, QaFinanceBootstrapFailure } from "../src/lib/staging-qa-finance-bootstrap";
+import { ensureStagingQaFinance, qaFinanceDatabaseUrl, QaFinanceBootstrapFailure, QA_FINANCE_CA_FILE, verifyQaFinanceCertificate } from "../src/lib/staging-qa-finance-bootstrap";
 import { isStagingDatabaseUrl } from "../src/lib/database-identity";
 
 const APP_ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
@@ -30,6 +30,8 @@ async function main() {
       || !env.JOB_SECRET || !env.PAYUNI_QA_FINANCE_PASSWORD
       || !isStagingDatabaseUrl(env.STAGING_DATABASE_URL)) throw new Error();
     const databaseUrl = qaFinanceDatabaseUrl(env.STAGING_DATABASE_URL!);
+    // Prisma resolves sslcert relative to the schema directory, not the shell cwd.
+    verifyQaFinanceCertificate(await readFile(resolve("prisma", QA_FINANCE_CA_FILE)));
     stage = "standalone-runner-load";
     // Native ESM import keeps the standalone runner's top-level await intact.
     const { verifyMvpPayUniLineage } = await import("./mvp-payuni-sandbox-e2e.mjs");
