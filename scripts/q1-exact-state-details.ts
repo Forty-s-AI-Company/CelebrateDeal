@@ -10,7 +10,29 @@ export const EXACT_SOURCE = "9acfe8d2dba62430e950cff2c0387841ab91f44b";
 const ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 const closedState = (value: unknown, values: readonly string[]) => values.find((state) => state === value) ?? "OTHER";
 
-export async function readExactSyntheticState(db: Pick<PrismaClient, "$transaction">) {
+// Query only the database-selected original merchant reference; no checkout/close API.
+export async function queryExactProviderState(orderNumber: string, query?: (order: string) => Promise<unknown>) {
+  try {
+    const { queryTransaction } = await import("./payuni-sandbox-external-qa.mjs");
+    const result = await (query ?? ((order) => queryTransaction(order, { signal: AbortSignal.timeout(5000) })))(orderNumber);
+    if (!result || typeof result !== "object" || Array.isArray(result)) return { providerQuery: "INVALID_RESPONSE" };
+    const row = result as Record<string, unknown>;
+    if (row.MerTradeNo !== orderNumber) return { providerQuery: "IDENTITY_MISMATCH" };
+    return { providerQuery: "OBSERVED", providerTradeState: closedState(String(row.TradeStatus), ["0", "1"]),
+      providerTradeNumberPresent: typeof row.TradeNo === "string" && row.TradeNo.length > 0,
+      providerAmountMatches: Number(row.TradeAmt) === 1 };
+  } catch (error) {
+    const { PayUniQueryFailure } = await import("./payuni-sandbox-external-qa.mjs");
+    if (!(error instanceof PayUniQueryFailure)) return { providerQuery: "UNAVAILABLE" };
+    return { providerQuery: "REJECTED", providerFailureStage: closedState(error.failureStage,
+      ["request-configuration", "network-request", "http-response", "response-envelope", "signature-decryption", "provider-result", "order-validation"]),
+      providerDisposition: closedState(error.providerDisposition,
+        ["terminal-authentication", "terminal-invalid-request", "retryable-not-found", "retryable-processing", "retryable-provider", "unknown"]) };
+  }
+}
+
+export async function readExactSyntheticState(db: Pick<PrismaClient, "$transaction">,
+  query?: (order: string) => Promise<unknown>) {
   return db.$transaction(async (tx) => {
     // PostgreSQL rejects writes even if a future refactor accidentally adds one.
     await tx.$executeRaw`SET TRANSACTION READ ONLY`;
@@ -19,7 +41,7 @@ export async function readExactSyntheticState(db: Pick<PrismaClient, "$transacti
         AND: [{ metadata: { path: ["wp4SourceCommit"], equals: EXACT_SOURCE } },
           { metadata: { path: ["billingPurpose"], equals: "buyer_order" } },
           { metadata: { path: ["productId"], equals: WP4_SANDBOX_FIXTURE.productId } }] }, take: 2,
-      select: { id: true, status: true, metadata: true, providerTradeNo: true, grossAmountCents: true, currency: true, refundedAmountCents: true },
+      select: { id: true, orderNumber: true, status: true, metadata: true, providerTradeNo: true, grossAmountCents: true, currency: true, refundedAmountCents: true },
     });
     const candidates = rows.filter((row) => wp4SourceCommitFromMetadata(row.metadata) === EXACT_SOURCE
       && wp4PayUniPurposeFromMetadata(row.metadata) === "buyer_order"
@@ -36,7 +58,10 @@ export async function readExactSyntheticState(db: Pick<PrismaClient, "$transacti
     const paidEventCount = orders.length === 1 ? await tx.commerceOrderEvent.count({
       where: { vendorId: WP4_SANDBOX_FIXTURE.vendorId, orderId: orders[0]!.id, eventType: "payment.paid" },
     }) : null;
-    return { category: "EXACT_SYNTHETIC_STATE_OBSERVED",
+    const provider = query ? (payment.grossAmountCents === 100 && payment.currency === "TWD"
+      && typeof payment.orderNumber === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(payment.orderNumber)
+      ? await queryExactProviderState(payment.orderNumber, query) : { providerQuery: "EXACT_IDENTITY_UNAVAILABLE" }) : undefined;
+    return { category: "EXACT_SYNTHETIC_STATE_OBSERVED", ...(provider ? { provider } : {}),
       paymentState: closedState(payment.status, ["pending", "paid", "failed", "expired", "refunded", "partially_refunded"]),
       providerTradeNumberPresent: Boolean(payment.providerTradeNo), fixedAmountMatches: payment.grossAmountCents === 100 && payment.currency === "TWD",
       refundState: payment.refundedAmountCents === 0 ? "NONE" : payment.refundedAmountCents > 0 ? "PRESENT" : "INVALID",
@@ -61,7 +86,7 @@ async function report(result: Record<string, unknown>) {
   console.log(JSON.stringify(receipt));
 }
 
-export async function main() {
+export async function main(withProviderQuery = false) {
   let db: PrismaClient | undefined;
   let stage = "configuration";
   try {
@@ -69,6 +94,8 @@ export async function main() {
     if (process.argv.length !== 2 || env.GITHUB_ACTIONS !== "true" || env.GITHUB_REF !== "refs/heads/master"
       || env.GITHUB_REF_PROTECTED !== "true" || env.PAYUNI_ENV !== "sandbox" || !env.JOB_SECRET
       || env.CELEBRATEDEAL_SOURCE_SHA !== EXACT_SOURCE) throw new Error();
+    if (withProviderQuery && ["PAYUNI_SANDBOX_MERCHANT_ID", "PAYUNI_SANDBOX_HASH_KEY", "PAYUNI_SANDBOX_HASH_IV"]
+      .some((name) => !env[name])) throw new Error();
     const databaseUrl = qaFinanceDatabaseUrl(env.STAGING_DATABASE_URL ?? "");
     verifyQaFinanceCertificate(await readFile(resolve("prisma", QA_FINANCE_CA_FILE)));
     stage = "deployment-lineage";
@@ -85,7 +112,9 @@ export async function main() {
     if (!Object.hasOwn(expected, proof?.status ?? "") || expected[proof.status] !== response.status) throw new Error();
     stage = "fixed-synthetic-readonly-snapshot";
     db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
-    await report({ status: "READ_ONLY_DIAGNOSTIC", ...await readExactSyntheticState(db) });
+    await report({ status: "READ_ONLY_DIAGNOSTIC", ...await readExactSyntheticState(db, withProviderQuery
+      ? async (order) => { const { queryTransaction } = await import("./payuni-sandbox-external-qa.mjs");
+        return queryTransaction(order, { signal: AbortSignal.timeout(5000) }); } : undefined) });
   } catch (error) {
     await report({ status: "BLOCKED_OR_FAILED", stage, failureCategory: qaFinanceFailureCategory(error) });
     process.exitCode = 1;
