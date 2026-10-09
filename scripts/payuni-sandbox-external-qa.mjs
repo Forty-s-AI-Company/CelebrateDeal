@@ -3,7 +3,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium, errors } from "playwright";
-import { createPendingRefundHandoff, writePaymentHandoff } from "./payuni-sandbox-payment-handoff.mjs";
+import { createPendingRefundHandoff, writePaymentHandoff, reference } from "./payuni-sandbox-payment-handoff.mjs";
+import { isCompletedFullCreditRefund } from "./payuni-credit-refund-query-contract.mjs";
 
 const SCHEMA = "celebratedeal-payuni-sandbox-qa/v2";
 const QA_ARTIFACT_SCHEMA = "celebratedeal-ai-team-payuni-artifact/v1";
@@ -1104,11 +1105,11 @@ async function refundTransaction(tradeNo, amount) {
   assert(String(row.CloseType) === "2", "PayUni 退款回應不是退款類型。");
 }
 
-async function waitForRefund(orderNumber) {
+async function waitForRefund(orderNumber, tradeNo, amount) {
   let row = null;
   for (let attempt = 0; attempt < 6; attempt += 1) {
     row = await queryTransaction(orderNumber);
-    if (["1", "2", "8"].includes(String(row.RefundStatus ?? ""))) return row;
+    if (isCompletedFullCreditRefund(row, { orderRef: reference(orderNumber), tradeRef: reference(tradeNo), amount })) return row;
     await new Promise((resolve) => setTimeout(resolve, 2_000));
   }
   return row;
@@ -1286,9 +1287,9 @@ async function cleanUpTimedOutPayment(error) {
     assert(Number(paid.TradeAmt) === amount, "PayUni 後台金額與 CelebrateDeal 結帳金額不一致。");
 
     await refundTransaction(String(paid.TradeNo), amount);
-    const refunded = await waitForRefund(checkout.orderNumber);
-    const refundStatus = String(refunded?.RefundStatus ?? "");
-    assert(["1", "2", "8"].includes(refundStatus), "PayUni 後台尚未記錄 Sandbox 退款。");
+    const refunded = await waitForRefund(checkout.orderNumber, String(paid.TradeNo), amount);
+    assert(isCompletedFullCreditRefund(refunded, { orderRef: reference(checkout.orderNumber), tradeRef: reference(paid.TradeNo), amount }),
+      "PayUni 後台尚未確認 Sandbox 全額退款完成。");
     error.diagnostic.checks.sandboxRefundAccepted = "passed";
     error.diagnostic.checks.refundVisibleInProviderQuery = "passed";
   } catch {
@@ -1393,4 +1394,5 @@ export {
   writeQaArtifact,
   truncate,
   queryDisposition,
+  queryTransaction,
 };

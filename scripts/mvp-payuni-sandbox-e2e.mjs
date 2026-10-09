@@ -871,7 +871,7 @@ async function parseFetchResponse(response, cookiePrefix, outcomeHeader) {
   };
 }
 
-async function defaultRequest(request) {
+export async function defaultRequest(request) {
   const response = await fetch(request.url, {
     method: "POST",
     headers: request.headers,
@@ -1646,7 +1646,7 @@ function assertSubscriptionRefundRequiresReconciliation(response) {
     && response.body.providerWriteAttempted === true;
 }
 
-function fixedBrowserEnvironment() {
+export function fixedBrowserEnvironment() {
   return process.platform === "win32"
     ? { PATH: "C:\\Windows\\System32;C:\\Windows", SystemRoot: "C:\\Windows", TEMP: "C:\\Windows\\Temp", TMP: "C:\\Windows\\Temp" }
     : { PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", HOME: "/tmp", TMPDIR: "/tmp" };

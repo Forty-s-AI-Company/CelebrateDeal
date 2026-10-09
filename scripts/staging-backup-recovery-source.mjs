@@ -16,6 +16,7 @@ const SAFE_SHA = /^[a-f0-9]{40}$/u;
 // would become unusable as soon as the recovery workflow is merged to master.
 const APPROVED_BACKUP_BLOBS = Object.freeze({
   [BACKUP_WORKFLOW]: [
+    "2d30a59e2c3149a0cf3c243e334a17067ec100fa", // Q1 fixed runner: exact candidate under independent review; WP2 unchanged.
     "3fb8088ae786e21dd520df8e9fc03788f355901d", // Original task-scoped source checkout.
     "a8d9e09bd4f3179d7abec116e5aeb6a05a9b4fb6", // #312: same pinned source checkout now applies to every task.
     "797805d471f245ce58130ad0a878650ab0bd453e", // #347: payment-only task; WP2 source, secrets, backup and artifacts unchanged.
