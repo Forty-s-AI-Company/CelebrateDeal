@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { runIssuedRecoveryProbe, runIssuedRecoveryQa } from "./payuni-issued-recovery-runner.mjs";
 import { createHash } from "node:crypto";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const input = { sourceSha: "a".repeat(40), previewHost: "synthetic-preview.vercel.app", payuniEnv: "sandbox",
   jobSecret: "synthetic-job", cardNumber: "4147631000000001", cardExpiry: "1230", cardCvv: "123" };
@@ -117,3 +119,17 @@ test("incomplete cleanup evidence never marks refund cleanup verified", async ()
   f.dependencies.consumeRefund = async operation => ({ ...await consume(operation), checks: {} });
   await assert.rejects(runIssuedRecoveryQa(input, f.dependencies), /RUNNER_REJECTED/);
 });
+
+for (const [mode, email] of [["production", "q1-synthetic-finance-v1@invalid.example"], ["sandbox", "unrelated-synthetic@invalid.example"]]) {
+  test(`real CLI rejects ${mode} / ${email} before any network or browser`, () => {
+    const child = spawnSync(process.execPath, [fileURLToPath(new URL("./payuni-issued-recovery-runner.mjs", import.meta.url))], {
+      encoding: "utf8", timeout: 30000, env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot,
+        GITHUB_ACTIONS: "true", GITHUB_REF: "refs/heads/master", GITHUB_REF_PROTECTED: "true",
+        PAYUNI_ENV: mode, PAYUNI_SANDBOX_QA_ENABLED: "true", PAYUNI_SANDBOX_REFUND_ENABLED: "true", PAYUNI_QA_FINANCE_EMAIL: email },
+    });
+    assert.equal(child.status, 1);
+    assert.deepEqual(JSON.parse(child.stdout.trim()), { schemaVersion: "celebratedeal-payuni-issued-recovery-observation/v1",
+      status: "BLOCKED_OR_FAILED", stage: "configuration", productionOperations: false, applicationRecoveryAccepted: false });
+    assert.equal(child.stdout.includes(email), false);
+  });
+}
