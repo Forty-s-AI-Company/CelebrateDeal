@@ -267,6 +267,23 @@
       "opus": []
     }
   },
+  "claude_cli": {
+    "enabled": true,
+    "trigger": "agy_failure_or_quota",
+    "models": {
+      "sonnet": {
+        "alias": "sonnet",
+        "observed_pattern": "claude-sonnet-\\d+(?:[.-]\\d+)+(?:-[a-zA-Z0-9]+)*"
+      },
+      "opus": {
+        "alias": "opus",
+        "observed_pattern": "claude-opus-\\d+(?:[.-]\\d+)+(?:-[a-zA-Z0-9]+)*"
+      }
+    },
+    "effort": "high",
+    "tools": false,
+    "session_persistence": false
+  },
   "final_review": {
     "ordinary_model": "sonnet",
     "critical_model": "opus",

@@ -18,9 +18,22 @@ try {
     Get-ChildItem (Join-Path $repoRoot '.ai-team/config') -Filter '*.json' | Copy-Item -Destination (Join-Path $fixtureTeam 'config')
     foreach ($file in @('routing.py','route_cli.py')) { Copy-Item -LiteralPath (Join-Path $repoRoot ".ai-team/mcp_server/$file") -Destination (Join-Path $fixtureTeam 'mcp_server') }
     Copy-Item -LiteralPath (Join-Path $repoRoot '.ai-team/prompts/reviewer-prompt.md') -Destination (Join-Path $fixtureTeam 'prompts')
-    foreach ($file in @('Invoke-AiTeamProcess.ps1','Invoke-AiTeamTask.ps1','Invoke-AgyFast.ps1','Invoke-AgyDeep.ps1','Invoke-AgyPlanReview.ps1','Invoke-AiTeamReadOnlyFailover.ps1','Switch-AiTeamMode.ps1')) {
+    foreach ($file in @('Invoke-AiTeamProcess.ps1','Invoke-ClaudeCliReview.ps1','Invoke-AiTeamTask.ps1','Invoke-AgyFast.ps1','Invoke-AgyDeep.ps1','Invoke-AgyPlanReview.ps1','Invoke-AiTeamReadOnlyFailover.ps1','Switch-AiTeamMode.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $fixtureScripts
     }
+    # Disable live subscription discovery only in this disposable offline fixture.
+    $fixtureTask = Join-Path $fixtureScripts 'Invoke-AiTeamTask.ps1'
+    $fixtureSource = [IO.File]::ReadAllText($fixtureTask).Replace("if (`$DisableClaudeCli -or", "if ((Get-Content (Join-Path `$PSScriptRoot 'scenario.txt') -Raw) -ne 'cli-transport' -or `$DisableClaudeCli -or")
+    [IO.File]::WriteAllText($fixtureTask, $fixtureSource)
+    # Explicit offline subscription fixture exercises the real wrapper/router path.
+    $cliMock = @'
+function Invoke-ClaudeCliReview {
+    param($Prompt,$Alias,$ObservedPattern,$HardTimeoutSeconds)
+    Add-Content -LiteralPath (Join-Path $PSScriptRoot 'cli-attempts.txt') -Value $Alias
+    return @{status='SUCCESS';exit_code=0;observed_model='claude-opus-5-5';observed_effort='unknown';review_output='{"summary":"Offline fixture only","findings":[]}'}
+}
+'@
+    Add-Content -LiteralPath (Join-Path $fixtureScripts 'Invoke-ClaudeCliReview.ps1') -Value $cliMock
     # Mock only AGY in this disposable copy; local Python adapter and all wrappers run for real.
     $mock = @'
 $script:RealAiTeamProcess = ${function:Invoke-AiTeamProcess}
@@ -39,7 +52,7 @@ function Invoke-AiTeamProcess {
     if ($FilePath -ne 'synthetic-agy') { return (& $script:RealAiTeamProcess @PSBoundParameters) }
     $scenario = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'scenario.txt') -Raw
     if ($ArgumentList[0] -eq 'models') {
-        if ($scenario -eq 'no-agy') { return [pscustomobject]@{status='AUTH_REQUIRED';stdout='';stdoutTruncated=$false} }
+        if ($scenario -in @('no-agy','cli-transport')) { return [pscustomobject]@{status='AUTH_REQUIRED';stdout='';stdoutTruncated=$false} }
         if ($scenario -eq 'host-permission') { return [pscustomobject]@{status='HOST_PERMISSION_BLOCKED';stdout='';stdoutTruncated=$false} }
         if ($scenario -eq 'discovery-first-output-timeout') { return [pscustomobject]@{status='FIRST_OUTPUT_TIMEOUT';stdout='';stdoutTruncated=$false} }
         if ($scenario -eq 'discovery-idle-timeout') { return [pscustomobject]@{status='IDLE_TIMEOUT';stdout='';stdoutTruncated=$false} }
@@ -72,6 +85,11 @@ function Invoke-AiTeamProcess {
     Assert-Route ($deep.finalModel -eq 'claude-sonnet-5-5-high') 'actual discovered Sonnet slug was not used'
     $critical = Run-Wrapper 'normal' 'Invoke-AgyPlanReview.ps1' 'one line payment webhook review'
     Assert-Route ($critical.finalModel -eq 'claude-opus-5-5-high') 'critical review did not jump directly to Opus'
+    $cli = Run-Wrapper 'cli-transport' 'Invoke-AgyPlanReview.ps1' 'one line payment webhook review'
+    Assert-Route ($cli.status -eq 'REVIEW_COMPLETED' -and $cli.execution_provider -eq 'claude_cli' -and $cli.observed.model -eq 'claude-opus-5-5') 'critical subscription transport failed'
+    Assert-Route ($cli.agy_discovery_status -eq 'AUTH_REQUIRED' -and $cli.claude_cli_discovery_status -eq 'SUCCESS') 'transport outcomes were conflated'
+    $cliCalls = @(Get-Content (Join-Path $fixtureScripts 'cli-attempts.txt'))
+    Assert-Route ($cliCalls.Count -eq 2) 'subscription transport did not use exactly one probe and one review'
     $major = Run-Wrapper 'major-finding' 'Invoke-AgyFast.ps1' 'ordinary large diff review'
     Assert-Route (-not $major.accepted -and $major.review.findings[0].severity -eq 'MAJOR') 'finding was incorrectly accepted as PASS'
     foreach ($scenario in @('cli-failure','invalid-output','no-agy','host-permission','no-installed','discovery-first-output-timeout','discovery-idle-timeout')) {
@@ -149,6 +167,8 @@ exit $LASTEXITCODE
         $simple = Run-Wrapper 'normal' 'Invoke-AiTeamTask.ps1' '修改文案' @('-TaskType','copy','-PlanOnly')
         Assert-Route ($simple.route.model -eq 'gpt-6-luna') 'team tier forced an expensive model'
     }
+    & $pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Test-ClaudeCliReview.ps1')
+    Assert-Route ($LASTEXITCODE -eq 0) 'subscription CLI safety/terminal contracts failed'
     Write-Output 'AI_TEAM_ROUTING_INTEGRATION=PASS'
 } finally {
     # Resolve and check the precise disposable directory before recursive cleanup.

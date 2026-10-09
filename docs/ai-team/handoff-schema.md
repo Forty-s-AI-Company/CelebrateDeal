@@ -83,3 +83,5 @@ NEXT_PROMPT_END
 ## 最終外部審查
 
 Handoff 保留 provider_availability（NOT_CHECKED／AVAILABLE／CALL_FAILED／UNAVAILABLE）、provider_failure_category、review_scope_files、snapshot revision、實際 provider terminal 與 findings。GPT native reviewer preset 僅提供候選 findings，最終資格由 canonical policy 檢查。修正後只委派受影響 scope，但仍產生匹配新來源的收據；未變更來源的證據須先確認內容與適用範圍。
+
+Claude CLI 收據另記 `execution_provider=claude_cli`、`claude_cli_discovery_status`、每次 transport 的 process status；final review 的 `source=claude_cli` 必須保存匹配終端的 `observed_model`。AGY 的 discovery／failure 保留，不被 CLI 成功覆蓋。探測收據不可作為 review 收據。

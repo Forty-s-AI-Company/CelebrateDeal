@@ -83,3 +83,5 @@
 `PRELAUNCH_DEV` 仍遵守 `RELEASE_HARDENING` 的 Production 邊界。`UNKNOWN = 0` 不成立：未知 quota 不可當成耗盡或可用。任務邊界使用 `NEXT_TASK_REQUIRED`、`PLAN_REMEDIATION`、`CONTINUE_CURRENT_WP`、`USER_AUTHORIZATION_REQUIRED` 與 `MIXED_HUNKS` 明確表示。相同工作最多 3 輪修正、最多 2 次外部模型 attempt、最多 8 個候選 agents；實際 vNext policy 另限制每 task 4 次 dispatch、child depth 1、active agents 2，並以 sanitized self-hash／evidence 保存決策。
 
 agy failure 必須保留實際分類：`AUTH_REQUIRED`、`HOST_PERMISSION_BLOCKED`、`AGY_NOT_INSTALLED`、`MODEL_UNAVAILABLE` 或 `AGY_RUNTIME_ERROR`。Host-side 已驗證登入時，Codex sandbox 的 Access Denied 屬於 `HOST_PERMISSION_BLOCKED`／`HOST_AUTH_CONTEXT_UNAVAILABLE`，不等於要求重新登入；工程／候選 QA 可依政策 fallback；最終裁決不得靜默換成 GPT。
+
+Claude 訂閱 CLI 可在 AGY Claude 失敗後承接相同 reviewer 角色；資格與備援條件只讀 canonical policy。探測、審查皆使用無工具、無持久會話入口，且遵守既有 bounded dispatch；CLI 失敗不得靜默轉 GPT 最終裁決。

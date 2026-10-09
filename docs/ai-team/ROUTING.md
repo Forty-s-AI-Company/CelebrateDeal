@@ -107,3 +107,7 @@ Project MCP 由 `.ai-team/scripts/Start-AiTeamMcp.ps1` 啟動。Launcher 從 rep
 ## 精確複審與裁決
 
 review_scope_files 由既定 snapshot、review_changed_files 與 review_dependencies 計算；未經 authorized_scope_expansion 的新增來源拒絕。這只限制讀取範圍，不讓修正後沿用 stale revision 收據。MINOR／NIT 不自動阻擋或要求整輪重審；confirmed／unresolved BLOCKER／MAJOR 必須處理。爭議交外部合格 reviewer 裁決，新需求另記 scope proposal。
+
+### Claude 訂閱 CLI 備援
+
+AGY Claude 發生額度不足、模型缺席或呼叫失敗時，canonical `claude_cli` 政策允許獨立的訂閱 CLI transport；角色仍使用原 Sonnet／Opus 資格，不新增模型階梯。先以停用工具的最小 probe 驗證實際 `modelUsage`，再送固定快照。AGY 與 CLI 的 quota／attempt 狀態分開；未登入、CLI 未安裝、模型不符或逾時都不等於審查通過。CLI 的 alias 是 requested，終端實際 model 是 observed；未回報 effort 記 unknown。Critical 兩個 Claude transport 都失敗仍為 REVIEW_BLOCKED。`--safe-mode`、空 tools、strict MCP、停用 session persistence 為必要參數，禁止 permission bypass。

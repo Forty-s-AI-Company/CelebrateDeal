@@ -227,7 +227,31 @@ def select_route(signals: dict[str, Any], policy: dict[str, Any]) -> tuple[str, 
     return role, model
 
 
+def claude_cli_model(model: str, runtime: dict, policy: dict) -> str | None:
+    """Only a completed, model-reporting CLI probe enables this independent transport."""
+    entry = policy.get("claude_cli", {}).get("models", {}).get(model)
+    state = runtime.get("claude_cli", {})
+    observed = state.get("models", {}).get(model)
+    if (entry and policy["claude_cli"].get("enabled") is True and state.get("available") is True
+            and model not in state.get("attempted_models", [])
+            and re.fullmatch(entry["observed_pattern"], str(observed), re.I)):
+        return observed
+    return None
+
+
+def use_claude_cli(model: str, runtime: dict, policy: dict) -> bool:
+    # AGY and the subscription CLI have separate quota and attempt state.
+    return bool(claude_cli_model(model, runtime, policy) and (
+        runtime.get("agy_available") is False or runtime.get("agy_failure_category")
+        or runtime.get("quota", {}).get("claude") == 0
+        or (runtime.get("agy_available") is True and model not in runtime.get("agy_models", {}))
+        or runtime.get("models", {}).get(model, {}).get("failure")
+        or runtime.get("models", {}).get(model, {}).get("quota_remaining") == 0))
+
+
 def unavailable(model: str, runtime: dict[str, Any], policy: dict[str, Any]) -> str | None:
+    if use_claude_cli(model, runtime, policy):
+        return None
     entry = policy["models"][model]
     provider = entry["provider"]
     # 相同 CLI slug 共用失敗狀態，不能透過舊角色名稱再次呼叫。
@@ -267,7 +291,7 @@ def resolve_model(role: str, selected: str, runtime: dict[str, Any], policy: dic
     events = []
     attempted_slugs = {policy["models"][key].get("slug") for key in attempted} - {None}
     for model in [selected, *fallback_candidates(role, selected, policy)]:
-        repeated = model in attempted or policy["models"][model].get("slug") in attempted_slugs
+        repeated = (model in attempted or policy["models"][model].get("slug") in attempted_slugs) and not use_claude_cli(model, runtime, policy)
         reason = "repeated_failure" if repeated else unavailable(model, runtime, policy)
         if reason:
             events.append({"model": model, "reason": reason})
@@ -298,15 +322,18 @@ def recommendation(role: str, model: str, signals: dict, runtime: dict, policy: 
         allowed = runtime.get("supported_efforts", {}).get(model, policy["codex_efforts"][model])
         if effort not in allowed:
             raise ValueError("UNSUPPORTED_MODEL_EFFORT")
+    cli = use_claude_cli(model, runtime, policy)
+    if cli:
+        effort = policy["claude_cli"]["effort"]
     return {"role": role, "model_key": model,
-            "model": entry.get("slug") or runtime["agy_models"][model],
-            "provider": "native_agent" if entry["provider"] == "codex" else "agy_wrapper",
+            "model": claude_cli_model(model, runtime, policy) if cli else entry.get("slug") or runtime["agy_models"][model],
+            "provider": "claude_cli" if cli else "native_agent" if entry["provider"] == "codex" else "agy_wrapper",
             "reasoning_effort": effort,
             "effort_floor": effort_floor,
             "effort_reason": ("engineering_profile:" + signals["engineering_profile"]
                               if effort in {"xhigh", "max"} and engineering else None),
             "sandbox_mode": "workspace-write" if role == "developer" else "read-only",
-            "execution": "native_agent_handoff_only" if entry["provider"] == "codex" else "agy_readonly",
+            "execution": "claude_cli_readonly" if cli else "native_agent_handoff_only" if entry["provider"] == "codex" else "agy_readonly",
             "candidate_findings_only": role in {"broad_review", "qa"},
             "may_spawn": False}
 
@@ -529,7 +556,7 @@ def assess_acceptance(decision: dict[str, Any], evidence: dict[str, Any],
             required_stage = decision
         if (not isinstance(review, dict) or review.get("revision") != revision
                 or review.get("status") != "PASS" or review.get("independent") is not True
-                or review.get("source") not in {"agy_wrapper", "native_runner", "desktop_native"}
+                or review.get("source") not in {"agy_wrapper", "claude_cli", "native_runner", "desktop_native"}
                 or required_stage is None
                 or required_stage.get("status") not in {None, "planned"}
                 or review.get("role") != required_stage.get("role")
@@ -539,7 +566,13 @@ def assess_acceptance(decision: dict[str, Any], evidence: dict[str, Any],
         policy = load_policy()
         qualified = [policy["final_review"]["critical_model"]] if risk == "critical" else [policy["final_review"]["ordinary_model"], *policy["final_review"]["noncritical_fallback"]]
         review_model = review.get("model", "") if isinstance(review, dict) else ""
-        if not any(re.fullmatch(policy["models"][key]["discovery_pattern"], str(review_model), re.I) for key in qualified):
+        cli_review = isinstance(review, dict) and review.get("source") == "claude_cli"
+        cli_qualified = cli_review and review.get("observed_model") == review_model and record_matches(
+            review, "review", ("revision", "status", "independent", "source", "role", "model", "observed_model")) and any(
+            key in policy.get("claude_cli", {}).get("models", {})
+            and re.fullmatch(policy["claude_cli"]["models"][key]["observed_pattern"], str(review_model), re.I)
+            for key in qualified)
+        if not cli_qualified and not any(re.fullmatch(policy["models"][key]["discovery_pattern"], str(review_model), re.I) for key in qualified):
             blockers.append("final_reviewer_not_qualified")
     for finding in evidence.get("findings", []):
         if not isinstance(finding, dict) or finding.get("severity") not in {"BLOCKER", "MAJOR", "MINOR", "NIT"} or finding.get("disposition") not in {"confirmed", "rejected_with_reason", "unresolved", "resolved"}:
