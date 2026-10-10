@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
 import { verifyReservedOriginalRefund } from "./q1-original-refund-verify.mjs";
-import { createOriginalRefundHandoff, assertOriginalRefundProof, ORIGINAL_TRANSACTION_SOURCE } from "./q1-original-refund-handoff.mjs";
+import { createOriginalRefundHandoff, assertOriginalRefundProof, originalPaidQueryChecks, originalPaidQueryShape, ORIGINAL_TRANSACTION_SOURCE } from "./q1-original-refund-handoff.mjs";
 import { consumePendingRefund, launchPendingRefundBrowser, fillExactRefundForm } from "./payuni-sandbox-pending-refund-consumer.mjs";
 import { openFinanceLoginPage, waitFinanceLoginRedirect } from "./payuni-current-source-refund-qa.mjs";
 const SOURCE = "a76330b5961a48892bc03be779438128816d1a8c";
@@ -66,7 +66,7 @@ export async function executeOriginalRefund() {
     }
     const target = await targetFunctions.readOriginalRefundTarget(db);
     const { chromium } = await import("@playwright/test");
-    const { queryTransaction } = await import("./payuni-sandbox-external-qa.mjs");
+    const { queryTransaction, callbackQueryFailure } = await import("./payuni-sandbox-external-qa.mjs");
     browser = await launchPendingRefundBrowser(chromium);
     const context = await browser.newContext({ locale: "zh-TW" }); context.setDefaultTimeout(15000);
     stage = "finance-login";
@@ -87,8 +87,21 @@ export async function executeOriginalRefund() {
       exactRefundFormCount: await form.count(), formTransactionRef: reference(await form.locator('input[name="id"]').inputValue()),
       csrfPresent: Boolean(await form.locator('input[name="_csrf"]').inputValue()), financeAuthenticated: true };
     stage = "fresh-signed-original-query";
-    const paid = await queryTransaction(target.orderNumber, { signal: AbortSignal.timeout(10000) });
-    const handoff = createOriginalRefundHandoff({ proof: await loadProof(), paid, target, browser: browserObservation,
+    let paid;
+    try {
+      paid = await queryTransaction(target.orderNumber, { signal: AbortSignal.timeout(10000) });
+    } catch (error) {
+      const diagnostic = callbackQueryFailure(error);
+      receipt.originalQueryFailure = { stage: diagnostic.failureStage, category: diagnostic.errorCategory };
+      throw error;
+    }
+    receipt.originalPaidQueryChecks = originalPaidQueryChecks(paid, target);
+    receipt.originalPaidQueryShape = originalPaidQueryShape(paid);
+    await persist();
+    stage = "fresh-original-handoff-proof";
+    const freshProof = await loadProof();
+    stage = "original-handoff-validation";
+    const handoff = createOriginalRefundHandoff({ proof: freshProof, paid, target, browser: browserObservation,
       executionSource: SOURCE, startedAt, completedAt: new Date().toISOString() });
     receipt.handoff = handoff;
     await login.close();
