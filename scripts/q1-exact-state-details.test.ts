@@ -161,3 +161,42 @@ describe("closed original callback rejection observations", () => {
       .toMatchObject({ callbackPayloadValid: false, callbackAmountMatches: false });
   });
 });
+
+
+describe("closed readonly callback processing schema diagnosis", () => {
+  it("reports only reviewed model/field names and performs no business-row read", async () => {
+    const { Prisma } = await import("@prisma/client");
+    const { readCallbackProcessingSchema } = await import("./q1-exact-state-details");
+    const names = ["Vendor", "PaymentTransaction", "WebhookEvent", "CommerceOrder", "InventoryReservation"];
+    const models = Prisma.dmmf.datamodel.models.filter((model) => names.includes(model.name));
+    const columns = models.flatMap((model) => model.fields.filter((field) => field.kind !== "object")
+      .map((field) => ({ table_name: model.dbName ?? model.name, column_name: field.dbName ?? field.name })));
+    const tx = { $executeRaw: vi.fn().mockResolvedValue(0), $queryRaw: vi.fn().mockResolvedValue(columns) };
+    const transaction = vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx));
+    const result = await readCallbackProcessingSchema({ $transaction: transaction } as unknown as PrismaClient);
+    expect(result.models).toHaveLength(5);
+    expect(result.models.every((model) => model.compatible && model.missingColumns.length === 0)).toBe(true);
+    expect(result.callbackReplayAuthorized).toBe(false);
+    expect(tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(tx.$queryRaw.mock.invocationCallOrder[0]!);
+    expect(tx.$executeRaw.mock.calls[0]?.[0]?.join("")).toBe("SET TRANSACTION READ ONLY");
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "RepeatableRead", timeout: 15000 });
+    const vendor = models.find((model) => model.name === "Vendor")!;
+    const firstField = vendor.fields.find((field) => field.kind !== "object")!;
+    tx.$queryRaw.mockResolvedValueOnce(columns.filter((column) => !(column.table_name === (vendor.dbName ?? vendor.name)
+      && column.column_name === (firstField.dbName ?? firstField.name))));
+    const partial = await readCallbackProcessingSchema({ $transaction: transaction } as unknown as PrismaClient);
+    expect(partial.models.find((model) => model.model === "Vendor")).toEqual({ model: "Vendor", compatible: false, missingColumns: [firstField.name] });
+    expect(partial.models.filter((model) => model.model !== "Vendor").every((model) => model.compatible)).toBe(true);
+    tx.$queryRaw.mockResolvedValueOnce([{ table_name: "private-table", column_name: "private-secret" }]);
+    const missing = await readCallbackProcessingSchema({ $transaction: transaction } as unknown as PrismaClient);
+    expect(missing.models.every((model) => !model.compatible && model.missingColumns.length > 0)).toBe(true);
+    expect(JSON.stringify(missing)).not.toContain("private-");
+  });
+  it("does not inspect schema after PostgreSQL refuses readonly mode", async () => {
+    const { readCallbackProcessingSchema } = await import("./q1-exact-state-details");
+    const tx = { $executeRaw: vi.fn().mockRejectedValue(new Error("private-error")), $queryRaw: vi.fn() };
+    const transaction = vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx));
+    await expect(readCallbackProcessingSchema({ $transaction: transaction } as unknown as PrismaClient)).rejects.toThrow();
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
+  });
+});
