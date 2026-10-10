@@ -33,3 +33,10 @@ test("artifact upload is limited to the closed sanitized completion file", () =>
   assert.equal(upload.with["retention-days"], 7);
   assert.equal(/\*|\.log/u.test(upload.with.path), false);
 });
+
+test("protected workflow exposes a boolean read-only diagnostic mode without shell interpolation", () => {
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.preflight_only,
+    { description: "Read-only fixed runtime diagnosis without fixture or payment writes", required: false, type: "boolean", default: false });
+  assert.equal(execute.env.PAYUNI_ISSUED_PREFLIGHT_ONLY, "${{ inputs.preflight_only }}");
+  assert.equal(execute.run.includes("inputs.preflight_only"), false);
+});
