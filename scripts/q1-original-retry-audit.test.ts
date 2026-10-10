@@ -25,7 +25,7 @@ describe("one original callback readonly audit classification", () => {
     expect(tx.$executeRaw.mock.calls[0]?.[0]?.join("")).toBe("SET TRANSACTION READ ONLY");
     expect(transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: "Serializable", timeout: 15000 });
     expect(tx.paymentTransaction.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 2,
-      select: { id: true, orderNumber: true, updatedAt: true }, where: expect.objectContaining({ vendorId: WP4_SANDBOX_FIXTURE.vendorId }) }));
+      select: { id: true, orderNumber: true }, where: expect.objectContaining({ vendorId: WP4_SANDBOX_FIXTURE.vendorId }) }));
     expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
     const query = tx.$queryRaw.mock.calls[0]?.[0] as Prisma.Sql;
     expect(query.sql).toContain(`"after"->>'errorCode'`); expect(query.sql).toContain(`"before"->>'retryCount'`);
@@ -61,7 +61,17 @@ describe("one original callback readonly audit classification", () => {
   });
   it("refuses all reads when readonly transaction setup fails", async () => {
     const { db, tx } = fixture(); tx.$executeRaw.mockRejectedValueOnce(new Error("private-error"));
-    await expect(readOriginalRetryAudit(db)).rejects.toThrow(); expect(tx.paymentTransaction.findMany).not.toHaveBeenCalled();
+    expect(await readOriginalRetryAudit(db)).toEqual({ classification: "AUDIT_READ_FAILED" }); expect(tx.paymentTransaction.findMany).not.toHaveBeenCalled();
+  });
+  it.each(["42703", "42P01"])("classifies actual raw-query schema SQLSTATE %s without exposing meta", async (code) => {
+    const { db, tx } = fixture();
+    tx.$queryRaw.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("private-query", { code: "P2010", clientVersion: "test", meta: { code, message: "private-column" } }));
+    expect(await readOriginalRetryAudit(db)).toEqual({ classification: "SCHEMA_UNVERIFIED" });
+  });
+  it("keeps unrelated P2010 closed and distinct from schema drift", async () => {
+    const { db, tx } = fixture();
+    tx.$queryRaw.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("private-query", { code: "P2010", clientVersion: "test", meta: { code: "40001" } }));
+    expect(await readOriginalRetryAudit(db)).toEqual({ classification: "AUDIT_READ_FAILED" });
   });
   it("returns only closed schema classification for missing audit columns", async () => {
     const { db, tx } = fixture(); tx.$queryRaw.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("private-field", { code: "P2022", clientVersion: "test" }));

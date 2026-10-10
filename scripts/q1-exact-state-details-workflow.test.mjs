@@ -16,6 +16,7 @@ test('only protected main can inject staging database and JOB into fixed readonl
   for (const file of workflow.match(/(?:scripts|src\/lib)\/[\w.-]+\.(?:ts|mjs)/g) ?? []) assert.doesNotThrow(() => readFileSync(file));
 });
 test('outbound IPv4 and IPv6 deny-by-default and restoration remain intact', () => {
+  assert.match(workflow, /"callbackPosts":0,"callbackReplayAuthorized":false/);
   assert.match(workflow, /sudo iptables -P OUTPUT DROP/);
   assert.match(workflow, /sudo ip6tables -P OUTPUT DROP/);
   assert.match(workflow, /trap restore_network EXIT/);

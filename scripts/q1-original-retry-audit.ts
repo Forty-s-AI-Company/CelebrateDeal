@@ -19,7 +19,7 @@ export async function readOriginalRetryAudit(db: Pick<PrismaClient, "$transactio
     return await db.$transaction(async (tx) => {
       await tx.$executeRaw`SET TRANSACTION READ ONLY`;
       const payments = await tx.paymentTransaction.findMany({ where: wp4HistoricalBuyerWhere(SOURCE), take: 2,
-        select: { id: true, orderNumber: true, updatedAt: true } });
+        select: { id: true, orderNumber: true } });
       if (payments.length !== 1) return { classification: payments.length ? "PAYMENT_AMBIGUOUS" : "PAYMENT_UNAVAILABLE" };
       const payment = payments[0]!;
       if (!payment.orderNumber) return { classification: "REFERENCE_UNAVAILABLE" };
@@ -57,11 +57,16 @@ export async function readOriginalRetryAudit(db: Pick<PrismaClient, "$transactio
         retryCount: integer(event.retryCount), maxRetries: integer(event.maxRetries),
         storedFailure: event.errorMessage === null ? "NONE" : CODES.find((code) => paymentWebhookFailureMessage(code) === event.errorMessage) ?? "OTHER",
         nextRetryAt: event.nextRetryAt === null ? "NONE" : event.nextRetryAt.getTime() <= Date.now() ? "DUE" : "FUTURE",
-        eventUpdatedAfterRunStart: event.updatedAt >= WINDOW_START, paymentUpdatedAfterRunStart: payment.updatedAt >= WINDOW_START,
+        eventUpdatedAfterRunStart: event.updatedAt >= WINDOW_START, paymentUpdatedAfterRunStart: "UNKNOWN",
         callbackPosts: 0, callbackReplayAuthorized: false };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15000 });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2021", "P2022"].includes(error.code)) return { classification: "SCHEMA_UNVERIFIED" };
-    throw error; // Existing outer closed error classifier owns all other failures.
+    if (error instanceof Prisma.PrismaClientKnownRequestError
+      && (["P2021", "P2022"].includes(error.code)
+        || (error.code === "P2010" && ["42703", "42P01"].includes(String(error.meta?.code ?? ""))))) {
+      return { classification: "SCHEMA_UNVERIFIED" };
+    }
+    // Keep the other readonly sections; never emit raw exception or meta contents.
+    return { classification: "AUDIT_READ_FAILED" };
   }
 }
