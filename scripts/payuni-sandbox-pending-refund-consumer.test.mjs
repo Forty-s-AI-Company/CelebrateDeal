@@ -1,3 +1,4 @@
+import { createOriginalRefundHandoff, ORIGINAL_TRANSACTION_SOURCE } from "./q1-original-refund-handoff.mjs";
 import { launchPendingRefundBrowser } from "./payuni-sandbox-pending-refund-consumer.mjs";
 import { expect, it, vi } from "vitest";
 import { createPendingRefundHandoff, reference } from "./payuni-sandbox-payment-handoff.mjs";
@@ -153,4 +154,41 @@ it("keeps injected finance and provider credentials out of the standalone CLI br
     await expect(launchPendingRefundBrowser(chromium)).resolves.toBe("isolated-cli-browser");
     expect(chromium.launch).toHaveBeenCalledTimes(1);
   } finally { vi.unstubAllEnvs(); }
+});
+
+function originalRunnerFixture() {
+  const run = runnerFixture(), original = fixture().proof;
+  Object.assign(original, { transactionSourceCommit: ORIGINAL_TRANSACTION_SOURCE, historicalOriginalBound: true,
+    vendorId: "wp4_synthetic_vendor_v1" });
+  run.options.receipt = createOriginalRefundHandoff({ proof: original,
+    target: { transactionId, orderNumber: order, providerTradeNo: trade },
+    paid: { MerTradeNo: order, TradeNo: trade, TradeStatus: "1", TradeAmt: 1, PaymentType: "1", DataSource: "A", RemainAmt: 1, RefundAmt: 0 },
+    browser: { origin: `https://${original.appHost}`, exactTransactionRef: original.transactionRef,
+      formTransactionRef: original.transactionRef, exactRefundFormCount: 1, csrfPresent: true, financeAuthenticated: true },
+    executionSource: source, startedAt: now.toISOString(), completedAt: now.toISOString(), now });
+  const completed = { ...original, status: "refunded", refundedAmountCents: 100, refundRecordCount: 1,
+    singleProcessedRefund: true, refundPersistencePassed: true };
+  run.options.loadProof = vi.fn().mockResolvedValueOnce(original).mockResolvedValue(completed);
+  return run;
+}
+it("original handoff preserves exact UI, CREDIT terminal proof and duplicate protection without historical checkout claim", async () => {
+  const run = originalRunnerFixture();
+  expect(run.options.receipt.checks.browserCheckout).toBeUndefined();
+  await expect(consumePendingRefund(run.options)).resolves.toMatchObject({ status: "COMPLETED" });
+  expect(run.first.click).toHaveBeenCalledTimes(1); expect(run.duplicate.click).toHaveBeenCalledTimes(1);
+  expect(run.options.queryProvider).toHaveBeenCalledTimes(1);
+});
+it("original handoff rejects changed original provenance before opening any refund UI", async () => {
+  const run = originalRunnerFixture(), wrong = { ...fixture().proof, transactionSourceCommit: source, historicalOriginalBound: true,
+    vendorId: "wp4_synthetic_vendor_v1" };
+  run.options.loadProof.mockReset().mockResolvedValue(wrong);
+  await expect(consumePendingRefund(run.options)).rejects.toThrow();
+  expect(run.options.context.newPage).not.toHaveBeenCalled(); expect(run.first.click).not.toHaveBeenCalled();
+});
+it("original handoff never resubmits while exact CREDIT query reports pending", async () => {
+  const run = originalRunnerFixture();
+  run.options.queryProvider.mockResolvedValue({ MerTradeNo: order, TradeNo: trade, TradeAmt: 1, TradeStatus: "1",
+    PaymentType: "1", DataSource: "A", RefundStatus: "8", RemainAmt: 1, RefundAmt: 1 });
+  await expect(consumePendingRefund(run.options)).rejects.toThrow();
+  expect(run.first.click).toHaveBeenCalledTimes(1); expect(run.duplicate.click).toHaveBeenCalledTimes(1);
 });
