@@ -117,7 +117,7 @@ describe("fixed historical buyer PostgreSQL recovery", () => {
    }
    return result;
   } });
-  await expect(retryWp4HistoricalBuyerCallback({ $transaction: transaction })).resolves.toEqual({ status: "RETRY_FAILED", retryAttempts: 1, failureCode: "processing_failed" });
+  await expect(retryWp4HistoricalBuyerCallback({ $transaction: transaction })).resolves.toEqual({ status: "RETRY_FAILED", retryAttempts: 1, failureCode: "scope_mismatch" });
   expect(reassigned).toBe(true);
   expect(await db.paymentTransaction.count({ where: { vendorId: raceVendorId } })).toBe(0);
   expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "pending", metadata: { wp4CallbackRetryReserved: true } });
