@@ -66,6 +66,9 @@ describe("fixed historical buyer PostgreSQL recovery", () => {
    expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "paid",
     providerTradeNo: payment.providerTradeNo, metadata: { wp4CallbackRetryReserved: true, q1SchemaRecoveryReserved: true } });
    expect(await db.webhookEvent.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({ status: "processed", retryCount: 4, maxRetries: 5 });
+   const audits = await db.auditLog.findMany({ where: { targetType: "WebhookEvent", targetId: event.id }, select: { actorLabel: true, action: true } });
+   expect(audits.map(row => row.actorLabel).sort()).toEqual(["q1_sandbox_schema_recovery", "webhook:payuni", "wp4_sandbox_fixed_callback_retry"]);
+   expect(audits.filter(row => row.action === "payment_webhook_paid")).toEqual([{ actorLabel: "webhook:payuni", action: "payment_webhook_paid" }]);
   } finally {
    await db.auditLog.deleteMany({ where: { targetType: "WebhookEvent", targetId: event.id } });
   }

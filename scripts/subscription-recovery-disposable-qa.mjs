@@ -40,11 +40,14 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
   test.title === "recovers only the catalog-owned Q1 original callback once without another payment");
    const remainingBudgetCases = result.testResults.flatMap(suite => suite.assertionResults).filter(test =>
     ["recovers the original callback with remaining provider retry budget 2", "recovers the original callback with remaining provider retry budget 4"].includes(test.title));
+   const schemaRecoveryCase = result.testResults.flatMap(suite => suite.assertionResults).filter(test =>
+    test.title === "recovers the original after schema repair once under contention without resetting the earlier marker");
    // Keep all 67 prior cases, the original once-only case, and both remaining-budget boundaries.
-   if (child.status !== 0 || !result.success || tests.total !== 70 || tests.passed !== 70 || tests.skipped !== 0
+   if (child.status !== 0 || !result.success || tests.total !== 71 || tests.passed !== 71 || tests.skipped !== 0
     || originalCallbackCase.length !== 1 || originalCallbackCase[0].status !== "passed"
     || remainingBudgetCases.length !== 2 || new Set(remainingBudgetCases.map(test => test.title)).size !== 2
-    || remainingBudgetCases.some(test => test.status !== "passed")) throw new Error("subscription-db-regression-failed");
+    || remainingBudgetCases.some(test => test.status !== "passed")
+    || schemaRecoveryCase.length !== 1 || schemaRecoveryCase[0].status !== "passed") throw new Error("subscription-db-regression-failed");
  if (process.argv.includes("--browser")) {
     // Reuse only the installed executable. The browser profile stays isolated;
     // changing HOME must not hide the installation and fail before the UI runs.
