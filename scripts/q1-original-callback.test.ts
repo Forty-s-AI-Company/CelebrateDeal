@@ -47,3 +47,10 @@ describe("one original callback replay transport", () => {
     expect(request).toHaveBeenCalledOnce();
   });
 });
+describe("original callback closed failure detail", () => {
+  it.each(["scope_mismatch", "amount_mismatch", "processing_timeout", "inventory_conflict"])("keeps %s failed and never retries it", async failureCode => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ status: "RETRY_FAILED", retryAttempts: 1, failureCode })));
+    expect(await replayOriginalCallback("synthetic-job-binding", request)).toMatchObject({ status: "BLOCKED", callbackStatus: "RETRY_FAILED", failureCode });
+    expect(request).toHaveBeenCalledOnce();
+  });
+});

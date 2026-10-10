@@ -1099,7 +1099,7 @@ export async function checkExistingWp4BuyerPayment(input, dependencies = {}) {
 }
 
 const buyerRetryStatuses = new Set(["PROCESSED", "ALREADY_PROCESSED", "FIXTURE_UNAVAILABLE", "CANDIDATE_AMBIGUOUS", "EVENT_UNAVAILABLE", "RETRY_REJECTED", "RETRY_FAILED"]);
-const buyerRetryFailures = new Set(["NONE", "UNKNOWN", "scope_missing", "scope_invalid", "scope_mismatch", "order_ambiguous", "amount_mismatch", "inventory_conflict", "processing_claim_lost", "processing_failed", "database_transaction_failed", "database_conflict"]);
+const buyerRetryFailures = new Set(["NONE", "UNKNOWN", "scope_missing", "scope_invalid", "scope_mismatch", "order_ambiguous", "amount_mismatch", "inventory_conflict", "processing_timeout", "processing_claim_lost", "processing_failed", "database_transaction_failed", "database_conflict"]);
 
 function validBuyerRetryBody(body) {
   if (!exactKeys(body, ["status", "retryAttempts", "failureCode"]) || !buyerRetryStatuses.has(body.status)
