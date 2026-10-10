@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
+import { publicLiveTransportFailure } from "../../scripts/public-live-browser-diagnostic";
 import { expect, test, type Page, type Request as PlaywrightRequest, type Response } from "@playwright/test";
 import { PrismaClient } from "@prisma/client";
 import {
@@ -101,6 +102,8 @@ function normalizePathQuery(value: string) {
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
 async function expectNoBlockingAxeViolations(page: Page) {
+  // 等待導航後的 title 完成更新，再執行完整 axe；title 缺失仍會使測試失敗。
+  await expect(page).toHaveTitle(/\S/u);
   const result = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .analyze();
@@ -1743,9 +1746,11 @@ test("desktop merchant can recover upload and validation errors, then publish an
         return;
       }
       admissionRequests += 1;
-      const response = await route.fetch();
+      const response = await route.fetch().catch((error: unknown) => {
+        throw new Error(`PUBLIC_LIVE:ADMISSION:NETWORK:${publicLiveTransportFailure(error)}`);
+      });
       if (!response.ok()) {
-        throw new Error(`LIVE_ADMISSION_FAILED:${response.status()}:${await response.text()}`);
+        throw new Error(`PUBLIC_LIVE:ADMISSION:HTTP:${response.status()}`);
       }
       if (admissionRequests === 2) {
         renewalPending = true;
@@ -1761,7 +1766,12 @@ test("desktop merchant can recover upload and validation errors, then publish an
     });
     await page.setViewportSize({ width: 1280, height: 900 });
 
-    const liveResponse = await page.goto(`/live/${fixture.sellableLiveSlug}`);
+    const liveResponse = await page.goto(`/live/${fixture.sellableLiveSlug}`).catch((error: unknown) => {
+      throw new Error(`PUBLIC_LIVE:NAVIGATION:NETWORK:${publicLiveTransportFailure(error)}`);
+    });
+    if (liveResponse && liveResponse.status() !== 200) {
+      throw new Error(`PUBLIC_LIVE:NAVIGATION:HTTP:${liveResponse.status()}`);
+    }
     expect(liveResponse?.status()).toBe(200);
     const video = page.locator("video");
     await expect(video).toBeVisible();

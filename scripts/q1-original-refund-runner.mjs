@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
 import { verifyReservedOriginalRefund } from "./q1-original-refund-verify.mjs";
-import { createOriginalRefundHandoff, assertOriginalRefundProof, originalPaidQueryChecks, originalPaidQueryShape, ORIGINAL_TRANSACTION_SOURCE } from "./q1-original-refund-handoff.mjs";
+import { createOriginalRefundHandoff, assertOriginalRefundProof, originalPaidQueryChecks, originalPaidQueryShape, originalRefundEligibilityChecks, ORIGINAL_TRANSACTION_SOURCE } from "./q1-original-refund-handoff.mjs";
 import { consumePendingRefund, launchPendingRefundBrowser, fillExactRefundForm } from "./payuni-sandbox-pending-refund-consumer.mjs";
 import { openFinanceLoginPage, waitFinanceLoginRedirect } from "./payuni-current-source-refund-qa.mjs";
 const SOURCE = "a76330b5961a48892bc03be779438128816d1a8c";
@@ -97,6 +97,7 @@ export async function executeOriginalRefund() {
     }
     receipt.originalPaidQueryChecks = originalPaidQueryChecks(paid, target);
     receipt.originalPaidQueryShape = originalPaidQueryShape(paid);
+    receipt.originalRefundEligibilityChecks = originalRefundEligibilityChecks(paid, target);
     await persist();
     stage = "fresh-original-handoff-proof";
     const freshProof = await loadProof();

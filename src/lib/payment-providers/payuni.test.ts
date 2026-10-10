@@ -105,10 +105,48 @@ describe("unreferenced Sandbox order observation", () => {
     ["CD-READONLY-001", "1", true], ["OTHER-ORDER", "1", false], ["CD-READONLY-001", "2", false],
   ])("validates returned order %s and amount %s", async (orderNumber, amount, valid) => {
     enable();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({ Status: "SUCCESS", Result: { MerTradeNo: orderNumber, TradeNo: "provider-reference", TradeAmt: amount, RefundStatus: "0", TradeStatus: "1" } }))));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({ Status: "SUCCESS", Result: { MerTradeNo: orderNumber, TradeNo: "provider-reference", TradeAmt: amount, RemainAmt: amount, DataSource: "A", PaymentType: "1", TradeStatus: "1" } }))));
     const result = payUniPaymentProvider.queryUnreferencedSandboxPayment?.({ transaction });
     if (valid) await expect(result).resolves.toMatchObject({ orderNumber, grossAmountCents: 100, status: "paid" });
     else await expect(result).rejects.toMatchObject({ category: "provider_response" });
+  });
+});
+
+describe("documented CREDIT query v2.0 refund evidence", () => {
+  const transaction = { id: "tx-terminal", providerName: "payuni", orderNumber: "CD-TERMINAL-001",
+    providerTradeNo: "trade-terminal", grossAmountCents: 100_000 } as PaymentTransaction;
+  function query(patch: Record<string, unknown>) {
+    stubPayUniEnv();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(payUniEnvelope({ Status: "SUCCESS", Result: {
+      MerTradeNo: transaction.orderNumber, TradeNo: transaction.providerTradeNo, TradeAmt: "1000",
+      TradeStatus: "1", PaymentType: "1", DataSource: "A", RefundStatus: "2",
+      RefundAmt: "200", RemainAmt: "500", ...patch,
+    } }))));
+    return payUniPaymentProvider.queryPayment!({ transaction });
+  }
+  it("uses remaining balance for cumulative refunds, not the last refund amount", async () => {
+    await expect(query({})).resolves.toMatchObject({ status: "partially_refunded",
+      refundedAmountCents: 50_000, remainingRefundableAmountCents: 50_000 });
+  });
+  it("recognizes full cumulative refund after multiple partial refunds", async () => {
+    await expect(query({ RemainAmt: "0" })).resolves.toMatchObject({ status: "refunded",
+      refundedAmountCents: 100_000, remainingRefundableAmountCents: 0 });
+  });
+  it("accepts a complete paid observation with no refund fields", async () => {
+    await expect(query({ RefundStatus: "", RefundAmt: "", RemainAmt: "1000" })).resolves.toMatchObject({
+      status: "paid", refundedAmountCents: 0, remainingRefundableAmountCents: 100_000 });
+  });
+  it.each(["0", "1", "3", "8", "9", "future"])("rejects nonterminal or undocumented refund state %s", async (RefundStatus) => {
+    await expect(query({ RefundStatus, RemainAmt: "0" })).rejects.toMatchObject({ category: "provider_response" });
+  });
+  it.each([
+    { DataSource: "B" }, { DataSource: "" }, { PaymentType: "2" }, { PaymentType: "" },
+    { TradeStatus: "2" }, { TradeStatus: "4" }, { TradeStatus: "8" }, { TradeStatus: "6" },
+    { RemainAmt: "" }, { RemainAmt: "1001" }, { RemainAmt: "-1" }, { RemainAmt: "500junk" },
+    { RefundAmt: "0" }, { RefundAmt: "501" }, { RefundAmt: "200junk" },
+    { RefundStatus: "", RemainAmt: "500" }, { RefundStatus: "", RemainAmt: "1000", RefundAmt: "1" },
+  ])("rejects incomplete, non-credit or inconsistent evidence %j", async (patch) => {
+    await expect(query(patch)).rejects.toMatchObject({ category: "provider_response" });
   });
 });
 
@@ -375,7 +413,7 @@ describe("PayUni provider", () => {
         TradeNo: "trade-query-123",
         TradeAmt: "1680",
         TradeStatus: "1",
-        RefundStatus: "1",
+        RefundStatus: "2", RefundAmt: "1680", RemainAmt: "0", DataSource: "A", PaymentType: "1",
       }),
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -418,7 +456,7 @@ describe("PayUni provider", () => {
         TradeNo: "trade-query-234",
         TradeAmt: "1680",
         TradeStatus: "1",
-        RefundStatus: "2",
+        RefundStatus: "2", RemainAmt: "1500", DataSource: "A", PaymentType: "1",
       }),
     }), { status: 200 })));
 
@@ -436,7 +474,7 @@ describe("PayUni provider", () => {
         TradeNo: "trade-query-strict",
         TradeAmt: tradeAmount,
         TradeStatus: "1",
-        RefundStatus: "1",
+        RefundStatus: "2", RefundAmt: "1680", RemainAmt: "0", DataSource: "A", PaymentType: "1",
       }),
     }), { status: 200 })));
 
@@ -454,7 +492,7 @@ describe("PayUni provider", () => {
         TradeNo: "trade-query-345",
         TradeAmt: "1680",
         TradeStatus: "1",
-        RefundStatus: "1",
+        RefundStatus: "2", RefundAmt: "1680", RemainAmt: "0", DataSource: "A", PaymentType: "1",
       }),
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -495,7 +533,7 @@ describe("PayUni provider", () => {
         TradeNo: "trade-query-346",
         TradeAmt: "1680",
         TradeStatus: "1",
-        RefundStatus: "1",
+        RefundStatus: "2", RefundAmt: "1680", RemainAmt: "0", DataSource: "A", PaymentType: "1",
       }, resultPatch)),
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
