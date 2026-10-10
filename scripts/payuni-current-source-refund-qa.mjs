@@ -20,6 +20,25 @@ function requireSafe(condition) {
   if (!condition) throw new Error("Current-source Sandbox refund QA rejected.");
 }
 
+/** Diagnose only the existing deployment-owned fixture. Never create or retry a payment. */
+export async function diagnoseCurrentSourcePayment(input, dependencies = {}) {
+  const invocation = validateInvocation(input);
+  requireSafe(invocation.ok);
+  const request = dependencies.request ?? defaultRequest;
+  const response = await request({ url: `${APP_ORIGIN}/api/admin/ops/payuni/wp4-buyer-order-proof`,
+    headers: { authorization: `Bearer ${input.jobSecret}`, "x-celebratedeal-source-sha": invocation.sourceSha }, body: undefined });
+  const categories = { VERIFIED: "EXACT_PAID_ORDER_VERIFIED", FIXTURE_UNAVAILABLE: "EXACT_FIXTURE_ABSENT",
+    CANDIDATE_AMBIGUOUS: "EXACT_FIXTURE_AMBIGUOUS", STATE_MISMATCH: "EXACT_STATE_MISMATCH" };
+  const expectedStatus = { VERIFIED: 200, FIXTURE_UNAVAILABLE: 404, CANDIDATE_AMBIGUOUS: 409, STATE_MISMATCH: 409 };
+  const status = response?.body?.status;
+  const category = Object.hasOwn(categories, status ?? "") && response.status === expectedStatus[status]
+    ? categories[status] : "EXACT_STATE_UNAVAILABLE";
+  return { schemaVersion: "celebratedeal-current-source-diagnostic/v1", status: "READ_ONLY_DIAGNOSTIC",
+    sourceCommit: invocation.sourceSha, category,
+    canonicalSandboxBoundaryVerified: category !== "EXACT_STATE_UNAVAILABLE", productionOperations: false,
+    paymentSubmitted: false, refundSubmitted: false, alternateTransactionSelected: false };
+}
+
 /** Only closed login outcomes escape CI; never return a URL, body or cookie. */
 export function classifyFinanceLoginFailure(value) {
   try {
@@ -36,6 +55,26 @@ export function classifyFinanceLoginFailure(value) {
     if (url.pathname === "/admin/billing/dashboard") return "FINANCE_DASHBOARD_NOT_VERIFIED";
     return "LOGIN_DESTINATION_REJECTED";
   } catch { return "LOGIN_NOT_COMPLETED"; }
+}
+
+/** An absent or malformed nested receipt must never break the failure report. */
+export function currentSourceFailureReceipt(stage, error, loginUrl) {
+  const stages = new Set(["configuration", "deployment-lineage", "canonical-runtime-preflight",
+    "exact-existing-state-diagnostic", "platform-login-page", "platform-login-form",
+    "platform-login-submit", "platform-login-redirect", "platform-mfa",
+    "platform-finance-dashboard", "exact-payment-and-refund"]);
+  let paymentReceipt;
+  try {
+    if (validatePaymentOnlyReceipt(error?.paymentReceipt).ok) paymentReceipt = error.paymentReceipt;
+  } catch {
+    // The legacy validator expects a complete object. Drop untrusted shapes;
+    // neither the exception nor the raw error is suitable for CI evidence.
+  }
+  return { schemaVersion: "celebratedeal-current-source-refund-qa/v1", status: "BLOCKED_OR_FAILED",
+    stage: stages.has(stage) ? stage : "configuration",
+    ...(loginUrl !== undefined ? { failureCategory: classifyFinanceLoginFailure(loginUrl) } : {}),
+    ...(paymentReceipt ? { paymentReceipt } : {}),
+    productionOperations: false, alternateTransactionSelected: false };
 }
 
 /** Connect the existing fixed synthetic payment runner to the exact refund UI.
@@ -77,6 +116,11 @@ export async function runCurrentSourceRefundQa({ input, context, loadProof, quer
       return browserSubmit({ ...operation, previewHost: APP_HOST });
     },
   });
+  if (validatePaymentOnlyReceipt(payment).ok && payment.result === "BLOCKED") {
+    const failure = new Error("Current-source payment blocked.");
+    failure.paymentReceipt = payment;
+    throw failure;
+  }
   requireSafe(validatePaymentOnlyReceipt(payment).ok && payment?.result === "PASS" && payment.sourceSha === invocation.sourceSha
     && payment.checks?.returnCallbackMapped === true && payment.checks?.duplicateCallbackVerified === true);
   requireSafe(typeof exactCheckout?.transactionId === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(exactCheckout.transactionId)
@@ -121,7 +165,7 @@ export async function waitFinanceLoginRedirect(page, afterMfa = false) {
 }
 
 /** Protected CI entry point: process injection only; no dotenv or raw logs. */
-export async function executeCurrentSourceRefundQa() {
+export async function executeCurrentSourceRefundQa(dependencies = {}) {
   let browser;
   let loginPage;
   let stage = "configuration";
@@ -134,12 +178,22 @@ export async function executeCurrentSourceRefundQa() {
     const input = readFixedInputs();
     requireSafe(validateInvocation(input).ok);
     stage = "deployment-lineage";
-    requireSafe(await verifyMvpPayUniLineage({ CELEBRATEDEAL_SOURCE_SHA: input.sourceSha,
+    requireSafe(await (dependencies.verifyLineage ?? verifyMvpPayUniLineage)({ CELEBRATEDEAL_SOURCE_SHA: input.sourceSha,
       CELEBRATEDEAL_DEPLOYMENT_HOST: input.previewHost, GITHUB_TOKEN: process.env.GITHUB_TOKEN }));
+    if (process.env.Q1_EXISTING_STATE_DIAGNOSTIC === "true") {
+      stage = "exact-existing-state-diagnostic";
+      // This existing endpoint authorizes the exact Preview/Sandbox/database
+      // boundary before any read. Paid orders may have exhausted inventory;
+      // they must not depend on readiness to create another payment.
+      const receipt = await diagnoseCurrentSourcePayment(input, { request: dependencies.diagnosticRequest });
+      console.log(JSON.stringify(receipt));
+      if (!receipt.canonicalSandboxBoundaryVerified) process.exitCode = 1;
+      return;
+    }
     // The mutable canonical alias must independently prove the same runtime
     // identity before finance credentials are entered or a payment is created.
     stage = "canonical-runtime-preflight";
-    const preflight = await fetch(`${APP_ORIGIN}/api/admin/ops/payuni/wp4-preflight`, {
+    const preflight = await (dependencies.preflightFetch ?? fetch)(`${APP_ORIGIN}/api/admin/ops/payuni/wp4-preflight`, {
       method: "POST", redirect: "error", signal: AbortSignal.timeout(10000),
       headers: { authorization: `Bearer ${input.jobSecret}`, "x-celebratedeal-source-sha": input.sourceSha },
     });
@@ -187,10 +241,8 @@ export async function executeCurrentSourceRefundQa() {
       queryProvider: (orderNumber) => queryTransaction(orderNumber, { signal: AbortSignal.timeout(10000) }) },
     { writeHandoff: writePaymentHandoff });
     console.log(JSON.stringify(receipt));
-  } catch {
-    console.log(JSON.stringify({ schemaVersion: "celebratedeal-current-source-refund-qa/v1", status: "BLOCKED_OR_FAILED", stage,
-      ...(loginPage ? { failureCategory: classifyFinanceLoginFailure(loginPage.url()) } : {}),
-      productionOperations: false, alternateTransactionSelected: false }));
+  } catch (error) {
+    console.log(JSON.stringify(currentSourceFailureReceipt(stage, error, loginPage?.url())));
     process.exitCode = 1;
   } finally {
     if (browser) await browser.close();

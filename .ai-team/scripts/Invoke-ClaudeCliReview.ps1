@@ -76,15 +76,15 @@ function Invoke-ClaudeCliReview {
             return $receipt
         }
         $terminal = $terminals[0]
-        # Text classification can match a finding quoting "permission denied".
+        # Text classification can match a finding quoting "permission denied" or a registry 429.
         # Recover only a complete native success with explicit zero denials,
         # no tool calls, no stderr, and exit zero. Real host failures stay blocked.
-        $textOnlyHostClassification = $result.status -eq 'HOST_PERMISSION_BLOCKED' -and
+        $textOnlyFailureClassification = $result.status -in @('HOST_PERMISSION_BLOCKED','RATE_LIMITED') -and
             $result.exitCode -eq 0 -and [string]::IsNullOrWhiteSpace([string]$result.stderr) -and
             $terminal.subtype -eq 'success' -and $terminal.is_error -eq $false -and
             $terminal.ContainsKey('permission_denials') -and @($terminal.permission_denials).Count -eq 0 -and
             -not $toolActivity
-        if ($result.status -eq 'HOST_PERMISSION_BLOCKED' -and -not $textOnlyHostClassification) {
+        if ($result.status -eq 'HOST_PERMISSION_BLOCKED' -and -not $textOnlyFailureClassification) {
             $receipt.status='HOST_PERMISSION_BLOCKED'; return $receipt
         }
         if ($terminal.is_error -eq $true) {
@@ -96,7 +96,7 @@ function Invoke-ClaudeCliReview {
                 elseif ($diagnostic -match '(?i)model.*(?:unavailable|not found)') {'MODEL_UNAVAILABLE'} else {'CLAUDE_CLI_RUNTIME_ERROR'}
             return $receipt
         }
-        if (($result.status -ne 'SUCCESS' -and -not $textOnlyHostClassification) -or
+        if (($result.status -ne 'SUCCESS' -and -not $textOnlyFailureClassification) -or
             $terminal.type -ne 'result' -or $terminal.subtype -ne 'success') { return $receipt }
         $models = @($terminal.modelUsage.Keys)
         # A success/alias alone cannot qualify a reviewer; reject silent model fallback.
@@ -108,7 +108,10 @@ function Invoke-ClaudeCliReview {
             $terminal.structured_output | ConvertTo-Json -Depth 20 -Compress
         } else { [string]$terminal.result }
         $receipt.status='SUCCESS'
-        if ($textOnlyHostClassification) { $receipt['classification_note']='HOST_TEXT_FALSE_POSITIVE_VERIFIED_TERMINAL' }
+        if ($textOnlyFailureClassification) {
+            $receipt['classification_note']=if ($hostBlocked) {'HOST_TEXT_FALSE_POSITIVE_VERIFIED_TERMINAL'}
+                else {'RATE_TEXT_FALSE_POSITIVE_VERIFIED_TERMINAL'}
+        }
     } catch { if (-not $hostBlocked) { $receipt.status='INVALID_REVIEW' } }
     return $receipt
 }

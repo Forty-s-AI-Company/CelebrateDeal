@@ -19,6 +19,7 @@ on:
           - wp4-payuni-sandbox-subscription
           - line-notifications-e2e
           - q1-exact-pending-refund
+          - q1-exact-state-diagnostic
       source_sha:
         description: Exact 40-character Preview source SHA
         required: true
@@ -98,11 +99,11 @@ jobs:
         run: npm run secure:staging:contract
 
       - name: Preload Q1 Chromium before secret injection
-        if: ${{ inputs.task == 'q1-exact-pending-refund' }}
+        if: ${{ (inputs.task == 'q1-exact-pending-refund' || inputs.task == 'q1-exact-state-diagnostic') }}
         run: npx playwright install --with-deps chromium
 
       - name: Validate Q1 exact deployment identity before secret injection
-        if: ${{ inputs.task == 'q1-exact-pending-refund' }}
+        if: ${{ (inputs.task == 'q1-exact-pending-refund' || inputs.task == 'q1-exact-state-diagnostic') }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
@@ -110,11 +111,12 @@ jobs:
         run: node scripts/mvp-payuni-sandbox-e2e.mjs --verify-lineage
 
       - name: Execute Q1 exact synthetic payment and refund
-        if: ${{ inputs.task == 'q1-exact-pending-refund' }}
+        if: ${{ (inputs.task == 'q1-exact-pending-refund' || inputs.task == 'q1-exact-state-diagnostic') }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+          Q1_EXISTING_STATE_DIAGNOSTIC: ${{ inputs.task == 'q1-exact-state-diagnostic' }}
           PAYUNI_ENV: sandbox
           PAYUNI_SANDBOX_QA_ENABLED: 'true'
           PAYUNI_SANDBOX_REFUND_ENABLED: 'true'
@@ -196,7 +198,7 @@ jobs:
           node scripts/payuni-current-source-refund-qa.mjs > "$RUNNER_TEMP/q1-exact-refund/completion.json"
 
       - name: Upload Q1 sanitized exact transaction evidence
-        if: ${{ always() && inputs.task == 'q1-exact-pending-refund' }}
+        if: ${{ always() && (inputs.task == 'q1-exact-pending-refund' || inputs.task == 'q1-exact-state-diagnostic') }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: q1-exact-refund-${{ inputs.source_sha }}
