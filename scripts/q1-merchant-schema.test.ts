@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
-import { installMerchantSchema, merchantStatements, MERCHANT_MIGRATION } from "./q1-merchant-schema";
+import { installMerchantSchema, merchantStatements, merchantPostProbeCompatible, MERCHANT_MIGRATION } from "./q1-merchant-schema";
+import { Q1_DOWNSTREAM_MODELS, Q1DownstreamReceipt } from "../src/lib/q1-downstream-readonly";
 const sql = await readFile(`prisma/migrations/${MERCHANT_MIGRATION}/migration.sql`, "utf8");
 function client(before: { tables?: number; columns?: number; ledger?: unknown[] } = {}) {
   const query = vi.fn().mockResolvedValueOnce(Array.from({ length: before.tables ?? 0 }, () => ({ name: "existing" })))
@@ -13,6 +14,22 @@ function client(before: { tables?: number; columns?: number; ledger?: unknown[] 
   return { query, execute, raw, tx: { $queryRaw: query, $executeRaw: execute, $executeRawUnsafe: raw } as unknown as Prisma.TransactionClient };
 }
 describe("fixed forward merchant schema", () => {
+  it("rejects failed, empty, duplicate and incomplete post-migration reads", () => {
+    const enums = [...new Set(Prisma.dmmf.datamodel.models.filter(model => (Q1_DOWNSTREAM_MODELS as readonly string[]).includes(model.name))
+      .flatMap(model => model.fields.filter(field => field.kind === "enum").map(field => field.type)))];
+    const full = Q1DownstreamReceipt.parse({ classification: "DOWNSTREAM_OBSERVED", readStage: "NONE", readClass: "NONE",
+      schema: Q1_DOWNSTREAM_MODELS.map(model => ({ model, compatible: true, missingColumns: [] })),
+      enums: enums.map(name => ({ name, compatible: true, missingLabels: [] })), decrypt: "OK", protect: "OK", billingPurposeClass: "buyer_order", coursePolicySnapshotClass: "ABSENT",
+      merchantSnapshotExists: false, emailDeliveryExists: false, paidOrderEventExists: false, databaseWrites: false, callbackPosts: 0, callbackReplayAuthorized: false });
+    expect(merchantPostProbeCompatible(full)).toBe(true);
+    expect(merchantPostProbeCompatible({ ...full, classification: "READ_FAILED", schema: [], enums: [] })).toBe(false);
+    expect(merchantPostProbeCompatible({ ...full, schema: [] })).toBe(false);
+    expect(merchantPostProbeCompatible({ ...full, enums: [] })).toBe(false);
+    expect(merchantPostProbeCompatible({ ...full, schema: full.schema.slice(1) })).toBe(false);
+    expect(merchantPostProbeCompatible({ ...full, schema: full.schema.map(() => full.schema[0]!) })).toBe(false);
+    expect(merchantPostProbeCompatible({ ...full, schema: full.schema.map((row, index) => index ? row : { ...row, compatible: false }) })).toBe(false);
+    expect(merchantPostProbeCompatible({ ...full, enums: full.enums.map(() => full.enums[0]!) })).toBe(false);
+  });
   it("accepts only exact delivered bytes and forward DDL", () => {
     const statements = merchantStatements(sql);
     expect(statements.length).toBeGreaterThan(20);

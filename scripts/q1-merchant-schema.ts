@@ -5,6 +5,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { qaFinanceDatabaseUrl, QA_FINANCE_CA_FILE, verifyQaFinanceCertificate } from "../src/lib/staging-qa-finance-bootstrap";
 import { fetchQ1Downstream, readQ1DiagnosticFence, readQ1FenceState } from "./q1-downstream-runtime";
 import { readOriginalRetryAudit } from "./q1-original-retry-audit";
+import { Q1_DOWNSTREAM_MODELS, Q1DownstreamReceipt } from "../src/lib/q1-downstream-readonly";
 
 export const MERCHANT_MIGRATION = "20261006120000_merchant_affiliate_policy_snapshots";
 export const MERCHANT_SQL_SHA256 = "1dc83cfe4e3db8d6116c116e6e918625f125ccc802bed306d3f85a076132c3dd";
@@ -13,6 +14,18 @@ const COLUMNS = ["merchantCalculationId", "merchantCheckoutId", "merchantLevel",
 const EXPECTED_APP = "84edba3958a5a3e7e25aa3915a701a936e41bdc1";
 const EXPECTED_HOST = "celebrate-deal-staging-3w0dm0sa8-a25814740s-projects.vercel.app";
 const rejected = () => new Error("FIXED_MERCHANT_SCHEMA_REJECTED");
+
+/** A failed or incomplete deployed read is never successful schema evidence. */
+export function merchantPostProbeCompatible(receipt: ReturnType<typeof Q1DownstreamReceipt.parse>) {
+  const modelNames = new Set<string>(Q1_DOWNSTREAM_MODELS);
+  const expectedEnums = new Set(Prisma.dmmf.datamodel.models.filter(model => modelNames.has(model.name))
+    .flatMap(model => model.fields.filter(field => field.kind === "enum").map(field => field.type)));
+  return receipt.classification === "DOWNSTREAM_OBSERVED"
+    && receipt.schema.length === modelNames.size && new Set(receipt.schema.map(row => row.model)).size === modelNames.size
+    && receipt.schema.every(row => modelNames.has(row.model) && row.compatible && row.missingColumns.length === 0)
+    && receipt.enums.length === expectedEnums.size && new Set(receipt.enums.map(row => row.name)).size === expectedEnums.size
+    && receipt.enums.every(row => expectedEnums.has(row.name) && row.compatible && row.missingLabels.length === 0);
+}
 
 /** Only the already delivered, byte-pinned forward migration is executable. */
 export function merchantStatements(sql: string) {
@@ -97,7 +110,7 @@ export async function main() {
     stage = "deployed-readonly-after";
     const downstream = await fetchQ1Downstream(env.JOB_SECRET ?? "", EXPECTED_APP);
     Object.assign(receipt, { downstreamClassification: downstream.classification, decrypt: downstream.decrypt, protect: downstream.protect,
-      schemaCompatible: downstream.schema.every(row => row.compatible) && downstream.enums.every(row => row.compatible) });
+      schemaCompatible: merchantPostProbeCompatible(downstream) });
     if (!receipt.schemaCompatible) throw rejected();
   } catch { receipt.status = "BLOCKED"; receipt.stage = stage; process.exitCode = 1; }
   finally {
