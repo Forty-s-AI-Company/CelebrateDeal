@@ -7,7 +7,8 @@ import { qaFinanceDatabaseUrl, QA_FINANCE_CA_FILE, verifyQaFinanceCertificate } 
 export const CALLBACK_EXECUTION_SOURCE = "01d7af28755e73478ade7cdd0bc017c8edee67f5";
 const ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 const statuses = new Set(["PROCESSED", "ALREADY_PROCESSED", "FIXTURE_UNAVAILABLE", "CANDIDATE_AMBIGUOUS", "EVENT_UNAVAILABLE", "RETRY_REJECTED", "RETRY_FAILED"]);
-const failureCodes = new Set(["NONE", "UNKNOWN", "processing_failed"]);
+const failureCodes = new Set(["NONE", "UNKNOWN", "scope_missing", "scope_invalid", "scope_mismatch", "order_ambiguous",
+  "amount_mismatch", "inventory_conflict", "processing_timeout", "processing_claim_lost", "processing_failed"]);
 
 /** Fixed single POST. Reserve possible effects before transport; never retry a lost response. */
 export async function replayOriginalCallback(jobSecret: string, request: typeof fetch = fetch,

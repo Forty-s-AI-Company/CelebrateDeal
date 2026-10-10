@@ -60,6 +60,6 @@ export async function retryWp4HistoricalBuyerCallback(db: Pick<PrismaClient, "$t
   try {
     const outcome = await retryWebhookEvent(reserved.eventId, "wp4_sandbox_fixed_callback_retry", reserved.expectedVersion);
     return outcome.status === "processed" ? { status: "PROCESSED", retryAttempts: 1, failureCode: "NONE" }
-      : { status: "RETRY_FAILED", retryAttempts: 1, failureCode: "processing_failed" };
+      : { status: "RETRY_FAILED", retryAttempts: 1, failureCode: "errorCode" in outcome ? outcome.errorCode ?? "processing_failed" : "processing_failed" };
   } catch { return { status: "RETRY_FAILED", retryAttempts: 1, failureCode: "processing_failed" }; }
 }
