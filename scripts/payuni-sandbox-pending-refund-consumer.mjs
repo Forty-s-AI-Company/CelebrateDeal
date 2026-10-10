@@ -1,5 +1,6 @@
 import { fixedBrowserEnvironment } from "./mvp-payuni-sandbox-e2e.mjs";
 import { SCHEMA_VERSION, reference } from "./payuni-sandbox-payment-handoff.mjs";
+import { ORIGINAL_REFUND_HANDOFF_SCHEMA, assertOriginalProofMatchesHandoff } from "./q1-original-refund-handoff.mjs";
 import { isCompletedFullCreditRefund } from "./payuni-credit-refund-query-contract.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -19,6 +20,12 @@ function requireCondition(condition) {
 
 /** Verify authenticated server evidence, keeping raw identifiers out of receipts. */
 function assertProofMatchesHandoff(receipt, proof, transactionId, expectedSourceSha, now = new Date()) {
+  // The fixed historical original has a separate fresh finance-UI handoff.
+  // It cannot inherit a fabricated browserCheckout result from the generic schema.
+  if (receipt?.schemaVersion === ORIGINAL_REFUND_HANDOFF_SCHEMA) {
+    assertOriginalProofMatchesHandoff(receipt, proof, transactionId, expectedSourceSha, now);
+    return;
+  }
   requireCondition(receipt?.schemaVersion === SCHEMA_VERSION && receipt.status === "PENDING_REFUND"
     && receipt.environment === "sandbox" && receipt.appHost === new URL(STAGING_ORIGIN).hostname
     && receipt.providerHost === PROVIDER_HOST);
