@@ -1,4 +1,5 @@
 import path from "node:path";
+import { classifyPublicLiveBrowserDiagnostic } from "./public-live-browser-diagnostic";
 import { classifyPrivateInboxDiagnostic } from "./private-inbox-diagnostic";
 import type { FullResult, Reporter, TestCase, TestResult, TestStep } from "@playwright/test/reporter";
 
@@ -151,7 +152,7 @@ export default class SanitizedPlaywrightCiReporter implements Reporter {
           // Playwright appends worker teardown diagnostics to message. Only the
           // complete first line is considered; the remainder is never forwarded.
           const inboxMessage = typeof error.message === "string" ? error.message.split("\n", 1)[0] : undefined;
-          const classification = classifySyntheticCheckoutError(error.message) ?? classifySanitizedAxeError(error.message) ?? classifyPrivateInboxDiagnostic(inboxMessage);
+          const classification = classifySyntheticCheckoutError(error.message) ?? classifySanitizedAxeError(error.message) ?? classifyPrivateInboxDiagnostic(inboxMessage) ?? classifyPublicLiveBrowserDiagnostic(inboxMessage);
           const location = error.location;
           if (!classification && !location) continue;
           const errorAnnotation = formatSanitizedPlaywrightAnnotation({
