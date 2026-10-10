@@ -29,6 +29,7 @@ import {
   applyPlatformReferralRefund,
 } from "@/lib/platform-referral-commission";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
+import { withPaymentWebhookStage } from "./payment-webhook-errors";
 import { reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
 import { ensureCommerceOrderPaidDelivery } from "@/lib/commerce-order-email";
 import { getDb } from "@/lib/db";
@@ -945,7 +946,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
     commerceOrderRefund,
   // The ordered re-read and writes must remain in one serializable closure.
   // eslint-disable-next-line complexity -- splitting this scope weakens its transaction invariant.
-  } = await db.$transaction(async (tx) => {
+  } = await db.$transaction(async (tx) => withPaymentWebhookStage("PAYMENT_UPDATE", async () => {
     // Re-read the logical order inside the serializable transaction. This keeps
     // amount, refund and state checks bound to the row version being updated.
     const currentTransaction = await tx.paymentTransaction.findFirst({
@@ -1053,77 +1054,82 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
 
     // Product identity is trusted only from the server-created checkout
     // transaction. Provider metadata must never choose another tenant's stock.
-    if (isPaymentLifecycleEvent(payload.eventType) && !ignoredIncomingState && !invariant.duplicateRefundEvent) {
-      await applyPaymentInventoryTransition(tx, {
+    const lifecycleEventType = payload.eventType;
+    if (isPaymentLifecycleEvent(lifecycleEventType) && !ignoredIncomingState && !invariant.duplicateRefundEvent) {
+
+      await withPaymentWebhookStage("INVENTORY", () => applyPaymentInventoryTransition(tx, {
         transaction: savedTransaction,
-        eventType: payload.eventType,
+        eventType: lifecycleEventType,
         trustedCheckoutMetadata: existingMetadata,
         now: occurredAt,
-      });
-      await reconcileCommercePaymentLifecycle(tx, {
+      }));
+
+      await withPaymentWebhookStage("ORDER_TRANSITION", () => reconcileCommercePaymentLifecycle(tx, {
         vendorId: vendor.id, transactionId: savedTransaction.id,
         eventType: payload.eventType, eventIdentity: payload.eventId, occurredAt,
-      });
+      }));
       if (payload.eventType === "paid") {
-        await ensureCommerceOrderPaidDelivery(tx, {
+
+        await withPaymentWebhookStage("PAID_DELIVERY_DECRYPT", () => ensureCommerceOrderPaidDelivery(tx, {
           vendorId: vendor.id,
           paymentTransactionId: savedTransaction.id,
           occurredAt,
-        });
+        }));
       }
     }
 
-    const { refundCommission, platformReferralRefund, courseRefundAllocations, commerceOrderRefund } = await applyPaymentRefundsInWebhook(tx, {
+    const { refundCommission, platformReferralRefund, courseRefundAllocations, commerceOrderRefund } = await withPaymentWebhookStage("REFUND", () => applyPaymentRefundsInWebhook(tx, {
       payload,
       vendorId: vendor.id,
       transaction: savedTransaction,
       duplicateRefundEvent: invariant.duplicateRefundEvent,
       occurredAt,
-    });
+    }));
 
-    const platformSubscription = await reconcilePlatformSubscription(tx, {
+    const platformSubscription = await withPaymentWebhookStage("SUBSCRIPTION", () => reconcilePlatformSubscription(tx, {
       vendorId: vendor.id,
       eventType: payload.eventType,
       transaction: savedTransaction,
       trustedMetadata: existingMetadata,
       currentTransactionExists: Boolean(currentTransaction),
       occurredAt,
-    });
+    }));
 
-    const invoicePayment = await reconcileInvoicePayment(tx, {
+    const invoicePayment = await withPaymentWebhookStage("INVOICE", () => reconcileInvoicePayment(tx, {
       vendorId: vendor.id,
       eventType: payload.eventType,
       transaction: savedTransaction,
       trustedMetadata: existingMetadata,
       currentTransactionExists: Boolean(currentTransaction),
       occurredAt,
-    });
+    }));
 
-    const disputeEntry = await applyDisputeToCommission(tx, payload, vendor.id, savedTransaction.id);
-    const courseDisputeEntries = await applyDisputeToCourseAllocations(tx, payload, vendor.id, savedTransaction.id);
-    const platformReferralDispute = await reconcilePlatformReferralDispute(tx, {
+    const disputeEntry = await withPaymentWebhookStage("DISPUTE", () => applyDisputeToCommission(tx, payload, vendor.id, savedTransaction.id));
+    const courseDisputeEntries = await withPaymentWebhookStage("DISPUTE", () => applyDisputeToCourseAllocations(tx, payload, vendor.id, savedTransaction.id));
+    const platformReferralDispute = await withPaymentWebhookStage("DISPUTE", () => reconcilePlatformReferralDispute(tx, {
       eventType: payload.eventType,
       paymentTransactionId: savedTransaction.id,
       providerName: payload.provider,
       eventIdentity: payload.eventId,
       disputeCaseId: payload.disputeCaseId,
       occurredAt,
-    });
+    }));
     if (isDisputeEvent(payload.eventType) && !disputeEntry && courseDisputeEntries.length === 0 && !platformReferralDispute) {
       throw new Error("dispute webhook 找不到對應的佣金或課程分潤 snapshot。");
     }
 
     if (payload.eventType === "paid") {
-      await reconcileTeamConversionAttribution(tx, {
+
+      await withPaymentWebhookStage("TEAM_ATTRIBUTION", () => reconcileTeamConversionAttribution(tx, {
         vendorId: vendor.id,
         paymentTransactionId: savedTransaction.id,
         formSubmissionId,
         affiliateClickId: checkoutAffiliateClickId,
-      });
+      }));
     }
 
     const courseAllocations = payload.eventType === "paid"
-      ? await upsertCourseCommissionAllocations(
+      ? await withPaymentWebhookStage("COURSE", () => upsertCourseCommissionAllocations(
           tx,
           vendor.id,
           savedTransaction.id,
@@ -1133,15 +1139,17 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
           occurredAt,
           existingMetadata,
           Boolean(currentTransaction),
-        )
+        ))
       : [];
 
     // Keep commission creation in the same serializable transaction as the
     // logical payment row so concurrent callbacks cannot both commit it.
+
     const merchantPlan = payload.eventType === "paid"
-      ? await accrueMerchantAffiliatePlan(tx, { vendorId: vendor.id, transactionId: savedTransaction.id, providerName: payload.provider, occurredAt })
+      ? await withPaymentWebhookStage("MERCHANT_AFFILIATE", () => accrueMerchantAffiliatePlan(tx, { vendorId: vendor.id, transactionId: savedTransaction.id, providerName: payload.provider, occurredAt }))
       : null;
-    const commission = merchantPlan ? (merchantPlan.commissions[0] ?? null) : await upsertAffiliateCommission(
+
+    const commission = merchantPlan ? (merchantPlan.commissions[0] ?? null) : await withPaymentWebhookStage("LEGACY_COMMISSION", () => upsertAffiliateCommission(
       tx,
       payload,
       vendor.id,
@@ -1151,9 +1159,10 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       occurredAt,
       hasRefundedOrder,
       currentTransaction ? checkoutReferralCode : payload.referralCode,
-    );
+    ));
+
     const platformReferralCommission = payload.eventType === "paid"
-      ? await accruePlatformReferralFromTrustedTransaction(tx, {
+      ? await withPaymentWebhookStage("PLATFORM_REFERRAL", () => accruePlatformReferralFromTrustedTransaction(tx, {
           vendorId: vendor.id,
           subscriptionId: platformSubscriptionId,
           paymentTransactionId: savedTransaction.id,
@@ -1165,7 +1174,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
           hasRefundedOrder,
           currentTransactionExists: Boolean(currentTransaction),
           subscriptionStatus: platformSubscription?.status ?? null,
-        })
+        }))
       : null;
 
     // Conversion attribution can only be established by checkout metadata. The
@@ -1177,7 +1186,8 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       && checkoutAffiliateClickId
       && checkoutReferralCode
     ) {
-      await tx.affiliateClick.updateMany({
+
+      await withPaymentWebhookStage("CLICK_CONVERSION", () => tx.affiliateClick.updateMany({
         where: {
           id: checkoutAffiliateClickId,
           vendorId: vendor.id,
@@ -1185,11 +1195,12 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
           convertedAt: null,
         },
         data: { convertedAt: occurredAt },
-      });
+      }));
     }
 
     if (event) {
-      const processedEvent = await tx.webhookEvent.updateMany({
+
+      const processedEvent = await withPaymentWebhookStage("EVENT_FINALIZE", () => tx.webhookEvent.updateMany({
         where: {
           id: event.id,
           status: event.status,
@@ -1201,7 +1212,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
           processedAt: new Date(),
           errorMessage: null,
         },
-      });
+      }));
       if (processedEvent.count !== 1) {
         throw new Error("付款 webhook 事件處理權已變更。");
       }
@@ -1222,7 +1233,7 @@ async function processPaymentWebhookOnce(payload: PaymentWebhookPayloadInput, ev
       invoicePayment,
       commerceOrderRefund,
     };
-  }, {
+  }), {
     isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     // The remote path keeps payment, inventory, delivery, invoice, and
     // commission invariants in one serializable boundary. Prisma's 5s default

@@ -1,0 +1,281 @@
+{
+  "schemaVersion": "celebratedeal-q1-checkpoint/v1",
+  "status": "IMPLEMENTED_PENDING_EXTERNAL",
+  "base_commit": "2319c742f1455681ff08b720c193a2faf1545e27",
+  "source_commit": "35d8f59341bcb776e548c69fe874a3f4d1fe2528",
+  "route": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "q1-exact-pending-refund",
+    "signals": {
+      "task_type": "cross_module",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 17,
+      "engineering_profile": "complex",
+      "large_workload": true,
+      "risk_categories": [
+        "auth",
+        "cross_module",
+        "payment",
+        "permission",
+        "security",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "high",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "medium",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 24,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "cross_module",
+    "difficulty": "high",
+    "requested_team": "ai-team-pro",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "required": true,
+        "fallback_events": [
+          {
+            "model": "opus",
+            "reason": "cli_failure"
+          }
+        ],
+        "status": "planned",
+        "model_key": "astra",
+        "model": "gpt-6-astra",
+        "provider": "native_agent",
+        "reasoning_effort": "high",
+        "effort_floor": null,
+        "effort_reason": null,
+        "sandbox_mode": "read-only",
+        "execution": "native_agent_handoff_only",
+        "candidate_findings_only": false,
+        "may_spawn": false,
+        "astra_reason": "critical_review_no_equivalent"
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:576a4cad524d96cd60c7026bc05ae6c3348cf2aaac85a46cb1b6228b9e029110",
+    "snapshot_root": "repository-root",
+    "snapshot_files": [
+      "scripts/payuni-sandbox-external-qa.mjs",
+      "scripts/payuni-sandbox-payment-handoff.mjs",
+      "scripts/payuni-sandbox-payment-handoff.test.mjs",
+      "scripts/payuni-sandbox-pending-refund-consumer.mjs",
+      "scripts/payuni-sandbox-pending-refund-consumer.test.mjs",
+      "scripts/pending-refund-disposable-qa.mjs",
+      "scripts/prisma-loopback-disposable-migration-runner.mjs",
+      "src/app/api/admin/ops/payuni/pending-refund-proof/route.test.ts",
+      "src/app/api/admin/ops/payuni/pending-refund-proof/route.ts",
+      "src/lib/payuni-pending-refund-proof.db.test.ts",
+      "src/lib/payuni-pending-refund-proof.ts",
+      "vitest.pending-refund-db.config.ts",
+      "src/app/actions.ts",
+      "src/lib/auth.ts",
+      "src/lib/csrf.ts",
+      "src/lib/database-identity.ts",
+      "src/lib/payuni-refund-execution.ts",
+      "src/lib/payment-refund-accounting.ts",
+      "src/lib/wp4-preview-runtime.ts",
+      "src/lib/wp4-payuni-sandbox-reconciliation.ts",
+      "src/lib/wp4-sandbox-fixture.ts",
+      "src/app/admin/billing/dashboard/page.tsx",
+      "package.json",
+      "package-lock.json"
+    ],
+    "required_checks": [
+      "unit",
+      "typecheck",
+      "lint",
+      "db",
+      "browser"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "acceptance": {
+    "status": "BLOCKED",
+    "blockers": [
+      "required_check_unverified:browser"
+    ],
+    "revision": "sha256:576a4cad524d96cd60c7026bc05ae6c3348cf2aaac85a46cb1b6228b9e029110"
+  },
+  "review": {
+    "kind": "review",
+    "revision": "sha256:576a4cad524d96cd60c7026bc05ae6c3348cf2aaac85a46cb1b6228b9e029110",
+    "status": "PASS",
+    "independent": true,
+    "source": "desktop_native",
+    "role": "critical_review",
+    "model": "gpt-6-astra",
+    "requested_effort": "high",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "source_snapshot_unchanged": true,
+    "findings": [],
+    "dispatches": 2,
+    "summary": "Independent Critical review found no actionable findings; exact source, staging DB resource, synthetic tenant, callback, UI permission/CSRF/MFA and single refund/duplicate contracts reviewed. External browser/provider not verified."
+  },
+  "execution": {
+    "kind": "execution",
+    "revision": "sha256:576a4cad524d96cd60c7026bc05ae6c3348cf2aaac85a46cb1b6228b9e029110",
+    "status": "COMPLETED",
+    "source": "desktop_native",
+    "provider_terminal": true,
+    "tool_operations": "completed",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "scope": "Local implementation and checks only; full Q1 remains incomplete pending genuine sandbox browser/provider acceptance."
+  },
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "unit",
+      "revision": "sha256:576a4cad524d96cd60c7026bc05ae6c3348cf2aaac85a46cb1b6228b9e029110",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 12.422
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "typecheck",
+      "revision": "sha256:576a4cad524d96cd60c7026bc05ae6c3348cf2aaac85a46cb1b6228b9e029110",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 11.11
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "lint",
+      "revision": "sha256:576a4cad524d96cd60c7026bc05ae6c3348cf2aaac85a46cb1b6228b9e029110",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 4.265
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "db",
+      "revision": "sha256:576a4cad524d96cd60c7026bc05ae6c3348cf2aaac85a46cb1b6228b9e029110",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 17.375
+    }
+  ],
+  "disposable": {
+    "schemaVersion": "pending-refund-disposable/v1",
+    "scope": "real database; simulated provider transport; external sandbox NOT_VERIFIED",
+    "status": "PASS",
+    "tests": {
+      "total": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    }
+  },
+  "candidate_migration_count": 83,
+  "targeted_unit_route_count": 76,
+  "browser": "NOT_RUN",
+  "provider": "NOT_VERIFIED: provider transport simulated in DB tests only",
+  "minimum_external_conditions": [
+    "approved process injection: JOB_SECRET and sandbox merchant/signing keys",
+    "exact current-source synthetic payment handoff",
+    "platform admin login and valid OTP when MFA is required"
+  ],
+  "remote_ci": "NOT_STARTED",
+  "merge": "NOT_AUTHORIZED_BY_GATE",
+  "safety": {
+    "env_files_read": false,
+    "credentials_values_recorded": false,
+    "cookies_exported": false,
+    "production_operations": false,
+    "external_refunds": false,
+    "original_handoff_preserved": true,
+    "latest_or_alternate_transaction_selected": false
+  },
+  "whole_goal_status": "IN_PROGRESS"
+}

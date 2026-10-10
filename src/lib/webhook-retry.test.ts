@@ -199,6 +199,12 @@ describe("webhook retry worker", () => {
     expect(dependencies.writeAuditLog).toHaveBeenNthCalledWith(1, expect.objectContaining({ action: "webhook_retry_failed", targetId: retryable.id }));
     expect(dependencies.writeAuditLog).toHaveBeenNthCalledWith(2, expect.objectContaining({ action: "webhook_retry_exhausted", targetId: finalAttempt.id }));
     expect(dependencies.auditSnapshot).toHaveBeenCalledTimes(4);
+    expect(dependencies.auditSnapshot).toHaveBeenCalledWith({
+      errorCode: "processing_failed", errorClass: "OTHER", errorStage: "UNKNOWN", status: "failed",
+    });
+    expect(dependencies.auditSnapshot).toHaveBeenCalledWith({
+      errorCode: "processing_failed", errorClass: "OTHER", errorStage: "UNKNOWN", status: "exhausted",
+    });
     expect(dependencies.captureOperationalError).toHaveBeenCalledTimes(2);
     expect(dependencies.captureOperationalError).toHaveBeenNthCalledWith(1, expect.any(Error), {
       source: "webhook_retry",

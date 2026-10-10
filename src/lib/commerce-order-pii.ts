@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { retainPaymentWebhookCause } from "./payment-webhook-errors";
 import {
   decryptSensitiveValue,
   deriveSensitiveDataKey,
@@ -216,6 +217,6 @@ export function revealCommerceOrderPii(
     return parseCommerceOrderPii({ buyer, shipping });
   } catch (error) {
     if (error instanceof CommerceOrderPiiValidationError) throw error;
-    throw new Error("Commerce order PII envelope could not be decrypted.");
+    throw retainPaymentWebhookCause(new Error("Commerce order PII envelope could not be decrypted."), error);
   }
 }

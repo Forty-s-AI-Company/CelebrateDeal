@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { randomInt } from "node:crypto";
+import { setTimeout as waitForRetry } from "node:timers/promises";
 import { revealCommerceOrderPii } from "@/lib/commerce-order-pii";
 import { courseCompletion, nextLessonProgress, type CourseLesson, type CourseLessonProgress } from "@/lib/course-learning";
 import type { StudentPortalScope } from "@/lib/student-portal";
@@ -111,10 +113,15 @@ export async function saveStudentLessonProgress(db: CourseLearningDatabase, scop
     }
     return tx.courseLessonProgress.findFirst({ where: identity, select: { lessonId: true, watchedSeconds: true, completedAt: true } });
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  const maxAttempts = 6;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try { return await persist(); }
     catch (error) {
-      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || !["P2002", "P2034"].includes(error.code) || attempt === 2) throw error;
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || !["P2002", "P2034"].includes(error.code) || attempt === maxAttempts - 1) throw error;
+      // Let competing commits finish instead of immediately colliding again.
+      // A bounded jittered delay stays outside the transaction; every retry
+      // obtains a fresh snapshot and rechecks the same purchase entitlement.
+      await waitForRetry(Math.min(25 * 2 ** attempt, 200) + randomInt(0, 25));
     }
   }
   throw new Error("Progress transaction did not complete.");

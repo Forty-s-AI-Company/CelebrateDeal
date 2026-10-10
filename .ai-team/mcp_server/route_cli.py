@@ -77,7 +77,9 @@ def record_native_execution(request: dict) -> dict:
 def main() -> None:
     request = json.load(sys.stdin)
     action = request.get("action", "route")
-    if action == "discover":
+    if action == "claude_cli_config":
+        result = load_config(Path(request["config_path"]))["claude_cli"]
+    elif action == "discover":
         result = discover_slugs(request["output"])
     elif action == "validate_review":
         result = validate_review(json.loads(request["output"]))

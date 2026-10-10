@@ -217,17 +217,57 @@ def select_route(signals: dict[str, Any], policy: dict[str, Any]) -> tuple[str, 
             return "senior_review", "sonnet"
         if kind == "broad_review" or risk == "medium" or signals["context_size"] >= 20000:
             return "broad_review", "gemini_high" if risk == "medium" or complexity != "low" else "gemini_medium"
-        return "self_review", "luna" if complexity == "low" else "sol"
+        return "senior_review", policy["final_review"]["ordinary_model"]
     if kind == "qa":
         return "qa", "gemini_high" if complexity in {"high", "very_high"} or risk != "low" else "gemini_medium"
     if kind == "arbiter":
-        return "arbiter", "sol"
+        return "arbiter", policy["final_review"]["critical_model" if risk == "critical" else "ordinary_model"]
     role = "planner" if kind in {"plan", "architecture"} else "explorer" if kind in {"explore", "analyze", "summarize"} else "manager" if kind == "manager" else "release" if kind == "release" else "developer"
     model = policy["MODEL_ROUTING"]["manager"] if role == "manager" else policy["MODEL_ROUTING"]["engineering"][signals["engineering_profile"]]["model"]
     return role, model
 
 
+def claude_cli_model(model: str, runtime: dict, policy: dict) -> str | None:
+    """Only a completed, model-reporting CLI probe enables this independent transport."""
+    entry = policy.get("claude_cli", {}).get("models", {}).get(model)
+    state = runtime.get("claude_cli") or {}
+    observed = state.get("models", {}).get(model)
+    if (entry and policy["claude_cli"].get("enabled") is True and state.get("available") is True
+            and model not in state.get("attempted_models", [])
+            and re.fullmatch(entry["observed_pattern"], str(observed), re.I)):
+        return observed
+    return None
+
+
+def requires_claude_cli(model: str, runtime: dict, policy: dict) -> bool:
+    return bool(model in policy.get("claude_cli", {}).get("models", {}) and (
+        runtime.get("agy_available") is False or runtime.get("agy_failure_category")
+        or runtime.get("quota", {}).get("claude") == 0
+        or (runtime.get("agy_available") is True and model not in runtime.get("agy_models", {}))
+        or runtime.get("models", {}).get(model, {}).get("failure")
+        or runtime.get("models", {}).get(model, {}).get("available") is False
+        or runtime.get("models", {}).get(model, {}).get("quota_remaining") == 0
+        or model in runtime.get("attempted_models", [])))
+
+
+def cli_discovery_needed(model: str, runtime: dict, policy: dict) -> bool:
+    state = runtime.get("claude_cli") or {}
+    return bool(policy.get("claude_cli", {}).get("enabled") is True
+                and requires_claude_cli(model, runtime, policy)
+                and (state.get("available") is None
+                     or (state.get("available") is True and model not in state.get("models", {}))))
+
+
+def use_claude_cli(model: str, runtime: dict, policy: dict) -> bool:
+    # AGY and the subscription CLI have separate quota and attempt state.
+    return bool(claude_cli_model(model, runtime, policy) and requires_claude_cli(model, runtime, policy))
+
+
 def unavailable(model: str, runtime: dict[str, Any], policy: dict[str, Any]) -> str | None:
+    if cli_discovery_needed(model, runtime, policy):
+        return "claude_cli_discovery_required"
+    if use_claude_cli(model, runtime, policy):
+        return None
     entry = policy["models"][model]
     provider = entry["provider"]
     # 相同 CLI slug 共用失敗狀態，不能透過舊角色名稱再次呼叫。
@@ -242,8 +282,10 @@ def unavailable(model: str, runtime: dict[str, Any], policy: dict[str, Any]) -> 
         if status.get("failure"):
             return choice(status["failure"], set(policy["fallback_reasons"]), "failure")
     if provider != "codex":
-        if runtime.get("agy_available") is not True:
+        if runtime.get("agy_available") is False:
             return "unavailable"
+        if runtime.get("agy_available") is not True:
+            return "discovery_required"
         slug = runtime.get("agy_models", {}).get(model)
         if not isinstance(slug, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]{1,100}", slug):
             return "model_unavailable"
@@ -265,10 +307,13 @@ def resolve_model(role: str, selected: str, runtime: dict[str, Any], policy: dic
     events = []
     attempted_slugs = {policy["models"][key].get("slug") for key in attempted} - {None}
     for model in [selected, *fallback_candidates(role, selected, policy)]:
-        repeated = model in attempted or policy["models"][model].get("slug") in attempted_slugs
-        reason = "repeated_failure" if repeated else unavailable(model, runtime, policy)
+        repeated = (model in attempted or policy["models"][model].get("slug") in attempted_slugs) and not use_claude_cli(model, runtime, policy)
+        reason = "claude_cli_discovery_required" if cli_discovery_needed(model, runtime, policy) else "repeated_failure" if repeated else unavailable(model, runtime, policy)
         if reason:
             events.append({"model": model, "reason": reason})
+            # Unknown is a request to inspect the provider, never failure evidence.
+            if reason in {"discovery_required", "claude_cli_discovery_required"}:
+                return None, events
         else:
             return model, events
     return None, events
@@ -293,16 +338,19 @@ def recommendation(role: str, model: str, signals: dict, runtime: dict, policy: 
         allowed = runtime.get("supported_efforts", {}).get(model, policy["codex_efforts"][model])
         if effort not in allowed:
             raise ValueError("UNSUPPORTED_MODEL_EFFORT")
+    cli = use_claude_cli(model, runtime, policy)
+    if cli:
+        effort = policy["claude_cli"]["effort"]
     return {"role": role, "model_key": model,
-            "model": entry.get("slug") or runtime["agy_models"][model],
-            "provider": "native_agent" if entry["provider"] == "codex" else "agy_wrapper",
+            "model": claude_cli_model(model, runtime, policy) if cli else entry.get("slug") or runtime["agy_models"][model],
+            "provider": "claude_cli" if cli else "native_agent" if entry["provider"] == "codex" else "agy_wrapper",
             "reasoning_effort": effort,
             "effort_floor": effort_floor,
             "effort_reason": ("engineering_profile:" + signals["engineering_profile"]
                               if effort in {"xhigh", "max"} and engineering else None),
             "sandbox_mode": "workspace-write" if role == "developer" else "read-only",
-            "execution": "native_agent_handoff_only" if entry["provider"] == "codex" else "agy_readonly",
-            "candidate_findings_only": entry["provider"] == "gemini",
+            "execution": "claude_cli_readonly" if cli else "native_agent_handoff_only" if entry["provider"] == "codex" else "agy_readonly",
+            "candidate_findings_only": role in {"broad_review", "qa"},
             "may_spawn": False}
 
 
@@ -335,9 +383,7 @@ def route(task: dict[str, Any], runtime: dict[str, Any] | None = None, team: str
     if task.get("hard_team_cap", False) not in (True, False):
         raise ValueError("Invalid hard_team_cap")
     role, selected = select_route(signals, policy)
-    if role == "arbiter" and astra_reason is None:
-        return {"status": "ASTRA_REASON_REQUIRED", "execution": "none"}
-    if astra_reason is not None and role in {"developer", "planner", "arbiter"}:
+    if astra_reason is not None and role in {"developer", "planner"}:
         selected = "astra"
         # 相容角色不是能力升級；已證明 Sol 不足時，不把同一模型當作替代。
         if (astra_reason == "sol_insufficient"
@@ -383,6 +429,18 @@ def route(task: dict[str, Any], runtime: dict[str, Any] | None = None, team: str
               "required_checks": task.get("required_checks", []),
               "requested": {"model_key": selected, "effort": task.get("reasoning_effort", "auto"), "speed": "standard"},
               "observed": {"model": "unknown", "effort": "unknown", "source": "not_executed"}}
+    result["provider_availability"] = ("NOT_CHECKED" if any(e["reason"] in {"discovery_required", "claude_cli_discovery_required"} for e in events)
+                                       else "AVAILABLE" if resolved and use_claude_cli(resolved, runtime, policy)
+                                       else "CALL_FAILED" if runtime.get("agy_failure_category")
+                                       else "UNAVAILABLE" if not resolved else "AVAILABLE")
+    result["provider_failure_category"] = runtime.get("agy_failure_category")
+    result["review_scope_files"] = bounded_review_scope(
+        task.get("snapshot_files") or signals["changed_files"],
+        task.get("review_changed_files", task.get("snapshot_files") or signals["changed_files"]),
+        task.get("review_dependencies", []),
+        task.get("authorized_scope_expansion", []))
+    if not resolved and policy["models"][selected]["provider"] != "codex":
+        result["status"] = "CLI_DISCOVERY_REQUIRED" if any(e["reason"] == "claude_cli_discovery_required" for e in events) else "AGY_DISCOVERY_REQUIRED" if result["provider_availability"] == "NOT_CHECKED" else "REVIEW_BLOCKED"
     if resolved:
         rec = recommendation(role, resolved, signals, runtime, policy)
         requested_effort = task.get("reasoning_effort")
@@ -414,13 +472,14 @@ def route(task: dict[str, Any], runtime: dict[str, Any] | None = None, team: str
     # Review stages are requirements, never automatic agent spawns. No recursive route calls.
     if signals["task_type"] not in {"manager", "arbiter"}:
         risk = signals["risk"]
-        stages = [("critical_review", "opus")] if risk == "critical" else [("senior_review", "sonnet")] if risk == "high" else []
+        final = policy["final_review"]
+        stages = [("critical_review", final["critical_model"])] if risk == "critical" else [("senior_review", final["ordinary_model"])] if (risk in {"medium", "high"} or (role == "developer" and selected == "sol")) else []
         if signals["task_type"] in REVIEW_TASKS:
-            stages = [(r, m) for r, m in stages if r != role and risk == "high"]
+            stages = [(r, m) for r, m in stages if r != role and risk in {"medium", "high"}]
         for review_role, review_model in stages:
             chosen, failures = resolve_model(review_role, review_model, runtime, policy)
             stage = {"role": review_role, "required": True, "fallback_events": failures,
-                     "status": "planned" if chosen else "NO_CAPABLE_MODEL"}
+                     "status": "planned" if chosen else "CLI_DISCOVERY_REQUIRED" if any(e["reason"] == "claude_cli_discovery_required" for e in failures) else "AGY_DISCOVERY_REQUIRED" if any(e["reason"] == "discovery_required" for e in failures) else "REVIEW_BLOCKED"}
             if chosen:
                 stage.update(recommendation(review_role, chosen, signals, runtime, policy))
                 if chosen == "astra":
@@ -431,7 +490,9 @@ def route(task: dict[str, Any], runtime: dict[str, Any] | None = None, team: str
                 if failures:
                     add_escalation_reason("fallback")
             else:
-                result["status"] = "REVIEW_BLOCKED"
+                result["review_status"] = stage["status"]
+                if role not in {"developer", "planner", "explorer", "release", "manager"}:
+                    result["status"] = stage["status"]
             result["review_plan"].append(stage)
     if task.get("hard_team_cap", False) and team != "auto" and TEAMS.index(result["team"]) > TEAMS.index(team):
         result["status"] = "TEAM_CAP_BLOCKED"
@@ -506,29 +567,68 @@ def assess_acceptance(decision: dict[str, Any], evidence: dict[str, Any],
         if not matching:
             blockers.append(f"required_check_unverified:{name}")
     risk = decision.get("signals", {}).get("risk")
-    if risk in {"high", "critical"}:
+    if risk in {"high", "critical"} or any(s.get("required") for s in decision.get("review_plan", [])) or decision.get("role") in {"senior_review", "critical_review", "arbiter"}:
         review = evidence.get("review", {})
         required_stage = next((stage for stage in decision.get("review_plan", [])
                                if stage.get("required") is True), None)
-        if required_stage is None and decision.get("role") in {"senior_review", "critical_review"}:
+        if required_stage is None and decision.get("role") in {"senior_review", "critical_review", "arbiter"}:
             required_stage = decision
         if (not isinstance(review, dict) or review.get("revision") != revision
                 or review.get("status") != "PASS" or review.get("independent") is not True
-                or review.get("source") not in {"agy_wrapper", "native_runner", "desktop_native"}
+                or review.get("source") not in {"agy_wrapper", "claude_cli", "native_runner", "desktop_native"}
                 or required_stage is None
+                or required_stage.get("status") not in {None, "planned"}
                 or review.get("role") != required_stage.get("role")
                 or review.get("model") != required_stage.get("model")
                 or not record_matches(review, "review", ("revision", "status", "independent", "source", "role", "model"))):
             blockers.append("independent_review_unverified")
+        policy = load_policy()
+        qualified = [policy["final_review"]["critical_model"]] if risk == "critical" else [policy["final_review"]["ordinary_model"], *policy["final_review"]["noncritical_fallback"]]
+        review_model = review.get("model", "") if isinstance(review, dict) else ""
+        cli_review = isinstance(review, dict) and review.get("source") == "claude_cli"
+        cli_qualified = cli_review and review.get("observed_model") == review_model and record_matches(
+            review, "review", ("revision", "status", "independent", "source", "role", "model", "observed_model")) and any(
+            key in policy.get("claude_cli", {}).get("models", {})
+            and re.fullmatch(policy["claude_cli"]["models"][key]["observed_pattern"], str(review_model), re.I)
+            for key in qualified)
+        agy_qualified = not cli_review and any(
+            re.fullmatch(policy["models"][key].get("discovery_pattern", ""), str(review_model), re.I) for key in qualified)
+        if not cli_qualified and not agy_qualified:
+            blockers.append("final_reviewer_not_qualified")
     for finding in evidence.get("findings", []):
-        if not isinstance(finding, dict) or finding.get("disposition") not in {"confirmed", "rejected_with_reason", "unresolved"}:
+        if not isinstance(finding, dict) or finding.get("severity") not in {"BLOCKER", "MAJOR", "MINOR", "NIT"} or finding.get("disposition") not in {"confirmed", "rejected_with_reason", "unresolved", "resolved"}:
             blockers.append("finding_unresolved")
-        elif finding["disposition"] == "unresolved" and finding.get("severity") in {"BLOCKER", "MAJOR"}:
+        elif finding["disposition"] in {"unresolved", "confirmed"} and finding.get("severity") in {"BLOCKER", "MAJOR"}:
             blockers.append("finding_unresolved")
         elif finding["disposition"] == "rejected_with_reason" and not finding.get("reason"):
             blockers.append("finding_without_rejection_reason")
+        elif finding["disposition"] == "resolved" and (not isinstance(finding.get("resolution_evidence"), list) or not any(
+                isinstance(item, dict) and item.get("revision") == revision and item.get("status") == "PASS"
+                and item.get("exit_code") == 0 and item.get("source") == "validation_runner"
+                and has_validation_receipt(item) for item in finding["resolution_evidence"])):
+            blockers.append("finding_resolution_unverified")
     return {"status": "READY" if not blockers else "BLOCKED", "blockers": sorted(set(blockers)),
             "revision": revision}
+
+
+def bounded_review_scope(snapshot_files: list[str], changed_files: list[str],
+                         affected_dependencies: list[str], authorized_expansion: list[str] | None = None) -> list[str]:
+    """A repair review reads only changed source and declared dependencies.
+
+    Expansion must be explicit; returning this scope does not reuse stale receipts.
+    """
+    groups = [snapshot_files, changed_files, affected_dependencies, authorized_expansion or []]
+    if any(not isinstance(group, list) or any(not isinstance(p, str) or not p for p in group) for group in groups):
+        raise ValueError("Invalid review scope")
+    for name in set(p for group in groups for p in group):
+        parts = name.replace("\\", "/").split("/")
+        if Path(name).is_absolute() or name.startswith(("/", "\\")) or re.match(r"^[a-zA-Z]:", name) or any(
+                part == ".." or part.startswith(".env") or part in {".git", "node_modules"} for part in parts):
+            raise ValueError("Invalid review scope path")
+    requested = set(changed_files + affected_dependencies)
+    if not requested <= set(snapshot_files + (authorized_expansion or [])):
+        raise ValueError("SCOPE_EXPANSION_REQUIRES_AUTHORIZATION")
+    return sorted(requested)
 
 
 def discover_slugs(output: str, policy: dict | None = None) -> dict[str, str]:
