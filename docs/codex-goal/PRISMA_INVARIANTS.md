@@ -11,10 +11,8 @@
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 141 |
-| Migration directories | 95 |
-| Prisma models | 129 |
-| Migration directories | 88 |
+| Prisma models | 145 |
+| Migration directories | 99 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -258,6 +256,21 @@ F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_af
 
 F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。
 
+## 2026-10-07 通知資料層候選
+
+新增 `LearnerNotificationPreference`、`LearnerNotificationDelivery`、`LearnerNotificationVerification` 與前向 `20261007010000_learner_notifications`。129 models、86 migrations；owned disposable PostgreSQL 全部套用成功，10 項回歸通過，包含匿名角色實際 RLS 讀取隔離/寫入拒絕、跨租戶 composite FK、CAS、退款後取消同意與無權益 opt-in 拒絕。驗證聯絡方式、實際渠道、UI、獨立審查與 canonical gate 尚未完成；不可宣稱 READY。
+
+新增前向 `20261007020000_learner_verification_delivery`，驗證碼僅加密保存；歷史 challenge 無可恢復 token，保持 suppressed。新增 status/attempt/claim/payload CHECK 與 due index；129 models、87 migrations。整批仍 NOT_READY。
+
+新增 `LearnerNotificationSourceEvent` 與前向 `20261007030000_learner_notification_source_events`；domain mutation 同 transaction 寫 encrypted source payload，composite tenant/product FK、unique event identity、private default-deny RLS；consumer bounded preference cursor 與 revision CAS。130 models/88 migrations，整批仍 NOT_READY。
+
+新增前向 `20261007040000_learner_notification_source_schedule`：`LearnerNotificationSourceEvent.availableAt` 與 occurredAt/consent cutoff 分離；既有來源 backfill 為 occurredAt，保留歷史時間與 payload，新增 tenant/completed/availableAt/id 索引。130 models/89 migrations；owned disposable PostgreSQL 已驗證實際 forward SQL/backfill、未到期不展開與 immediate default。學員明確確認的 consultation reminder 沿用既有 source outbox，發送前鎖定目前 booking/project/course binding；功能仍 NOT_READY，未宣稱 Production 或真實渠道送達。
+
+## 本次通知與社群整合候選
+
+接入來源 `efee6e262685402b8c6efd13b2fe91091b49c70c` 的 `CourseCommunityPost`、`CourseCommunityReply`、`CourseCommunityReaction` 與唯一 `20261006070000_course_community` migration；保留其 SQL 原文，不新增等價 migration。討論回覆與通知來源同 transaction，送出前鎖定 exact parent/reply 與原作者；整合候選仍待新測試、獨立 review 與 acceptance。
+
+
 本次社群／夥伴入口整合候選有129models與86migrations；新整合驗證尚未完成，舊收據不代表本次PASS。
 Q2 本輪前向新增 `20261006140000_subscription_refund_entitlement_state`；既有126models不變，VendorUsageLimit新增active/revoked權限狀態。初次86 migration完整套用及51 PostgreSQL回歸PASS；之後擴充native退款backfill至byo訂閱快照，需重新驗證新revision。歷史migration/checksum保持原樣。
 
@@ -285,3 +298,7 @@ Commission integration with delivered community a5964d83: 136 models and 89 cano
 Current integrated inventory:
 ## Private messaging + delivered community/PWA candidate 20261008
 Current inventory: 130 models and 89 forward migrations, including `20261006070000_course_community` and `20261007110000_live_private_chat_messages`. Preserve every historical SQL/checksum and fixed staging replay window.
+
+## 2026-10-08 notification / delivered-main integration
+
+Current source inventory: 145 models and 99 forward migrations. Previous checkpoints retained in Git and historical sections: notification 133/92; delivered main 141/95; earlier portal 129/88. Current schema validate passed; complete disposable DB/browser acceptance remains pending. No historical migration checksum changed.

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { recordLearnerNotificationSourceEvent } from "./learner-notification-source-events";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { authorizedCourseAccess } from "@/lib/student-course-learning";
@@ -76,9 +77,11 @@ export async function mutateCourseCommunity(db: Database, scope: StudentPortalSc
   return serializable(db, async (tx) => {
     if (!await authorizedCourseAccess(tx, scope, courseId)) return null;
     const identity = { vendorId: scope.vendorId, productId: courseId };
+    let parent: { id: string; customerKeyHash: string } | null = null;
     if (input.operation !== "post") {
-      const post = await tx.courseCommunityPost.findFirst({ where: { ...identity, id: input.postId, hiddenAt: null }, select: { id: true } });
+      const post = await tx.courseCommunityPost.findFirst({ where: { ...identity, id: input.postId, hiddenAt: null }, select: { id: true, customerKeyHash: true } });
       if (!post) return null;
+      parent = post;
     }
     if (input.operation === "reaction") {
       const key = { ...identity, postId: input.postId, customerKeyHash: scope.customerKeyHash };
@@ -98,6 +101,18 @@ export async function mutateCourseCommunity(db: Database, scope: StudentPortalSc
     }
     const reply = await tx.courseCommunityReply.upsert({ where: { vendorId_productId_id: key }, create: { ...data, postId: input.postId }, update: {}, select: { ...publicReply, postId: true, hiddenAt: true } });
     if (reply.body !== input.body || reply.authorName !== input.authorName || reply.postId !== input.postId || reply.hiddenAt) throw new CommunityConflict("Request key already used");
+    // Source and reply commit together; self replies are quiet and retries reuse
+    // the accepted reply identity without copying private discussion text.
+    if (parent && parent.customerKeyHash !== scope.customerKeyHash) {
+      const vendor = await tx.vendor.findUniqueOrThrow({ where: { id: scope.vendorId }, select: { slug: true } });
+      await recordLearnerNotificationSourceEvent(tx, {
+        vendorId: scope.vendorId, productId: courseId, event: "discussion_reply",
+        eventIdentity: reply.id, audienceCustomerKeyHash: parent.customerKeyHash, occurredAt: reply.createdAt,
+        message: { title: "課程討論有新回覆", body: "你的討論收到新回覆，登入課程查看。",
+          path: `/portal/${encodeURIComponent(vendor.slug)}/learn/${encodeURIComponent(courseId)}/community/${encodeURIComponent(parent.id)}`,
+          discussionReply: { postId: parent.id, replyId: reply.id, customerKeyHash: parent.customerKeyHash } },
+      });
+    }
     return { id: reply.id };
   });
 }

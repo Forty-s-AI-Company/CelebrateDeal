@@ -40,7 +40,7 @@ type ConsultationEvent = {
   intakeFormFields: unknown;
   isActive: boolean;
   projectId?: string | null;
-  project?: { status: string; publishedAt: Date | null } | null;
+  salesProject?: { status: string; publishedAt: Date | null } | null;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -380,9 +380,9 @@ export async function getConsultationSlots(eventId: string, date: string) {
   const database = db();
   const event = await database.consultationEvent.findFirst({
     where: { id: id.data, isActive: true },
-    select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, timezone: true, projectId: true, project: { select: { status: true, publishedAt: true } } },
+    select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, timezone: true, projectId: true, salesProject: { select: { status: true, publishedAt: true } } },
   });
-  if (!event || (event.projectId && (event.project?.status !== "published" || !event.project.publishedAt))) return [];
+  if (!event || (event.projectId && (event.salesProject?.status !== "published" || !event.salesProject.publishedAt))) return [];
   const ranges = eventDayRanges(date, event.timezone);
   if (!ranges) return [];
   const bookings = await bookingRecordsForDay(database, event, ranges.actual);
@@ -447,10 +447,10 @@ export async function reserveConsultationBooking(
     return await database.$transaction(async (transaction) => {
       const event = await transaction.consultationEvent.findFirst({
         where: { id: input.eventId, isActive: true },
-        select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, timezone: true, intakeFormFields: true, isActive: true, projectId: true, project: { select: { status: true, publishedAt: true } } },
+        select: { id: true, vendorId: true, durationMinutes: true, bufferMinutes: true, dailyLimit: true, weeklySchedule: true, timezone: true, intakeFormFields: true, isActive: true, projectId: true, salesProject: { select: { status: true, publishedAt: true } } },
       });
       if (!event) return { status: "unavailable" };
-      if (event.projectId && (event.project?.status !== "published" || !event.project.publishedAt)) return { status: "unavailable" };
+      if (event.projectId && (event.salesProject?.status !== "published" || !event.salesProject.publishedAt)) return { status: "unavailable" };
 
       // This lock is event-wide rather than start-time-only. It therefore also
       // protects buffer-overlap and daily-limit checks from a concurrent POST.

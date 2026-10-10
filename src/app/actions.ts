@@ -52,6 +52,8 @@ import {
   supersedeLiveNotificationDeliveriesForLifecycle,
 } from "@/lib/live-notification-delivery";
 import { captureOperationalError } from "@/lib/monitoring";
+import { recordLearnerLiveStartedSources } from "@/lib/learner-live-notifications";
+import { replaceLiveProductBindings } from "@/lib/live-product-bindings";
 import { dispatchLiveStartedLineNotificationsSafely } from "@/lib/line-live-started";
 import { assertPaymentMethodReferenceForQuota, PaymentMethodReferenceRequiredError } from "@/lib/payment-method-reference";
 import type { InteractionRoleActionState } from "@/lib/interaction-role-action-state";
@@ -794,11 +796,9 @@ async function commitLiveDraft(input: {
           triggers: ["before_live", "during_live"],
         });
       }
-      await tx.liveProduct.deleteMany({ where: { liveId: input.liveId! } });
-      for (const [index, productId] of input.productIds.entries()) {
-        await tx.liveProduct.create({
-          data: { vendorId: input.vendorId, liveId: input.liveId!, productId, sortOrder: index + 1, isPinned: index === 0 },
-        });
+      await replaceLiveProductBindings(tx, { vendorId: input.vendorId, liveId: input.liveId!, productIds: input.productIds });
+      if (currentLive.status === "scheduled" && input.data.status === "live") {
+        await recordLearnerLiveStartedSources(tx, { vendorId: input.vendorId, liveId: input.liveId!, startedAt: lifecycleData.startedAt ?? currentLive.startedAt ?? transitionAt });
       }
       const notificationReconciliation = await reconcileLiveNotificationRules(tx, {
         vendorId: input.vendorId,

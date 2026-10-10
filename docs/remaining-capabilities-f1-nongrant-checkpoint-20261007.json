@@ -1,0 +1,38 @@
+{
+  "task_id": "f1-learner-notifications",
+  "status": "IMPLEMENTED_LOCAL_DB_STATIC_UNIT_PASS_BROWSER_AND_REVIEW_RUNNING",
+  "migrations": 90,
+  "database_tests": 80,
+  "unit_tests": 50,
+  "unit_files": 5,
+  "typecheck": "PASS",
+  "lint": "PASS",
+  "browser_session": 75543,
+  "browser_expected": 7,
+  "independent_review": "/root/learner_notifications_final_review",
+  "review_dispatches": 4,
+  "dispatch_limit": 4,
+  "requested_model": "gpt-6-astra",
+  "requested_effort": "high",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "fallback_reason": "existing AGY wrapper BLOCKED_SENSITIVE_INPUT; canonical cli_failure native fallback",
+  "canonical_ready": false,
+  "delivered": false,
+  "production_operation": false,
+  "database_receipt": "docs/remaining-capabilities-f1-nongrant-db-pass-20261007.json",
+  "payment_browser_receipt": "docs/remaining-capabilities-f1-exact-payment-browser-pass-20261007.json",
+  "old_browser_scope": "5 journeys before physical/service changes; historical only",
+  "failures_preserved": [
+    "docs/remaining-capabilities-f1-exact-payment-first-failure-20261007.json",
+    "docs/remaining-capabilities-f1-nongrant-first-failure-20261007.json"
+  ],
+  "contract": "digital/course active paid grant; physical/service owned fully-paid unrefunded order; encrypted payment source exact original order with no replacement; existing withdrawal preserved",
+  "remaining": [
+    "fresh 7 browser outcome",
+    "independent findings/fixes",
+    "latest master integration and affected validation",
+    "approved external provider evidence",
+    "canonical gate exact-head CI and protected delivery"
+  ]
+}

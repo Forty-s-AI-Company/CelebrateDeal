@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  processDueLearnerNotifications: vi.fn(),
   processDueEmailDeliveries: vi.fn(),
   processDuePostLiveFollowups: vi.fn(),
   processLiveReminderReconciliationJobs: vi.fn(),
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   captureOperationalError: vi.fn(),
 }));
 
+vi.mock("@/lib/learner-notification-job", () => ({ processDueLearnerNotifications: mocks.processDueLearnerNotifications }));
 vi.mock("@/lib/email-delivery", () => ({
   processDueEmailDeliveries: mocks.processDueEmailDeliveries,
   processDuePostLiveFollowups: mocks.processDuePostLiveFollowups,
@@ -30,6 +32,7 @@ import { GET, POST } from "./route";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.processDueLearnerNotifications.mockResolvedValue([]);
   vi.stubEnv("JOB_SECRET", "g7-07-job-secret");
   vi.stubEnv("CRON_SECRET", "g7-21-cron-secret");
   mocks.processLiveReminderReconciliationJobs.mockResolvedValue([]);
@@ -56,6 +59,7 @@ describe("POST /api/jobs/email-deliveries", () => {
       const response = await POST(request(secret));
       expect(response.status).toBe(401);
     }
+    expect(mocks.processDueLearnerNotifications).not.toHaveBeenCalled();
     expect(mocks.processDueEmailDeliveries).not.toHaveBeenCalled();
     expect(mocks.processDuePostLiveFollowups).not.toHaveBeenCalled();
     expect(mocks.processLiveReminderReconciliationJobs).not.toHaveBeenCalled();
@@ -102,6 +106,8 @@ describe("POST /api/jobs/email-deliveries", () => {
       reconciliationResults: [{ status: "completed" }, { status: "unknown" }],
       processed: 2,
       results: [{ status: "sent" }, { status: "unknown" }],
+      learnerNotificationsProcessed: 0,
+      learnerNotificationResults: [],
       lineMaterialized: 0,
       lineProcessed: 0,
       lineResults: [],
@@ -162,6 +168,7 @@ describe("GET /api/jobs/email-deliveries", () => {
       const response = await GET(request(secret, "GET"));
       expect(response.status).toBe(401);
     }
+    expect(mocks.processDueLearnerNotifications).not.toHaveBeenCalled();
     expect(mocks.processDueEmailDeliveries).not.toHaveBeenCalled();
 
     const response = await GET(request("g7-21-cron-secret", "GET"));
@@ -174,6 +181,15 @@ describe("GET /api/jobs/email-deliveries", () => {
     const response = await GET(request("g7-21-cron-secret", "GET"));
 
     expect(response.status).toBe(401);
+    expect(mocks.processDueLearnerNotifications).not.toHaveBeenCalled();
     expect(mocks.processDueEmailDeliveries).not.toHaveBeenCalled();
   });
+});
+
+it("notification result projection strips identifiers and bounds the output", async () => {
+ mocks.processDueLearnerNotifications.mockResolvedValue(Array.from({length:25},()=>({status:"indeterminate",recipient:"synthetic-private-recipient",claimToken:"synthetic-private-token"})));
+ const response=await POST(request("g7-07-job-secret"));const body=await response.json();
+ expect(body.learnerNotificationsProcessed).toBe(25);expect(body.learnerNotificationResults).toHaveLength(20);
+ expect(body.learnerNotificationResults.every((result:unknown)=>JSON.stringify(result)==='{"status":"indeterminate"}')).toBe(true);
+ expect(JSON.stringify(body)).not.toContain("synthetic-private");
 });
