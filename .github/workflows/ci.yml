@@ -203,6 +203,8 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
+      - name: Tracking authoritative events database and browser gate
+        run: node scripts/tracking-settings-disposable-qa.mjs --browser
       - name: Referral sharing database and browser gate
         run: node scripts/affiliate-portal-browser-qa.mjs --browser
 

@@ -1,0 +1,31 @@
+{
+  "task_id": "f2-server-tracking-webhooks",
+  "at": "2026-10-07T12:51:03.710215+00:00",
+  "head": "c72b5089a0a87e63ebb5cea6a09fdb28deb2b93d",
+  "dirty_source_sha256": {
+    "src/lib/tracking-delivery-policy.ts": "ac44a008a61abb7749898fd824231f16eaa68576b1e69331a07f2fec8ae86ce4",
+    "src/lib/tracking-delivery-policy.test.ts": "25236a820fb18a0b441a5edf8bbcb28dba96039d6b20a8ac661f18cbd05e0444",
+    "src/lib/tracking-meta-transport.ts": "d4afa670ef758478dfabb1eecc10d6a7b92df3592a5b320e211b7778dc20cfaa",
+    "src/lib/tracking-meta-transport.test.ts": "d865ed4887c66320264e571746fb194b199449de2853408a309041ed3b604803"
+  },
+  "tests": {
+    "vitest": {
+      "passed": 26,
+      "skipped": 0
+    },
+    "scoped_lint": "PASS",
+    "typecheck": "PASS"
+  },
+  "provider_http": "SIMULATED_ONLY",
+  "provider_network_attempted": false,
+  "independent_review": "NOT_RUN",
+  "canonical_acceptance": "NOT_READY",
+  "remaining": [
+    "durable authoritative event outbox",
+    "worker integration and tenant/concurrency/rollback DB regressions",
+    "actual settings and event browser journeys",
+    "non-production provider delivery proof",
+    "independent review and canonical acceptance",
+    "exact-head CI and protected PR delivery"
+  ]
+}

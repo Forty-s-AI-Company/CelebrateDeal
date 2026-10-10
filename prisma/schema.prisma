@@ -85,6 +85,7 @@ model Vendor {
 
   members                          VendorMember[]
   tracking                         TrackingSetting?
+  trackingDeliveries               TrackingDelivery[]
   videos                           Video[]
   products                         Product[]
   automationRules                  AutomationRule[]
@@ -322,6 +323,9 @@ model TrackingSetting {
   id                  String   @id @default(cuid())
   vendorId            String   @unique
   facebookPixelId     String?
+  facebookAccessTokenEncrypted String?
+  facebookTestEventCode String?
+  credentialRevision Int @default(0)
   tiktokPixelId       String?
   googleTagManagerId  String?
   enablePageView      Boolean  @default(true)
@@ -331,6 +335,47 @@ model TrackingSetting {
   updatedAt           DateTime @updatedAt
 
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+}
+
+/// Four-event server outbox. Tokens and plaintext browser/customer context are never stored here.
+model TrackingDelivery {
+  id                    String   @id @default(cuid())
+  vendorId              String
+  orderId               String?
+  eventName             String   @default("Purchase")
+  formId                String?
+  submissionId          String?
+  analyticsEventId      String?
+  bookingId             String?
+  contextEncrypted      String?
+  eventId               String
+  credentialRevision    Int
+  pixelId               String
+  testEventCode         String?
+  status                String   @default("queued")
+  attemptCount          Int      @default(0)
+  nextAttemptAt         DateTime @default(now())
+  leaseToken            String?
+  leaseExpiresAt        DateTime?
+  acceptedAt            DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  order CommerceOrder? @relation(fields: [vendorId, orderId], references: [vendorId, id], onDelete: Cascade)
+
+  form RegistrationForm? @relation(fields: [vendorId, formId], references: [vendorId, id], onDelete: Cascade)
+  submission FormSubmission? @relation(fields: [formId, submissionId], references: [formId, id], onDelete: Cascade)
+  analyticsEvent AnalyticsEvent? @relation(fields: [vendorId, analyticsEventId], references: [vendorId, id], onDelete: Cascade)
+  booking ConsultationBooking? @relation(fields: [vendorId, bookingId], references: [vendorId, id], onDelete: Cascade)
+
+  @@unique([vendorId, eventId])
+  @@index([status, nextAttemptAt])
+  @@index([vendorId, status, nextAttemptAt])
+  @@index([formId, submissionId])
+  @@index([vendorId, analyticsEventId])
+  @@index([vendorId, bookingId])
+  @@index([vendorId, orderId])
 }
 
 model Video {
@@ -529,6 +574,8 @@ model RegistrationForm {
   landingPages         LandingPage[]        @relation("LandingPageDraftForm")
   landingPageVersions  LandingPageVersion[] @relation("LandingPageVersionForm")
 
+  trackingDeliveries TrackingDelivery[]
+
   @@unique([vendorId, id])
   @@index([vendorId, projectId])
 }
@@ -561,7 +608,10 @@ model FormSubmission {
   liveInteractionResponses LiveInteractionResponse[]
   funnelSubmission         FunnelSubmission?
 
+  trackingDeliveries TrackingDelivery[]
+
   @@unique([liveId, id])
+  @@unique([formId, id])
   @@index([formId, verificationStatus, createdAt])
   @@index([liveId, verificationStatus, createdAt])
   @@index([affiliateClickId])
@@ -1058,6 +1108,9 @@ model AnalyticsEvent {
   vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   live   Live?  @relation(fields: [liveId], references: [id], onDelete: SetNull)
 
+  trackingDeliveries TrackingDelivery[]
+
+  @@unique([vendorId, id])
   @@index([eventType, createdAt])
   @@index([liveId, createdAt])
   @@index([vendorId, trustLevel, eventType, createdAt])
@@ -1723,6 +1776,8 @@ model CommerceOrder {
   paidAmountCents             Int                 @default(0)
   refundedAmountCents         Int                 @default(0)
   buyerEncryptedEnvelope      String
+  /// 原始 browser context 在 checkout 捕捉，以 vendor/order 綁定加密。
+  trackingContextEncrypted String?
   buyerMaskedName             String
   buyerMaskedEmail            String
   buyerMaskedPhone            String?
@@ -1747,6 +1802,7 @@ model CommerceOrder {
   buyerSupportOrderGrants   BuyerSupportOrderGrant[]
   deliverySnapshots         CommerceOrderItemDeliverySnapshot[]
   electronicInvoice         ElectronicInvoice?
+  trackingDeliveries        TrackingDelivery[]
 
   merchantAffiliateSnapshot MerchantAffiliateCheckoutSnapshot?
   @@unique([vendorId, id])
@@ -3383,6 +3439,8 @@ model ConsultationBooking {
 
   vendor Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   event  ConsultationEvent @relation(fields: [vendorId, eventId], references: [vendorId, id], onDelete: Cascade)
+
+  trackingDeliveries TrackingDelivery[]
 
   @@unique([vendorId, id])
   @@index([vendorId, eventId, startTime])

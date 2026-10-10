@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import { verifyFormSubmissionVerificationToken } from "@/lib/form-submission-verification";
+import { enqueueAuthoritativeTrackingEvent } from "@/lib/tracking-event-outbox";
+import type { TrackingBrowserContext } from "@/lib/tracking-browser-context";
 
 export type FormSubmissionVerificationResult =
   | { status: "invalid" }
@@ -67,6 +69,7 @@ export async function verifyFormSubmission(
   db: PrismaClient,
   token: string,
   now = new Date(),
+  trackingContext?: TrackingBrowserContext | null,
 ): Promise<FormSubmissionVerificationResult> {
   const verifiedToken = verifyFormSubmissionVerificationToken(token, now);
   if (!verifiedToken) return { status: "invalid" };
@@ -177,6 +180,10 @@ export async function verifyFormSubmission(
           }
         : { status: "invalid" as const };
     }
+
+    if (trackingContext) await enqueueAuthoritativeTrackingEvent(tx, {
+      vendorId: submission.form.vendorId, eventName: "Lead", sourceId: submission.id, context: trackingContext,
+    });
 
     if (submission.liveId) {
       await tx.analyticsEvent.create({

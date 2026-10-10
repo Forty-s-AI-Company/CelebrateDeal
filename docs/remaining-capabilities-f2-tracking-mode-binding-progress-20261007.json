@@ -1,0 +1,35 @@
+{
+  "task_id": "f2-server-tracking-webhooks",
+  "head": "d5dcae59b1e784a79bceb7144a5d9c3054bd4de2",
+  "candidate_has_uncommitted_mode_binding_changes": true,
+  "unit": {
+    "total": 31,
+    "passed": 31,
+    "skipped": 0
+  },
+  "typescript": "PASS",
+  "scoped_lint": "PASS",
+  "first_db_attempt": {
+    "migrations": 90,
+    "total": 39,
+    "passed": 38,
+    "failed": 1,
+    "skipped": 0,
+    "cause": "New synthetic fixture passed token:null; schema accepts omitted token to preserve existing encrypted credential. Corrected without changing assertions."
+  },
+  "latest_full_db_browser_run": {
+    "session_id": 29571,
+    "status": "RUNNING"
+  },
+  "provider_test_pixel": "USER_CONFIRMED_NOT_CONFIGURED",
+  "provider_network_attempted": false,
+  "acceptance": "NOT_READY",
+  "independent_incremental_review": "PENDING",
+  "dispatch_used": 1,
+  "dispatch_limit": 4,
+  "exact_pushed_head_ci": {
+    "run_id": 37646572557,
+    "status": "IN_PROGRESS"
+  },
+  "production_execution": "NOT_PERFORMED"
+}

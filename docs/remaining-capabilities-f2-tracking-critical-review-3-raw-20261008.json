@@ -1,0 +1,27 @@
+{
+  "summary": "第 3/4 次唯讀複審完成。53 檔審查前後 SHA-256 均符合 revision sha256:198e781453c8c723b7f5593267b1402e3f07f6731341cbc4850599a93f211478。第 2 次兩項 MAJOR 已修妥：四種無效 binding 均在 worker 存取 DB／transport fetch 前拒絕；live Purchase 的 enqueue 與來源重讀均要求 isTestOrder=false。上述結果另以記憶體合成依賴獨立核對，零 DB／網路存取。發現新增 guard 導致綜合 coverage 入口的測試環境回歸。經 root 核准讀取的支援檔前後 hash 相同：vitest.config.ts=ac44fd700f29b0bc76c201359c40756de7101e1d0c297eb99e820e66586b05ee；package.json=34b37857c04888e390a3d4013e62521f38fe62cdc224205ce8b8c2b83b391ffb；scripts/run-combined-coverage.mjs=93af5705c88b52ddc009cf8c50e73906d9b3c1ef25d3c8758c79dec731cbfb5c。未修改來源或執行 coverage／DB。resolved=Astra high，observed model/effort=unknown；仍為 NOT_READY。",
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "file": ".ai-team/reports/server-tracking/critical-review-3-snapshot.json",
+      "area": "real_provider_delivery 驗收項目",
+      "issue": "真實核准非 Production Meta delivery 仍未驗證。",
+      "evidence": "使用者尚未設定 Meta Pixel；現有 provider 行為驗證使用 mocked HTTP，沒有真實 provider acceptance 證據。",
+      "impact": "本機功能與模式隔離測試通過，仍不能證明實際 Pixel、憑證、API binding 和四事件 payload 可完成送達。",
+      "recommended_fix": "保留此 BLOCKER；待核准非 Production Pixel 與平台注入完成後，執行固定範圍 delivery 並保存去識別化證據。",
+      "required_test": "Purchase、Lead、ViewContent、Schedule 的真實非 Production 接受與穩定 event_id 去重證據，不執行真正 Production 傳送。",
+      "confidence": 1
+    },
+    {
+      "severity": "MAJOR",
+      "file": "src/lib/tracking-purchase-outbox.db.test.ts",
+      "area": "beforeEach:12；src/lib/tracking-event-sources.db.test.ts:14",
+      "issue": "DB suites 依賴專用 runner 注入 tracking flags，新增 default-off guard 後會使標準 CI coverage 路徑失敗。",
+      "evidence": "兩套 DB tests 的 beforeEach 都只設定 CSRF_SECRET。只有 tracking-settings-disposable-qa.mjs 注入 Preview／test／live flags。CI 的 npm run test:coverage 則呼叫 run-combined-coverage.mjs；其 selectedCoverageEnvironment 未提供這三項 flags，並執行未限縮選檔的 vitest run --coverage。vitest.config.ts 未排除這兩套 DB tests。因此既有預期 accepted／retried／cancelled 的 worker 案例會先拋出 Tracking execution is disabled。",
+      "impact": "專用 41 DB／5 browser runner 即使通過，正式 push／PR 的綜合 coverage gate 仍會失敗；測試也無法獨立重現其必要環境。",
+      "recommended_fix": "在兩套 DB tests 的 beforeEach 明確 stub 合成 VERCEL_ENV=preview、META_TRACKING_TEST_DELIVERY_ENABLED=true、META_TRACKING_LIVE_DELIVERY_ENABLED=false，沿用 afterEach 還原；保留負向案例自行覆寫環境，不變更 coverage、exclude 或 assertions。",
+      "required_test": "使用綜合 coverage 的合成環境契約執行完整兩套 DB suites，確認不依賴專用 runner flags；再驗證 CI coverage gate，且所有停用／互斥模式的負向案例仍通過。",
+      "confidence": 1
+    }
+  ]
+}
