@@ -33,7 +33,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npx prisma generate
       - name: Validate fixed read-only contract before secrets
-        run: npx vitest run scripts/q1-exact-state-details.test.ts src/lib/staging-qa-finance-bootstrap.test.ts
+        run: npx vitest run scripts/q1-exact-state-details.test.ts scripts/q1-original-retry-audit.test.ts src/lib/staging-qa-finance-bootstrap.test.ts
       - name: Validate CLI startup and sanitized receipts before secrets
         run: node --test scripts/q1-exact-state-details-workflow.test.mjs
       - name: Verify exact deployment lineage before secrets
