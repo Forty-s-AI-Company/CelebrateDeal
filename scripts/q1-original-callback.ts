@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { readExactSyntheticState, EXACT_SOURCE } from "./q1-exact-state-details";
 import { qaFinanceDatabaseUrl, QA_FINANCE_CA_FILE, verifyQaFinanceCertificate } from "../src/lib/staging-qa-finance-bootstrap";
 
-export const CALLBACK_EXECUTION_SOURCE = "f8e73e72e8e1c068c47b67a8bf19a2a75efc20ff";
+export const CALLBACK_EXECUTION_SOURCE = "c78f3dbb1c8a912906767668829dc46039674b23";
 const ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 const statuses = new Set(["PROCESSED", "ALREADY_PROCESSED", "FIXTURE_UNAVAILABLE", "CANDIDATE_AMBIGUOUS", "EVENT_UNAVAILABLE", "RETRY_REJECTED", "RETRY_FAILED"]);
 const failureCodes = new Set(["NONE", "UNKNOWN", "processing_failed"]);
