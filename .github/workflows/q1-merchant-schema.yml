@@ -113,6 +113,3 @@ jobs:
           path: ${{ runner.temp }}/q1-merchant-schema/completion.json
           if-no-files-found: ignore
           retention-days: 7
-
-
-
