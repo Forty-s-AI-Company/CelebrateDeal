@@ -203,6 +203,9 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
+      - name: Q1 original refund proof database isolation
+        run: node scripts/q1-original-refund-proof-disposable-qa.mjs
+
       - name: Referral sharing database and browser gate
         run: node scripts/affiliate-portal-browser-qa.mjs --browser
 

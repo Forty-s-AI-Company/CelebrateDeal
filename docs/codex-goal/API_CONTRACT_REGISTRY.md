@@ -188,6 +188,8 @@
 | `POST /portal/[vendorSlug]/learn/[courseId]/community/data` | 同站、CSRF、有效學員 session、購買權益 | strict action union、24 KiB body、合成 UUID operation identity | Serializable 再驗權益；post/reply 重試冪等，reaction desired state；不含外部渠道 | 泛化拒絕、private no-store；同路徑 unit、9 DB 回歸、實際 browser |
 本輪 Q2 固定非 Production recovery 契約：
 
+- `GET /api/admin/ops/payuni/q1-original-refund-proof`：JOB Bearer、精確部署來源、固定 Preview/Sandbox／資料庫邊界；不接受 caller selector、query 或 body。只讀 catalog-owned 原 Q1 合成交易，分別保留原付款來源 `9acfe8…` 與目前執行來源；要求舊與 schema recovery 標記，以及唯一匹配的已處理 callback。回傳 hashed reference、退款投影與 private no-store；不建立替代付款、不改寫來源、不呼叫付款或退款 provider。
+
 - `POST /api/admin/ops/payuni/q1-original-callback-retry`：JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、目前部署的精確 source SHA；不接受 caller ID、source、金額、query 或 body。只重試 server-owned 原 Q1 合成付款來源 `9acfe8d2dba62430e950cff2c0387841ab91f44b` 的既存已驗證回呼，保留 Serializable CAS、交易 scope 與持久一次性標記；不提交付款或退款。輸出封閉狀態與計數、no-store；實际 PostgreSQL 驗證不代表外部退款 proof 通過。
 
 - `POST /api/admin/ops/payuni/wp4-buyer-callback-retry`：timing-safe JOB Bearer、固定 Preview/Sandbox 或受驗證 disposable loopback、exact source SHA；不接受 caller resource ID、金額或 body。只承接 server-owned 固定合成資源；唯一性、租戶、冪等與交易版本不符時 fail closed。輸出封閉狀態與計數、no-store；同路徑 unit、實際 PostgreSQL 與 owner/buyer browser 驗證。
