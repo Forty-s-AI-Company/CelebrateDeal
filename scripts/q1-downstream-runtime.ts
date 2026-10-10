@@ -26,6 +26,12 @@ export async function fetchQ1Downstream(jobSecret: string, runtimeSource: string
 export async function readQ1DiagnosticFence(db: Pick<PrismaClient, "$transaction">) {
   return db.$transaction(async tx => {
     await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+    return readQ1FenceState(tx);
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 15000 });
+}
+
+/** Shared fixed-state reader; the caller controls read-only mode or DDL locks. */
+export async function readQ1FenceState(tx: Prisma.TransactionClient) {
     const rows = await tx.paymentTransaction.findMany({ where: wp4HistoricalBuyerWhere(Q1_ORIGINAL_SOURCE), take: 2,
       select: { id: true, orderNumber: true, status: true } });
     if (rows.length !== 1 || !rows[0]!.orderNumber) throw new Error("Fixture unavailable.");
@@ -42,7 +48,6 @@ export async function readQ1DiagnosticFence(db: Pick<PrismaClient, "$transaction
     if (marker.length !== 1 || marker[0]!.reserved !== true || events[0]!.retryCount !== 3 || events[0]!.maxRetries !== 5
       || events[0]!.status !== "failed" || payment.status !== "pending") throw new Error("Original state changed.");
     return JSON.stringify({ payment, event: events[0], marker: true });
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 15000 });
 }
 
 export async function main() {
