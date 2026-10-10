@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
-import { createOriginalRefundHandoff, assertOriginalProofMatchesHandoff, ORIGINAL_TRANSACTION_SOURCE } from "./q1-original-refund-handoff.mjs";
+import { createOriginalRefundHandoff, assertOriginalProofMatchesHandoff, originalPaidQueryChecks, originalPaidQueryShape, ORIGINAL_TRANSACTION_SOURCE } from "./q1-original-refund-handoff.mjs";
 const source = "a".repeat(40), now = new Date("2026-10-11T00:00:00Z");
 function fixture() {
   const target = { transactionId: "synthetic-original", orderNumber: "synthetic-order", providerTradeNo: "synthetic-trade" };
@@ -32,8 +32,45 @@ for (const [key, value] of Object.entries({ sourceCommit: "b".repeat(40), transa
 }
 for (const [key, value] of Object.entries({ MerTradeNo: "other", TradeNo: "other", TradeStatus: "2", TradeAmt: "2",
   PaymentType: "2", DataSource: "B", RemainAmt: "0", RefundAmt: "1" })) {
-  test(`rejects signed provider observation mismatch ${key}`, () => { const input = fixture(); input.paid[key] = value; assert.throws(() => createOriginalRefundHandoff(input)); });
+  test(`rejects signed provider observation mismatch ${key}`, () => {
+    const input = fixture(); input.paid[key] = value;
+    assert.throws(() => createOriginalRefundHandoff(input));
+    const checks = Object.values(originalPaidQueryChecks(input.paid, input.target));
+    assert.equal(checks.filter(value => value === false).length, 1);
+    assert.ok(checks.every(value => typeof value === "boolean"));
+  });
 }
+
+test("paid query diagnostics emit only immutable booleans, never raw response or identities", () => {
+  const input = fixture(); input.paid.unrecognizedResponse = "opaque-provider-probe-do-not-emit";
+  const checks = originalPaidQueryChecks(input.paid, input.target);
+  assert.equal(Object.keys(checks).length, 8);
+  assert.ok(Object.values(checks).every(value => value === true));
+  assert.ok(Object.isFrozen(checks));
+  const serialized = JSON.stringify(checks);
+  for (const value of [input.target.orderNumber, input.target.providerTradeNo, input.paid.unrecognizedResponse]) {
+    assert.ok(!serialized.includes(value));
+  }
+});
+
+test("diagnostics preserve rejection of absent, empty, malformed and boolean balances", () => {
+  for (const value of [undefined, null, "", " ", true, false, {}, "01", "1e0"]) {
+    for (const [field, check] of [["RefundAmt", "zeroReportedRefund"], ["RemainAmt", "fullOriginalBalance"]]) {
+      const input = fixture(); input.paid[field] = value;
+      assert.equal(originalPaidQueryChecks(input.paid, input.target)[check], false);
+      assert.throws(() => createOriginalRefundHandoff(input));
+    }
+  }
+});
+
+test("query shape distinguishes absence from a value without disclosing an amount", () => {
+  for (const [value, category] of [[undefined, "ABSENT"], [null, "NULL"], ["", "EMPTY"],
+    [false, "INVALID"], ["opaque-provider-value", "INVALID"], [0, "VALID_INTEGER"], [1, "VALID_INTEGER"], [29, "VALID_INTEGER"]]) {
+    const shape = originalPaidQueryShape({ RemainAmt: value, RefundAmt: value });
+    assert.deepEqual(shape, { remainingAmount: category, lastRefundAmount: category });
+    assert.ok(Object.isFrozen(shape));
+  }
+});
 for (const [key, value] of Object.entries({ origin: "https://foreign.invalid", exactRefundFormCount: 2,
   exactTransactionRef: reference("other"), formTransactionRef: reference("other"), csrfPresent: false, financeAuthenticated: false })) {
   test(`rejects finance browser observation ${key}`, () => { const input = fixture(); input.browser[key] = value; assert.throws(() => createOriginalRefundHandoff(input)); });
