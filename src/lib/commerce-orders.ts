@@ -66,7 +66,7 @@ export class CommerceOrderConflictError extends Error {
   }
 }
 
-function assertOpaqueId(value: string, field: string) {
+export function assertOpaqueId(value: string, field: string) {
   if (!value || value !== value.trim() || value.length > 191 || /[\u0000-\u001f\u007f]/u.test(value)) {
     throw new CommerceOrderValidationError(`${field} is invalid.`);
   }

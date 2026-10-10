@@ -118,7 +118,7 @@ function orderedReservationItems<T extends ReservationItem>(items: T[]): T[] {
  * intentionally limited to their original primary product; no historical
  * order-bump stock is inferred from mutable order or payment metadata.
  */
-function snapshotReservationItems(reservation: ReservationRecord): ReservationItem[] {
+export function snapshotReservationItems(reservation: Pick<ReservationRecord, "items" | "productId" | "quantity">): ReservationItem[] {
   if (reservation.items === null) {
     return [{ productId: reservation.productId, quantity: reservation.quantity }];
   }
