@@ -3,12 +3,31 @@ import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { WP4_SANDBOX_FIXTURE } from "../src/lib/wp4-sandbox-fixture";
 import { wp4PayUniPurposeFromMetadata, wp4SourceCommitFromMetadata } from "../src/lib/wp4-payuni-sandbox-reconciliation";
+import { paymentWebhookFailureMessage, type PaymentWebhookFailureCode } from "../src/lib/payment-webhook-errors";
 import { qaFinanceDatabaseUrl, QA_FINANCE_CA_FILE, verifyQaFinanceCertificate, qaFinanceFailureCategory } from "../src/lib/staging-qa-finance-bootstrap";
 
 // Diagnose the already-issued transaction only; this is not a new checkout selector.
 export const EXACT_SOURCE = "9acfe8d2dba62430e950cff2c0387841ab91f44b";
 const ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 const closedState = (value: unknown, values: readonly string[]) => values.find((state) => state === value) ?? "OTHER";
+const CALLBACK_FAILURES: readonly PaymentWebhookFailureCode[] = ["scope_missing", "scope_invalid", "scope_mismatch",
+  "order_ambiguous", "amount_mismatch", "inventory_conflict", "processing_timeout", "processing_claim_lost", "processing_failed"];
+
+// Read the actual stored callback only. A signed query is never a callback substitute.
+async function readOriginalCallback(tx: Prisma.TransactionClient, orderNumber: string | null) {
+  if (!orderNumber || !/^[a-zA-Z0-9_-]{1,128}$/.test(orderNumber)) return { callbackState: "REFERENCE_UNAVAILABLE" };
+  const events = await tx.webhookEvent.findMany({ where: { provider: "payuni", eventType: "paid",
+    payload: { path: ["normalized", "orderNumber"], equals: orderNumber } }, take: 2,
+    select: { status: true, vendorId: true, errorMessage: true, retryCount: true, maxRetries: true } });
+  if (events.length !== 1) return { callbackState: events.length ? "AMBIGUOUS" : "NOT_OBSERVED" };
+  const event = events[0]!;
+  return { callbackState: closedState(event.status, ["received", "processed", "failed", "retrying", "exhausted"]),
+    callbackTenantState: event.vendorId === null ? "UNASSIGNED" : event.vendorId === WP4_SANDBOX_FIXTURE.vendorId ? "MATCHED" : "MISMATCHED",
+    callbackFailure: event.errorMessage === null ? "NONE"
+      : CALLBACK_FAILURES.find((code) => paymentWebhookFailureMessage(code) === event.errorMessage) ?? "OTHER",
+    callbackRetryBudgetAvailable: Number.isSafeInteger(event.retryCount) && Number.isSafeInteger(event.maxRetries)
+      && event.retryCount >= 0 && event.retryCount < event.maxRetries };
+}
 
 // Query only the database-selected original merchant reference; no checkout/close API.
 export async function queryExactProviderState(orderNumber: string, query?: (order: string) => Promise<unknown>) {
@@ -58,10 +77,15 @@ export async function readExactSyntheticState(db: Pick<PrismaClient, "$transacti
     const paidEventCount = orders.length === 1 ? await tx.commerceOrderEvent.count({
       where: { vendorId: WP4_SANDBOX_FIXTURE.vendorId, orderId: orders[0]!.id, eventType: "payment.paid" },
     }) : null;
+    const callback = await readOriginalCallback(tx, payment.orderNumber);
     const provider = query ? (payment.grossAmountCents === 100 && payment.currency === "TWD"
       && typeof payment.orderNumber === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(payment.orderNumber)
       ? await queryExactProviderState(payment.orderNumber, query) : { providerQuery: "EXACT_IDENTITY_UNAVAILABLE" }) : undefined;
-    return { category: "EXACT_SYNTHETIC_STATE_OBSERVED", ...(provider ? { provider } : {}),
+    return { category: "EXACT_SYNTHETIC_STATE_OBSERVED", ...(provider ? { provider } : {}), callback,
+      paymentSubmissionReserved: typeof payment.metadata === "object" && payment.metadata !== null && !Array.isArray(payment.metadata)
+        && payment.metadata.wp4PaymentSubmissionReserved === true,
+      callbackRetryReserved: typeof payment.metadata === "object" && payment.metadata !== null && !Array.isArray(payment.metadata)
+        && payment.metadata.wp4CallbackRetryReserved === true,
       paymentState: closedState(payment.status, ["pending", "paid", "failed", "expired", "refunded", "partially_refunded"]),
       providerTradeNumberPresent: Boolean(payment.providerTradeNo), fixedAmountMatches: payment.grossAmountCents === 100 && payment.currency === "TWD",
       refundState: payment.refundedAmountCents === 0 ? "NONE" : payment.refundedAmountCents > 0 ? "PRESENT" : "INVALID",
