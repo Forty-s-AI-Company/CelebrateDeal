@@ -10,7 +10,8 @@ const statuses = new Set(["PROCESSED", "ALREADY_PROCESSED", "FIXTURE_UNAVAILABLE
 const failureCodes = new Set(["NONE", "UNKNOWN", "processing_failed"]);
 
 /** Fixed single POST. Reserve possible effects before transport; never retry a lost response. */
-export async function replayOriginalCallback(jobSecret: string, request: typeof fetch = fetch) {
+export async function replayOriginalCallback(jobSecret: string, request: typeof fetch = fetch,
+  persistReservation: () => Promise<void> = async () => {}) {
   const receipt = { status: "BLOCKED", callbackPosts: 0, possibleDatabaseWrites: false,
     callbackStatus: "INPUT_REJECTED", retryAttempts: 0, failureCode: "UNKNOWN" };
   if (!jobSecret) return receipt;
@@ -18,6 +19,7 @@ export async function replayOriginalCallback(jobSecret: string, request: typeof 
   receipt.possibleDatabaseWrites = true;
   receipt.retryAttempts = 1;
   try {
+    await persistReservation();
     const response = await request(`${ORIGIN}/api/admin/ops/payuni/q1-original-callback-retry`, {
       method: "POST", redirect: "error", signal: AbortSignal.timeout(20000),
       headers: { authorization: `Bearer ${jobSecret}`, "x-celebratedeal-source-sha": CALLBACK_EXECUTION_SOURCE },
@@ -35,6 +37,13 @@ export async function replayOriginalCallback(jobSecret: string, request: typeof 
     receipt.status = ["PROCESSED", "ALREADY_PROCESSED"].includes(body.status) ? "OBSERVED" : "BLOCKED";
   } catch { receipt.callbackStatus = "TRANSPORT_OR_RESPONSE_UNVERIFIED"; }
   return receipt;
+}
+
+async function writeReceipt(receipt: Record<string, unknown>) {
+  if (!process.env.RUNNER_TEMP) return;
+  const directory = resolve(process.env.RUNNER_TEMP, "q1-original-callback");
+  await mkdir(directory, { recursive: true });
+  await writeFile(resolve(directory, "completion.json"), `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
 }
 
 export async function main() {
@@ -71,7 +80,11 @@ export async function main() {
       || before.callback?.callbackState !== "failed" || before.callback.callbackRetryBudgetAvailable !== true
       || !["UNASSIGNED", "MATCHED"].includes(before.callback.callbackTenantState ?? "")) throw new Error();
     stage = "original-callback-replay";
-    Object.assign(receipt, await replayOriginalCallback(env.JOB_SECRET));
+    Object.assign(receipt, await replayOriginalCallback(env.JOB_SECRET, fetch, async () => {
+      // A killed runner must retain conservative possible effects before POST.
+      Object.assign(receipt, { callbackPosts: 1, possibleDatabaseWrites: true, stage });
+      await writeReceipt(receipt);
+    }));
     stage = "original-readonly-after";
     const after = await readExactSyntheticState(db); receipt.after = after;
     if (!("paymentState" in after) || receipt.status !== "OBSERVED" || after.paymentState !== "paid" || after.callback?.callbackState !== "processed"
@@ -83,11 +96,7 @@ export async function main() {
   } catch { receipt.status = "BLOCKED"; receipt.stage = stage; process.exitCode = 1; }
   finally {
     try { await db?.$disconnect(); } catch { receipt.status = "BLOCKED"; receipt.stage = "database-disconnect"; process.exitCode = 1; }
-    if (process.env.RUNNER_TEMP) {
-      const directory = resolve(process.env.RUNNER_TEMP, "q1-original-callback");
-      await mkdir(directory, { recursive: true });
-      await writeFile(resolve(directory, "completion.json"), `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
-    }
+    await writeReceipt(receipt);
     console.log(JSON.stringify(receipt));
   }
 }

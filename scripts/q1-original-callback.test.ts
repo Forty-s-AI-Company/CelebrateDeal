@@ -23,6 +23,19 @@ describe("one original callback replay transport", () => {
     expect(await replayOriginalCallback("synthetic", request)).toMatchObject({ status: "BLOCKED", callbackPosts: 1, retryAttempts: 1 });
     expect(request).toHaveBeenCalledOnce();
   });
+  it("persists the conservative reservation before transport and does not send if persistence fails", async () => {
+    let persisted = false;
+    const request = vi.fn<typeof fetch>().mockImplementation(async () => {
+      expect(persisted).toBe(true);
+      return new Response(JSON.stringify({ status: "PROCESSED", retryAttempts: 1, failureCode: "NONE" }));
+    });
+    await replayOriginalCallback("synthetic", request, async () => { persisted = true; });
+    expect(request).toHaveBeenCalledOnce();
+    request.mockClear();
+    expect(await replayOriginalCallback("synthetic", request, async () => { throw new Error("synthetic receipt write failure"); }))
+      .toMatchObject({ status: "BLOCKED", possibleDatabaseWrites: true });
+    expect(request).not.toHaveBeenCalled();
+  });
   it.each([
     { status: "PROCESSED", retryAttempts: 0, failureCode: "NONE" },
     { status: "ALREADY_PROCESSED", retryAttempts: 1, failureCode: "NONE" },

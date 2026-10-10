@@ -12,6 +12,10 @@ test('only protected master injects minimal staging credentials after contracts 
   assert.match(workflow, /JOB_SECRET: \$\{\{ secrets.JOB_SECRET \}\}/);
   assert.doesNotMatch(workflow, /PAYUNI_QA_FINANCE_PASSWORD|PAYUNI_SANDBOX_HASH|PAYUNI_SANDBOX_MERCHANT|secrets\.DATABASE_URL/);
   assert.ok(workflow.indexOf('Validate fixed original callback contract') < workflow.indexOf('secrets.STAGING_DATABASE_URL'));
+  const command = workflow.split('\n').find(line => line.includes('run: npx vitest run'));
+  const files = command.match(/(?:scripts|src\/lib)\/[\w.-]+\.test\.ts/g);
+  assert.ok(files.includes('scripts/q1-exact-state-details.test.ts'));
+  assert.equal(new Set(files).size, files.length);
   assert.ok(workflow.indexOf('--verify-lineage') < workflow.indexOf('secrets.STAGING_DATABASE_URL'));
   for (const file of workflow.match(/(?:scripts|src\/lib)\/[\w.-]+\.(?:ts|mjs)/g) ?? []) assert.doesNotThrow(() => readFileSync(file));
 });
