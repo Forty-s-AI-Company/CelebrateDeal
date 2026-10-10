@@ -19,6 +19,7 @@ describe("closed downstream diagnostic receipt", () => {
     expect(Q1DownstreamReceipt.safeParse({ ...valid, schema: [{ model: "EmailDelivery", compatible: false, missingColumns: ["private_column"] }] }).success).toBe(false);
     expect(Q1DownstreamReceipt.parse(valid)).toEqual(valid);
     expect(Q1_DOWNSTREAM_MODELS).toEqual(expect.arrayContaining(["CommerceOrderEvent", "CommerceOrderItem", "CommerceEntitlement",
-      "EmailDelivery", "RefundRecord", "AffiliateCommission", "MerchantAffiliateCheckoutSnapshot", "MerchantAffiliateCheckoutRecipient"]));
+      "EmailDelivery", "RefundRecord", "AffiliateCommission", "MerchantAffiliateCheckoutSnapshot", "MerchantAffiliateCheckoutRecipient",
+      "Vendor", "WebhookEvent", "InventoryReservation", "Product"]));
   });
 });

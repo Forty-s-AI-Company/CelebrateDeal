@@ -76,6 +76,8 @@ describe("real PostgreSQL downstream readonly probe", () => {
   it.each([
     { table: "EmailDelivery", column: "recipientHash" },
     { table: "AffiliateCommission", column: "merchantCheckoutId" },
+    { table: "InventoryReservation", column: "items" },
+    { table: "Vendor", column: "senderName" },
   ])("detects an actual missing $table column before any crypto read", async ({ table, column }) => {
     await seed();
     // Identifiers are the fixed reviewed table/column tuples above; loopback guard

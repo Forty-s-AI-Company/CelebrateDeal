@@ -9,7 +9,7 @@ import { coursePolicySnapshotFromMetadata } from "./course-policy-snapshot";
 
 export const Q1_ORIGINAL_SOURCE = "9acfe8d2dba62430e950cff2c0387841ab91f44b";
 // All unconditional paid-path dependencies and relations, reviewed together.
-export const Q1_DOWNSTREAM_MODELS = ["PaymentTransaction", "RefundRecord", "CommerceOrder",
+export const Q1_DOWNSTREAM_MODELS = ["Vendor", "WebhookEvent", "InventoryReservation", "Product", "PaymentTransaction", "RefundRecord", "CommerceOrder",
   "CommerceOrderItem", "CommerceOrderEvent", "CommerceEntitlement", "EmailDelivery",
   "MerchantAffiliateCheckoutSnapshot", "MerchantAffiliatePolicy", "MerchantAffiliateCheckoutRecipient",
   "MerchantAffiliateCalculation", "MerchantAffiliateSalesCounter", "AffiliateCommission"] as const;
@@ -27,7 +27,7 @@ const CryptoState = z.enum(["OK", "SENSITIVE_KEY_MISSING", "SENSITIVE_KEY_TOO_SH
 export const Q1DownstreamReceipt = z.object({
   classification: z.enum(["DOWNSTREAM_OBSERVED", "FIXTURE_UNAVAILABLE", "ORDER_UNAVAILABLE", "SCHEMA_INCOMPATIBLE", "READ_FAILED"]),
   readStage: z.enum(["NONE", "SCHEMA", "PAYMENT", "ORDER", "MERCHANT_AFFILIATE", "PAYMENT_RELATIONS",
-    "LEGACY_COMMISSION", "ORDER_ITEMS", "ENTITLEMENT", "PAID_DELIVERY", "ORDER_EVENT", "CRYPTO"]),
+    "LEGACY_COMMISSION", "ORDER_ITEMS", "ENTITLEMENT", "PAID_DELIVERY", "ORDER_EVENT", "CRYPTO", "INVENTORY", "VENDOR"]),
   readClass: z.enum(["NONE", "P2002", "P2010", "P2021", "P2022", "P2028", "P2034",
     "PrismaClientKnownRequestError", "PrismaClientUnknownRequestError", "PrismaClientInitializationError", "PrismaClientValidationError", "OTHER"]),
   schema: z.array(z.object({ model: z.enum(Q1_DOWNSTREAM_MODELS), compatible: z.boolean(),
@@ -86,6 +86,12 @@ export async function readQ1Downstream(db: Pick<PrismaClient, "$transaction">) {
         select: { id: true, vendorId: true, metadata: true } });
       if (payments.length !== 1) return Q1DownstreamReceipt.parse({ ...common, classification: "FIXTURE_UNAVAILABLE" });
       const payment = payments[0]!;
+      readStage = "INVENTORY";
+      await tx.inventoryReservation.findUnique({ where: { paymentTransactionId: payment.id } });
+      await tx.product.findFirst({ where: { id: WP4_SANDBOX_FIXTURE.productId, vendorId: payment.vendorId }, select: { id: true } });
+      readStage = "VENDOR";
+      await tx.vendor.findUnique({ where: { id: payment.vendorId },
+        select: { name: true, senderName: true, supportEmail: true, contactUrl: true } });
       readStage = "ORDER";
       const orders = await tx.commerceOrder.findMany({ where: { vendorId: payment.vendorId, primaryPaymentTransactionId: payment.id }, take: 2,
         select: { id: true, buyerEncryptedEnvelope: true, shippingEncryptedEnvelope: true } });
@@ -93,7 +99,7 @@ export async function readQ1Downstream(db: Pick<PrismaClient, "$transaction">) {
       const order = orders[0]!;
       const metadata = payment.metadata && typeof payment.metadata === "object" && !Array.isArray(payment.metadata) ? payment.metadata : {};
       const purpose = metadata.billingPurpose;
-      const billingPurposeClass = ["buyer_order", "platform_subscription_checkout", "invoice_payment"].includes(String(purpose))
+      const billingPurposeClass = typeof purpose === "string" && ["buyer_order", "platform_subscription_checkout", "invoice_payment"].includes(purpose)
         ? purpose : purpose === undefined ? "NONE" : "OTHER";
       const coursePolicySnapshotClass = !Object.hasOwn(metadata, "coursePolicySnapshot") ? "ABSENT"
         : coursePolicySnapshotFromMetadata(metadata) ? "VALID" : "INVALID";
