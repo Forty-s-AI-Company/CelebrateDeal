@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
-import { createOriginalRefundHandoff, assertOriginalProofMatchesHandoff, originalPaidQueryChecks, originalPaidQueryShape, ORIGINAL_TRANSACTION_SOURCE } from "./q1-original-refund-handoff.mjs";
+import { createOriginalRefundHandoff, assertOriginalProofMatchesHandoff, originalPaidQueryChecks, originalPaidQueryShape, originalRefundEligibilityChecks, ORIGINAL_TRANSACTION_SOURCE } from "./q1-original-refund-handoff.mjs";
 const source = "a".repeat(40), now = new Date("2026-10-11T00:00:00Z");
 function fixture() {
   const target = { transactionId: "synthetic-original", orderNumber: "synthetic-order", providerTradeNo: "synthetic-trade" };
@@ -92,5 +92,47 @@ test("later processed refund projection remains original-bound without authorizi
 test("empty/null/boolean provider balances never imply an unrefunded original", () => {
   for (const value of ["", null, false, "00", "0.5"]) {
     const input = fixture(); input.paid.RefundAmt = value; assert.throws(() => createOriginalRefundHandoff(input));
+  }
+});
+
+test("actual absent refund amount uses full signed balance and fresh local proof without inventing zero", () => {
+  const input = fixture(); delete input.paid.RefundAmt;
+  assert.equal(originalPaidQueryChecks(input.paid, input.target).zeroReportedRefund, false);
+  const eligibility = originalRefundEligibilityChecks(input.paid, input.target);
+  assert.ok(Object.isFrozen(eligibility));
+  assert.ok(Object.values(eligibility).every(value => value === true));
+  assert.equal(createOriginalRefundHandoff(input).status, "PENDING_REFUND");
+  assert.equal(Object.hasOwn(input.paid, "RefundAmt"), false);
+  for (const [field, value] of Object.entries({ MerTradeNo: "foreign", TradeNo: "foreign", TradeStatus: "2",
+    TradeAmt: "2", PaymentType: "2", DataSource: "B", RemainAmt: "0" })) {
+    const drift = fixture(); delete drift.paid.RefundAmt; drift.paid[field] = value;
+    assert.throws(() => createOriginalRefundHandoff(drift));
+  }
+  for (const field of ["RemainAmt", "DataSource", "TradeNo"]) {
+    const drift = fixture(); delete drift.paid.RefundAmt; delete drift.paid[field];
+    assert.throws(() => createOriginalRefundHandoff(drift));
+  }
+  for (const [field, value] of [["refundRecordCount", 1], ["refundedAmountCents", 100], ["status", "refunded"]]) {
+    const drift = fixture(); delete drift.paid.RefundAmt; drift.proof[field] = value;
+    assert.throws(() => createOriginalRefundHandoff(drift));
+  }
+});
+
+test("any provider refund state blocks both absent and explicit zero refund amounts", () => {
+  for (const value of ["1", "2", "3", "8", "0", undefined, null, "", false, "unknown"]) {
+    for (const absent of [true, false]) {
+      const input = fixture(); if (absent) delete input.paid.RefundAmt;
+      input.paid.RefundStatus = value;
+      assert.equal(originalRefundEligibilityChecks(input.paid, input.target).providerRefundStateAbsent, false);
+      assert.throws(() => createOriginalRefundHandoff(input));
+    }
+  }
+});
+
+test("inherited refund fields cannot masquerade as an absent signed field", () => {
+  for (const field of ["RefundAmt", "RefundStatus"]) {
+    const input = fixture(); delete input.paid.RefundAmt;
+    Object.setPrototypeOf(input.paid, { [field]: "0" });
+    assert.throws(() => createOriginalRefundHandoff(input));
   }
 });

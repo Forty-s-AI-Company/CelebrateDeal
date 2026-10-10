@@ -35,6 +35,25 @@ export function originalPaidQueryShape(paid) {
   return Object.freeze({ remainingAmount: shape(paid?.RemainAmt), lastRefundAmount: shape(paid?.RefundAmt) });
 }
 
+/** QUERY v2 CREDIT defines RemainAmt as the remaining refundable balance.
+ * The actual unrefunded original omits RefundAmt. Do not invent a zero value:
+ * require the complete signed balance, all identity/payment checks, no provider
+ * refund state, and (below) a fresh server proof with no local refund records.
+ * Explicit undefined/null/empty/malformed refund fields remain invalid.
+ * Official contract: https://docs.payuni.com.tw/web/#/7/164
+ */
+export function originalRefundEligibilityChecks(paid, target) {
+  const literalChecks = originalPaidQueryChecks(paid, target);
+  const mandatoryChecks = Object.fromEntries(Object.entries(literalChecks)
+    .filter(([key]) => key !== "zeroReportedRefund"));
+  const row = paid && typeof paid === "object" ? paid : {};
+  return Object.freeze({ ...mandatoryChecks,
+    providerRefundStateAbsent: !("RefundStatus" in row),
+    refundAmountAbsentOrExplicitZero: !("RefundAmt" in row)
+      || (Object.hasOwn(row, "RefundAmt") && literalChecks.zeroReportedRefund),
+  });
+}
+
 /** Keep original provenance distinct from executing source. This validates a
  * freshly authenticated fixed-catalog server proof, not a caller-selected order. */
 export function assertOriginalRefundProof(proof, executionSource) {
@@ -57,7 +76,7 @@ export function createOriginalRefundHandoff({ proof, paid, target, browser, exec
   requireSafe(proof.status === "paid" && proof.refundedAmountCents === 0 && proof.refundRecordCount === 0);
   requireSafe(reference(target?.transactionId) === proof.transactionRef && reference(target?.orderNumber) === proof.orderRef
     && reference(target?.providerTradeNo) === proof.tradeRef);
-  requireSafe(Object.values(originalPaidQueryChecks(paid, target)).every(value => value === true));
+  requireSafe(Object.values(originalRefundEligibilityChecks(paid, target)).every(value => value === true));
   requireSafe(browser?.origin === `https://${APP_HOST}` && browser.exactTransactionRef === proof.transactionRef
     && browser.exactRefundFormCount === 1 && browser.formTransactionRef === proof.transactionRef
     && browser.csrfPresent === true && browser.financeAuthenticated === true);
