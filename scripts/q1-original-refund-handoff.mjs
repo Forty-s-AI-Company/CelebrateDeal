@@ -14,6 +14,27 @@ function requireSafe(condition) {
   if (!condition) throw new Error("Fixed original Sandbox refund handoff rejected.");
 }
 
+// Closed booleans identify the rejected contract without exposing the signed
+// response, identifiers, amounts, credentials or provider error text.
+export function originalPaidQueryChecks(paid, target) {
+  return Object.freeze({
+    merchantOrderMatches: typeof paid?.MerTradeNo === "string" && paid.MerTradeNo === target?.orderNumber,
+    providerTradeMatches: typeof paid?.TradeNo === "string" && paid.TradeNo === target?.providerTradeNo,
+    paymentSucceeded: String(paid?.TradeStatus) === "1",
+    originalAmountMatches: wholeAmount(paid?.TradeAmt) === 1,
+    creditPaymentType: String(paid?.PaymentType) === "1",
+    creditDataSource: paid?.DataSource === "A",
+    fullOriginalBalance: wholeAmount(paid?.RemainAmt) === 1,
+    zeroReportedRefund: wholeAmount(paid?.RefundAmt) === 0,
+  });
+}
+
+export function originalPaidQueryShape(paid) {
+  const shape = value => value === undefined ? "ABSENT" : value === null ? "NULL"
+    : value === "" ? "EMPTY" : wholeAmount(value) === undefined ? "INVALID" : "VALID_INTEGER";
+  return Object.freeze({ remainingAmount: shape(paid?.RemainAmt), lastRefundAmount: shape(paid?.RefundAmt) });
+}
+
 /** Keep original provenance distinct from executing source. This validates a
  * freshly authenticated fixed-catalog server proof, not a caller-selected order. */
 export function assertOriginalRefundProof(proof, executionSource) {
@@ -36,10 +57,7 @@ export function createOriginalRefundHandoff({ proof, paid, target, browser, exec
   requireSafe(proof.status === "paid" && proof.refundedAmountCents === 0 && proof.refundRecordCount === 0);
   requireSafe(reference(target?.transactionId) === proof.transactionRef && reference(target?.orderNumber) === proof.orderRef
     && reference(target?.providerTradeNo) === proof.tradeRef);
-  requireSafe(typeof paid?.MerTradeNo === "string" && paid.MerTradeNo === target.orderNumber
-    && typeof paid.TradeNo === "string" && paid.TradeNo === target.providerTradeNo
-    && String(paid.TradeStatus) === "1" && wholeAmount(paid.TradeAmt) === 1 && String(paid.PaymentType) === "1"
-    && paid.DataSource === "A" && wholeAmount(paid.RemainAmt) === 1 && wholeAmount(paid.RefundAmt) === 0);
+  requireSafe(Object.values(originalPaidQueryChecks(paid, target)).every(value => value === true));
   requireSafe(browser?.origin === `https://${APP_HOST}` && browser.exactTransactionRef === proof.transactionRef
     && browser.exactRefundFormCount === 1 && browser.formTransactionRef === proof.transactionRef
     && browser.csrfPresent === true && browser.financeAuthenticated === true);
