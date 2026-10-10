@@ -8,6 +8,8 @@ import { wp4HistoricalBuyerWhere } from "../src/lib/wp4-buyer-recovery";
 
 // All setup and schema writes belong only to an explicitly verified loopback test DB.
 assertLocalTestDatabase("DATABASE_URL", process.env.DATABASE_URL);
+const ownerSchema = new URL(process.env.DATABASE_URL!).searchParams.get("schema") ?? "public";
+if (!/^[a-z][a-z0-9_]{0,62}$/.test(ownerSchema)) throw new Error("Unsafe synthetic schema");
 const db = new PrismaClient();
 const source = "9acfe8d2dba62430e950cff2c0387841ab91f44b";
 const prefix = `q1_audit_${randomBytes(8).toString("hex")}`;
@@ -65,11 +67,11 @@ describe("original audit SQL against real migrated PostgreSQL", () => {
     // Names are generated from a fixed prefix and cryptographic hex, never caller input.
     await db.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
     try {
-      await db.$executeRawUnsafe(`CREATE TABLE "${schema}"."AuditLog" (LIKE public."AuditLog" INCLUDING DEFAULTS)`);
+      await db.$executeRawUnsafe(`CREATE TABLE "${schema}"."AuditLog" (LIKE "${ownerSchema}"."AuditLog" INCLUDING DEFAULTS)`);
       await db.$executeRawUnsafe(`ALTER TABLE "${schema}"."AuditLog" DROP COLUMN "after"`);
       const scratch = { $transaction: async (fn: (tx: Prisma.TransactionClient) => Promise<unknown>, options: object) =>
         db.$transaction(async tx => {
-          await tx.$executeRawUnsafe(`SET LOCAL search_path TO "${schema}", public`);
+          await tx.$executeRawUnsafe(`SET LOCAL search_path TO "${schema}", "${ownerSchema}"`);
           return fn(tx);
         }, options) } as unknown as Pick<PrismaClient, "$transaction">;
       expect(await readOriginalRetryAudit(scratch)).toEqual({ classification: "SCHEMA_UNVERIFIED" });
