@@ -1,4 +1,5 @@
 import { readOriginalRetryAudit } from "./q1-original-retry-audit";
+import { readProcessingPreconditions } from "./q1-processing-preconditions";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -195,7 +196,8 @@ export async function main(withProviderQuery = false) {
     await report({ status: "READ_ONLY_DIAGNOSTIC", ...await readExactSyntheticState(db, withProviderQuery
       ? async (order) => { const { queryTransaction } = await import("./payuni-sandbox-external-qa.mjs");
         return queryTransaction(order, { signal: AbortSignal.timeout(5000) }); } : undefined),
-      processingSchema: await readCallbackProcessingSchema(db), retryAudit: await readOriginalRetryAudit(db) });
+      processingSchema: await readCallbackProcessingSchema(db), retryAudit: await readOriginalRetryAudit(db),
+      processingPreconditions: await readProcessingPreconditions(db) });
   } catch (error) {
     await report({ status: "BLOCKED_OR_FAILED", stage, failureCategory: qaFinanceFailureCategory(error) });
     process.exitCode = 1;
