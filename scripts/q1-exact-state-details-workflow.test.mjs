@@ -12,10 +12,12 @@ test('only protected main can inject staging database and JOB into fixed readonl
   assert.doesNotMatch(workflow, /PAYUNI_QA_FINANCE_PASSWORD|PAYUNI_SANDBOX_HASH|PAYUNI_SANDBOX_MERCHANT|secrets\.DATABASE_URL/);
   assert.match(workflow, /q1-exact-state-details-cli.ts/);
   assert.match(workflow, /Validate CLI startup and sanitized receipts before secrets/);
+  assert.match(workflow, /q1-processing-preconditions\.test\.ts/);
   assert.match(workflow, /persist-credentials: false/);
   for (const file of workflow.match(/(?:scripts|src\/lib)\/[\w.-]+\.(?:ts|mjs)/g) ?? []) assert.doesNotThrow(() => readFileSync(file));
 });
 test('outbound IPv4 and IPv6 deny-by-default and restoration remain intact', () => {
+  assert.match(workflow, /"callbackPosts":0,"callbackReplayAuthorized":false/);
   assert.match(workflow, /sudo iptables -P OUTPUT DROP/);
   assert.match(workflow, /sudo ip6tables -P OUTPUT DROP/);
   assert.match(workflow, /trap restore_network EXIT/);

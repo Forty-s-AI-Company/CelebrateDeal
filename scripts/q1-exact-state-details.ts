@@ -1,3 +1,5 @@
+import { readOriginalRetryAudit } from "./q1-original-retry-audit";
+import { readProcessingPreconditions } from "./q1-processing-preconditions";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -126,9 +128,36 @@ export async function readExactSyntheticState(db: Pick<PrismaClient, "$transacti
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 15000 });
 }
 
+/** Observe schema names only; never select vendor/payment secrets or replay a callback.
+ * Compatibility is candidate diagnosis, not permission to reset a durable marker.
+ */
+export async function readCallbackProcessingSchema(db: Pick<PrismaClient, "$transaction">) {
+  const names = ["Vendor", "PaymentTransaction", "WebhookEvent", "CommerceOrder", "InventoryReservation"] as const;
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+    const models = names.map((name) => Prisma.dmmf.datamodel.models.find((model) => model.name === name));
+    if (models.some((model) => !model)) throw new Error("Processing schema model unavailable");
+    const tables = models.map((model) => model!.dbName ?? model!.name);
+    const columns = await tx.$queryRaw<{ table_name: string; column_name: string }[]>(Prisma.sql`
+      SELECT table_name, column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name IN (${Prisma.join(tables)})
+    `);
+    return { expectedApplicationSource: "01d7af28755e73478ade7cdd0bc017c8edee67f5",
+      models: models.map((model) => {
+        const expected = model!.fields.filter((field) => field.kind !== "object");
+        const observed = new Set(columns.filter((column) => column.table_name === (model!.dbName ?? model!.name))
+          .map((column) => column.column_name));
+        const missing = expected.filter((field) => !observed.has(field.dbName ?? field.name));
+        // Names originate exclusively in the reviewed source schema; never expose unknown DB metadata.
+        return { model: model!.name, compatible: missing.length === 0,
+          missingColumns: missing.map((field) => field.name) };
+      }), callbackReplayAuthorized: false };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 15000 });
+}
+
 async function report(result: Record<string, unknown>) {
   const receipt = { schemaVersion: "celebratedeal-q1-exact-state-details/v1", ...result,
-    sourceCommit: EXACT_SOURCE, productionOperations: false, databaseWrites: false, paymentSubmitted: false, refundSubmitted: false };
+    sourceCommit: EXACT_SOURCE, productionOperations: false, databaseWrites: false, paymentSubmitted: false, refundSubmitted: false, callbackPosts: 0, callbackReplayAuthorized: false };
   if (process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_REF === "refs/heads/master"
     && process.env.GITHUB_REF_PROTECTED === "true" && process.env.RUNNER_TEMP) {
     const directory = resolve(process.env.RUNNER_TEMP, "q1-exact-state-details");
@@ -166,7 +195,9 @@ export async function main(withProviderQuery = false) {
     db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
     await report({ status: "READ_ONLY_DIAGNOSTIC", ...await readExactSyntheticState(db, withProviderQuery
       ? async (order) => { const { queryTransaction } = await import("./payuni-sandbox-external-qa.mjs");
-        return queryTransaction(order, { signal: AbortSignal.timeout(5000) }); } : undefined) });
+        return queryTransaction(order, { signal: AbortSignal.timeout(5000) }); } : undefined),
+      processingSchema: await readCallbackProcessingSchema(db), retryAudit: await readOriginalRetryAudit(db),
+      processingPreconditions: await readProcessingPreconditions(db) });
   } catch (error) {
     await report({ status: "BLOCKED_OR_FAILED", stage, failureCategory: qaFinanceFailureCategory(error) });
     process.exitCode = 1;
