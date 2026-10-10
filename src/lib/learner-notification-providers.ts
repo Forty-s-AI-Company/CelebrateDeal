@@ -35,7 +35,8 @@ async function boundedJson(response: Response): Promise<unknown> {
 function appMessage(raw: unknown, appOrigin: string) {
  const message = LearnerNotificationMessage.parse(raw), origin = new URL(appOrigin);
  if (origin.protocol !== "https:" || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) throw new Error("Invalid notification origin.");
- return { ...message, text: `${message.title}\n${message.body}\n${new URL(message.path,origin).toString()}` };
+ const url = new URL(message.path,origin).toString();
+ return { ...message, url, text: `${message.title}\n${message.body}\n${url}` };
 }
 
 type ProviderInput = { channel: LearnerNotificationChannel; destination: unknown; message: unknown; appOrigin: string; idempotencyKey: string };
@@ -93,8 +94,20 @@ function smsRequest(phone: string, text: string, c: NotificationProviderConfigur
   headers: { authorization: `Basic ${Buffer.from(`${c.accountSid}:${c.authToken}`).toString("base64")}`, "content-type": "application/x-www-form-urlencoded" },
   body: new URLSearchParams({ To: phone, From: c.from, Body: text }).toString() };
 }
-function whatsappRequest(phone: string, text: string, c: NotificationProviderConfiguration["whatsapp"]): ProviderRequest | null {
+/** Template variables reject line breaks/tabs; retain the complete settings link.
+ * Bound this single variable conservatively without splitting UTF-16 pairs.
+ * This does not claim acceptance of an unverified external template. */
+function whatsappParameter(message: ReturnType<typeof appMessage>): string | null {
+ const budget = 1024 - message.url.length - 1;
+ if (budget < 1) return null;
+ let content = `${message.title} ${message.body}`.replace(/\s+/gu," ").trim().slice(0,budget);
+ const last = content.charCodeAt(content.length - 1);
+ if (last >= 0xd800 && last <= 0xdbff) content = content.slice(0,-1);
+ return content ? `${content.trimEnd()} ${message.url}` : null;
+}
+function whatsappRequest(phone: string, message: ReturnType<typeof appMessage>, c: NotificationProviderConfiguration["whatsapp"]): ProviderRequest | null {
  if (!c || !/^v[1-9][0-9]?\.[0-9]$/u.test(c.version) || !/^[0-9]{1,32}$/u.test(c.phoneNumberId) || !c.accessToken || !/^[a-z0-9_]{1,512}$/u.test(c.templateName) || !/^[a-z]{2}(?:_[A-Z]{2})?$/u.test(c.language)) return null;
+ const text = whatsappParameter(message); if (!text) return null;
  return { url: `https://graph.facebook.com/${c.version}/${c.phoneNumberId}/messages`, headers: { authorization: `Bearer ${c.accessToken}`, "content-type": "application/json" },
   body: JSON.stringify({ messaging_product: "whatsapp", to: phone.slice(1), type: "template", template: { name: c.templateName, language: { code: c.language }, components: [{ type: "body", parameters: [{ type: "text", text }] }] } }) };
 }
@@ -109,7 +122,7 @@ function parseReceipt(result: unknown, channel: LearnerNotificationChannel): str
 async function sendPhone(input: PreparedInput, config: NotificationProviderConfiguration): Promise<NotificationProviderResult> {
  const phone = LearnerPhoneDestination.safeParse(input.destination);
  if (!phone.success) return { outcome: "not_delivered", code: "INVALID_DESTINATION" };
- const request = input.channel === "sms" ? smsRequest(phone.data.phone,input.prepared.text,config.sms) : whatsappRequest(phone.data.phone,input.prepared.text,config.whatsapp);
+ const request = input.channel === "sms" ? smsRequest(phone.data.phone,input.prepared.text,config.sms) : whatsappRequest(phone.data.phone,input.prepared,config.whatsapp);
  if (!request) return configurationResult;
  try {
   const response = await fetch(request.url,{ method: "POST", headers: request.headers, body: request.body, redirect: "error", signal: AbortSignal.timeout(10000) });

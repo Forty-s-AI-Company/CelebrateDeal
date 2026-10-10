@@ -1,14 +1,19 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ email: vi.fn(), push: vi.fn(), fetch: vi.fn() }));
+const mocks = vi.hoisted(() => ({ email: vi.fn(), push: vi.fn(), fetch: vi.fn(), rights: vi.fn() }));
 vi.mock("./email", async original => ({ ...await original<typeof import("./email")>(), sendTransactionalEmail: mocks.email }));
+vi.mock("./learner-notification-access", () => ({ lockLearnerNotificationPurchase: mocks.rights }));
 vi.mock("web-push", () => ({ default: { generateRequestDetails: mocks.push } }));
 import { LearnerPushDestination, sendLearnerNotificationProvider, type NotificationProviderConfiguration } from "./learner-notification-providers";
 import { TransactionalEmailError } from "./email";
+import { dispatchLearnerVerificationDelivery } from "./learner-verification-delivery";
+import { protectLearnerNotificationDestination } from "./learner-notification-contract";
+import { encryptSensitiveValue } from "./sensitive-data";
+import { createHash } from "node:crypto";
 const base = { channel: "sms" as const, destination: { phone: "+886900000001" }, message: { title: "Synthetic", body: "Synthetic only", path: "/portal/synthetic/learn/course" }, appOrigin: "https://app.example.test", idempotencyKey: "a".repeat(64) };
 const config: NotificationProviderConfiguration = { sms: { accountSid: `AC${"0".repeat(32)}`, authToken: "synthetic-test-credential", from: "+15005550006" }, whatsapp: { version: "v22.0", phoneNumberId: "100000000000000", accessToken: "synthetic-test-credential", templateName: "synthetic_notification", language: "zh_TW" }, email: { enabled: true }, push: { subject: "mailto:synthetic@invalid.example", publicKey: "synthetic-public", privateKey: "synthetic-private" } };
 const subscription = { endpoint: "https://fcm.googleapis.com/fcm/send/synthetic", keys: { p256dh: "a".repeat(87), auth: "a".repeat(22) } };
 beforeEach(() => { vi.clearAllMocks(); vi.stubGlobal("fetch",mocks.fetch); });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); vi.useRealTimers(); });
 it.each(["email","push","sms","whatsapp"] as const)("missing %s configuration never sends or reports success", async channel => {
  const destination = channel === "email" ? { email: "synthetic@invalid.example" } : channel === "push" ? subscription : base.destination;
  expect(await sendLearnerNotificationProvider({ ...base, channel, destination },{})).toEqual({ outcome: "not_delivered", code: "CONFIGURATION" });
@@ -22,6 +27,7 @@ it("constructs fixed Twilio form with a bounded timeout and rejects redirects", 
  expect(options.redirect).toBe("error");expect(options.signal).toBeInstanceOf(AbortSignal);
  expect(new URLSearchParams(options.body).get("To")).toBe(base.destination.phone);
  expect(new URLSearchParams(options.body).get("Body")).toContain("https://app.example.test/portal/synthetic/learn/course");
+ expect(new URLSearchParams(options.body).get("Body")).toBe("Synthetic\nSynthetic only\nhttps://app.example.test/portal/synthetic/learn/course");
 });
 it("sends only configured WhatsApp template and normalized recipient", async () => {
  mocks.fetch.mockResolvedValue(new Response(JSON.stringify({ messages:[{ id:"wamid.synthetic" }] }),{ status:200 }));
@@ -101,4 +107,54 @@ it.each([false, true])("push hard deadline aborts an unfinished response, active
  await vi.advanceTimersByTimeAsync(10000);
  expect(await pending).toEqual({ outcome: "indeterminate", code: "OUTCOME_UNKNOWN" });
  expect(deadline).toHaveBeenCalledWith(10000); expect(abortObserved).toBe(true); expect(mocks.fetch).toHaveBeenCalledTimes(1);
+});
+
+it("WhatsApp variables normalize whitespace, bound long text and preserve the full link", async () => {
+ mocks.fetch.mockResolvedValue(new Response(JSON.stringify({messages:[{id:"wamid.synthetic"}]}),{status:200}));
+ const message={...base.message,title:"Synthetic\n\t     title",body:"通知😀\n\t     "+"🧪".repeat(960)};
+ expect((await sendLearnerNotificationProvider({...base,channel:"whatsapp",message},config)).outcome).toBe("sent");
+ const text=JSON.parse(mocks.fetch.mock.calls[0]![1].body).template.components[0].parameters[0].text as string;
+ expect(text).not.toMatch(/[\r\n\t]| {5}/u);
+ expect(text.length).toBeLessThanOrEqual(1024);
+ expect(text.endsWith(" https://app.example.test/portal/synthetic/learn/course")).toBe(true);
+ expect(text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/u);
+});
+it("WhatsApp contact proof retains its complete verification code and token-free settings link", async () => {
+ const token="q".repeat(43);
+ mocks.fetch.mockResolvedValue(new Response(JSON.stringify({messages:[{id:"wamid.synthetic"}]}),{status:200}));
+ const message={title:"驗證通知收件方式",body:`請回到原本的通知設定，輸入驗證碼：${token}。15 分鐘內有效；驗證後仍需自行開啟通知。`,path:"/portal/synthetic/notifications"};
+ expect((await sendLearnerNotificationProvider({...base,channel:"whatsapp",message},config)).outcome).toBe("sent");
+ const text=JSON.parse(mocks.fetch.mock.calls[0]![1].body).template.components[0].parameters[0].text as string;
+ expect(text).toContain(token);
+ expect(text).not.toMatch(/[\r\n\t]| {5}/u);
+ expect(text.length).toBeLessThanOrEqual(1024);
+ expect(text.endsWith(" https://app.example.test/portal/synthetic/notifications")).toBe(true);
+ expect(text.split("https://")[1]).not.toContain(token);
+});
+
+it("the real verification dispatcher sends one valid WhatsApp variable and clears its durable proof", async () => {
+ vi.stubEnv("CSRF_SECRET","synthetic-notification-provider-proof-key-32-bytes");
+ const scope={vendorId:"vendor-proof",productId:"course-proof",customerKeyHash:"a".repeat(43)};
+ const id="verification-proof",token="q".repeat(43),claimToken="c".repeat(43);
+ const row={id,...scope,preferenceId:"preference-proof",consentRevision:0,consumedAt:null,expiresAt:new Date(Date.now()+60000),
+  deliveryTokenEncryptedEnvelope:encryptSensitiveValue(token,`learner-contact-proof-v1:${JSON.stringify([scope.vendorId,id])}`),
+  tokenHash:createHash("sha256").update(token).digest("hex"),
+  destinationEncryptedEnvelope:protectLearnerNotificationDestination(scope,"whatsapp",base.destination).encryptedEnvelope};
+ const update=vi.fn().mockResolvedValue({}),fallback=vi.fn();
+ const tx={$queryRaw:vi.fn().mockResolvedValue([{id}]),
+  learnerNotificationVerification:{findFirstOrThrow:vi.fn().mockResolvedValue(row),update},
+  learnerNotificationPreference:{findFirstOrThrow:vi.fn().mockResolvedValue({...scope,revision:0,channel:"whatsapp"})},
+  vendor:{findUniqueOrThrow:vi.fn().mockResolvedValue({slug:"synthetic"})}};
+ mocks.rights.mockResolvedValue({});
+ mocks.fetch.mockResolvedValue(new Response(JSON.stringify({messages:[{id:"wamid.synthetic"}]}),{status:200}));
+ const db={$transaction:vi.fn(async (callback:(value:typeof tx)=>Promise<unknown>)=>callback(tx)),learnerNotificationVerification:{updateMany:fallback}};
+ expect(await dispatchLearnerVerificationDelivery(db as unknown as Parameters<typeof dispatchLearnerVerificationDelivery>[0],
+  {vendorId:scope.vendorId,id,claimToken},{appOrigin:base.appOrigin,configuration:config})).toEqual({status:"sent"});
+ expect(mocks.fetch).toHaveBeenCalledTimes(1);
+ const text=JSON.parse(mocks.fetch.mock.calls[0]![1].body).template.components[0].parameters[0].text as string;
+ expect(text).toContain(token);expect(text).not.toMatch(/[\r\n\t]| {5}/u);expect(text.length).toBeLessThanOrEqual(1024);
+ expect(text.endsWith(" https://app.example.test/portal/synthetic/notifications")).toBe(true);
+ expect(text.split("https://")[1]).not.toContain(token);
+ expect(update).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({deliveryStatus:"sent",deliveryTokenEncryptedEnvelope:null,deliveryClaimTokenHash:null})}));
+ expect(fallback).not.toHaveBeenCalled();
 });
