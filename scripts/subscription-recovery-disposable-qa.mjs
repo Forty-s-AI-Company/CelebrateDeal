@@ -38,9 +38,13 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
    (t.failureMessages ?? []).flatMap(message => [...message.matchAll(/(wp4-buyer-ops\.db\.test\.ts):(\d+):(\d+)/g)].map(match => ({ file: match[1], line: Number(match[2]) }))))) };
  const originalCallbackCase = result.testResults.flatMap(suite => suite.assertionResults).filter(test =>
   test.title === "recovers only the catalog-owned Q1 original callback once without another payment");
- // Keep all 67 existing cases plus the new original-transaction concurrency case.
- if (child.status !== 0 || !result.success || tests.total !== 68 || tests.passed !== 68 || tests.skipped !== 0
-  || originalCallbackCase.length !== 1 || originalCallbackCase[0].status !== "passed") throw new Error("subscription-db-regression-failed");
+   const remainingBudgetCases = result.testResults.flatMap(suite => suite.assertionResults).filter(test =>
+    ["recovers the original callback with remaining provider retry budget 2", "recovers the original callback with remaining provider retry budget 4"].includes(test.title));
+   // Keep all 67 prior cases, the original once-only case, and both remaining-budget boundaries.
+   if (child.status !== 0 || !result.success || tests.total !== 70 || tests.passed !== 70 || tests.skipped !== 0
+    || originalCallbackCase.length !== 1 || originalCallbackCase[0].status !== "passed"
+    || remainingBudgetCases.length !== 2 || new Set(remainingBudgetCases.map(test => test.title)).size !== 2
+    || remainingBudgetCases.some(test => test.status !== "passed")) throw new Error("subscription-db-regression-failed");
  if (process.argv.includes("--browser")) {
     // Reuse only the installed executable. The browser profile stays isolated;
     // changing HOME must not hide the installation and fail before the UI runs.

@@ -29,12 +29,11 @@ async function checkout(paymentSource = source) {
  const payload = PaymentWebhookPayload.parse({ provider: "payuni", eventId: "synthetic-buyer-paid", eventType: "paid", vendorId: fixed.vendorId, orderNumber: payment.orderNumber, providerTradeNo: payment.providerTradeNo, grossAmountCents: 100, netAmountCents: 100, currency: "TWD" });
  return { payment, payload };
 }
-describe("fixed historical buyer PostgreSQL recovery", () => {
- it("recovers only the catalog-owned Q1 original callback once without another payment", async () => {
+async function verifyOriginalCallbackRecovery(retryCount: number) {
   const { payment, payload } = await checkout("9acfe8d2dba62430e950cff2c0387841ab91f44b");
   const normalized = { ...payload }; delete normalized.vendorId;
   await db.webhookEvent.create({ data: { provider: "payuni", eventId: payload.eventId, eventType: "paid",
-   status: "failed", retryCount: 1, maxRetries: 5, payload: { normalized: JSON.parse(JSON.stringify(normalized)) } } });
+   status: "failed", retryCount, maxRetries: 5, payload: { normalized: JSON.parse(JSON.stringify(normalized)) } } });
   await expect(retryWp4HistoricalBuyerCallback(db)).resolves.toMatchObject({ status: "FIXTURE_UNAVAILABLE", retryAttempts: 0 });
   const outcomes = await Promise.all([retryQ1OriginalBuyerCallback(db), retryQ1OriginalBuyerCallback(db)]);
   expect(outcomes.filter(outcome => outcome.status === "PROCESSED")).toHaveLength(1);
@@ -45,7 +44,10 @@ describe("fixed historical buyer PostgreSQL recovery", () => {
    status: "paid", providerTradeNo: payment.providerTradeNo,
    metadata: { wp4PaymentSubmissionReserved: true, wp4CallbackRetryReserved: true },
   });
- });
+}
+describe("fixed historical buyer PostgreSQL recovery", () => {
+ it("recovers only the catalog-owned Q1 original callback once without another payment", () => verifyOriginalCallbackRecovery(1));
+ it.each([2, 4])("recovers the original callback with remaining provider retry budget %i", retryCount => verifyOriginalCallbackRecovery(retryCount));
  it("permits one recovery dispatch under concurrent requests and rejects replay", async () => {
   const { payment, payload } = await checkout();
   const normalized = { ...payload };

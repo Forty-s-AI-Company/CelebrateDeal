@@ -41,7 +41,11 @@ async function retryFixedBuyerCallback(db: Pick<PrismaClient, "$transaction">, s
     if (event.status === "processed") return { status: "ALREADY_PROCESSED" };
     const metadata = payment.metadata;
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata) || metadata.wp4CallbackRetryReserved === true
-      || event.status !== "failed" || event.retryCount >= event.maxRetries || event.retryCount > 1) return { status: "RETRY_REJECTED" };
+      || event.status !== "failed" || !Number.isSafeInteger(event.retryCount) || !Number.isSafeInteger(event.maxRetries)
+      || event.retryCount < 0 || event.maxRetries <= 0 || event.retryCount >= event.maxRetries) return { status: "RETRY_REJECTED" };
+    // NotifyURL and ReturnURL can already have consumed retries. The actual remaining
+    // event budget governs eligibility; the payment marker and CAS still allow only
+    // one fixed recovery. Never reset or increase the provider event's retry budget.
     const updatedAt = new Date();
     const fenced = await tx.webhookEvent.updateMany({ where: { id: event.id, status: "failed", retryCount: event.retryCount, updatedAt: event.updatedAt }, data: { updatedAt } });
     if (fenced.count !== 1) return { status: "RETRY_REJECTED" };
