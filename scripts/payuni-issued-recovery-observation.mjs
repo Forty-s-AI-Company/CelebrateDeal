@@ -9,7 +9,7 @@ function reject() {
 }
 
 function identity(row, expected) {
-  if (!row || row.MerTradeNo !== expected.orderNumber
+  if (!row || row.DataSource !== "A" || row.MerTradeNo !== expected.orderNumber
     || typeof row.TradeNo !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(row.TradeNo)
     || String(row.TradeAmt) !== String(expected.amount)
     || String(row.PaymentType) !== "1") reject();

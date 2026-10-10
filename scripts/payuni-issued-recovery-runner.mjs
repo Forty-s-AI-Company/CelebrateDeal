@@ -130,7 +130,7 @@ export async function runIssuedRecoveryQa(input, dependencies) {
   requireSafe(/^[A-Za-z0-9_-]{1,128}$/.test(checkout.transactionId ?? "")
     && Number.isSafeInteger(checkout.amountCents) && checkout.amountCents > 0 && checkout.amountCents % 100 === 0);
   const paid = await dependencies.queryProvider(checkout.orderNumber);
-  requireSafe(paid?.MerTradeNo === checkout.orderNumber && String(paid.PaymentType) === "1"
+  requireSafe(paid?.DataSource === "A" && paid.MerTradeNo === checkout.orderNumber && String(paid.PaymentType) === "1"
     && /^[A-Za-z0-9_-]{1,128}$/.test(paid.TradeNo ?? ""));
   const receipt = createPendingRefundHandoff({ startedAt, completedAt: now().toISOString(), appUrl: APP,
     checkout: { ...checkout, amount: checkout.amountCents / 100 }, paid });

@@ -4,7 +4,7 @@ import { observeIssuedRecovery } from "./payuni-issued-recovery-observation.mjs"
 
 const expected = { orderNumber: "synthetic_order", amount: 1 };
 const row = (status, extra = {}) => ({ MerTradeNo: expected.orderNumber,
-  TradeNo: "synthetic_trade", TradeAmt: 1, PaymentType: "1", TradeStatus: status, ...extra });
+  TradeNo: "synthetic_trade", TradeAmt: 1, PaymentType: "1", DataSource: "A", TradeStatus: status, ...extra });
 
 function fixture(before, after = row("1"), available = true) {
   const calls = [];
@@ -70,4 +70,18 @@ test("reports a still-unpaid original trade without claiming success", async () 
   const receipt = await observeIssuedRecovery(input);
   assert.equal(receipt.result, "SAME_TRADE_NOT_PAID");
   assert.equal(receipt.paid, false);
+});
+
+test("incomplete signed data never authorizes an original-page retry", async () => {
+  for (const DataSource of ["B", undefined, "unknown"]) {
+    const { input, calls } = fixture(row("2", { DataSource }));
+    await assert.rejects(observeIssuedRecovery(input), /OBSERVATION_REJECTED/);
+    assert.deepEqual(calls.map(c => c[0]), ["query"]);
+  }
+});
+
+test("incomplete paid result cannot claim success or cause a second retry", async () => {
+  const { input, calls } = fixture(row("2"), row("1", { DataSource: "B" }));
+  await assert.rejects(observeIssuedRecovery(input), /OBSERVATION_REJECTED/);
+  assert.deepEqual(calls.map(c => c[0]), ["query", "availability", "retry", "query"]);
 });

@@ -32,7 +32,7 @@ function fixture({ available = true, status = "1", tradeNo = "synthetic_trade", 
     state.queries++;
     if (queryFails && state.queries === 2) throw new Error("private provider diagnostic");
     return { MerTradeNo: "synthetic_order", TradeNo: state.queries === 1 ? "synthetic_trade" : tradeNo,
-      TradeAmt: "1", PaymentType: "1", TradeStatus: state.queries === 1 ? "3" : status };
+      TradeAmt: "1", PaymentType: "1", DataSource: "A", TradeStatus: state.queries === 1 ? "3" : status };
   };
   return { state, input: { prepared, queryProvider }, dependencies: { playwright: { chromium } } };
 }
