@@ -4,7 +4,10 @@ import { beforeAll, afterAll, afterEach, expect, it } from "vitest";
 import { WP4_SANDBOX_FIXTURE } from "./wp4-sandbox-fixture";
 import { wp4HistoricalBuyerWhere } from "./wp4-buyer-recovery";
 import { Q1_ORIGINAL_REFUND_SOURCE, readPendingRefundProof, readQ1OriginalPendingRefundProof } from "./payuni-pending-refund-proof";
+import { assertLocalTestDatabase } from "../../scripts/local-database-safety";
 
+assertLocalTestDatabase("DATABASE_URL", process.env.DATABASE_URL);
+assertLocalTestDatabase("DIRECT_URL", process.env.DIRECT_URL);
 const db = new PrismaClient(), execution = "a".repeat(40), prefix = `q1-original-proof-${randomUUID()}`;
 const ids: string[] = [];
 beforeAll(async () => {
