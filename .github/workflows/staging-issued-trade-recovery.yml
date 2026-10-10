@@ -10,6 +10,11 @@ name: Staging original issued trade recovery observation
         description: Exact reviewed Sandbox Preview hostname
         required: true
         type: string
+      preflight_only:
+        description: Read-only fixed runtime diagnosis without fixture or payment writes
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
   deployments: read
@@ -51,6 +56,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+          PAYUNI_ISSUED_PREFLIGHT_ONLY: ${{ inputs.preflight_only }}
           PAYUNI_ENV: sandbox
           PAYUNI_SANDBOX_QA_ENABLED: 'true'
           PAYUNI_SANDBOX_REFUND_ENABLED: 'true'

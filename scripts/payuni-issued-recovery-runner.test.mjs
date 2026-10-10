@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runIssuedRecoveryProbe, runIssuedRecoveryQa, verifyIssuedRecoveryProofSource, persistIssuedRecoveryPending, verifyFixedFinanceDashboard } from "./payuni-issued-recovery-runner.mjs";
+import { runIssuedRecoveryProbe, runIssuedRecoveryQa, verifyIssuedRecoveryProofSource, persistIssuedRecoveryPending, verifyFixedFinanceDashboard, inspectIssuedRecoveryPreflight } from "./payuni-issued-recovery-runner.mjs";
 import { mkdtemp, readFile, writeFile, mkdir, rename, unlink, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -252,4 +252,37 @@ test("processing cleanup query preserves the original pending target without han
   assert.equal(f.pending.at(-1).transactionRef, reference("synthetic_transaction"));
   assert.equal(f.pending.at(-1).paymentSubmissionMayHaveOccurred, true);
   assert.equal(f.pending.at(-1).refundSubmissionMayHaveOccurred, false);
+});
+
+test("runtime diagnosis reads only the fixed preflight and emits closed metadata", async () => {
+  const cases = [
+    [{ status: 200, body: { ready: true, buyerOrder: true, unrelated: "synthetic-private" } }, "READY"],
+    [{ status: 200, body: { ready: true, buyerOrder: false } }, "INVALID_RESPONSE"],
+    [{ status: 401 }, "UNAUTHORIZED"], [{ status: 403 }, "ACCESS_DENIED"],
+    [{ status: 404, outcome: "FIXTURE_UNAVAILABLE" }, "FIXTURE_UNAVAILABLE"],
+    [{ status: 404, outcome: "EXECUTOR_DISABLED" }, "EXECUTOR_DISABLED"],
+    [{ status: 404, outcome: "synthetic-private" }, "NOT_FOUND"],
+    [{ status: 503 }, "SERVICE_UNAVAILABLE"], [{ status: 502 }, "HTTP_OTHER"],
+  ];
+  for (const [response, code] of cases) {
+    let calls = 0;
+    const result = await inspectIssuedRecoveryPreflight(input, async operation => {
+      calls++;
+      assert.equal(operation.url, "https://celebrate-deal-staging.carry-digital-nomad.in.net/api/admin/ops/payuni/wp4-preflight");
+      assert.equal(operation.body, undefined);
+      assert.equal(operation.outcomeHeader, "x-celebratedeal-wp4-preflight");
+      assert.equal(operation.headers["x-celebratedeal-source-sha"], input.sourceSha);
+      return response;
+    });
+    assert.equal(calls, 1);
+    assert.deepEqual(result, { ready: code === "READY", code });
+    assert.equal(JSON.stringify(result).includes("synthetic-private"), false);
+  }
+});
+test("runtime diagnosis suppresses raw failures and rejects unsafe input before requests", async () => {
+  assert.deepEqual(await inspectIssuedRecoveryPreflight(input, async () => { throw new Error("synthetic-private"); }),
+    { ready: false, code: "NETWORK_OR_RESPONSE_REJECTED" });
+  let calls = 0;
+  await assert.rejects(inspectIssuedRecoveryPreflight({ ...input, payuniEnv: "production" }, async () => { calls++; }));
+  assert.equal(calls, 0);
 });
