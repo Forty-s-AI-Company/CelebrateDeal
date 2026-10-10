@@ -1,7 +1,23 @@
 import { expect, it, vi } from "vitest";
-import { originalProviderMatches, postSchemaRecovery, SCHEMA_RECOVERY_SOURCE } from "./q1-schema-recovery";
+import { originalProviderMatches, postSchemaRecovery, SCHEMA_RECOVERY_SOURCE, schemaRecoveryAfterVerified } from "./q1-schema-recovery";
 
 const signed = { MerTradeNo: "synthetic-original-order", TradeNo: "synthetic-original-trade", TradeStatus: "1", TradeAmt: 1 };
+const completed = { paymentState: "paid", callback: { callbackState: "processed", callbackTenantState: "MATCHED" },
+  callbackRetryReserved: true, paidEventCount: 1, orderState: "paid", orderPaidAmountMatches: true,
+  providerTradeNumberPresent: true, reservationState: "committed", reservationProductMatches: true, fixedAmountMatches: true, refundState: "NONE" };
+const actualAudit = { total: 3, fixed: 1, recovery: 1, paid: 1, scheduler: 0, recoveryReserved: true, retryCount: 4, maxRetries: 5 };
+it("accepts the actual processing path's three distinct audits, not a fabricated two-row success", () => {
+  expect(schemaRecoveryAfterVerified(completed, actualAudit)).toBe(true);
+  expect(schemaRecoveryAfterVerified(completed, { ...actualAudit, total: 2, paid: 0 })).toBe(false);
+});
+it.each([{ total: 4 }, { fixed: 0 }, { recovery: 0 }, { paid: 0 }, { scheduler: 1 }, { recoveryReserved: false },
+  { retryCount: 3 }, { maxRetries: 6 }])("rejects actual actor/marker/budget drift %#", drift => {
+  expect(schemaRecoveryAfterVerified(completed, { ...actualAudit, ...drift })).toBe(false);
+});
+it.each([{ paymentState: "pending" }, { paidEventCount: 2 }, { fixedAmountMatches: false }, { refundState: "PRESENT" },
+  { callbackRetryReserved: false }, { reservationState: "released" }])("rejects original payment/projection drift %#", drift => {
+  expect(schemaRecoveryAfterVerified({ ...completed, ...drift }, actualAudit)).toBe(false);
+});
 it("requires the newly signed paid query to match the original merchant and provider references", () => {
   expect(originalProviderMatches(signed, signed.MerTradeNo, signed.TradeNo)).toBe(true);
   expect(originalProviderMatches({ ...signed, TradeNo: undefined, TradeNoRef: signed.TradeNo }, signed.MerTradeNo, signed.TradeNo)).toBe(true);

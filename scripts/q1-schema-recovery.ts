@@ -7,7 +7,7 @@ import { qaFinanceDatabaseUrl, QA_FINANCE_CA_FILE, verifyQaFinanceCertificate } 
 import { readExactSyntheticState, EXACT_SOURCE } from "./q1-exact-state-details";
 import { fetchQ1Downstream } from "./q1-downstream-runtime";
 
-export const SCHEMA_RECOVERY_SOURCE = "e54f6eaffe1d57311fd04452264c47aa4114e019";
+export const SCHEMA_RECOVERY_SOURCE = "bd7bf574a5cc0eec8cc425a439da06457881497f";
 const ORIGIN = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 const WINDOW = new Date("2026-10-10T06:43:34Z");
 type CheckDb = Pick<PrismaClient, "$transaction">;
@@ -57,10 +57,11 @@ export async function readSchemaRecoveryAudit(db: CheckDb) {
       payload: { path: ["normalized", "orderNumber"], equals: orderNumber } }, take: 2,
       select: { id: true, retryCount: true, maxRetries: true } });
     if (events.length !== 1) throw new Error();
-    const counts = await tx.$queryRaw<{ total: number; fixed: number; recovery: number; scheduler: number }[]>(Prisma.sql`
+    const counts = await tx.$queryRaw<{ total: number; fixed: number; recovery: number; scheduler: number; paid: number }[]>(Prisma.sql`
       SELECT count(*)::int AS total,
         count(*) FILTER (WHERE "actorLabel"='wp4_sandbox_fixed_callback_retry')::int AS fixed,
         count(*) FILTER (WHERE "actorLabel"='q1_sandbox_schema_recovery')::int AS recovery,
+        count(*) FILTER (WHERE "actorLabel"='webhook:payuni' AND action='payment_webhook_paid')::int AS paid,
         count(*) FILTER (WHERE "actorLabel"='job:webhook-retry')::int AS scheduler
       FROM "AuditLog" WHERE "targetType"='WebhookEvent' AND "targetId"=${events[0]!.id} AND "createdAt">=${WINDOW}`);
     if (counts.length !== 1) throw new Error();
@@ -68,6 +69,24 @@ export async function readSchemaRecoveryAudit(db: CheckDb) {
     return { ...counts[0]!, retryCount: events[0]!.retryCount, maxRetries: events[0]!.maxRetries,
       recoveryReserved: !!metadata && typeof metadata === "object" && !Array.isArray(metadata) && metadata.q1SchemaRecoveryReserved === true };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 15000 });
+}
+
+type RecoveryObservation = {
+  paymentState?: string; callback?: { callbackState: string; callbackTenantState?: string };
+  callbackRetryReserved?: boolean; paidEventCount?: number | null; orderState?: string;
+  orderPaidAmountMatches?: boolean; providerTradeNumberPresent?: boolean; reservationState?: string;
+  reservationProductMatches?: boolean; fixedAmountMatches?: boolean; refundState?: string;
+};
+/** The normal processor writes its own paid audit before the fixed retry audit.
+ * Require all three exact records; do not treat an unknown actor as success. */
+export function schemaRecoveryAfterVerified(after: RecoveryObservation, audit: Awaited<ReturnType<typeof readSchemaRecoveryAudit>>) {
+  return after.paymentState === "paid" && after.callback?.callbackState === "processed"
+    && after.callback.callbackTenantState === "MATCHED" && after.callbackRetryReserved === true
+    && after.paidEventCount === 1 && after.orderState === "paid" && after.orderPaidAmountMatches === true
+    && after.providerTradeNumberPresent === true && after.reservationState === "committed" && after.reservationProductMatches === true
+    && after.fixedAmountMatches === true && after.refundState === "NONE"
+    && audit.total === 3 && audit.fixed === 1 && audit.recovery === 1 && audit.paid === 1 && audit.scheduler === 0
+    && audit.recoveryReserved === true && audit.retryCount === 4 && audit.maxRetries === 5;
 }
 
 async function persist(receipt: Record<string, unknown>) {
@@ -116,7 +135,7 @@ export async function main() {
     receipt.before = before; receipt.auditBefore = audit;
     if (!("paymentState" in before) || before.paymentState !== "pending" || before.paymentSubmissionReserved !== true
       || before.callbackRetryReserved !== true || before.callback?.callbackState !== "failed"
-      || audit.total !== 1 || audit.fixed !== 1 || audit.scheduler !== 0 || audit.recovery !== 0
+      || audit.total !== 1 || audit.fixed !== 1 || audit.scheduler !== 0 || audit.recovery !== 0 || audit.paid !== 0
       || audit.recoveryReserved || audit.retryCount !== 3 || audit.maxRetries !== 5) throw new Error();
     stage = "fresh-signed-original-provider-query";
     await verifyOriginalProvider(db); receipt.providerPaidQueryMatched = true;
@@ -132,13 +151,8 @@ export async function main() {
     stage = "original-readonly-after";
     const after = await readExactSyntheticState(db), auditAfter = await readSchemaRecoveryAudit(db);
     receipt.after = after; receipt.auditAfter = auditAfter;
-    if (!("paymentState" in after) || after.paymentState !== "paid" || after.callback?.callbackState !== "processed"
-      || after.callback.callbackTenantState !== "MATCHED" || after.callbackRetryReserved !== true
-      || after.paidEventCount !== 1 || after.orderState !== "paid" || after.orderPaidAmountMatches !== true
-      || after.providerTradeNumberPresent !== true || after.reservationState !== "committed" || after.reservationProductMatches !== true
-      || auditAfter.total !== 2 || auditAfter.fixed !== 1 || auditAfter.recovery !== 1 || auditAfter.scheduler !== 0
-      || !auditAfter.recoveryReserved || auditAfter.retryCount !== 4 || auditAfter.maxRetries !== 5) throw new Error();
-    receipt.status = "ORIGINAL_SCHEMA_RECOVERY_VERIFIED";
+    if (!("paymentState" in after) || !schemaRecoveryAfterVerified(after, auditAfter)) throw new Error();
+    receipt.status = "ORIGINAL_SCHEMA_RECOVERY_VERIFIED"; receipt.stage = "complete";
   } catch { receipt.status = "BLOCKED"; receipt.stage = stage; process.exitCode = 1; }
   finally {
     try { await db?.$disconnect(); } catch { receipt.status = "BLOCKED"; receipt.stage = "disconnect"; process.exitCode = 1; }
