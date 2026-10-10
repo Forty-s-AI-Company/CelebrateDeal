@@ -168,6 +168,12 @@
 |---|---|---|---|---|
 | `POST /api/affiliates/[affiliateId]/remuneration/[snapshotId]/export` | 同源表單、session／MFA、目前商家管理員、兩項功能權益與 CSRF | 4096-byte body；精確租戶、affiliate、snapshot、簽署、政策／profile revision 與 ledger proof | 私人 CSV attachment；private／CDN no-store；冪等不可變匯出 audit；不執行付款；401／403／404／409 fail closed | 同路徑 6 unit；29 disposable PG；實際 workspace browser 與跨租戶／重試證据 |
 
+## Q1 原交易唯讀診斷（2026-10-10）
+
+| Route／method | Caller 與安全邊界 | Input／資源契約 | Side effect 與 response | 目前證據 |
+|---|---|---|---|---|
+| `GET /api/admin/ops/payuni/q1-downstream-readonly` | 既有 timing-safe JOB Bearer、精確部署來源、Preview／Sandbox 與固定資料庫邊界；授權先於讀取 | 不接受 caller 資源 ID、query 或 body；僅 server-owned 固定合成原交易 | RepeatableRead READ ONLY；封閉 schema／enum／stage／crypto 分類；不輸出 PII、秘密值或原始錯誤；no-store；不付款、退款、寄信或重送 callback；不可用回 503 | 同路徑授權與安全 unit、disposable PostgreSQL schema drift／crypto／禁止寫入測試；實際部署診斷與產品驗收尚未完成 |
+
 ## 原生課程社群（2026-10-06）
 
 | Route／method | Caller 與安全邊界 | Input／資源契約 | Side effect／replay | Response／證據 |
