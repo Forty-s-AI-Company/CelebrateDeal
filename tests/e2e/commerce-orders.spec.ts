@@ -101,6 +101,8 @@ function normalizePathQuery(value: string) {
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
 async function expectNoBlockingAxeViolations(page: Page) {
+  // 等待導航後的 title 完成更新，再執行完整 axe；title 缺失仍會使測試失敗。
+  await expect(page).toHaveTitle(/\S/u);
   const result = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .analyze();
