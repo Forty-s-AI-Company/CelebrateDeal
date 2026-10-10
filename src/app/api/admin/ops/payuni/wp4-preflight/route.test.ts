@@ -165,6 +165,42 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("POST /api/admin/ops/payuni/wp4-preflight", () => {
+  it("validates buyer readiness without activating or querying unrelated billing fixtures", async () => {
+    mocks.findBillingPlan.mockResolvedValue(null);
+    mocks.findInvoice.mockResolvedValue(null);
+    const response = await POST(requestWithHeaders({ "x-celebratedeal-wp4-preflight-scope": "buyer_order" }));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ready: true, buyerOrder: true,
+      platformSubscription: false, invoicePayment: false, scope: "buyer_order" });
+    expect(mocks.findMembership).toHaveBeenCalledOnce();
+    expect(mocks.findProduct).toHaveBeenCalledOnce();
+    expect(mocks.findBillingPlan).not.toHaveBeenCalled();
+    expect(mocks.findInvoice).not.toHaveBeenCalled();
+    expectNoWritesOrProviders();
+  });
+
+  it.each(["all", "invoice", "buyer_order,all", "unknown"])("rejects unknown scope %s before DB access", async (scope) => {
+    const response = await POST(requestWithHeaders({ "x-celebratedeal-wp4-preflight-scope": scope }));
+    expect(response.status).toBe(404);
+    expectNoReads();
+    expectNoWritesOrProviders();
+  });
+
+  it.each(["findMembership", "findProduct"] as const)("buyer scope still rejects missing %s", async (fixture) => {
+    mocks[fixture].mockResolvedValueOnce(null);
+    const response = await POST(requestWithHeaders({ "x-celebratedeal-wp4-preflight-scope": "buyer_order" }));
+    expect(response.status).toBe(404);
+    expect(response.headers.get("x-celebratedeal-wp4-preflight")).toBe("FIXTURE_UNAVAILABLE");
+    expectNoWritesOrProviders();
+  });
+
+  it("buyer scope still rejects unready delivery", async () => {
+    mocks.findProduct.mockResolvedValueOnce({ id: "product-1", fulfillmentType: "digital", deliveryConfig: deliveryConfig({ status: "draft" }) });
+    const response = await POST(requestWithHeaders({ "x-celebratedeal-wp4-preflight-scope": "buyer_order" }));
+    expect(response.status).toBe(404);
+    expectNoWritesOrProviders();
+  });
+
   it("returns 401 before reading a body or touching the DB", async () => {
     const requestWithUnauthorizedBody = requestWithBody();
 

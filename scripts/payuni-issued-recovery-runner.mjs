@@ -73,8 +73,8 @@ export async function runIssuedRecoveryProbe(input, dependencies) {
   requireSafe(invocation.ok && dependencies && typeof dependencies.queryProvider === "function");
   const request = dependencies.request ?? defaultRequest;
   const preflight = await request({ url: `${APP}/api/admin/ops/payuni/wp4-preflight`, body: undefined,
-    headers: { authorization: `Bearer ${invocation.jobSecret}`, "x-celebratedeal-source-sha": invocation.sourceSha } });
-  requireSafe(preflight?.status === 200 && preflight.body?.ready === true && preflight.body?.buyerOrder === true);
+    headers: { authorization: `Bearer ${invocation.jobSecret}`, "x-celebratedeal-source-sha": invocation.sourceSha, "x-celebratedeal-wp4-preflight-scope": "buyer_order" } });
+  requireSafe(preflight?.status === 200 && preflight.body?.ready === true && preflight.body?.buyerOrder === true && preflight.body?.scope === "buyer_order");
   const prepared = await prepareIssuedRecoveryCheckout(input, {
     request: operation => {
       const url = new URL(operation.url);
@@ -170,9 +170,9 @@ export async function inspectIssuedRecoveryPreflight(input, request = defaultReq
   requireSafe(validateInvocation(input).ok);
   try {
     const response = await request({ url: `${APP}/api/admin/ops/payuni/wp4-preflight`, body: undefined,
-      headers: { authorization: `Bearer ${input.jobSecret}`, "x-celebratedeal-source-sha": input.sourceSha },
+      headers: { authorization: `Bearer ${input.jobSecret}`, "x-celebratedeal-source-sha": input.sourceSha, "x-celebratedeal-wp4-preflight-scope": "buyer_order" },
       outcomeHeader: "x-celebratedeal-wp4-preflight" });
-    const ready = response?.status === 200 && response.body?.ready === true && response.body?.buyerOrder === true;
+    const ready = response?.status === 200 && response.body?.ready === true && response.body?.buyerOrder === true && response.body?.scope === "buyer_order";
     const outcome = new Set(["EXECUTOR_DISABLED", "FIXTURE_UNAVAILABLE"]).has(response?.outcome) ? response.outcome : null;
     const code = ready ? "READY" : outcome ?? ({ 200: "INVALID_RESPONSE", 401: "UNAUTHORIZED", 403: "ACCESS_DENIED", 404: "NOT_FOUND", 503: "SERVICE_UNAVAILABLE" }[response?.status] ?? "HTTP_OTHER");
     return { ready, code };
