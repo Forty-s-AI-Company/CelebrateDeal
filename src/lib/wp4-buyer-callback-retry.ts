@@ -1,7 +1,7 @@
 import { Prisma, type PrismaClient, type PaymentTransaction, type WebhookEvent } from "@prisma/client";
 import { PaymentWebhookPayload, type PaymentWebhookPayloadInput } from "./payment-webhooks";
 import { retryWebhookEvent } from "./webhook-retry";
-import { wp4HistoricalBuyerWhere } from "./wp4-buyer-recovery";
+import { wp4HistoricalBuyerWhere, WP4_BUYER_CONTINUATION_SOURCE } from "./wp4-buyer-recovery";
 import { WP4_SANDBOX_FIXTURE } from "./wp4-sandbox-fixture";
 
 /** Every supplied provider selector must agree with the server-owned payment. */
@@ -18,9 +18,9 @@ function matchesFixedPayment(payload: PaymentWebhookPayloadInput,
     && (payload.currency === undefined || payload.currency === payment.currency);
 }
 /** Reserve one retry durably before dispatch; a lost response cannot reopen it. */
-export async function retryWp4HistoricalBuyerCallback(db: Pick<PrismaClient, "$transaction">) {
+async function retryFixedBuyerCallback(db: Pick<PrismaClient, "$transaction">, source: string) {
   const reserved = await db.$transaction(async tx => {
-    const payments = await tx.paymentTransaction.findMany({ where: wp4HistoricalBuyerWhere(), take: 2 });
+    const payments = await tx.paymentTransaction.findMany({ where: wp4HistoricalBuyerWhere(source), take: 2 });
     if (payments.length !== 1) return { status: payments.length ? "CANDIDATE_AMBIGUOUS" : "FIXTURE_UNAVAILABLE" };
     const payment = payments[0]!;
     if (!payment.orderNumber) return { status: "EVENT_UNAVAILABLE" };
@@ -62,4 +62,15 @@ export async function retryWp4HistoricalBuyerCallback(db: Pick<PrismaClient, "$t
     return outcome.status === "processed" ? { status: "PROCESSED", retryAttempts: 1, failureCode: "NONE" }
       : { status: "RETRY_FAILED", retryAttempts: 1, failureCode: "processing_failed" };
   } catch { return { status: "RETRY_FAILED", retryAttempts: 1, failureCode: "processing_failed" }; }
+}
+
+/** Preserve the previously delivered historical recovery scope. */
+export function retryWp4HistoricalBuyerCallback(db: Pick<PrismaClient, "$transaction">) {
+  return retryFixedBuyerCallback(db, WP4_BUYER_CONTINUATION_SOURCE);
+}
+
+/** Original Q1 payment is catalog-owned; callers cannot supply a source or ID.
+ * Replays only its existing verified callback, never submits another payment. */
+export function retryQ1OriginalBuyerCallback(db: Pick<PrismaClient, "$transaction">) {
+  return retryFixedBuyerCallback(db, "9acfe8d2dba62430e950cff2c0387841ab91f44b");
 }
