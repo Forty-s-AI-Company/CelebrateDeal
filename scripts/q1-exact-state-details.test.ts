@@ -10,7 +10,7 @@ function fixture(rows = [payment()]) {
     commerceOrder: { findMany: vi.fn(async () => [{ id: "private-order-id", status: "pending_payment", paidAmountCents: 0 }]) },
     inventoryReservation: { findMany: vi.fn(async () => [{ status: "reserved", releaseReason: null, productId: WP4_SANDBOX_FIXTURE.productId, quantity: 1 }]) },
     commerceOrderEvent: { count: vi.fn(async () => 0) },
-    webhookEvent: { findMany: vi.fn<() => Promise<Array<{ status: string; vendorId: string | null; errorMessage: string | null; retryCount: number; maxRetries: number }>>>().mockResolvedValue([]) } };
+    webhookEvent: { findMany: vi.fn<() => Promise<Array<{ status: string; vendorId: string | null; errorMessage: string | null; retryCount: number; maxRetries: number; eventId?: string; payload?: unknown }>>>().mockResolvedValue([]) } };
   const transaction = vi.fn(async (fn: (value: typeof tx) => unknown) => fn(tx));
   return { tx, transaction, db: { $transaction: transaction } as unknown as PrismaClient };
 }
@@ -54,7 +54,7 @@ describe("exact existing synthetic transaction read-only diagnosis", () => {
     expect("callback" in result && result.callback).toEqual({ callbackState: "NOT_OBSERVED" });
     expect(tx.webhookEvent.findMany).toHaveBeenCalledExactlyOnceWith({ where: { provider: "payuni", eventType: "paid",
       payload: { path: ["normalized", "orderNumber"], equals: "private-original-reference" } }, take: 2,
-      select: { status: true, vendorId: true, errorMessage: true, retryCount: true, maxRetries: true } });
+      select: { status: true, vendorId: true, errorMessage: true, retryCount: true, maxRetries: true, eventId: true, payload: true } });
     expect(JSON.stringify(result)).not.toContain("private-");
   });
   it("reports durable submission and callback-retry reservations without changing them", async () => {
@@ -68,14 +68,18 @@ describe("exact existing synthetic transaction read-only diagnosis", () => {
     const { db, tx } = fixture();
     tx.webhookEvent.findMany.mockResolvedValue([{ status: "failed", vendorId: null, errorMessage: "Payment webhook processing failed (processing_timeout).", retryCount: 1, maxRetries: 3 }]);
     const result = await readExactSyntheticState(db);
-    expect("callback" in result && result.callback).toEqual({ callbackState: "failed", callbackTenantState: "UNASSIGNED", callbackFailure: "processing_timeout", callbackRetryBudgetAvailable: true });
+    expect("callback" in result && result.callback).toEqual({ callbackState: "failed", callbackTenantState: "UNASSIGNED", callbackFailure: "processing_timeout", callbackRetryBudgetAvailable: true,
+      callbackPayloadValid: false, callbackEventIdentityMatches: false, callbackProviderOrderMatches: false, callbackPayloadTenantMatches: false,
+      callbackAmountMatches: false, callbackTradeMatches: false, callbackCurrencyMatches: false, callbackSingleRecoveryCountAllowed: true });
     expect(JSON.stringify(result)).not.toContain("private-");
   });
   it("closes unknown errors and reports a conflicting tenant without revealing its value", async () => {
     const { db, tx } = fixture();
     tx.webhookEvent.findMany.mockResolvedValue([{ status: "private-status", vendorId: "private-foreign-tenant", errorMessage: "private-token-error", retryCount: 3, maxRetries: 3 }]);
     const result = await readExactSyntheticState(db);
-    expect("callback" in result && result.callback).toEqual({ callbackState: "OTHER", callbackTenantState: "MISMATCHED", callbackFailure: "OTHER", callbackRetryBudgetAvailable: false });
+    expect("callback" in result && result.callback).toEqual({ callbackState: "OTHER", callbackTenantState: "MISMATCHED", callbackFailure: "OTHER", callbackRetryBudgetAvailable: false,
+      callbackPayloadValid: false, callbackEventIdentityMatches: false, callbackProviderOrderMatches: false, callbackPayloadTenantMatches: false,
+      callbackAmountMatches: false, callbackTradeMatches: false, callbackCurrencyMatches: false, callbackSingleRecoveryCountAllowed: false });
     expect(JSON.stringify(result)).not.toContain("private-");
   });
   it("does not select one of two callbacks or query an invalid original reference", async () => {
@@ -119,5 +123,41 @@ describe("fixed original provider query classification", () => {
   it("never serializes raw errors or grants permission to resubmit", async () => {
     const result = await queryExactProviderState("fixed", async () => { throw new Error("private-key"); });
     expect(result).toEqual({ providerQuery: "UNAVAILABLE" });
+  });
+});
+
+describe("closed original callback rejection observations", () => {
+  const normalized = () => ({ provider: "payuni", eventId: "private-event", eventType: "paid", orderNumber: "private-original-reference",
+    providerTradeNo: "private-provider-id", grossAmountCents: 100, currency: "TWD" });
+  async function observe(payload: unknown, retryCount = 1) {
+    const { db, tx } = fixture();
+    tx.webhookEvent.findMany.mockResolvedValue([{ status: "failed", vendorId: null, errorMessage: null,
+      retryCount, maxRetries: 5, eventId: "private-event", payload: { normalized: payload } }]);
+    const result = await readExactSyntheticState(db);
+    expect(JSON.stringify(result)).not.toContain("private-");
+    expect(tx.$executeRaw.mock.calls[0]?.[0]?.join("")).toBe("SET TRANSACTION READ ONLY");
+    if (!("callback" in result)) throw new Error("Expected exact callback observation");
+    return result.callback;
+  }
+  it("separates the stricter fixed-recovery count from the provider retry budget", async () => {
+    expect(await observe(normalized(), 2)).toMatchObject({ callbackRetryBudgetAvailable: true,
+      callbackSingleRecoveryCountAllowed: false, callbackPayloadValid: true, callbackEventIdentityMatches: true,
+      callbackProviderOrderMatches: true, callbackPayloadTenantMatches: true, callbackAmountMatches: true,
+      callbackTradeMatches: true, callbackCurrencyMatches: true });
+  });
+  it.each([
+    ["eventId", "private-other-event", "callbackEventIdentityMatches"],
+    ["provider", "other", "callbackProviderOrderMatches"],
+    ["vendorId", "private-other-tenant", "callbackPayloadTenantMatches"],
+    ["vendorSlug", "private-other-slug", "callbackPayloadTenantMatches"],
+    ["grossAmountCents", 200, "callbackAmountMatches"],
+    ["providerTradeNo", "private-other-trade", "callbackTradeMatches"],
+    ["currency", "USD", "callbackCurrencyMatches"],
+  ])("closes mismatched %s to a boolean without exporting values", async (field, value, flag) => {
+    expect(await observe({ ...normalized(), [field]: value })).toHaveProperty(flag, false);
+  });
+  it("does not interpret an invalid stored shape as a usable callback", async () => {
+    expect(await observe({ ...normalized(), grossAmountCents: "100", token: "private-token" }))
+      .toMatchObject({ callbackPayloadValid: false, callbackAmountMatches: false });
   });
 });

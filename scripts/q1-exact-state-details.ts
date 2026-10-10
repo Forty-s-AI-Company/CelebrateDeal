@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { WP4_SANDBOX_FIXTURE } from "../src/lib/wp4-sandbox-fixture";
 import { wp4PayUniPurposeFromMetadata, wp4SourceCommitFromMetadata } from "../src/lib/wp4-payuni-sandbox-reconciliation";
 import { paymentWebhookFailureMessage, type PaymentWebhookFailureCode } from "../src/lib/payment-webhook-errors";
+import { PaymentWebhookPayload } from "../src/lib/payment-webhooks";
 import { qaFinanceDatabaseUrl, QA_FINANCE_CA_FILE, verifyQaFinanceCertificate, qaFinanceFailureCategory } from "../src/lib/staging-qa-finance-bootstrap";
 
 // Diagnose the already-issued transaction only; this is not a new checkout selector.
@@ -13,20 +14,47 @@ const closedState = (value: unknown, values: readonly string[]) => values.find((
 const CALLBACK_FAILURES: readonly PaymentWebhookFailureCode[] = ["scope_missing", "scope_invalid", "scope_mismatch",
   "order_ambiguous", "amount_mismatch", "inventory_conflict", "processing_timeout", "processing_claim_lost", "processing_failed"];
 
+type CallbackObservation = {
+  callbackState: string; callbackTenantState?: string; callbackFailure?: string; callbackRetryBudgetAvailable?: boolean;
+  callbackPayloadValid?: boolean; callbackEventIdentityMatches?: boolean; callbackProviderOrderMatches?: boolean;
+  callbackPayloadTenantMatches?: boolean; callbackAmountMatches?: boolean; callbackTradeMatches?: boolean;
+  callbackCurrencyMatches?: boolean; callbackSingleRecoveryCountAllowed?: boolean;
+};
+
 // Read the actual stored callback only. A signed query is never a callback substitute.
-async function readOriginalCallback(tx: Prisma.TransactionClient, orderNumber: string | null) {
+async function readOriginalCallback(tx: Prisma.TransactionClient, payment: {
+  orderNumber: string | null; providerTradeNo: string | null; grossAmountCents: number; currency: string;
+}): Promise<CallbackObservation> {
+  const { orderNumber } = payment;
   if (!orderNumber || !/^[a-zA-Z0-9_-]{1,128}$/.test(orderNumber)) return { callbackState: "REFERENCE_UNAVAILABLE" };
   const events = await tx.webhookEvent.findMany({ where: { provider: "payuni", eventType: "paid",
     payload: { path: ["normalized", "orderNumber"], equals: orderNumber } }, take: 2,
-    select: { status: true, vendorId: true, errorMessage: true, retryCount: true, maxRetries: true } });
+    select: { status: true, vendorId: true, errorMessage: true, retryCount: true, maxRetries: true, eventId: true, payload: true } });
   if (events.length !== 1) return { callbackState: events.length ? "AMBIGUOUS" : "NOT_OBSERVED" };
   const event = events[0]!;
+  const envelope = event.payload;
+  const parsed = PaymentWebhookPayload.safeParse(envelope && typeof envelope === "object" && !Array.isArray(envelope) ? envelope.normalized : null);
+  // Only booleans leave this read-only process. Never expose payloads, IDs or schema errors.
+  // These observations explain the existing recovery guards; they do not authorize replay.
+  const callbackBinding = {
+    callbackPayloadValid: parsed.success,
+    callbackEventIdentityMatches: parsed.success && parsed.data.eventId === event.eventId,
+    callbackProviderOrderMatches: parsed.success && parsed.data.provider === "payuni" && parsed.data.eventType === "paid"
+      && parsed.data.orderNumber === orderNumber,
+    callbackPayloadTenantMatches: parsed.success && (parsed.data.vendorId === undefined || parsed.data.vendorId === WP4_SANDBOX_FIXTURE.vendorId)
+      && (parsed.data.vendorSlug === undefined || parsed.data.vendorSlug === WP4_SANDBOX_FIXTURE.vendorSlug),
+    callbackAmountMatches: parsed.success && parsed.data.grossAmountCents === payment.grossAmountCents,
+    callbackTradeMatches: parsed.success && (parsed.data.providerTradeNo === undefined || payment.providerTradeNo === null
+      || parsed.data.providerTradeNo === payment.providerTradeNo),
+    callbackCurrencyMatches: parsed.success && (parsed.data.currency === undefined || parsed.data.currency === payment.currency),
+    callbackSingleRecoveryCountAllowed: Number.isSafeInteger(event.retryCount) && event.retryCount >= 0 && event.retryCount <= 1,
+  };
   return { callbackState: closedState(event.status, ["received", "processed", "failed", "retrying", "exhausted"]),
     callbackTenantState: event.vendorId === null ? "UNASSIGNED" : event.vendorId === WP4_SANDBOX_FIXTURE.vendorId ? "MATCHED" : "MISMATCHED",
     callbackFailure: event.errorMessage === null ? "NONE"
       : CALLBACK_FAILURES.find((code) => paymentWebhookFailureMessage(code) === event.errorMessage) ?? "OTHER",
     callbackRetryBudgetAvailable: Number.isSafeInteger(event.retryCount) && Number.isSafeInteger(event.maxRetries)
-      && event.retryCount >= 0 && event.retryCount < event.maxRetries };
+      && event.retryCount >= 0 && event.retryCount < event.maxRetries, ...callbackBinding };
 }
 
 // Query only the database-selected original merchant reference; no checkout/close API.
@@ -77,7 +105,7 @@ export async function readExactSyntheticState(db: Pick<PrismaClient, "$transacti
     const paidEventCount = orders.length === 1 ? await tx.commerceOrderEvent.count({
       where: { vendorId: WP4_SANDBOX_FIXTURE.vendorId, orderId: orders[0]!.id, eventType: "payment.paid" },
     }) : null;
-    const callback = await readOriginalCallback(tx, payment.orderNumber);
+    const callback = await readOriginalCallback(tx, payment);
     const provider = query ? (payment.grossAmountCents === 100 && payment.currency === "TWD"
       && typeof payment.orderNumber === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(payment.orderNumber)
       ? await queryExactProviderState(payment.orderNumber, query) : { providerQuery: "EXACT_IDENTITY_UNAVAILABLE" }) : undefined;
