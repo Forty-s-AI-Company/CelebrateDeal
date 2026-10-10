@@ -7,7 +7,7 @@ import { createReservedPaymentTransaction } from "./inventory-reservations";
 import { createCommerceOrderForCheckout } from "./commerce-orders";
 import { PaymentWebhookPayload, processPaymentWebhook } from "./payment-webhooks";
 import { readWp4ExistingBuyerState, wp4HistoricalBuyerWhere, WP4_BUYER_CONTINUATION_SOURCE as source } from "./wp4-buyer-recovery";
-import { retryQ1OriginalBuyerCallback, retryWp4HistoricalBuyerCallback } from "./wp4-buyer-callback-retry";
+import { retryQ1OriginalBuyerCallback, retryWp4HistoricalBuyerCallback, retryQ1OriginalAfterSchemaRepair } from "./wp4-buyer-callback-retry";
 const db = getDb();
 const raceVendorId = "wp4_synthetic_slug_race_vendor";
 afterEach(async () => {
@@ -46,6 +46,30 @@ async function verifyOriginalCallbackRecovery(retryCount: number) {
   });
 }
 describe("fixed historical buyer PostgreSQL recovery", () => {
+ it("recovers the original after schema repair once under contention without resetting the earlier marker", async () => {
+  const { payment, payload } = await checkout("9acfe8d2dba62430e950cff2c0387841ab91f44b");
+  const normalized = { ...payload }; delete normalized.vendorId;
+  const event = await db.webhookEvent.create({ data: { provider: "payuni", eventId: payload.eventId, eventType: "paid",
+   status: "failed", retryCount: 3, maxRetries: 5, payload: { normalized: JSON.parse(JSON.stringify(normalized)) } } });
+  await db.paymentTransaction.update({ where: { id: payment.id }, data: {
+   metadata: { ...(payment.metadata as Record<string, string | boolean>), wp4CallbackRetryReserved: true },
+  } });
+  await db.auditLog.create({ data: { vendorId: fixed.vendorId, actorLabel: "wp4_sandbox_fixed_callback_retry",
+   action: "webhook_retry_failed", targetType: "WebhookEvent", targetId: event.id,
+   before: { retryCount: 3 }, after: { status: "failed", errorCode: "processing_failed" } } });
+  try {
+   const outcomes = await Promise.all([retryQ1OriginalAfterSchemaRepair(db), retryQ1OriginalAfterSchemaRepair(db)]);
+   expect(outcomes.filter(outcome => outcome.status === "PROCESSED")).toHaveLength(1);
+   expect(outcomes.reduce((sum, outcome) => sum + outcome.retryAttempts, 0)).toBe(1);
+   await expect(retryQ1OriginalAfterSchemaRepair(db)).resolves.toMatchObject({ status: "ALREADY_PROCESSED", retryAttempts: 0 });
+   expect(await db.paymentTransaction.count({ where: { vendorId: fixed.vendorId } })).toBe(1);
+   expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "paid",
+    providerTradeNo: payment.providerTradeNo, metadata: { wp4CallbackRetryReserved: true, q1SchemaRecoveryReserved: true } });
+   expect(await db.webhookEvent.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({ status: "processed", retryCount: 4, maxRetries: 5 });
+  } finally {
+   await db.auditLog.deleteMany({ where: { targetType: "WebhookEvent", targetId: event.id } });
+  }
+ });
  it("recovers only the catalog-owned Q1 original callback once without another payment", () => verifyOriginalCallbackRecovery(1));
  it.each([2, 4])("recovers the original callback with remaining provider retry budget %i", retryCount => verifyOriginalCallbackRecovery(retryCount));
  it("permits one recovery dispatch under concurrent requests and rejects replay", async () => {
