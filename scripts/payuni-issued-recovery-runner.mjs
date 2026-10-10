@@ -22,7 +22,7 @@ const PATHS = new Set(["/api/admin/ops/payuni/wp4-fixture", "/api/payments/check
   "/api/payments/checkout", "/api/admin/ops/payuni/wp4-payment-attempt"]);
 const PROOF_BLOBS = Object.freeze({
   "src/app/api/admin/ops/payuni/pending-refund-proof/route.ts": "5b90f3d557cb3f1fbee0d1af9b20189df9acc8cf",
-  "src/lib/payuni-pending-refund-proof.ts": "3cb7b6541551df4f4565f7e0f89ec84d6126f535",
+  "src/lib/payuni-pending-refund-proof.ts": "25fb5c1e5dd77aa780cc513c014e28e84b6b13a4",
 });
 
 /** Replace only after a complete write; failure preserves the previous receipt. */
@@ -130,7 +130,7 @@ export async function runIssuedRecoveryQa(input, dependencies) {
   requireSafe(/^[A-Za-z0-9_-]{1,128}$/.test(checkout.transactionId ?? "")
     && Number.isSafeInteger(checkout.amountCents) && checkout.amountCents > 0 && checkout.amountCents % 100 === 0);
   const paid = await dependencies.queryProvider(checkout.orderNumber);
-  requireSafe(paid?.MerTradeNo === checkout.orderNumber && String(paid.PaymentType) === "1"
+  requireSafe(paid?.DataSource === "A" && paid.MerTradeNo === checkout.orderNumber && String(paid.PaymentType) === "1"
     && /^[A-Za-z0-9_-]{1,128}$/.test(paid.TradeNo ?? ""));
   const receipt = createPendingRefundHandoff({ startedAt, completedAt: now().toISOString(), appUrl: APP,
     checkout: { ...checkout, amount: checkout.amountCents / 100 }, paid });

@@ -123,7 +123,7 @@ function cleanupFixture() {
     observeBrowser: async () => { history.push("observe"); return { result: "SAME_TRADE_PAYMENT_OBSERVED", sameTrade: true,
       paid: true, tradeRef: `sha256:${createHash("sha256").update(trade).digest("hex")}` }; },
     queryProvider: async order => { assert.equal(order, "synthetic_order"); history.push("query");
-      return { MerTradeNo: order, TradeNo: trade, TradeStatus: "1", TradeAmt: "1", PaymentType: "1" }; },
+      return { MerTradeNo: order, TradeNo: trade, TradeStatus: "1", TradeAmt: "1", PaymentType: "1", DataSource: "A" }; },
     loadProof: async (transactionId, sourceSha) => {
       assert.equal(transactionId, "synthetic_transaction"); assert.equal(sourceSha, input.sourceSha); history.push("proof");
       return { schemaVersion: "celebratedeal-payuni-pending-refund-proof/v1", environment: "preview", payuniEnvironment: "sandbox",
@@ -211,7 +211,7 @@ test("a paid original trade remains durable when its first application proof fai
 
 test("proof source capability requires both exact reviewed route and service blobs", async () => {
   const calls = [];
-  const shas = ["5b90f3d557cb3f1fbee0d1af9b20189df9acc8cf", "3cb7b6541551df4f4565f7e0f89ec84d6126f535"];
+  const shas = ["5b90f3d557cb3f1fbee0d1af9b20189df9acc8cf", "25fb5c1e5dd77aa780cc513c014e28e84b6b13a4"];
   assert.equal(await verifyIssuedRecoveryProofSource({ sourceSha: input.sourceSha, token: "synthetic-github" }, async url => {
     calls.push(url); assert.equal(url.searchParams.get("ref"), input.sourceSha);
     return new Response(JSON.stringify({ type: "file", path: url.pathname.split("/contents/")[1], sha: shas[calls.length - 1] }));
@@ -243,3 +243,13 @@ for (const [mode, email] of [["production", "q1-synthetic-finance-v1@invalid.exa
     assert.equal(child.stdout.includes(email), false);
   });
 }
+
+test("processing cleanup query preserves the original pending target without handoff or refund", async () => {
+  const f = cleanupFixture(); const query = f.dependencies.queryProvider;
+  f.dependencies.queryProvider = async order => ({ ...await query(order), DataSource: "B" });
+  await assert.rejects(runIssuedRecoveryQa(input, f.dependencies), /RUNNER_REJECTED/);
+  assert.deepEqual(f.history, ["capability", "finance", "observe", "query"]);
+  assert.equal(f.pending.at(-1).transactionRef, reference("synthetic_transaction"));
+  assert.equal(f.pending.at(-1).paymentSubmissionMayHaveOccurred, true);
+  assert.equal(f.pending.at(-1).refundSubmissionMayHaveOccurred, false);
+});
