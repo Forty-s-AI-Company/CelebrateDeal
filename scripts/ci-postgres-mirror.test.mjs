@@ -31,6 +31,18 @@ test('official pinned mirror preserves the entire existing CI contract and dispo
     }
   }
 
+  // Verify the additional notification gate before removing only its exact block
+  // from the historical comparison; every previous CI step stays byte-for-byte.
+  const notificationBlock = '      - name: Learner notification database boundaries\n        run: node --import tsx scripts/learner-notification-disposable-qa.mjs\n\n';
+  assert.equal(current.split(notificationBlock).length - 1, existsSync('scripts/learner-notification-disposable-qa.mjs') ? 1 : 0);
+  if (existsSync('scripts/learner-notification-disposable-qa.mjs')) {
+    const notificationPosition = current.indexOf(notificationBlock);
+    const concurrencyPosition = current.indexOf('      - name: PostgreSQL concurrency tests');
+    assert.ok(concurrencyPosition >= 0);
+    assert.ok(notificationPosition > concurrencyPosition);
+    assert.ok(notificationPosition < current.indexOf('      - name: Install Playwright browser'));
+    restored = restored.replace(notificationBlock, '');
+  }
   assert.equal(restored, prior, 'all database health, migrations, test assertions and existing steps remain intact');
 });
 
