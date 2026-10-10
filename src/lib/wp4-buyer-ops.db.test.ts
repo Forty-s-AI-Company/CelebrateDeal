@@ -7,7 +7,7 @@ import { createReservedPaymentTransaction } from "./inventory-reservations";
 import { createCommerceOrderForCheckout } from "./commerce-orders";
 import { PaymentWebhookPayload, processPaymentWebhook } from "./payment-webhooks";
 import { readWp4ExistingBuyerState, wp4HistoricalBuyerWhere, WP4_BUYER_CONTINUATION_SOURCE as source } from "./wp4-buyer-recovery";
-import { retryWp4HistoricalBuyerCallback } from "./wp4-buyer-callback-retry";
+import { retryQ1OriginalBuyerCallback, retryWp4HistoricalBuyerCallback, retryQ1OriginalAfterSchemaRepair } from "./wp4-buyer-callback-retry";
 const db = getDb();
 const raceVendorId = "wp4_synthetic_slug_race_vendor";
 afterEach(async () => {
@@ -17,19 +17,64 @@ afterEach(async () => {
  await db.user.deleteMany({ where: { id: fixed.userId } });
  await db.billingPlan.deleteMany({ where: { id: fixed.planId } });
 });
-async function checkout() {
+async function checkout(paymentSource = source) {
  await ensureWp4SandboxFixture(db);
  await db.vendorSubscription.create({ data: { vendorId: fixed.vendorId, planId: fixed.planId, status: "active", paymentMode: "platform" } });
- const key = wp4HistoricalBuyerWhere().checkoutIdempotencyKey;
+ const key = wp4HistoricalBuyerWhere(paymentSource).checkoutIdempotencyKey;
  const payment = await createReservedPaymentTransaction({ vendorId: fixed.vendorId, productId: fixed.productId, checkoutIdempotencyKey: key,
   transactionData: { vendorId: fixed.vendorId, providerName: "payuni", orderNumber: "synthetic-historical-buyer", providerTradeNo: "synthetic-buyer-trade", paymentMode: "platform", grossAmountCents: 100, netAmountCents: 100, currency: "TWD", status: "pending", checkoutIdempotencyKey: key,
-   metadata: { billingPurpose: "buyer_order", productId: fixed.productId, wp4SourceCommit: source, wp4PaymentSubmissionReserved: true } },
+   metadata: { billingPurpose: "buyer_order", productId: fixed.productId, wp4SourceCommit: paymentSource, wp4PaymentSubmissionReserved: true } },
   createCommerceOrder: async (tx, transaction) => { await createCommerceOrderForCheckout(tx, { vendorId: fixed.vendorId, productId: fixed.productId, orderNumber: "synthetic-historical-buyer", checkoutIdempotencyKey: key, paymentTransactionId: transaction.id, totalAmountCents: 100, currency: "TWD", buyer: { name: "Synthetic buyer", email: "synthetic-buyer@invalid.example" }, shipping: null }); },
  });
  const payload = PaymentWebhookPayload.parse({ provider: "payuni", eventId: "synthetic-buyer-paid", eventType: "paid", vendorId: fixed.vendorId, orderNumber: payment.orderNumber, providerTradeNo: payment.providerTradeNo, grossAmountCents: 100, netAmountCents: 100, currency: "TWD" });
  return { payment, payload };
 }
+async function verifyOriginalCallbackRecovery(retryCount: number) {
+  const { payment, payload } = await checkout("9acfe8d2dba62430e950cff2c0387841ab91f44b");
+  const normalized = { ...payload }; delete normalized.vendorId;
+  await db.webhookEvent.create({ data: { provider: "payuni", eventId: payload.eventId, eventType: "paid",
+   status: "failed", retryCount, maxRetries: 5, payload: { normalized: JSON.parse(JSON.stringify(normalized)) } } });
+  await expect(retryWp4HistoricalBuyerCallback(db)).resolves.toMatchObject({ status: "FIXTURE_UNAVAILABLE", retryAttempts: 0 });
+  const outcomes = await Promise.all([retryQ1OriginalBuyerCallback(db), retryQ1OriginalBuyerCallback(db)]);
+  expect(outcomes.filter(outcome => outcome.status === "PROCESSED")).toHaveLength(1);
+  expect(outcomes.reduce((total, outcome) => total + outcome.retryAttempts, 0)).toBe(1);
+  await expect(retryQ1OriginalBuyerCallback(db)).resolves.toMatchObject({ status: "ALREADY_PROCESSED", retryAttempts: 0 });
+  expect(await db.paymentTransaction.count({ where: { vendorId: fixed.vendorId } })).toBe(1);
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({
+   status: "paid", providerTradeNo: payment.providerTradeNo,
+   metadata: { wp4PaymentSubmissionReserved: true, wp4CallbackRetryReserved: true },
+  });
+}
 describe("fixed historical buyer PostgreSQL recovery", () => {
+ it("recovers the original after schema repair once under contention without resetting the earlier marker", async () => {
+  const { payment, payload } = await checkout("9acfe8d2dba62430e950cff2c0387841ab91f44b");
+  const normalized = { ...payload }; delete normalized.vendorId;
+  const event = await db.webhookEvent.create({ data: { provider: "payuni", eventId: payload.eventId, eventType: "paid",
+   status: "failed", retryCount: 3, maxRetries: 5, payload: { normalized: JSON.parse(JSON.stringify(normalized)) } } });
+  await db.paymentTransaction.update({ where: { id: payment.id }, data: {
+   metadata: { ...(payment.metadata as Record<string, string | boolean>), wp4CallbackRetryReserved: true },
+  } });
+  await db.auditLog.create({ data: { vendorId: fixed.vendorId, actorLabel: "wp4_sandbox_fixed_callback_retry",
+   action: "webhook_retry_failed", targetType: "WebhookEvent", targetId: event.id,
+   before: { retryCount: 3 }, after: { status: "failed", errorCode: "processing_failed" } } });
+  try {
+   const outcomes = await Promise.all([retryQ1OriginalAfterSchemaRepair(db), retryQ1OriginalAfterSchemaRepair(db)]);
+   expect(outcomes.filter(outcome => outcome.status === "PROCESSED")).toHaveLength(1);
+   expect(outcomes.reduce((sum, outcome) => sum + outcome.retryAttempts, 0)).toBe(1);
+   await expect(retryQ1OriginalAfterSchemaRepair(db)).resolves.toMatchObject({ status: "ALREADY_PROCESSED", retryAttempts: 0 });
+   expect(await db.paymentTransaction.count({ where: { vendorId: fixed.vendorId } })).toBe(1);
+   expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: payment.id } })).toMatchObject({ status: "paid",
+    providerTradeNo: payment.providerTradeNo, metadata: { wp4CallbackRetryReserved: true, q1SchemaRecoveryReserved: true } });
+   expect(await db.webhookEvent.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({ status: "processed", retryCount: 4, maxRetries: 5 });
+   const audits = await db.auditLog.findMany({ where: { targetType: "WebhookEvent", targetId: event.id }, select: { actorLabel: true, action: true } });
+   expect(audits.map(row => row.actorLabel).sort()).toEqual(["q1_sandbox_schema_recovery", "webhook:payuni", "wp4_sandbox_fixed_callback_retry"]);
+   expect(audits.filter(row => row.action === "payment_webhook_paid")).toEqual([{ actorLabel: "webhook:payuni", action: "payment_webhook_paid" }]);
+  } finally {
+   await db.auditLog.deleteMany({ where: { targetType: "WebhookEvent", targetId: event.id } });
+  }
+ });
+ it("recovers only the catalog-owned Q1 original callback once without another payment", () => verifyOriginalCallbackRecovery(1));
+ it.each([2, 4])("recovers the original callback with remaining provider retry budget %i", retryCount => verifyOriginalCallbackRecovery(retryCount));
  it("permits one recovery dispatch under concurrent requests and rejects replay", async () => {
   const { payment, payload } = await checkout();
   const normalized = { ...payload };

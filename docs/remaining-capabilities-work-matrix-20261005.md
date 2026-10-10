@@ -8,6 +8,12 @@ Goal：`remaining-capabilities-20261005`，狀態 **IN_PROGRESS**。承接既有
 
 | ID | 精確來源索引／缺口 | 相依 | Owner | 驗收條件 | 新證據 | 狀態 |
 | --- | --- | --- | --- | --- | --- | --- |
+| F1 | future-work F1；#210/#211：播放器、進度、證書、社群、多語/PWA/push、SMS/WhatsApp | 現行 portal session、租戶與購買權益 | 主代理，待分批路由 | 每個能力具完整 UI/API、跨租戶/權益回歸、DB 與瀏覽器旅程；provider 實測分開標記 | 待產生 | PENDING |
+| F2 | future-work F2：affiliate、階梯/多層佣金、扣繳/payout export、referral、upsell、tracking/webhooks、私訊/廣播 | 現行收入快照、退款、權限/provider 契約 | 主代理，待分批路由 | 先跨租戶/併發/退款回歸再接 UI；Critical review、精確 head CI | 待產生 | PENDING |
+| F3.1 | #211 `b5397dbb45ddc4dc15a3059b7dec90b5a7771487`：editor parent echo、文件替換與 undo/redo lifecycle | 現行 FunnelPageEditor / FunnelStepPagesEditor | 主代理 writer；f3_inspect 唯讀 | parent echo 保留歷史；外部替換顯示新文件；undo/redo 不還原外部舊文件；真實瀏覽器測試 | `remaining-capabilities-f3.1-local-receipt-20261006.json`：14 unit、9 Chromium、lint/typecheck、獨立複審與 canonical READY；remote CI/merge 待交付 | LOCAL_ACCEPTED |
+| F3.2 | 同來源：popup/template/flow 完整互動、team/video UI 與 guard inventory | F3.1、逐功能核對實際介面 | 主代理，待分批路由 | 完整瀏覽器互動與持久化；必要 disposable QA；舊 selector 只對應已交付 UI | 待產生 | PENDING |
+| Q1 | `35d8f59341bcb776e548c69fe874a3f4d1fe2528`：精確 PENDING_REFUND consumer、固定 staging DB/source/tenant proof 已實作；真實 browser/provider 未驗 | 核准 process 注入、指定目前 handoff、平台 admin/MFA、現行退款契約 | 主代理 writer；course_critical 唯讀 Astra fallback | 權限/CSRF、單筆 processed RefundRecord、冪等/重複拒絕；真實 sandbox 必須另過 browser gate | `remaining-capabilities-q1-checkpoint-20261006.json`；76 targeted unit、83 migration/8 DB、TS/lint、Critical PASS；canonical BLOCKED browser | IMPLEMENTED_PENDING_EXTERNAL |
+
 | F1 | future-work F1；#210/#211：播放器、進度、證書、社群、多語/PWA/push、SMS/WhatsApp | 現行 portal session、租戶與購買權益 | 主代理，待分批路由 | 每個能力具完整 UI/API、跨租戶/權益回歸、DB 與瀏覽器旅程；provider 實測分開標記 | F1.1 本機 unit、7 PostgreSQL、1 Chromium、Critical review及canonical READY；其餘 F1 待續 | IN_PROGRESS |
 | F1.1 | #210/#211；`b7956d803f8dfebbbfdb3a4faeff497ab4bc140e` 的原生播放器/progress/certificate，依現行契約重建商家單元發布 | manager auth/CSRF、portal session、paid entitlement、前向 migration | 主代理唯一 writer；獨立 Critical reviewer（policy fallback Astra high） | 商家發布→學員權益學習→75秒持久化/reload續播→完課證書→退款撤權；跨租戶/跨課程/併發/CSRF回歸 | 本機 unit/typecheck/lint、84 migration、7 DB、1 Chromium PASS，canonical acceptance READY；`remaining-capabilities-f1.1-local-receipt-20261006.json`；精確 head CI PASS、#370 squash `728f0e59`，验收tree一致 | DELIVERED |
 | F1.2 | `b7956d803f8dfebbbfdb3a4faeff497ab4bc140e`：學員社群、商家置頂／公告；依現行課程權益重建 | F1.1、portal session、tenant scope、manager CSRF/CAS | root 唯一 writer；Astra high readonly Critical review（observed unknown），dispatch4/4 | 發文／回覆／按讚／分頁／管理公告／退款撤權完整瀏覽器、跨租戶及併發DB、精確CI/PR | 最新候選8unit、TS/lint、1067 Node TAP零skip；85migration9DB、完整實際manager/learner browser PASS，review無findings，canonical READY；PR/CI待交付 | LOCAL_ACCEPTED_REMOTE_CI_PENDING |
@@ -690,3 +696,12 @@ Root resolved the current a5964d83 main integration without losing locale or com
 ### F2 withholding current delivered-main integration 20261008
 
 Preserved both documents and forward schema capabilities while integrating delivered community/PWA `e573a101`. Current 140 models / 94 migrations / 94 protected pages, vendorManager 55. Exact inventory assertions updated; historical migration windows/checksums and safety assertions retained. Previous fifth review applies to head `23b25045`; latest integrated candidate requires new current evidence, acceptance and review. Not delivered.
+
+
+### Q1 current main integration 2026-10-07
+
+Q1 retains exact transaction scope and external browser requirement. Main a10728f integrated; 87 migrations, 8 DB cases, 144 unit tests, TypeScript and lint PASS. Independent review 4/4 has no findings after migration freshness correction. Canonical gate remains BLOCKED only on browser; no real provider refund attempted. Evidence: `remaining-capabilities-q1-main-integrated-validation-20261007.json`.
+
+### Q1 official CREDIT query correction / current main 20261008
+
+Original task `q1-exact-pending-refund`, root sole writer, patch `448359dd`, tested integrated head `c627ec6228a58179d97373362d7df2defd5900d2` includes actual main `aba65b4e`. Official query v2.0 contract confirms CREDIT RefundStatus 1/8 are pending and 2 successful; RefundAmt is the last refund, so cumulative totals use RemainAmt. Adapter, exact-transaction consumer and cleanup acceptance corrected; existing 8 DB cases retained plus 3 adapter-to-real-PG regressions. Fresh 95 migrations / 11 DB / 283 unit / 1067 full TAP zero skip, TS/strict-index/lint PASS. Current canonical source `sha256:8cb8e50777b71ff80aa23400bdb4d697f51a4c665c9a3558c7a36fd8627f11f7` BLOCKED for current independent review and actual sandbox browser/provider proof. Original dispatch4/4; additional review5 requested, not authorized or executed yet. Draft #371, exact-head CI pending, NOT DELIVERED. Evidence: `remaining-capabilities-q1-query-contract-correction-20261008.json`.

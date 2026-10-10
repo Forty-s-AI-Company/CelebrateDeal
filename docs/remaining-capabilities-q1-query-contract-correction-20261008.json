@@ -1,0 +1,116 @@
+{
+  "task_id": "q1-exact-pending-refund",
+  "goal_id": "remaining-capabilities-20261005",
+  "parent_goal_id": "CELEBRATEDEAL-M2-M7",
+  "at": "2026-10-08T02:28:20.610357+00:00",
+  "tested_head": "c627ec6228a58179d97373362d7df2defd5900d2",
+  "product_patch_commit": "448359dd",
+  "integrated_master": "aba65b4e7913f79f7de72a7b3abedb5d1f10ec3f",
+  "source_revision": "sha256:8cb8e50777b71ff80aa23400bdb4d697f51a4c665c9a3558c7a36fd8627f11f7",
+  "source_files": 56,
+  "product_changes": [
+    "CREDIT query v2.0 application/processing are not terminal refunds",
+    "derive cumulative refunded amount from documented remaining balance, never last RefundAmt or CloseAmt",
+    "require complete CREDIT observation and exact original transaction identity",
+    "consumer and cleanup receipt only accept exact terminal full-refund observation; pending is polled without resubmission"
+  ],
+  "official_contract": {
+    "task_id": "q1-exact-pending-refund",
+    "sources": [
+      {
+        "url": "https://docs.payuni.com.tw/web/#/7/34",
+        "api_page_id": 34,
+        "public_response_sha256": "111acb381496aba654725ea3dfedb50412b66f902f7a575f17871f73711ce19e",
+        "document_content_sha256": "3deecae0fe0a06b2553fefa06d00c3c443de6fed7fbd0af16f0b367d26167124",
+        "retrieved_at": "2026-10-08T02:25:51.738005+00:00",
+        "credentials_used": false
+      },
+      {
+        "url": "https://docs.payuni.com.tw/web/#/7/164",
+        "api_page_id": 164,
+        "public_response_sha256": "f2bbf7c3087e051fce0858a8e01113126d397fe668b7be08680c04b8f0dfe522",
+        "document_content_sha256": "bab28547db0a073a0895710dc62a542e2ff2312fec61aee1668dc3737a0d1b9b",
+        "retrieved_at": "2026-10-08T02:25:51.975677+00:00",
+        "credentials_used": false
+      }
+    ],
+    "confirmed_contract": {
+      "query_version": "2.0",
+      "payment_type": "CREDIT / 1",
+      "refund_status_1": "application_pending",
+      "refund_status_2": "successful",
+      "refund_status_8": "processing",
+      "refund_amount": "last_refund_not_cumulative",
+      "remaining_amount": "remaining_refundable_balance",
+      "data_source_A": "complete",
+      "data_source_B": "incomplete"
+    },
+    "post_purchase_recovery": {
+      "same_merchant_order_duplicate_window_minutes": 10,
+      "same_provider_trade_resume_permission": "NOT_PROVEN",
+      "sandbox_actual_resume": "NOT_VERIFIED"
+    },
+    "actual_sandbox_payment_or_refund": "NOT_EXECUTED",
+    "raw_response_persisted": false
+  },
+  "verification": {
+    "unit": {
+      "passed": 283,
+      "failed": 0,
+      "skipped": 0
+    },
+    "migrations": 95,
+    "db": {
+      "total": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0
+    },
+    "db_cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "db_source_revision": "sha256:edd3d72fc91fc514ba859ca7f4a059a78e667a3f4cdb5d3618e917456d061d4f",
+    "typecheck": "PASS",
+    "strict_index": "PASS",
+    "lint": "PASS",
+    "full_node_tap": {
+      "passed": 1067,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "critical_review": {
+    "dispatch_used": 4,
+    "approved_limit": 4,
+    "current_revision": "NOT_REVIEWED",
+    "requested_extension_to": 5,
+    "authorization": "PENDING",
+    "observed_model": "unknown",
+    "observed_effort": "unknown"
+  },
+  "canonical_acceptance": {
+    "status": "BLOCKED",
+    "blockers": [
+      "finding_unresolved",
+      "independent_review_unverified",
+      "required_check_unverified:browser"
+    ],
+    "revision": "sha256:8cb8e50777b71ff80aa23400bdb4d697f51a4c665c9a3558c7a36fd8627f11f7"
+  },
+  "external_sandbox_browser": "NOT_VERIFIED",
+  "exact_head_ci": "NOT_STARTED",
+  "pr": 371,
+  "pr_state": "DRAFT",
+  "delivered": false,
+  "goal_complete": false,
+  "safety": {
+    "production_operations": 0,
+    "actual_payment_or_refund": 0,
+    "secret_values_read": false,
+    "original_dirty_project_touched": false,
+    "historical_checksums_changed": false,
+    "tests_removed_or_skipped": false
+  },
+  "evidence_directory": "C:\\Users\\eden\\.codex\\worktrees\\remaining-refund-proof-qa\\CelebrateDeal\\.ai-team\\reports\\q1-query-contract-20261008\\current-main"
+}
