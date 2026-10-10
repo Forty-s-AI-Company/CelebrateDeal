@@ -27,12 +27,12 @@ describe("real PostgreSQL fixed merchant forward replay", () => {
         const index = statement.match(/^CREATE (?:UNIQUE )?INDEX "([A-Za-z0-9_]+)"/u);
         if (index) await tx.$executeRawUnsafe(`DROP INDEX IF EXISTS "${index[1]}" CASCADE`);
       }
-      await tx.$executeRaw`DELETE FROM public._prisma_migrations WHERE migration_name=${MERCHANT_MIGRATION}`;
+      await tx.$executeRaw`DELETE FROM "_prisma_migrations" WHERE migration_name=${MERCHANT_MIGRATION}`;
       expect(await merchantSchemaState(tx)).toEqual({ tables: 0, columns: 0, ledger: [] });
       expect(await installMerchantSchema(tx, sql)).toEqual({ installedTables: 7, installedColumns: 4 });
       const after = await merchantSchemaState(tx);
       expect(after.ledger).toEqual([{ checksum: MERCHANT_SQL_SHA256, finished: true, rolled: false }]);
-      const rls = await tx.$queryRaw<{ name: string; enabled: boolean }[]>(Prisma.sql`SELECT relname AS name, relrowsecurity AS enabled FROM pg_class WHERE relname IN (${Prisma.join([...MERCHANT_TABLES])}) AND relkind='r' AND relnamespace='public'::regnamespace ORDER BY relname`);
+      const rls = await tx.$queryRaw<{ name: string; enabled: boolean }[]>(Prisma.sql`SELECT relname AS name, relrowsecurity AS enabled FROM pg_class WHERE relname IN (${Prisma.join([...MERCHANT_TABLES])}) AND relkind='r' AND relnamespace=current_schema()::regnamespace ORDER BY relname`);
       expect(rls.map(row => row.name)).toEqual([...MERCHANT_TABLES].sort());
       expect(rls.every(row => row.enabled)).toBe(true);
       const guard = await tx.$queryRaw<{ present: boolean }[]>`SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='merchant_affiliate_commission_plan_guard' AND NOT tgisinternal) AS present`;

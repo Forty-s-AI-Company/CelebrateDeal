@@ -41,9 +41,9 @@ export function merchantStatements(sql: string) {
 
 /** Read catalog and ledger only; partial installation is never marked applied. */
 export async function merchantSchemaState(tx: Prisma.TransactionClient) {
-  const tables = await tx.$queryRaw<{ name: string }[]>(Prisma.sql`SELECT table_name AS name FROM information_schema.tables WHERE table_schema='public' AND table_name IN (${Prisma.join([...MERCHANT_TABLES])})`);
-  const columns = await tx.$queryRaw<{ name: string }[]>(Prisma.sql`SELECT column_name AS name FROM information_schema.columns WHERE table_schema='public' AND table_name='AffiliateCommission' AND column_name IN (${Prisma.join([...COLUMNS])})`);
-  const ledger = await tx.$queryRaw<{ checksum: string; finished: boolean; rolled: boolean }[]>(Prisma.sql`SELECT checksum, finished_at IS NOT NULL AS finished, rolled_back_at IS NOT NULL AS rolled FROM public._prisma_migrations WHERE migration_name=${MERCHANT_MIGRATION}`);
+  const tables = await tx.$queryRaw<{ name: string }[]>(Prisma.sql`SELECT table_name AS name FROM information_schema.tables WHERE table_schema=current_schema() AND table_name IN (${Prisma.join([...MERCHANT_TABLES])})`);
+  const columns = await tx.$queryRaw<{ name: string }[]>(Prisma.sql`SELECT column_name AS name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='AffiliateCommission' AND column_name IN (${Prisma.join([...COLUMNS])})`);
+  const ledger = await tx.$queryRaw<{ checksum: string; finished: boolean; rolled: boolean }[]>(Prisma.sql`SELECT checksum, finished_at IS NOT NULL AS finished, rolled_back_at IS NOT NULL AS rolled FROM "_prisma_migrations" WHERE migration_name=${MERCHANT_MIGRATION}`);
   return { tables: tables.length, columns: columns.length, ledger };
 }
 
@@ -58,7 +58,7 @@ export async function installMerchantSchema(tx: Prisma.TransactionClient, sql: s
   const after = await merchantSchemaState(tx);
   if (after.tables !== MERCHANT_TABLES.length || after.columns !== COLUMNS.length || after.ledger.length) throw rejected();
   // This records SQL that actually ran successfully inside this transaction.
-  await tx.$executeRaw(Prisma.sql`INSERT INTO public._prisma_migrations (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count) VALUES (${randomUUID()}, ${MERCHANT_SQL_SHA256}, CURRENT_TIMESTAMP, ${MERCHANT_MIGRATION}, NULL, NULL, CURRENT_TIMESTAMP, 1)`);
+  await tx.$executeRaw(Prisma.sql`INSERT INTO "_prisma_migrations" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count) VALUES (${randomUUID()}, ${MERCHANT_SQL_SHA256}, CURRENT_TIMESTAMP, ${MERCHANT_MIGRATION}, NULL, NULL, CURRENT_TIMESTAMP, 1)`);
   return { installedTables: after.tables, installedColumns: after.columns };
 }
 
@@ -91,6 +91,9 @@ export async function main() {
     if (!("schedulerCount" in audit) || audit.schedulerCount !== 0 || audit.retryCount !== 3) throw rejected();
     stage = "atomic-forward-migration";
     const installed = await db.$transaction(async tx => {
+      // Staging runner scope stays fixed. Only disposable tests use an
+      // owned alternate schema; environment input can never choose this value.
+      await tx.$executeRaw`SET LOCAL search_path = public, pg_catalog`;
       await tx.$executeRaw`SET LOCAL lock_timeout = '5s'`;
       await tx.$executeRaw`SET LOCAL statement_timeout = '45s'`;
       const fixed = JSON.parse(original) as { payment: { id: string }; event: { id: string } };
