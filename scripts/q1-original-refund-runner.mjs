@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import { reference } from "./payuni-sandbox-payment-handoff.mjs";
+import { verifyReservedOriginalRefund } from "./q1-original-refund-verify.mjs";
 import { createOriginalRefundHandoff, assertOriginalRefundProof, ORIGINAL_TRANSACTION_SOURCE } from "./q1-original-refund-handoff.mjs";
 import { consumePendingRefund, launchPendingRefundBrowser, fillExactRefundForm } from "./payuni-sandbox-pending-refund-consumer.mjs";
 import { openFinanceLoginPage, waitFinanceLoginRedirect } from "./payuni-current-source-refund-qa.mjs";
@@ -37,7 +38,7 @@ export async function executeOriginalRefund() {
     bootstrap.verifyQaFinanceCertificate(await readFile(resolve("prisma", bootstrap.QA_FINANCE_CA_FILE)));
     stage = "deployment-lineage";
     const { verifyMvpPayUniLineage } = await import("./mvp-payuni-sandbox-e2e.mjs");
-    safe(await verifyMvpPayUniLineage({ NODE_ENV: "test", CELEBRATEDEAL_SOURCE_SHA: SOURCE,
+    safe(await verifyMvpPayUniLineage({ CELEBRATEDEAL_SOURCE_SHA: SOURCE,
       CELEBRATEDEAL_DEPLOYMENT_HOST: env.CELEBRATEDEAL_DEPLOYMENT_HOST, GITHUB_TOKEN: env.GITHUB_TOKEN }));
     const loadProof = async () => {
       const response = await fetch(`${ORIGIN}/api/admin/ops/payuni/q1-original-refund-proof`, {
@@ -52,6 +53,17 @@ export async function executeOriginalRefund() {
     const targetModule = await import("./q1-original-refund-target.ts");
     const targetFunctions = targetModule.default ?? targetModule;
     stage = "original-readonly-target";
+    safe(["false", "true"].includes(env.Q1_ORIGINAL_REFUND_VERIFY_ONLY ?? "false"));
+    if (env.Q1_ORIGINAL_REFUND_VERIFY_ONLY === "true") {
+      stage = "reserved-original-readonly-target";
+      const reserved = await targetFunctions.readReservedOriginalRefundTarget(db);
+      const { queryTransaction } = await import("./payuni-sandbox-external-qa.mjs");
+      receipt.completion = await verifyReservedOriginalRefund({ target: reserved, executionSource: SOURCE, loadProof,
+        queryProvider: order => queryTransaction(order, { signal: AbortSignal.timeout(10000) }),
+        onStage: async observation => { stage = observation.stage; await persist(); } });
+      receipt.status = reserved.duplicateUIVerified ? "ORIGINAL_REFUND_VERIFIED" : "ORIGINAL_REFUND_TERMINAL_VERIFIED"; stage = "complete";
+      return;
+    }
     const target = await targetFunctions.readOriginalRefundTarget(db);
     const { chromium } = await import("@playwright/test");
     const { queryTransaction } = await import("./payuni-sandbox-external-qa.mjs");
@@ -89,6 +101,10 @@ export async function executeOriginalRefund() {
           // Durable artifact first, then atomic exact-original marker before any click.
           receipt.refundSubmissionMayHaveOccurred = true; await persist();
           await targetFunctions.reserveOriginalRefund(db, target.transactionId); receipt.reservationWritten = true;
+        }
+        if (observation.duplicateRefundRejected === true) {
+          await targetFunctions.recordOriginalDuplicateVerified(db, target.transactionId);
+          receipt.duplicateUIVerified = true;
         }
         await persist();
       } });

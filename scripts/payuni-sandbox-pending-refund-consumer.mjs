@@ -94,6 +94,18 @@ async function consumePendingRefund({ receipt, transactionId, expectedSourceSha,
     }
     requireCondition(completed?.singleProcessedRefund === true && completed.refundRecordCount === 1
       && completed.status === "refunded" && completed.refundedAmountCents === completed.grossAmountCents);
+    const verifyDuplicate = async () => {
+    await onStage?.({ stage: "refund-duplicate-check", refundSubmissionMayHaveOccurred: true });
+    await duplicateForm.getByRole("button", { name: "退款", exact: true }).click();
+    await duplicate.waitForURL(`${STAGING_ORIGIN}/admin/billing/dashboard?error=refund_already_processed`, { waitUntil: "domcontentloaded" });
+    const final = await loadProof(transactionId, expectedSourceSha);
+    assertProofMatchesHandoff(receipt, final, transactionId, expectedSourceSha, now());
+    requireCondition(final.refundPersistencePassed === true && final.refundRecordCount === 1
+      && final.refundedAmountCents === completed.refundedAmountCents);
+      await onStage?.({ stage: "refund-duplicate-verified", refundSubmissionMayHaveOccurred: true, duplicateRefundRejected: true });
+    };
+    const originalHandoff = receipt.schemaVersion === ORIGINAL_REFUND_HANDOFF_SCHEMA;
+    if (originalHandoff) await verifyDuplicate();
     let providerCompleted = false;
     await onStage?.({ stage: "refund-provider-confirmation", refundSubmissionMayHaveOccurred: true });
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -102,13 +114,13 @@ async function consumePendingRefund({ receipt, transactionId, expectedSourceSha,
       await sleep(1000);
     }
     requireCondition(providerCompleted);
-    await onStage?.({ stage: "refund-duplicate-check", refundSubmissionMayHaveOccurred: true });
-    await duplicateForm.getByRole("button", { name: "退款", exact: true }).click();
-    await duplicate.waitForURL(`${STAGING_ORIGIN}/admin/billing/dashboard?error=refund_already_processed`, { waitUntil: "domcontentloaded" });
-    const final = await loadProof(transactionId, expectedSourceSha);
-    assertProofMatchesHandoff(receipt, final, transactionId, expectedSourceSha, now());
-    requireCondition(final.refundPersistencePassed === true && final.refundRecordCount === 1
-      && final.refundedAmountCents === completed.refundedAmountCents);
+    if (!originalHandoff) await verifyDuplicate();
+    else {
+      const finalOriginal = await loadProof(transactionId, expectedSourceSha);
+      assertProofMatchesHandoff(receipt, finalOriginal, transactionId, expectedSourceSha, now());
+      requireCondition(finalOriginal.refundPersistencePassed === true && finalOriginal.refundRecordCount === 1
+        && finalOriginal.refundedAmountCents === completed.refundedAmountCents);
+    }
     return Object.freeze({ schemaVersion: "celebratedeal-payuni-refund-completion/v1", status: "COMPLETED",
       sourceCommit: expectedSourceSha, transactionRef: receipt.transactionRef, orderRef: receipt.orderRef,
       tradeRef: receipt.tradeRef, amount: receipt.amount, environment: "sandbox", appHost: receipt.appHost,

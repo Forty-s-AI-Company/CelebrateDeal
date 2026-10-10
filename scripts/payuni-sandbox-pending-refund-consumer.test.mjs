@@ -190,5 +190,5 @@ it("original handoff never resubmits while exact CREDIT query reports pending", 
   run.options.queryProvider.mockResolvedValue({ MerTradeNo: order, TradeNo: trade, TradeAmt: 1, TradeStatus: "1",
     PaymentType: "1", DataSource: "A", RefundStatus: "8", RemainAmt: 1, RefundAmt: 1 });
   await expect(consumePendingRefund(run.options)).rejects.toThrow();
-  expect(run.first.click).toHaveBeenCalledTimes(1); expect(run.duplicate.click).not.toHaveBeenCalled();
+  expect(run.first.click).toHaveBeenCalledTimes(1); expect(run.duplicate.click).toHaveBeenCalledTimes(1);
 });

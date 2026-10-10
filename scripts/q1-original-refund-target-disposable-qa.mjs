@@ -17,7 +17,7 @@ const migration = await migrate({ afterMigrate: async ({ databaseUrl, environmen
   const result = JSON.parse(fs.readFileSync(report, "utf8"));
   tests = { total: result.numTotalTests, passed: result.numPassedTests, failed: result.numFailedTests, skipped: result.numPendingTests,
     failedTitles: result.testResults.flatMap(s => s.assertionResults.filter(t => t.status === "failed").map(t => t.title)) };
-  if (child.status !== 0 || !result.success || tests.total !== 11 || tests.passed !== 11 || tests.skipped !== 0) throw new Error("ORIGINAL_REFUND_TARGET_REGRESSION_FAILED");
+  if (child.status !== 0 || !result.success || tests.total !== 18 || tests.passed !== 18 || tests.skipped !== 0) throw new Error("ORIGINAL_REFUND_TARGET_REGRESSION_FAILED");
 } });
 const receipt = { status: migration.status, tests, migrations: migration.migrationNames.length,
   cleanup: migration.cleanup, failure: migration.failure, providerOperations: false, productionOperations: false };

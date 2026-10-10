@@ -31,3 +31,8 @@ test("actual TypeScript runtime adapters expose required named functions under t
   { encoding: "utf8", timeout: 15000, env: { SystemRoot: process.platform === "win32" ? "C:\\Windows" : "", PATH: "" } });
   assert.equal(result.status, 0);
 });
+test("readonly verify mode has explicit input and a bounded refund-step budget", () => {
+  assert.match(workflow, /verify_only:[\s\S]*?type: boolean/);
+  assert.match(workflow, /Q1_ORIGINAL_REFUND_VERIFY_ONLY: \$\{\{ inputs.verify_only \}\}/);
+  assert.match(workflow, /timeout-minutes: 30/); assert.match(workflow, /timeout-minutes: 20\s+shell: bash/);
+});

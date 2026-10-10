@@ -4,7 +4,7 @@ import { beforeAll, afterAll, afterEach, expect, it } from "vitest";
 import { WP4_SANDBOX_FIXTURE } from "../src/lib/wp4-sandbox-fixture";
 import { wp4HistoricalBuyerWhere } from "../src/lib/wp4-buyer-recovery";
 import { assertLocalTestDatabase } from "./local-database-safety";
-import { ORIGINAL_REFUND_SOURCE, readOriginalRefundTarget, reserveOriginalRefund } from "./q1-original-refund-target";
+import { ORIGINAL_REFUND_SOURCE, readOriginalRefundTarget, reserveOriginalRefund, readReservedOriginalRefundTarget, recordOriginalDuplicateVerified } from "./q1-original-refund-target";
 assertLocalTestDatabase("DATABASE_URL", process.env.DATABASE_URL);
 assertLocalTestDatabase("DIRECT_URL", process.env.DIRECT_URL);
 const db = new PrismaClient(), prefix = `q1-original-refund-${randomUUID()}`, ids: string[] = [];
@@ -53,4 +53,38 @@ it("an existing pending refund cannot authorize another submission", async () =>
   const row = await fixture(); await db.refundRecord.create({ data: { vendorId: row.vendorId, paymentTransactionId: row.id,
     monthKey: "2026-10", refundAmountCents: 100, status: "pending" } });
   await expect(readOriginalRefundTarget(db)).rejects.toThrow(); await expect(reserveOriginalRefund(db, row.id)).rejects.toThrow();
+});
+async function processedFixture(marked = true) {
+  const row = await fixture();
+  await db.paymentTransaction.update({ where: { id: row.id }, data: { status: "refunded", refundedAmountCents: 100,
+    metadata: { ...Object(row.metadata), ...(marked ? { q1OriginalRefundReserved: true } : {}) } } });
+  await db.refundRecord.create({ data: { vendorId: row.vendorId, paymentTransactionId: row.id, monthKey: "2026-10",
+    refundAmountCents: 100, status: "processed", providerEventId: "synthetic-original-full-refund" } });
+  return row;
+}
+it("readonly resume accepts only the marked original with one processed full refund", async () => {
+  const row = await processedFixture(); const before = await db.paymentTransaction.findUniqueOrThrow({ where: { id: row.id } });
+  expect(await readReservedOriginalRefundTarget(db)).toEqual({ transactionId: row.id, orderNumber: row.orderNumber,
+    providerTradeNo: row.providerTradeNo, reservationVerified: true, duplicateUIVerified: false });
+  expect(await db.paymentTransaction.findUniqueOrThrow({ where: { id: row.id } })).toEqual(before);
+});
+it("readonly resume refuses absent marker even when refund is processed", async () => {
+  await processedFixture(false); await expect(readReservedOriginalRefundTarget(db)).rejects.toThrow();
+});
+it.each(["pending", "foreign-source", "duplicate"])("readonly resume refuses %s evidence", async drift => {
+  const row = await processedFixture();
+  if (drift === "pending") await db.refundRecord.updateMany({ where: { paymentTransactionId: row.id }, data: { status: "pending" } });
+  if (drift === "foreign-source") await db.paymentTransaction.update({ where: { id: row.id }, data: { metadata: { ...Object(row.metadata),
+    q1OriginalRefundReserved: true, wp4SourceCommit: "b".repeat(40) } } });
+  if (drift === "duplicate") await db.refundRecord.create({ data: { vendorId: row.vendorId, paymentTransactionId: row.id, monthKey: "2026-10",
+    refundAmountCents: 1, status: "failed" } });
+  await expect(readReservedOriginalRefundTarget(db)).rejects.toThrow();
+});
+it("durable duplicate observation requires the marked full processed original", async () => {
+  const row = await processedFixture(); await recordOriginalDuplicateVerified(db, row.id);
+  expect((await readReservedOriginalRefundTarget(db)).duplicateUIVerified).toBe(true);
+  await expect(recordOriginalDuplicateVerified(db, "foreign")).rejects.toThrow();
+});
+it("cannot record duplicate verification on an unmarked or unpaid original", async () => {
+  const row = await fixture(); await expect(recordOriginalDuplicateVerified(db, row.id)).rejects.toThrow();
 });

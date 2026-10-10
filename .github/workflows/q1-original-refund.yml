@@ -10,6 +10,11 @@ on:
         description: Exact Sandbox Preview hostname
         required: true
         type: string
+      verify_only:
+        description: Observe an already reserved original without submitting any refund
+        required: true
+        default: false
+        type: boolean
 permissions:
   contents: read
   deployments: read
@@ -21,7 +26,7 @@ jobs:
     if: ${{ github.ref == 'refs/heads/master' && github.ref_protected }}
     environment: Preview – celebrate-deal-staging
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -35,7 +40,7 @@ jobs:
       - name: Validate fixed read-only contract before secrets
         run: npx vitest run scripts/payuni-sandbox-pending-refund-consumer.test.mjs src/lib/staging-qa-finance-bootstrap.test.ts
       - name: Validate CLI startup and sanitized receipts before secrets
-        run: node --test scripts/q1-original-refund-handoff.test.mjs scripts/q1-original-refund-workflow.test.mjs
+        run: node --test scripts/q1-original-refund-handoff.test.mjs scripts/q1-original-refund-verify.test.mjs scripts/q1-original-refund-workflow.test.mjs
       - name: Install credential-free Chromium before secrets
         run: npx playwright install chromium --with-deps
       - name: Verify exact deployment lineage before secrets
@@ -49,6 +54,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
           CELEBRATEDEAL_DEPLOYMENT_HOST: ${{ inputs.deployment_host }}
+          Q1_ORIGINAL_REFUND_VERIFY_ONLY: ${{ inputs.verify_only }}
           PAYUNI_ENV: sandbox
           PAYUNI_SANDBOX_QA_ENABLED: 'true'
           PAYUNI_SANDBOX_REFUND_ENABLED: 'true'
@@ -60,6 +66,7 @@ jobs:
           PAYUNI_SANDBOX_MERCHANT_ID: ${{ secrets.PAYUNI_SANDBOX_MERCHANT_ID }}
           PAYUNI_SANDBOX_HASH_KEY: ${{ secrets.PAYUNI_SANDBOX_HASH_KEY }}
           PAYUNI_SANDBOX_HASH_IV: ${{ secrets.PAYUNI_SANDBOX_HASH_IV }}
+        timeout-minutes: 20
         shell: bash
         run: |
           set -euo pipefail
