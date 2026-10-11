@@ -11,7 +11,7 @@ export const FIXED_PENDING = Object.freeze({ runId: 38097819821,
   transactionRef: "ac730f8d290e", orderRef: "dc8bb5058d44", amountCents: 100 });
 const APP = "https://celebrate-deal-staging.carry-digital-nomad.in.net";
 const closed = (value: unknown, allowed: readonly string[]) => allowed.find(x => x === value) ?? "OTHER";
-const reject = (): never => { throw new Error("Fixed pending F2 state rejected."); };
+function reject(): never { throw new Error("Fixed pending F2 state rejected."); }
 
 /** Database-enforced read-only snapshot. Only a unique fixed-catalog record
  * matching BOTH hashes may reach the signed Sandbox query adapter.
