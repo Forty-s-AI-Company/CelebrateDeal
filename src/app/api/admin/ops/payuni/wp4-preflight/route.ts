@@ -84,6 +84,12 @@ export async function POST(request: Request) {
     return unavailableResponse();
   }
 
+  // A buyer-only probe must not depend on a public subscription plan or invoice.
+  // Unknown scopes fail closed, and the default retains the full original gate.
+  const scope = request.headers.get("x-celebratedeal-wp4-preflight-scope");
+  if (scope !== null && scope !== "buyer_order") return unavailableResponse();
+  const buyerOrderOnly = scope === "buyer_order";
+
   const authorization = await authorizeWp4Ops(request);
   if (authorization instanceof Response) return authorization;
   try {
@@ -140,11 +146,11 @@ export async function POST(request: Request) {
           },
         },
       }),
-      db.billingPlan.findFirst({
+      buyerOrderOnly ? Promise.resolve(null) : db.billingPlan.findFirst({
         where: { id: planId, isActive: true, monthlyPriceCents: { gt: 0 } },
         select: { id: true },
       }),
-      db.invoice.findFirst({
+      buyerOrderOnly ? Promise.resolve(null) : db.invoice.findFirst({
         where: {
           id: invoiceId,
           vendorId,
@@ -155,7 +161,7 @@ export async function POST(request: Request) {
       }),
     ]);
 
-    if (!product || !isProductDeliveryReadyForCheckout(product, vendorId) || !billingPlan || !invoice) {
+    if (!product || !isProductDeliveryReadyForCheckout(product, vendorId) || (!buyerOrderOnly && (!billingPlan || !invoice))) {
       return unavailableResponse("FIXTURE_UNAVAILABLE");
     }
 
@@ -163,8 +169,9 @@ export async function POST(request: Request) {
       {
         ready: true,
         buyerOrder: true,
-        platformSubscription: true,
-        invoicePayment: true,
+        platformSubscription: !buyerOrderOnly,
+        invoicePayment: !buyerOrderOnly,
+        ...(buyerOrderOnly ? { scope: "buyer_order" } : {}),
       },
       { status: 200, headers: { "Cache-Control": "no-store" } },
     );
