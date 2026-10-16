@@ -1,0 +1,261 @@
+{
+  "source": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "candidate": "eb5649645ac658f5e792a9ed1bd7f986e730a930",
+  "decisions": [
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-buyer-callback-retry/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "13e1cf69eced816717fd133d5c5eb78a5a963b51",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": true,
+        "sandbox_guard_present": true,
+        "job_auth_present": true,
+        "fixed_fixture_reference": false
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-buyer-existing-reconcile/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "3571d5c4a5c26e99f65808196d06f05702237524",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": true,
+        "sandbox_guard_present": true,
+        "job_auth_present": true,
+        "fixed_fixture_reference": false
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-buyer-existing-refund/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "247592cedcc550e17db6c15b5e07e6d35d6e917c",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": true,
+        "sandbox_guard_present": true,
+        "job_auth_present": true,
+        "fixed_fixture_reference": false
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-buyer-existing-state/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "2c9909406640552833cad7cadde19dd20618a588",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": true,
+        "sandbox_guard_present": true,
+        "job_auth_present": true,
+        "fixed_fixture_reference": false
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-refund-recovery/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "dfbf4cc888437d7f29116ae9b40bc4ae1f67f416",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": true,
+        "sandbox_guard_present": true,
+        "job_auth_present": true,
+        "fixed_fixture_reference": false
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-subscription-payment-attempt/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "1d2d6a29b6c6de8a41599391776ccf5f0d171c0c",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": true,
+        "sandbox_guard_present": true,
+        "job_auth_present": true,
+        "fixed_fixture_reference": false
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-subscription-reconcile/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "a9d70fa12b5efa6a8e596eec6d95001c11af962b",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": true,
+        "sandbox_guard_present": true,
+        "job_auth_present": true,
+        "fixed_fixture_reference": false
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-subscription-refund/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "1ccab6b3d8a752bcb549941aac8ce8490bd0826b",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": true,
+        "sandbox_guard_present": true,
+        "job_auth_present": true,
+        "fixed_fixture_reference": false
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-subscription-state/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "5108ca9973caa89561565e6dd8782abbb0bed163",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": true,
+        "sandbox_guard_present": true,
+        "job_auth_present": true,
+        "fixed_fixture_reference": false
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    },
+    {
+      "path": "src/lib/wp4-payuni-buyer-callback-retry.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "aec0f9d1053f1f5cdb88e8dcd939a249761e85d8",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": false,
+        "sandbox_guard_present": false,
+        "job_auth_present": false,
+        "fixed_fixture_reference": true
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    },
+    {
+      "path": "src/lib/wp4-payuni-buyer-continuation-state.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "0b2a85b99a37dd261b5a60dc161bbd60193b1dec",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": false,
+        "sandbox_guard_present": false,
+        "job_auth_present": false,
+        "fixed_fixture_reference": true
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    },
+    {
+      "path": "src/lib/wp4-payuni-buyer-continuation.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f87e9b48864f388fd68d493bc5f7dcfd2b80d656",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": false,
+        "sandbox_guard_present": false,
+        "job_auth_present": false,
+        "fixed_fixture_reference": true
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    },
+    {
+      "path": "src/lib/wp4-payuni-subscription-state.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "0d288c9a15f67e678e3e379501b326f052ae4c3e",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": false,
+        "sandbox_guard_present": false,
+        "job_auth_present": false,
+        "fixed_fixture_reference": true
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    },
+    {
+      "path": "src/lib/wp4-preview-owner-session.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "37c47351c8ab9e18b674b48326fc6717e9536ef6",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_HISTORICAL_FIXED_SANDBOX_TOOLING_NOT_PRODUCT_DELIVERY",
+      "evidence": {
+        "preview_guard_present": true,
+        "sandbox_guard_present": true,
+        "job_auth_present": false,
+        "fixed_fixture_reference": true
+      },
+      "follow_up": "Restore only with a named sandbox work package and current fixture/source binding tests; no Production execution authorized"
+    }
+  ],
+  "basis": "These paths implement fixed WP4 Preview/Sandbox payment/reconciliation/refund verification or owner-session setup. Current master retains its existing WP4 tooling. User authorized milestone merge with unfinished work in future report.",
+  "limits": "Not claiming all old probe capabilities have current replacements; not certifying old tooling safe for current deployment; no endpoint invoked or secret read.",
+  "production_touched": false
+}

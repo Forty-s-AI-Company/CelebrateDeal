@@ -1,0 +1,858 @@
+{
+  "base": "e1f38be324e349969a657be376aa1602e804c2dd",
+  "source": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "master": "9a76580124edf373f9ad4d8d18aaa45a8150d1d1",
+  "scope": "Every non-comment model/enum line added by PR211 relative to its stack base, checked in the same named model. Existing PR210 features not claimed by this delta check. Additions only; deletions/modified semantics still need review.",
+  "added_lines": 168,
+  "unresolved": [
+    {
+      "model": "LandingPage",
+      "source_added_line": "slug String @unique",
+      "state": "UNRESOLVED",
+      "finding": "Schema declares nonunique slug while committed landing_pages migration still creates LandingPage_slug_key; no drop found in migration search. Need resolve declared schema/DDL consistency before closing.",
+      "next": "Review public slug routing and intended uniqueness; prefer preserving committed DDL unless an explicit product requirement and validated migration justify change."
+    }
+  ],
+  "rows": [
+    {
+      "model": "SalesWorkspaceMode",
+      "source_added_line": "consulting",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesWorkspaceMode",
+      "source_added_line": "flagship",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesWorkspaceMode",
+      "source_added_line": "live_course",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectFlow",
+      "source_added_line": "consultation",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectFlow",
+      "source_added_line": "live",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectStatus",
+      "source_added_line": "archived",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectStatus",
+      "source_added_line": "draft",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectStatus",
+      "source_added_line": "published",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageStatus",
+      "source_added_line": "draft",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageStatus",
+      "source_added_line": "published",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskStatus",
+      "source_added_line": "archived",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskStatus",
+      "source_added_line": "completed",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskStatus",
+      "source_added_line": "in_progress",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskStatus",
+      "source_added_line": "needs_attention",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskStatus",
+      "source_added_line": "not_started",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskStatus",
+      "source_added_line": "skipped",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "Vendor",
+      "source_added_line": "landingPageVersions LandingPageVersion[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "Vendor",
+      "source_added_line": "landingPages LandingPage[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "Vendor",
+      "source_added_line": "onboardingPreferences UserOnboardingPreference[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "Vendor",
+      "source_added_line": "onboardingTaskStates OnboardingTaskState[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "Vendor",
+      "source_added_line": "salesProjectCustomers SalesProjectCustomer[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "Vendor",
+      "source_added_line": "salesProjectProducts SalesProjectProduct[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "Vendor",
+      "source_added_line": "salesProjects SalesProject[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "User",
+      "source_added_line": "onboardingPreferences UserOnboardingPreference[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "Product",
+      "source_added_line": "salesProjectLinks SalesProjectProduct[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "RegistrationForm",
+      "source_added_line": "landingPageVersions LandingPageVersion[] @relation(\"LandingPageVersionForm\")",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "RegistrationForm",
+      "source_added_line": "landingPages LandingPage[] @relation(\"LandingPageDraftForm\")",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "RegistrationForm",
+      "source_added_line": "project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)",
+      "state": "RELATION_FIELD_RENAMED_SAME_CONSTRAINT"
+    },
+    {
+      "model": "RegistrationForm",
+      "source_added_line": "projectId String?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "@@index([vendorId, projectId, updatedAt])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "@@index([vendorId, status, publishedAt])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "@@unique([vendorId, id, publishedVersionId])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "@@unique([vendorId, id])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "@@unique([vendorId, projectId, slug])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "createdAt DateTime @default(now())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "draftContent Json",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "draftForm RegistrationForm? @relation(\"LandingPageDraftForm\", fields: [vendorId, draftFormId], references: [vendorId, id], onDelete: Restrict)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "draftFormId String?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "draftLive Live? @relation(\"LandingPageDraftLive\", fields: [vendorId, draftLiveId], references: [vendorId, id], onDelete: Restrict)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "draftLiveId String?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "id String @id @default(cuid())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "name String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "project SalesProject @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "projectId String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "publishedAt DateTime?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "publishedVersion LandingPageVersion? @relation(\"LandingPagePublishedVersion\", fields: [vendorId, id, publishedVersionId], references: [vendorId, pageId, id], onDelete: Restrict)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "publishedVersionId String?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "revision Int @default(1)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "slug String @unique",
+      "state": "UNRESOLVED"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "status LandingPageStatus @default(draft)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "unpublishedAt DateTime?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "updatedAt DateTime @updatedAt",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "vendorId String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPage",
+      "source_added_line": "versions LandingPageVersion[] @relation(\"LandingPageVersions\")",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "@@index([vendorId, pageId, createdAt])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "@@unique([vendorId, id])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "@@unique([vendorId, pageId, id])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "@@unique([vendorId, pageId, version])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "content Json",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "createdAt DateTime @default(now())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "form RegistrationForm? @relation(\"LandingPageVersionForm\", fields: [vendorId, formId], references: [vendorId, id], onDelete: Restrict)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "formId String?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "id String @id @default(cuid())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "live Live? @relation(\"LandingPageVersionLive\", fields: [vendorId, liveId], references: [vendorId, id], onDelete: Restrict)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "liveId String?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "page LandingPage @relation(\"LandingPageVersions\", fields: [vendorId, pageId], references: [vendorId, id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "pageId String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "publishedFor LandingPage? @relation(\"LandingPagePublishedVersion\")",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "vendorId String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "LandingPageVersion",
+      "source_added_line": "version Int",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "Live",
+      "source_added_line": "landingPageVersions LandingPageVersion[] @relation(\"LandingPageVersionLive\")",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "Live",
+      "source_added_line": "landingPages LandingPage[] @relation(\"LandingPageDraftLive\")",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "Live",
+      "source_added_line": "project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)",
+      "state": "RELATION_FIELD_RENAMED_SAME_CONSTRAINT"
+    },
+    {
+      "model": "Live",
+      "source_added_line": "projectId String?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "AnalyticsEvent",
+      "source_added_line": "@@index([vendorId, projectId, createdAt])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "AnalyticsEvent",
+      "source_added_line": "project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)",
+      "state": "RELATION_FIELD_RENAMED_SAME_CONSTRAINT"
+    },
+    {
+      "model": "AnalyticsEvent",
+      "source_added_line": "projectId String?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "CommerceOrder",
+      "source_added_line": "@@index([vendorId, projectId, status, createdAt])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "CommerceOrder",
+      "source_added_line": "project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)",
+      "state": "RELATION_FIELD_RENAMED_SAME_CONSTRAINT"
+    },
+    {
+      "model": "CommerceOrder",
+      "source_added_line": "projectId String?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "InventoryReservation",
+      "source_added_line": "items Json?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "CustomerCrmRecord",
+      "source_added_line": "salesProjects SalesProjectCustomer[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "@@index([vendorId, status, updatedAt])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "@@unique([vendorId, id])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "@@unique([vendorId, slug])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "analytics AnalyticsEvent[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "consultations ConsultationEvent[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "createdAt DateTime @default(now())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "customers SalesProjectCustomer[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "forms RegistrationForm[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "id String @id @default(cuid())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "landingPages LandingPage[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "lives Live[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "mode SalesWorkspaceMode",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "name String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "onboardingEnabled Boolean @default(true)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "orders CommerceOrder[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "preferences UserOnboardingPreference[] @relation(\"SelectedSalesProject\")",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "primaryFlow SalesProjectFlow",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "products SalesProjectProduct[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "publishedAt DateTime?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "slug String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "status SalesProjectStatus @default(draft)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "taskStates OnboardingTaskState[]",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "updatedAt DateTime @updatedAt",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProject",
+      "source_added_line": "vendorId String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectProduct",
+      "source_added_line": "@@index([vendorId, productId])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectProduct",
+      "source_added_line": "@@index([vendorId, projectId, sortOrder])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectProduct",
+      "source_added_line": "@@unique([vendorId, projectId, productId])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectProduct",
+      "source_added_line": "createdAt DateTime @default(now())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectProduct",
+      "source_added_line": "id String @id @default(cuid())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectProduct",
+      "source_added_line": "product Product @relation(fields: [vendorId, productId], references: [vendorId, id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectProduct",
+      "source_added_line": "productId String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectProduct",
+      "source_added_line": "project SalesProject @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectProduct",
+      "source_added_line": "projectId String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectProduct",
+      "source_added_line": "sortOrder Int @default(0)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectProduct",
+      "source_added_line": "vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectProduct",
+      "source_added_line": "vendorId String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectCustomer",
+      "source_added_line": "@@index([vendorId, customerKeyHash])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectCustomer",
+      "source_added_line": "@@unique([vendorId, projectId, customerKeyHash])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectCustomer",
+      "source_added_line": "createdAt DateTime @default(now())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectCustomer",
+      "source_added_line": "customer CustomerCrmRecord @relation(fields: [vendorId, customerKeyHash], references: [vendorId, customerKeyHash], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectCustomer",
+      "source_added_line": "customerKeyHash String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectCustomer",
+      "source_added_line": "id String @id @default(cuid())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectCustomer",
+      "source_added_line": "project SalesProject @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectCustomer",
+      "source_added_line": "projectId String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectCustomer",
+      "source_added_line": "updatedAt DateTime @updatedAt",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectCustomer",
+      "source_added_line": "vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "SalesProjectCustomer",
+      "source_added_line": "vendorId String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "@@index([vendorId, selectedProjectId])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "@@unique([userId, vendorId])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "createdAt DateTime @default(now())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "guideDismissedAt DateTime?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "id String @id @default(cuid())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "questionnaireAnswers Json?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "questionnaireDoneAt DateTime?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "questionnaireStep Int @default(0)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "recommendedMode SalesWorkspaceMode?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "selectedMode SalesWorkspaceMode?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "selectedProject SalesProject? @relation(\"SelectedSalesProject\", fields: [vendorId, selectedProjectId], references: [vendorId, id], onDelete: Restrict)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "selectedProjectId String?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "taskPanelCollapsed Boolean @default(false)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "taskPanelHiddenUntil DateTime?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "updatedAt DateTime @updatedAt",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "user User @relation(fields: [userId], references: [id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "userId String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "UserOnboardingPreference",
+      "source_added_line": "vendorId String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "@@index([vendorId, projectId, status])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "@@unique([vendorId, scopeKey, taskKey])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "archivedAt DateTime?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "createdAt DateTime @default(now())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "id String @id @default(cuid())",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "projectId String?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "scopeKey String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "skipImpact String?",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "status OnboardingTaskStatus @default(not_started)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "taskKey String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "updatedAt DateTime @updatedAt",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "OnboardingTaskState",
+      "source_added_line": "vendorId String",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "ConsultationEvent",
+      "source_added_line": "@@index([vendorId, projectId, isActive])",
+      "state": "EXACT_IN_SAME_MODEL"
+    },
+    {
+      "model": "ConsultationEvent",
+      "source_added_line": "project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)",
+      "state": "RELATION_FIELD_RENAMED_SAME_CONSTRAINT"
+    },
+    {
+      "model": "ConsultationEvent",
+      "source_added_line": "projectId String?",
+      "state": "EXACT_IN_SAME_MODEL"
+    }
+  ]
+}

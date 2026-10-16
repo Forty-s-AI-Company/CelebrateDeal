@@ -1,0 +1,192 @@
+{
+  "state": "VERIFIED_GAPS_PENDING_IMPLEMENTATION",
+  "candidate_head": "78672f510b2dc5fdcb7898a49bf4134d544d006b",
+  "files": [
+    {
+      "path": "src/app/(app)/settings/security/page.tsx",
+      "candidate_lf_sha256": "17952e23d0a6de561321068af3b5a7f5780ab9a6359e4783ebcbf085329758ab"
+    },
+    {
+      "path": "src/app/mfa/setup/page.tsx",
+      "candidate_lf_sha256": "eb6399c22bb7ec34c890e7d46e106366a0616c648c9ed96cd2ad3933001d1c1a"
+    },
+    {
+      "path": "src/components/mfa-enrollment-form.tsx",
+      "candidate_lf_sha256": "f876a6fbaab7196ed4c9163462e9ddb4ad23fd7245ecae4fb81cae58d0b9d01c"
+    },
+    {
+      "path": "src/lib/mfa-enrollment.ts",
+      "candidate_lf_sha256": "04c6927728b6e5ccdf571186d4a8209fd42fa3d5d025d79256a21c47fad3e6b5"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/start/route.ts",
+      "candidate_lf_sha256": "013601429f64dad334a3bfd00fb5b495b47119a6e87c134ce550a2fc7bc8fa69"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/confirm/route.ts",
+      "candidate_lf_sha256": "db149c8629fd67020ab7f695d7bdcc64978d05155b9f413a47b0a613cd66c341"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/recovery-codes/dismiss/route.ts",
+      "candidate_lf_sha256": "a07cf4bcfc9a74057d169b6292aa937cb3c2cc1014adcfc739de5e11ceb46d4c"
+    }
+  ],
+  "findings": [
+    {
+      "requirement": "Recover security settings QR enrollment UI",
+      "evidence": "Original page calls QRCode.toDataURL and renders Image; candidate page renders only secret and URI",
+      "preserve": "Pending setup userId binding, native enrollment POST, CSRF and existing vendor member management"
+    },
+    {
+      "requirement": "Recover safe return navigation through MFA setup",
+      "evidence": "Original setup accepts next, forwards hidden fields and verification link; candidate setup ignores next, enrollment service uses fixed destinations, native start/confirm/dismiss routes do not preserve next",
+      "scope": "Must reconcile service, forms, routes and actions together; simply copying old JSX leaves incomplete behavior",
+      "tests_needed": "Invalid external or backslash destinations rejected; start/restart/failure/success/recovery acknowledgement preserve validated internal return; desktop/mobile browser round trip"
+    },
+    {
+      "requirement": "Preserve current reliable recovery-code regeneration",
+      "evidence": "Original setup uses Server Action; candidate uses native POST route; preserve current security service and transport while recovering visuals"
+    }
+  ],
+  "acceptance": "No original files declared delivered; read-only gap analysis only",
+  "next": "Complete parent PR360 and onboarding publication, then implement MFA UI/navigation in a separate protected PR",
+  "implementation": {
+    "branch": "codex/integrate-original-mfa-ui-20261005",
+    "state": "LOCAL_VALIDATED_PENDING_PARENT_MERGES_AND_PROTECTED_CI",
+    "qr_display": "Restored server-local QR plus manual fallback; existing tenant/member and native POST controls preserved",
+    "validation": {
+      "targeted_eslint": "PASS after extracting return field",
+      "typecheck": "PASS after wiring",
+      "browser": "PASS admin1 and current-head desktop/mobile2; development environment only",
+      "independent_review": "PASS: zero remaining findings"
+    },
+    "remaining": [
+      "Parent PR360 and onboarding protected merges",
+      "Publish exact-scope MFA PR, complete CI and canonical acceptance"
+    ],
+    "return_path_utility": {
+      "state": "WIRED_AND_REVIEWED",
+      "tests_passed": 29,
+      "tests_failed": 0,
+      "eslint": "PASS",
+      "remaining": "Protected CI and acceptance"
+    },
+    "visual_recovery": "Setup page restored while preserving validated return fields, native recovery regeneration and smoke policy",
+    "browser_session": null,
+    "browser_state": "PASS current-head desktop/mobile2",
+    "browser_stats": {
+      "startTime": "2026-10-04T18:37:41.094Z",
+      "duration": 52419.578,
+      "expected": 1,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "review_state": "PASS: portal_review_fallback zero findings",
+    "return_browser": {
+      "stats": {
+        "startTime": "2026-10-04T18:44:57.438Z",
+        "duration": 60333.685,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "scope": "1440px/390px: setup, wrong code rejected, valid code, recovery acknowledgement, verification and original internal destination",
+      "environment": "Isolated PostgreSQL54463 env-free dev server mirror"
+    },
+    "review_fixes": {
+      "regeneration": "All native and action forms preserve validated next, success and failure route tests PASS",
+      "auth_guard": "Both pages pass validated nextPath to requireAuth, four boundary tests PASS",
+      "typecheck": "PASS",
+      "targeted_eslint": "PASS",
+      "review": "PASS"
+    }
+  },
+  "review": {
+    "reviewer": "/root/portal_review_fallback",
+    "findings": [],
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "scope": "Source and receipts reviewed; reviewer did not execute tests; regeneration and auth-guard MINOR findings closed"
+  },
+  "candidate_files": [
+    {
+      "path": "src/app/(app)/settings/security/page.tsx",
+      "sha256_lf": "cc022a31e9b70b5297cc6e46ad9b62a46877a435fb74f3436419b75231d750b1"
+    },
+    {
+      "path": "src/app/actions.test.ts",
+      "sha256_lf": "489d780d3e8890143f37628df5a5a85e277a79fdac350600511132680f2be0c1"
+    },
+    {
+      "path": "src/app/actions/auth-security-actions.ts",
+      "sha256_lf": "b322a8601225b3d33b9865899b253368c48abbebf3f0382853a05ee5c1905714"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/confirm/route.test.ts",
+      "sha256_lf": "faaaf19a6acede3435eccca176031bd459611e7cce220ce73a9919f7f201c284"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/confirm/route.ts",
+      "sha256_lf": "8680b95a1a40d8ff569a84af49c27698850fbda0fdaff5416c87c14f375f4e91"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/recovery-codes/regenerate/route.test.ts",
+      "sha256_lf": "714a5820c9a722e28615608b2e7baba7e40fed5267e4d3dcb0cc3e7e3fd8e57f"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/recovery-codes/regenerate/route.ts",
+      "sha256_lf": "26873278f5a2545e5514b2dc5bc259722137af142d565782b06bc5db7fdfa123"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/start/route.test.ts",
+      "sha256_lf": "46f15a7ac9843d49a7bc66b2bafb49afe7a340b2931fd9e3311306f5e059a78c"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/start/route.ts",
+      "sha256_lf": "de16f3d57045431106413657630531fe13a48407579cab5a12ed9ccc91e362ce"
+    },
+    {
+      "path": "src/app/mfa/setup/page.test.tsx",
+      "sha256_lf": "de0b01dc14d702635daf31076436bd723f2cfbbd8d35e9a20978799fd29d6da4"
+    },
+    {
+      "path": "src/app/mfa/setup/page.tsx",
+      "sha256_lf": "bb3f46dae88c910255772764b5b863dbf34b90f910836177165862f21a5ca5e5"
+    },
+    {
+      "path": "src/components/mfa-enrollment-form.tsx",
+      "sha256_lf": "332589581669f2a4c1ac0c78e82a39b3b672c843cae05b325d56b084375ff5a4"
+    },
+    {
+      "path": "src/components/mfa-return-field.tsx",
+      "sha256_lf": "549afbd57df8e60260885532185482813f777ed6f75172d216d0818600436b73"
+    },
+    {
+      "path": "src/lib/mfa-enrollment.test.ts",
+      "sha256_lf": "ce928039ab626b8c5118fe16b2fff90563d59d3e903ec50aafa999d661409f4c"
+    },
+    {
+      "path": "src/lib/mfa-enrollment.ts",
+      "sha256_lf": "261cb660a05b88e37aba46eea89b68ec550bb73ba526979dd44a415e1f58ed9f"
+    },
+    {
+      "path": "src/lib/mfa-return-path.test.ts",
+      "sha256_lf": "e5275b2495531a4ae0b1d62cfd27533e1450c34324f4d37bb2b2e794bf41a59d"
+    },
+    {
+      "path": "src/lib/mfa-return-path.ts",
+      "sha256_lf": "dd05fdfd775e9327186be58373c9d6ea425671b2693ecf4df74f41f1438ea821"
+    },
+    {
+      "path": "tests/e2e/smoke.spec.ts",
+      "sha256_lf": "887d4cd656c28b2bc6d659e1e2c61e8fa467dcc250f59aa8300242e07eccaba5"
+    }
+  ],
+  "original_preservation": {
+    "entries": 120,
+    "hashed_files": 118,
+    "changed": 0
+  }
+}

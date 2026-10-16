@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { LandingPageWorkspace } from "@/components/landing-page-workspace";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { getLandingPageForEditor, LandingPageNotFoundError, LandingPageScopeError, type LandingPageStoredContent } from "@/lib/landing-page-service";
 import { CSRF_FIELD_NAME, getCsrfToken } from "@/lib/csrf";
 import { getActiveFunnelStepPage, switchFunnelStep, type FunnelStepPages } from "@/lib/funnel-step-pages";
@@ -9,6 +10,7 @@ function isFunnelStepPages(content: LandingPageStoredContent): content is Funnel
 }
 
 export default async function EditLandingPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ step?: string }> }) {
+  await requireVendorManagerContext();
   const { id } = await params;
   const query = await searchParams;
   const data = await getLandingPageForEditor(id).catch((error: unknown) => { if (error instanceof LandingPageNotFoundError || error instanceof LandingPageScopeError) notFound(); throw error; });

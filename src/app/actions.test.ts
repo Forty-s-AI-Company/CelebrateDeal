@@ -3217,6 +3217,22 @@ describe("sendPasswordResetSmokeAction", () => {
     expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
   });
 
+  it("blocks the smoke email action in deployed production before rate-limit or mail operations", async () => {
+    authenticatedSmokeRecipient();
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("E2E_TEST_MODE", "true");
+    vi.stubEnv("E2E_BASE_URL", "https://app.example.test");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+    mocks.isAllowedSmokeTestRecipient.mockReturnValue(true);
+
+    await expect(sendPasswordResetSmokeAction(new FormData())).rejects.toThrow(
+      "redirect:/settings/security?error=password_reset_smoke_unavailable",
+    );
+
+    expect(mocks.checkRateLimit).not.toHaveBeenCalled();
+    expect(mocks.sendPasswordResetLink).not.toHaveBeenCalled();
+  });
+
   it("does not create a reset token after the per-account smoke limit is reached", async () => {
     authenticatedSmokeRecipient();
     mocks.checkRateLimit.mockResolvedValueOnce(new Response(null, { status: 429 }));
@@ -3975,16 +3991,16 @@ describe("/settings/security isolation", () => {
     ]);
 
     const page = await SecuritySettingsPage({ searchParams: Promise.resolve({ updated: "member", error: "member_invitation_resend_failed" }) });
-    const resendActions = formActions(page).filter((action) => action === resendVendorMemberInvitationAction);
+    const actions = formActions(page);
     const actionButtons = elementsOfType(page, FormSubmitButton);
     const pendingLabels = actionButtons.map((button) => button.props.pendingChildren);
     const recoveryButton = actionButtons.find((button) => button.props.pendingChildren === "重新產生中…");
     const paragraphs = elementsOfType(page, "p");
 
-    expect(resendActions).toHaveLength(0);
+    expect(actions).toContain(sendPasswordResetSmokeAction);
+    expect(actions).not.toContain(createVendorMemberAction);
+    expect(actions).not.toContain(resendVendorMemberInvitationAction);
     expect(pendingLabels).toEqual(expect.arrayContaining(["重新產生中…"]));
-    expect(pendingLabels).not.toContain("重寄中…");
-    expect(pendingLabels).not.toContain("寄送中…");
     expect(recoveryButton?.props.confirmMessage).toBe("重新產生後，舊 recovery codes 會立即失效。確定繼續？");
     expect(elementsOfType(page, "button")).toHaveLength(0);
     expect(paragraphs.some((paragraph) => paragraph.props.role === "status" && paragraph.props["aria-live"] === "polite")).toBe(true);

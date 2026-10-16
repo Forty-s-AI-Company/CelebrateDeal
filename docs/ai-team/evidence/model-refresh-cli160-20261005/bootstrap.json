@@ -1,0 +1,1 @@
+{"kind": "validation", "source": "validation_runner", "name": "bootstrap", "revision": "sha256:0c6ae7d86884bdb3a60557f5a6fb7cd63914221519437262741b02f5809b3ae5", "status": "PASS", "exit_code": 0, "duration_seconds": 3.578}

@@ -1,0 +1,19 @@
+{
+  "head": "202cafcd1aa9fcf1ad184c5cb85d7869d37d2ffa",
+  "previous_attempt": "FAILED_BEFORE_BROWSER",
+  "diagnosis": "Isolated mirror missing scripts/local-database-safety.ts; tsc TS2307 in three DB test modules.",
+  "fix": "Copy the exact safety module into the isolated mirror; no source changes, exclusions or typecheck bypass.",
+  "current_session": 22618,
+  "status": "PASS",
+  "production_operations": false,
+  "receipt": "C:\\Users\\eden\\.codex\\worktrees\\branch-integration-20261004\\CelebrateDeal\\.ai-team\\tmp\\buyer-order-title-results.json",
+  "stats": {
+    "startTime": "2026-10-04T23:42:21.047Z",
+    "duration": 154728.41799999998,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "scope": "Isolated next build/start on loopback synthetic database: desktop/mobile buyer-order capability, exact title, unchanged cache-control and axe assertions."
+}

@@ -1,0 +1,132 @@
+{
+  "source": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "candidate": "eb5649645ac658f5e792a9ed1bd7f986e730a930",
+  "decisions": [
+    {
+      "path": "src/app/actions/community-actions.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "9cf4fcc4d5a35fba6ff4492b4445a6cb824c11b5",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_LEARNING_AND_COMMUNITY_EXTENSION_NOT_PORTAL_AUTH_EQUIVALENCE"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/community/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "fcb2ca702a050eab58dcb0724f77bad144af6ba5",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_LEARNING_AND_COMMUNITY_EXTENSION_NOT_PORTAL_AUTH_EQUIVALENCE"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/learn/[courseId]/certificate/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "611415741943d72aad4bb2e51dec0c93376ec9c3",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_LEARNING_AND_COMMUNITY_EXTENSION_NOT_PORTAL_AUTH_EQUIVALENCE"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/learn/[courseId]/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "45cb711c5caad4a05347b1aba0fe32ac8a69ece0",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_LEARNING_AND_COMMUNITY_EXTENSION_NOT_PORTAL_AUTH_EQUIVALENCE"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/learn/[courseId]/progress/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "ced61cd71f4426feb0f06f8cc281b4d4cdd4b4bd",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_LEARNING_AND_COMMUNITY_EXTENSION_NOT_PORTAL_AUTH_EQUIVALENCE"
+    },
+    {
+      "path": "src/components/course-player.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "ca9427c26cb7b882d9d36ff35642378d9f98ff1d",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_LEARNING_AND_COMMUNITY_EXTENSION_NOT_PORTAL_AUTH_EQUIVALENCE"
+    },
+    {
+      "path": "src/lib/community.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "e229ccfd7ac0a67f8bea2334cba2dd0ecc642cf0",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_LEARNING_AND_COMMUNITY_EXTENSION_NOT_PORTAL_AUTH_EQUIVALENCE"
+    },
+    {
+      "path": "src/lib/course-certificate.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "39dd6ea47e9f5630b506376172ad67fb908ae463",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_LEARNING_AND_COMMUNITY_EXTENSION_NOT_PORTAL_AUTH_EQUIVALENCE"
+    },
+    {
+      "path": "src/lib/course-learning.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "00294cce271c8b34f475077598afbf08af461a37",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_LEARNING_AND_COMMUNITY_EXTENSION_NOT_PORTAL_AUTH_EQUIVALENCE"
+    },
+    {
+      "path": "src/lib/student-course-learning.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "63c35fba49d0f7103b32dea7706f41a5e06e13a2",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_LEARNING_AND_COMMUNITY_EXTENSION_NOT_PORTAL_AUTH_EQUIVALENCE"
+    }
+  ],
+  "current_milestone": "Current student portal provides tenant-qualified dashboard and verified login/delivery boundaries. It is not a replacement for lesson player, progress tracking, certificates or community.",
+  "source_capabilities": [
+    "Purchased course/entitlement lookup before read/progress/certificate",
+    "Per-lesson watch progress and completion",
+    "SVG certificate generation",
+    "Community membership and page/actions"
+  ],
+  "future_acceptance": [
+    "Reuse current mailbox-verified session; never grant account-wide access from a checkout-only capability",
+    "Verify vendor/student/course scope on every read/write/certificate and revoke access after entitlement changes",
+    "Validate lesson progress bounds, concurrent updates and completion semantics with real DB tests",
+    "Verify certificate escaping and private response/caching",
+    "Define community membership policy and verify unauthorized/cross-tenant cases",
+    "Complete browser journey from verified login to lesson progress, reload and certificate"
+  ],
+  "limits": "Source code inspected for scope/dependencies only; no full security review or feature execution claimed. Explicitly deferred per user milestone instruction."
+}

@@ -74,6 +74,9 @@ assertLocalTestDatabase("DIRECT_URL", process.env.DIRECT_URL);
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  // This route is intentionally development-only. Its dedicated mirror/dev
+  // runner is a separate required gate; production E2E must not call it.
+  testIgnore: ["**/funnel-advanced-elements.spec.ts"],
   timeout: 30_000,
   // Browser smoke is a release gate. Run a production build/start lifecycle
   // instead of Turbopack dev mode, whose local filesystem cache can make
@@ -135,6 +138,13 @@ export default defineConfig({
       // external ingest endpoint delay page loads or surface false 500s here.
       [sentryDsnEnvironmentName]: "",
       [publicSentryDsnEnvironmentName]: "",
+      // Browser QA uses a disposable database and must never inherit a local
+      // or deployed R2 destination; upload failure states stay deterministic.
+      CLOUDFLARE_R2_ACCOUNT_ID: "",
+      CLOUDFLARE_R2_ACCESS_KEY_ID: "",
+      CLOUDFLARE_R2_SECRET_ACCESS_KEY: "",
+      CLOUDFLARE_R2_BUCKET: "",
+      CLOUDFLARE_R2_PUBLIC_BASE_URL: "",
       // Release-mode browser QA must never publish local source maps or create
       // an external Sentry release as a side effect of its child build.
       [sentryAuthTokenEnvironmentName]: "",

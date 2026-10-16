@@ -1,0 +1,38 @@
+{
+  "head": "1c7d3b63a720da9dd6ab47a56e5536d867336a4f",
+  "status": "RECONCILIATION_PENDING_VALIDATION",
+  "items": [
+    {
+      "path": "vitest.synthetic-db-coverage.config.ts",
+      "observed": "Original injects synthetic CSRF and excludes tests/e2e-support and tmp. Current CI already injects synthetic CSRF and e2e-support is absent. Current excludes browser-dev, which contains real Playwright harness. Do not blindly copy exclusions or claim independent local concurrency verified.",
+      "next": "Confirm current concurrency CI; preserve test discovery and coverage thresholds."
+    },
+    {
+      "path": "tests/e2e/helpers/direct-url-guard.ts",
+      "observed": "Original uses load for streamed 404, current uses commit then explicit visible 404/body assertions and canary scan; initial response contract deliberately retained. Runtime sequencing equivalence requires actual browser evidence.",
+      "next": "Inspect direct URL browser gate results and original caller deltas before choosing final behavior."
+    }
+  ],
+  "playwright_config_work_package": {
+    "status": "IMPLEMENTED_PR365_PENDING_BROWSER_PARENT_AND_CI",
+    "source": "Original preserved playwright.config.ts compared to current master",
+    "requirements": [
+      "Inject deterministic synthetic bank encryption key into both test and local server processes",
+      "Blank Cloudflare R2 destinations/credentials for synthetic browser runtime",
+      "Retain loopback URL and disposable DB validation before any migration; deploy committed migrations before local fixture startup",
+      "Restore optional explicit Playwright executable selection",
+      "Account for measured Windows build startup duration without increasing individual assertion timeouts"
+    ],
+    "do_not_restore": [
+      "Obsolete testIgnore for advanced-elements: development-only spec now resides outside testDir in tests/browser-dev"
+    ],
+    "acceptance": [
+      "Verify unsafe database and non-loopback URL rejected before external commands",
+      "Verify no inherited external storage destination reaches local browser server",
+      "Run affected synthetic browser gate and check migration parity"
+    ],
+    "scope_note": "A separate next integration milestone; not evidence that current PR363 code is unsafe, and not marked merged.",
+    "head": "266396e288df22a9ce8b22559bbc244b56805bf1",
+    "pr": 365
+  }
+}

@@ -9,10 +9,10 @@
 - Planner 不再受「一次、30～90 分鐘、完成後停止」限制；只有 scope、風險、授權或架構改變時才重新規劃。
 - 主代理具備 Direct Autonomous 端到端直通模式，可直接規劃、實作、自測並建立 checkpoint commit。
 - 日常 70% 任務（UI、文案、簡單 Bug）通過本地 `typecheck` 與 targeted tests 即可交付，直接跳過 AI 複審以極限節省 Token 額度。
-- 高風險任務啟動四級審查降級鏈（Review Fallback Ladder）：Tier 1 Claude Sonnet 4.6（反過度設計）→ Tier 2 Gemini 3.8 Flash High（零額度焦慮）→ Tier 3 GPT-5.6-Terra medium（客觀嚴謹，不用 Sol 避免發散）→ Tier 4 本地測試防線。
-- 一般實作由 `gpt-5.6-luna high` Worker 執行（解除 max 鎖定以節省額度）；複雜跨檔或困難診斷由 `gpt-5.6-terra` Worker Deep 執行，Reviewer 固定使用 Terra read-only。
-- Explorer／Analyst 預設維持 AGY 唯讀路徑；`complex`／`critical` 任務可升級至 Luna read-only。
-- 推理程度動態選擇，採最低足夠成本：Sol `low`～`xhigh`、Terra `low`～`xhigh`、Luna `high`～`max`。一般任務使用中間值。
+- 高風險 review 依 vNext `review_plan` 路由：Gemini 先做廣域 candidate scan，Sonnet 做深度判斷；Critical security/payment/auth 直接使用 Opus 或其明確 Codex fallback。Review 不得因固定階梯而跳過必要審查。
+- 一般模型由 `.ai-team/config/routing-policy.json` 的 `MODEL_ROUTING` 按任務 signals 選擇：超簡單工作用 GPT-6 Luna，一般工程用 GPT-6.1 Sol，effort 依共享政策提高；GPT-6 Astra 需具體例外理由。
+- Explorer／Analyst 是唯讀邏輯職位，實際模型由 router 選擇；agy 只在需要且 discovery 成功時使用，未登入時走 native fallback。
+- 推理程度由 complexity/risk/role 決定，不能把所有 Worker 固定成 Luna high/max，也不能因 Pro invocation 固定使用 Astra。
 - 只要同一檔案、資料資源或外部資源沒有 writer 衝突，不同 scope 可以並行。
 - 每個 checkpoint 只需保存精確結果、證據、回滾方式與下一步；不因 checkpoint 自動停止 Goal。
 
@@ -33,6 +33,7 @@
 ## 開發與測試
 
 - 允許本機、loopback、disposable PostgreSQL、Docker、Preview、staging、sandbox、Browser 與 PayUni Sandbox，前提是非 Production、scope 明確且不讀取秘密。
+- 上述非 Production 開發與驗證不需要逐次 owner authorization、一次性 probe 或沿用舊 Work Package 的 attempt budget；固定 runner 自己必須驗證環境分類、host allowlist、資料隔離與必要設定。
 - 允許 Preview／staging deploy、環境驗證與 rollback rehearsal；不得把它們誤標成 Production readiness。
 - 允許使用 synthetic data、mock boundary、deterministic tests、integration tests 與真實 sandbox reconciliation。
 - 測試命令依產品風險與價值選擇，不強制每個 WP 都執行完整 test suite。
@@ -40,12 +41,13 @@
 - E2E 可在功能測試與環境身份可驗證後執行；不必等待 coverage gate。
 - AGY 是輔助 evidence，不能取代 deterministic tests、功能驗證或正式人工簽核。
 - Claude plan review 是 advisory evidence，額度不足、登入阻擋或工具錯誤必須如實記錄，不得標成 PASS。
+- 歷史 evidence 與 WP packet 保留原始結果，但其中的 no-rerun、single-attempt、waiting-authorization 或特定 lineage 規則不會自動限制新的非 Production 工作。
 
 ## AGY fallback
 
-- 重要產品／安全／release 工作可依序使用 AGY Fast → AGY Deep → native Luna。
-- Fast、Deep、Luna 均必須如實保存 `PASS`、`TOOL_BLOCKED`、`LOGIN_REQUIRED` 或 `FALLBACK_HANDOFF_REQUIRED`。
-- 允許自動 fallback；禁止對同一失敗命令無限重試。若路徑沒有改善，改用不同診斷或重新排序產品工作。
+- 重要產品／安全／release 工作先由 router 選擇適合的 reviewer；需要 agy 時只做一次 bounded discovery，依實際 slug 呼叫。
+- Provider 狀態必須保存 `PASS`、`TOOL_BLOCKED`、`LOGIN_REQUIRED` 或 `FALLBACK_HANDOFF_REQUIRED`；agy 不可用時 Codex fallback 仍可完成必要 native handoff。
+- 允許有限 fallback；禁止對同一失敗命令無限重試，且 routing 與 fallback 必須分開記錄。
 
 ## Git 與 checkpoint
 
@@ -75,3 +77,9 @@
 - 小範圍續修使用精簡 checkpoint；只有角色、scope、風險或 Milestone 改變時才輸出完整 `AI_TEAM_HANDOFF`。
 - `NEXT_PROMPT` 只在需要換角色或外部人工動作時提供，不要求每輪複製長 Prompt。
 - Goal 完成前不得宣稱所有功能、外部服務或 Production ready；最終分數與 release evidence 必須可追溯。
+
+## vNext router gates
+
+`PRELAUNCH_DEV` 仍遵守 `RELEASE_HARDENING` 的 Production 邊界。`UNKNOWN = 0` 不成立：未知 quota 不可當成耗盡或可用。任務邊界使用 `NEXT_TASK_REQUIRED`、`PLAN_REMEDIATION`、`CONTINUE_CURRENT_WP`、`USER_AUTHORIZATION_REQUIRED` 與 `MIXED_HUNKS` 明確表示。相同工作最多 3 輪修正、最多 2 次外部模型 attempt、最多 8 個候選 agents；實際 vNext policy 另限制每 task 4 次 dispatch、child depth 1、active agents 2，並以 sanitized self-hash／evidence 保存決策。
+
+agy failure 必須保留實際分類：`AUTH_REQUIRED`、`HOST_PERMISSION_BLOCKED`、`AGY_NOT_INSTALLED`、`MODEL_UNAVAILABLE` 或 `AGY_RUNTIME_ERROR`。Host-side 已驗證登入時，Codex sandbox 的 Access Denied 屬於 `HOST_PERMISSION_BLOCKED`／`HOST_AUTH_CONTEXT_UNAVAILABLE`，不等於要求重新登入；所有分類都仍走適當的 Codex fallback。

@@ -1,0 +1,16 @@
+{
+  "pr": 362,
+  "state": "MERGED",
+  "head": "ea576e1a05b2e405e423081b5208e8338e672d06",
+  "merge": "fadfe59d044290c69c8bfd9919dcbf571a5f7f41",
+  "merged_at": "2026-10-04T20:49:58Z",
+  "runs": [
+    37228702572,
+    37228683931
+  ],
+  "ci": "SUCCESS",
+  "acceptance": "READY",
+  "revision": "sha256:f214fc6faaa23e3ebaa1499048fdb31b529f8f21dee93d67464ed0616a6c74af",
+  "accepted_and_merged_tree": "bce8a3c57f41b42eb10cfb68d4ccfdfc3756aa68",
+  "production": "Not operated"
+}

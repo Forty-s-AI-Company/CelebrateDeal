@@ -1,0 +1,213 @@
+{
+  "source": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "candidate": "eb5649645ac658f5e792a9ed1bd7f986e730a930",
+  "decisions": [
+    {
+      "path": "prisma/migrations/20260905090000_affiliate_portal/migration.sql",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "061980bc23757688b002894ddc7e1038dd4e94b2",
+      "base_blob": null,
+      "master_blob": null,
+      "decision": "DEFER_WITH_ASSOCIATED_UNFINISHED_FEATURE",
+      "tables_created": [],
+      "tables_altered": [
+        "Affiliate",
+        "AffiliatePayout"
+      ]
+    },
+    {
+      "path": "prisma/migrations/20260905160000_tiered_multilevel_commission/migration.sql",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "b72c5681bbf157c21bd9b933c9a99463b9badedc",
+      "base_blob": null,
+      "master_blob": null,
+      "decision": "DEFER_WITH_ASSOCIATED_UNFINISHED_FEATURE",
+      "tables_created": [
+        "CommissionRuleSet",
+        "CommissionRateTier",
+        "CommissionUplineLevel"
+      ],
+      "tables_altered": [
+        "AffiliateCommission",
+        "CommissionRateTier",
+        "CommissionRuleSet",
+        "CommissionUplineLevel"
+      ]
+    },
+    {
+      "path": "prisma/migrations/20260906013000_smart_automation_workflows/migration.sql",
+      "state": "BOTH_CHANGED",
+      "source_blob": "a66a7d15b45f55ef286da653c4c6b2d035a7c568",
+      "base_blob": null,
+      "master_blob": "aa2c029e7427a02e80e3fc436b20fe931c4b6167",
+      "decision": "KEEP_EXISTING_MIGRATION_WHITESPACE_ONLY_DIFFERENCE"
+    },
+    {
+      "path": "prisma/migrations/20260907200000_affiliate_payout_taiwan_withholding/migration.sql",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "8f2a9fb3a3b04df758327ad3b7c90b8ef8af5cb7",
+      "base_blob": null,
+      "master_blob": null,
+      "decision": "DEFER_WITH_ASSOCIATED_UNFINISHED_FEATURE",
+      "tables_created": [],
+      "tables_altered": [
+        "Affiliate",
+        "AffiliatePayout"
+      ]
+    },
+    {
+      "path": "prisma/migrations/20260907213000_versioned_tiered_commission_snapshots/migration.sql",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "20e74e0837fbc68cc2459a61baec65d8f37d0ca0",
+      "base_blob": null,
+      "master_blob": null,
+      "decision": "DEFER_WITH_ASSOCIATED_UNFINISHED_FEATURE",
+      "tables_created": [
+        "CommissionProductOverride"
+      ],
+      "tables_altered": [
+        "AffiliateCommission",
+        "CommissionProductOverride"
+      ]
+    },
+    {
+      "path": "prisma/migrations/20260907220000_quantity_commission_tiers/migration.sql",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "a64dd3260af8aee208edc895ca8d0488943f6dad",
+      "base_blob": null,
+      "master_blob": null,
+      "decision": "DEFER_WITH_ASSOCIATED_UNFINISHED_FEATURE",
+      "tables_created": [
+        "CommissionQuantityTier"
+      ],
+      "tables_altered": [
+        "AffiliateCommission",
+        "CommissionQuantityTier"
+      ]
+    },
+    {
+      "path": "prisma/migrations/20260907221500_quantity_commission_snapshot_contract/migration.sql",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "aea6601c4c57b3be93dd35065cbb9aaaf3b9ef57",
+      "base_blob": null,
+      "master_blob": null,
+      "decision": "DEFER_WITH_ASSOCIATED_UNFINISHED_FEATURE",
+      "tables_created": [],
+      "tables_altered": [
+        "AffiliateCommission"
+      ]
+    },
+    {
+      "path": "prisma/migrations/20260907230000_registration_form_funnel_blocks/migration.sql",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "0fd4639557b24cc72647924171306630f9886790",
+      "base_blob": null,
+      "master_blob": null,
+      "decision": "DEFER_WITH_ASSOCIATED_UNFINISHED_FEATURE",
+      "tables_created": [],
+      "tables_altered": [
+        "RegistrationForm"
+      ]
+    },
+    {
+      "path": "prisma/migrations/20260908090000_vendor_feature_toggles/migration.sql",
+      "state": "BOTH_CHANGED",
+      "source_blob": "f9714c4798ba15c32da09d910608573b506fdbd5",
+      "base_blob": null,
+      "master_blob": "c1f71a6a54c0a9fa19f510365651b7f3ec50d8da",
+      "decision": "KEEP_EXISTING_MIGRATION_WHITESPACE_ONLY_DIFFERENCE"
+    },
+    {
+      "path": "prisma/migrations/20260908113000_automation_customer_funnel_identity/migration.sql",
+      "state": "BOTH_CHANGED",
+      "source_blob": "96b841d12b811624ecd4f1eeba2b6499f4e6723f",
+      "base_blob": null,
+      "master_blob": "093c972b0c831404dcfcd8cba86261635073c6f8",
+      "decision": "KEEP_EXISTING_MIGRATION_WHITESPACE_ONLY_DIFFERENCE"
+    },
+    {
+      "path": "prisma/migrations/20260908143000_customer_crm_cockpit/migration.sql",
+      "state": "BOTH_CHANGED",
+      "source_blob": "60d5d0a0fe625a668280b91829b30ac43e06f09a",
+      "base_blob": null,
+      "master_blob": "0f76fb066fa5b0f1af804e08a498d87be8fb0739",
+      "decision": "KEEP_EXISTING_MIGRATION_WHITESPACE_ONLY_DIFFERENCE"
+    },
+    {
+      "path": "prisma/migrations/20260909100000_student_portal_access_tokens/migration.sql",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "4ac3fb91bdeb845fb7ec96a5784d219570322d8d",
+      "base_blob": null,
+      "master_blob": null,
+      "decision": "KEEP_HARDENED_PORTAL_MIGRATION_DO_NOT_DUPLICATE",
+      "replacement": "prisma/migrations/20261004154500_student_portal_access_tokens/migration.sql",
+      "limit": "See portal milestone review; not byte equivalence"
+    },
+    {
+      "path": "prisma/migrations/20260909143000_line_rich_menu/migration.sql",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "357adeb26643f00402b111c857138591a118442b",
+      "base_blob": null,
+      "master_blob": null,
+      "decision": "KEEP_DELIVERED_DRAFT_MILESTONE_DEFER_EXTERNAL_SYNC",
+      "replacement": "prisma/migrations/20261004140000_line_rich_menu_drafts/migration.sql",
+      "limit": "Draft milestone does not imply external LINE sync complete"
+    },
+    {
+      "path": "prisma/migrations/20260909190000_flagship_growth_delivery/migration.sql",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "2103358fabc41c7cd71caa37edd3e49a7fa6f9ba",
+      "base_blob": null,
+      "master_blob": null,
+      "decision": "DEFER_WITH_ASSOCIATED_UNFINISHED_FEATURE",
+      "tables_created": [
+        "CourseLesson",
+        "CourseLessonProgress",
+        "CommunityPost",
+        "CommunityComment",
+        "CommunityReaction"
+      ],
+      "tables_altered": [
+        "CommunityComment",
+        "CommunityPost",
+        "CommunityReaction",
+        "CourseLesson",
+        "CourseLessonProgress",
+        "Product",
+        "TrackingSetting"
+      ]
+    },
+    {
+      "path": "prisma/migrations/20260911010000_private_live_chat/migration.sql",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "6167aaab62ed1bf6441bdff194a213aa7cd51fb4",
+      "base_blob": null,
+      "master_blob": null,
+      "decision": "DEFER_WITH_ASSOCIATED_UNFINISHED_FEATURE",
+      "tables_created": [],
+      "tables_altered": [
+        "LiveChatMessage"
+      ]
+    },
+    {
+      "path": "prisma/migrations/20260912103000_sales_workspace_onboarding/migration.sql",
+      "state": "BOTH_CHANGED",
+      "source_blob": "19765044f3e46e1bd9dff4137a736e2701461def",
+      "base_blob": null,
+      "master_blob": "ae6e80f025b22ac92e43cdc47887714d40053634",
+      "decision": "KEEP_EXISTING_MIGRATION_WHITESPACE_ONLY_DIFFERENCE"
+    },
+    {
+      "path": "prisma/migrations/20260917093000_inventory_reservation_items_snapshot/migration.sql",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "b3ae5fbbb1c7f0dc6a2fd7ed99fd4eaa5b9274b5",
+      "base_blob": null,
+      "master_blob": null,
+      "decision": "EXACT_SQL_ALREADY_DELIVERED_UNDER_NEW_MIGRATION_NAME",
+      "replacement": "prisma/migrations/20260922120000_inventory_reservation_items_snapshot/migration.sql"
+    }
+  ],
+  "validation": "Current 83 migrations actually applied to new isolated local CI database in restored-tests receipt; source deferred migrations were not run",
+  "schema_prisma": "Still requires separate model/field disposition; migration index alone is not full schema equivalence",
+  "production_touched": false
+}

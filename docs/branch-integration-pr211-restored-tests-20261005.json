@@ -1,0 +1,51 @@
+{
+  "head": "eb5649645ac658f5e792a9ed1bd7f986e730a930",
+  "source": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "restored": {
+    "checkout_form_cases": 2,
+    "revision_boundary_cases": 1,
+    "inventory_cases": 6
+  },
+  "adaptations": [
+    "Add required Funnel version/revision to UI fixture",
+    "Add required buyer to both positive/negative schema fixtures; original revision assertions preserved"
+  ],
+  "results": {
+    "unit": {
+      "numPassedTests": 14,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "database": {
+      "numPassedTests": 14,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    }
+  },
+  "database": {
+    "host": "127.0.0.1",
+    "port": 54463,
+    "database": "celebratedeal_ci",
+    "schema": "g7_04_3670000000000001",
+    "migrations": 83,
+    "migration_result": "PASS",
+    "production": false,
+    "dotenv_read": false
+  },
+  "attempts": [
+    {
+      "database": "celebratedeal_test",
+      "result": "P3018 extension operator visibility; no tests run",
+      "schema": "g7_04_3670000000000001"
+    },
+    {
+      "database": "celebratedeal_test_pr367",
+      "result": "safety gate rejected database name; no migrations run; owned empty database renamed to permitted celebratedeal_ci"
+    },
+    {
+      "database": "celebratedeal_ci",
+      "result": "83 migrations and 14 real DB tests PASS"
+    }
+  ],
+  "cleanup": "Only synthetic test fixtures cleaned by test afterEach; created schema/database retained for follow-up, no shared database deletion"
+}

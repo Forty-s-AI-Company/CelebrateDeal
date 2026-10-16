@@ -1,0 +1,66 @@
+{
+  "pr": 361,
+  "head": "25e6827c0ff209ccd48e4af99872c347be99bacf",
+  "integration_base": "11541b6ac097ea957f2152710e7d9f405b4bfccb",
+  "state": "PENDING_EXACT_HEAD_CI",
+  "files": [
+    {
+      "path": "docs/branch-integration-original-onboarding-progress-20261005.json",
+      "candidate_sha256": "49f685e167f2c36038c77bd56e1fa9fe4e537537f584e78a1b2d3e45b5a40b84"
+    },
+    {
+      "path": "docs/branch-integration-pr360-merged-20261005.json",
+      "candidate_sha256": "8af7ecd0641cd8a398b0ee6e9608098220e69a115a7d526cb5ca23044bc59fa3"
+    },
+    {
+      "path": "src/app/actions/registration-actions.db.test.ts",
+      "candidate_sha256": "c38bdb789db6b17dd99b49e1d9cf5c1d3569008f38ee9bbd71b648c6bed6cdee"
+    },
+    {
+      "path": "src/app/actions/registration-actions.test.ts",
+      "candidate_sha256": "fc9500d1aee1912f36fcba7b3b050b9306b2c4b35350b063792f05baf1558708"
+    },
+    {
+      "path": "src/app/actions/registration-actions.ts",
+      "candidate_sha256": "1fa211adf7bf509ac00499cea0b06a2b5491c552e85c20547e3296675ba12eba"
+    },
+    {
+      "path": "src/app/login/page.tsx",
+      "candidate_sha256": "d3cb5334b5718877e5f4ebbeccd9de93c060110bd488e0106094a755ba7cccfa"
+    },
+    {
+      "path": "src/app/register/page.tsx",
+      "candidate_sha256": "2827e3c90bfa02457fa1e3575318480a090abad86a514e437ccc582095199ed8"
+    },
+    {
+      "path": "src/app/welcome/page.tsx",
+      "candidate_sha256": "8c02e70ad0bc97838704bc854e533b4b8adef7ef17d25be2743fdf2be1e195b4"
+    },
+    {
+      "path": "src/app/welcome/preparing/page.test.tsx",
+      "candidate_sha256": "67a13fc347096fb9e81c21d9491c705ad76dd7052d7802422bec221a29a04ad1"
+    },
+    {
+      "path": "src/app/welcome/preparing/page.tsx",
+      "candidate_sha256": "00033653ec708764f699c34e56bc4b27b1e40c514faa6529bb08ace25d7e6b10"
+    },
+    {
+      "path": "src/components/personalized-onboarding-questionnaire.tsx",
+      "candidate_sha256": "5917ed80d13d765dba9cdc8d3d51a8c07415d31382bcbb57a775b718a777bc09"
+    },
+    {
+      "path": "src/components/workspace-preparing-progress.tsx",
+      "candidate_sha256": "78a029a44aba6cdd8531fe57e2c0ea4d96a84c914b4fdfde9e3e0c33fc78005c"
+    },
+    {
+      "path": "tests/e2e/registration-onboarding.spec.ts",
+      "candidate_sha256": "d477cf1f0c140dcd48886108efb0c547b6ed1f4875f40744aac5c9df93f6b71e"
+    }
+  ],
+  "review": "Independent onboarding source review zero remaining findings; current 11 code/test blobs equal reviewed ef15a5bc; only dependency merge and report updates since",
+  "validation": "registration14, preparation5, PostgreSQL5, component browser2, full desktop/mobile browser2 PASS; tsc/lint PASS; complete CI pending",
+  "ci_handles": {
+    "pull_request": 37226812135,
+    "push": 37226798755
+  }
+}

@@ -1,0 +1,865 @@
+{
+  "source": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "stack_base": "dbdba6dda06b21d28393d6b019eb00644af5338a",
+  "candidate": "eb5649645ac658f5e792a9ed1bd7f986e730a930",
+  "scope": "84 source runtime deltas unchanged from common base in prior master; current candidate tree revalidated. Absence of path alone is not proof of absent capability.",
+  "groups": {
+    "registration_and_funnel_editor": 4,
+    "live_interaction": 11,
+    "affiliate_commission_tax": 23,
+    "shell_settings_and_other": 9,
+    "student_learning_community": 10,
+    "tracking_and_notifications": 5,
+    "historical_payuni_operations": 14,
+    "payments_and_post_purchase": 8
+  },
+  "files": [
+    {
+      "path": "src/app/(app)/landing-pages/layout.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "c613861bb5785144213da0e97de3b29fd946104c",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "registration_and_funnel_editor",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/(app)/lives/[id]/chat/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f9baaba55c0e9a08e257b52d1e4bb870762efea3",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/(app)/settings/commissions/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "a88f2e5f957906bd5c165b72d43c451dcc5cebf9",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/(app)/settings/layout.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "fe55a9d6f2ba76e6226114d0dd1b2cf5c68c7434",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/(app)/settings/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "a9e15052c2c15b162e7ce129189c966f69e23e20",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/actions/affiliate-payout-validation.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "acfd66e36868739d0ca2934cce8a3f4291708b11",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/actions/affiliate-portal-actions.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "2d49421dafcb8873c9af1330c17a41ebaddedac7",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/actions/commission-rule-actions.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "4069bef1dd10bb8a9ed69c1d457e6f8dd0098791",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/actions/community-actions.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "9cf4fcc4d5a35fba6ff4492b4445a6cb824c11b5",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/actions/tracking-actions.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "51d8ef729fb90c19d03ab9b94f2361f6c2781a92",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "tracking_and_notifications",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/actions/webhook-actions.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "0c4014401cca76760b112844ede267917be4d9b5",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "tracking_and_notifications",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/affiliate-portal/layout.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "246270ce3d92fbf53c61382ca3712fecdef10448",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/affiliate-portal/login/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f575ff2b26be9347fbfa57e445720b45434b7f57",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/affiliate-portal/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "5522bc2706a090f1b91fdbc54493b4dda904f65f",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-buyer-callback-retry/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "13e1cf69eced816717fd133d5c5eb78a5a963b51",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-buyer-existing-reconcile/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "3571d5c4a5c26e99f65808196d06f05702237524",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-buyer-existing-refund/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "247592cedcc550e17db6c15b5e07e6d35d6e917c",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-buyer-existing-state/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "2c9909406640552833cad7cadde19dd20618a588",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-refund-recovery/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "dfbf4cc888437d7f29116ae9b40bc4ae1f67f416",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-subscription-payment-attempt/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "1d2d6a29b6c6de8a41599391776ccf5f0d171c0c",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-subscription-reconcile/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "a9d70fa12b5efa6a8e596eec6d95001c11af962b",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-subscription-refund/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "1ccab6b3d8a752bcb549941aac8ce8490bd0826b",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/api/admin/ops/payuni/wp4-subscription-state/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "5108ca9973caa89561565e6dd8782abbb0bed163",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/api/affiliates/payouts/export/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "1000cc864ac7374b1746c450c0ff59ce8eac0b0b",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/api/live-chat/instructor/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "978893d25c1cf758542fab57525a7d11b302a23b",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/api/live-purchase-broadcasts/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "69bd10b1f83eca2943899b74e4d48cfc5b8b3e13",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/checkout/upsell/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "54fb44c23d10b06b95adea802e36a9e127bf7ee9",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/checkout/upsell/upsell-offer.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f529332bdd9a7960428acfd436d3248b3f3a1586",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/community/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "fcb2ca702a050eab58dcb0724f77bad144af6ba5",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/learn/[courseId]/certificate/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "611415741943d72aad4bb2e51dec0c93376ec9c3",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/learn/[courseId]/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "45cb711c5caad4a05347b1aba0fe32ac8a69ece0",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/learn/[courseId]/progress/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "ced61cd71f4426feb0f06f8cc281b4d4cdd4b4bd",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/affiliate-remuneration-dialog.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "fb5bd9510874581d02a4238aef2f7f39657cbf07",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/commission-simulator.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "68d1e4753b52eb8ce9819eeedf0f2707c1646709",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/copy-referral-link.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "88eae8456f455d05c1fab85952fdf2d7dcfaa2dd",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/course-player.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "ca9427c26cb7b882d9d36ff35642378d9f98ff1d",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/exit-intent-popup.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "9a4ad4c5eed4e9f4dde0841096b720800ed4f406",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/fixed-registration-form-builder.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f0a3bc2d74b1328820bcd7b8c3ec710c6e0df9a4",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "registration_and_funnel_editor",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/funnel-builder/funnel-canvas-editor.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f9ec7e55f4f9c5e38016058fcaf056f9c5293d15",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "registration_and_funnel_editor",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/funnel-builder/funnel-wizard.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "6733205c2678a6df7be865ca683f846648331e68",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "registration_and_funnel_editor",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/instructor-chat-panel.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "7e4ec789c8d38eaca59ad31bc3a417b1b72386f4",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/language-switcher.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "0de6ced93e6ab0c3d7415d207d411214c7951c77",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/live-interaction-card.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "67aeb107bfabb6879dd3674760776fd725b4e6c0",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/live-mobile-preview-simulator.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "ee1408cf541d6e339364bc7fccb61e5b4b6470ac",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/live-purchase-ticker.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "9b31e53efab44e47d2c57af1ea72b70e753912ff",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/live-viewing-shell.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "364546d412177efa4728fc46a3875f4382e20695",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/mvp-billing-notice.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "30c443278b0558a49877758eeca944a2be903cb9",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/onboarding-task-center.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "ce64d886e66ffd3684102bfde02d67f0e5528495",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/pwa-install-prompt.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "dc1918da117af87ab7ff02c6c67f3f55ea98cb08",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/referral-share-card.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f8b656e7667714182cdde4aaa27da7a74be31241",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/settings-tabs.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "8b41775dccda56e1c5a6957df85fb14749e94d5b",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/components/sticky-announcement-bar.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "d31d99480a1fdb426c98391786472685050f7fcc",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/affiliate-payout-csv.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "9dccfb3c5479d7bb0d22200b878e11991fc2f5fa",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/affiliate-portal-auth.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "bbecbe1147189f3b9267e89d8ee4654d2028cb17",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/affiliate-portal-payout.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "6ce2028c551c5c2938195c2565e82bf386d71b85",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/affiliate-portal.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "d8bb88aa94334ae9e1eec5939e8e5704901e52b6",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/commission-rule-engine.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "a6eeeb6cbe5a9c911048878d1357635053c31583",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/commission-rule-form.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "e282b9fa40cc8f09a26f2d0043ce5a887fc5e80e",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/community.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "e229ccfd7ac0a67f8bea2334cba2dd0ecc642cf0",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/course-certificate.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "39dd6ea47e9f5630b506376172ad67fb908ae463",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/course-learning.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "00294cce271c8b34f475077598afbf08af461a37",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/i18n.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "bc23ed1a4328db1d9168511f1269202dc7442a62",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/interaction-card-polling.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "fa91f5d89cd211388a025507abf152ce4a612639",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/live-start-notifications.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "7fc5de8179704161bd3c8a336fca9a03dc15902f",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/mvp-commission-policy.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "ae4548c78f6882e1ebced2cce562fd276d9e8de7",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/mvp-usage-billing-policy.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "c1ae53d58a13c4003bc0888ab069267d4b7b3b58",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/payment-providers/ecpay.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "b5bc0f9cb3abf439018964126c65d8a4ac5fe8b4",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/payment-providers/index.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "4b1637d40ed8ebf1a712f78464aa3d58cd6f3293",
+      "base_blob": "9125e2ffa8b061e27ec3d9d61625ac70992c1002",
+      "master_blob": "9125e2ffa8b061e27ec3d9d61625ac70992c1002",
+      "candidate_blob": "9125e2ffa8b061e27ec3d9d61625ac70992c1002",
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_CHANGE_REQUIRES_REVIEW"
+    },
+    {
+      "path": "src/lib/payment-providers/stripe.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "1b41631f696eb37a75fb95dfc33ecba87e745007",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/platform-refund-projection.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "828fa94ba180d50a52655496f0516ac7137265c3",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/referral-card.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "9dc05daee523797c91986a6d3625d510c029be78",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/server-side-tracking.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "2f066a0b8b7c682e102714d89d3d1b24859b4c6f",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "tracking_and_notifications",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/sms-whatsapp-notification.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "da55011b189e30ed7800b67c0a009a2a84dbfef4",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "tracking_and_notifications",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/student-course-learning.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "63c35fba49d0f7103b32dea7706f41a5e06e13a2",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "student_learning_community",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/taiwan-tax-withholding.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f384ae221c96f3eb4ac62f8ea03e9057d3f0ffc8",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/tax-identity.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "3c9b819245054e6f76b5830cbc52ce80aa0c486c",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/team-live-share-action-state.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f5deb422b685ecc99129d93db9a50077c9ab2056",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/tiered-commission-engine.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "c964acc8ff795c4125f24aff0d68de673b692aa0",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/tracking-credentials.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "461a6fc3c8ae192301eb769770b0e53ddda50523",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "tracking_and_notifications",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/wp4-payuni-buyer-callback-retry.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "aec0f9d1053f1f5cdb88e8dcd939a249761e85d8",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/wp4-payuni-buyer-continuation-state.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "0b2a85b99a37dd261b5a60dc161bbd60193b1dec",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/wp4-payuni-buyer-continuation.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f87e9b48864f388fd68d493bc5f7dcfd2b80d656",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/wp4-payuni-subscription-state.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "0d288c9a15f67e678e3e379501b326f052ae4c3e",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    },
+    {
+      "path": "src/lib/wp4-preview-owner-session.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "37c47351c8ab9e18b674b48326fc6717e9536ef6",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "historical_payuni_operations",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION"
+    }
+  ],
+  "known_decisions": [
+    "PR211 landing-page layout and fixed form editor already have explicit product decisions; reuse those, do not reimplement",
+    "Student portal login/deliverables milestone already ported through protected PRs, but course/community routes here are separate",
+    "Post-purchase token and registration pageBlocks/wizard remain unproven replacements",
+    "Historical operational scripts do not authorize live payment, refund, or deployment"
+  ],
+  "next": "Map each group to active runtime and requirements; preserve original source and defer uncompleted features explicitly per user authorization, without claiming source-equivalent delivery."
+}

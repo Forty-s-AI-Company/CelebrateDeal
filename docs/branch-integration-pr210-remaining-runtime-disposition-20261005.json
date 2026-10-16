@@ -1,0 +1,500 @@
+{
+  "source": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "candidate": "eb5649645ac658f5e792a9ed1bd7f986e730a930",
+  "decisions": [
+    {
+      "path": "src/app/(app)/landing-pages/layout.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "c613861bb5785144213da0e97de3b29fd946104c",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "registration_and_funnel_editor",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "REUSE_PR211_EXPLICIT_REPLACEMENT_DECISION",
+      "future_acceptance": [
+        "Current independent LandingPage editor is not automatic equivalence for registration pageBlocks",
+        "Preserve current rich form editor product decision",
+        "Reconcile legacy document migration and editing before enabling old wizard"
+      ],
+      "evidence": "branch-integration-pr211-three-path-decisions-20261005.json"
+    },
+    {
+      "path": "src/app/(app)/lives/[id]/chat/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f9baaba55c0e9a08e257b52d1e4bb870762efea3",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_ADDITIONAL_LIVE_UI_AND_NOTIFICATION_SURFACES",
+      "future_acceptance": [
+        "Verify private instructor chat role/live/vendor scope",
+        "Verify purchase broadcasts expose only masked authorized data",
+        "Integrate card polling lifecycle and stop on disabled/unmounted state",
+        "Verify mobile player/checkout and start-notification idempotency"
+      ]
+    },
+    {
+      "path": "src/app/(app)/settings/layout.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "fe55a9d6f2ba76e6226114d0dd1b2cf5c68c7434",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_SHELL_SETTINGS_LOCALE_AND_ONBOARDING_EXTENSIONS",
+      "future_acceptance": [
+        "Reconcile with current sidebar/settings capabilities",
+        "Verify locale fallback, accessible labels and persisted choice",
+        "Verify PWA prompts and announcement timing in browser",
+        "Do not replace current role guards with navigation-only filtering"
+      ]
+    },
+    {
+      "path": "src/app/(app)/settings/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "a9e15052c2c15b162e7ce129189c966f69e23e20",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_SHELL_SETTINGS_LOCALE_AND_ONBOARDING_EXTENSIONS",
+      "future_acceptance": [
+        "Reconcile with current sidebar/settings capabilities",
+        "Verify locale fallback, accessible labels and persisted choice",
+        "Verify PWA prompts and announcement timing in browser",
+        "Do not replace current role guards with navigation-only filtering"
+      ]
+    },
+    {
+      "path": "src/app/actions/tracking-actions.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "51d8ef729fb90c19d03ab9b94f2361f6c2781a92",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "tracking_and_notifications",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_EXTERNAL_TRACKING_AND_CHANNEL_INTEGRATION",
+      "future_acceptance": [
+        "Keep credentials encrypted and server-only",
+        "Define consent, suppression and retry/idempotency semantics",
+        "Use mock transport and synthetic events before sandbox integration",
+        "Verify owner/manager authorization and cross-tenant rejection"
+      ]
+    },
+    {
+      "path": "src/app/actions/webhook-actions.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "0c4014401cca76760b112844ede267917be4d9b5",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "tracking_and_notifications",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_EXTERNAL_TRACKING_AND_CHANNEL_INTEGRATION",
+      "future_acceptance": [
+        "Keep credentials encrypted and server-only",
+        "Define consent, suppression and retry/idempotency semantics",
+        "Use mock transport and synthetic events before sandbox integration",
+        "Verify owner/manager authorization and cross-tenant rejection"
+      ]
+    },
+    {
+      "path": "src/app/api/live-chat/instructor/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "978893d25c1cf758542fab57525a7d11b302a23b",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_ADDITIONAL_LIVE_UI_AND_NOTIFICATION_SURFACES",
+      "future_acceptance": [
+        "Verify private instructor chat role/live/vendor scope",
+        "Verify purchase broadcasts expose only masked authorized data",
+        "Integrate card polling lifecycle and stop on disabled/unmounted state",
+        "Verify mobile player/checkout and start-notification idempotency"
+      ]
+    },
+    {
+      "path": "src/app/api/live-purchase-broadcasts/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "69bd10b1f83eca2943899b74e4d48cfc5b8b3e13",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_ADDITIONAL_LIVE_UI_AND_NOTIFICATION_SURFACES",
+      "future_acceptance": [
+        "Verify private instructor chat role/live/vendor scope",
+        "Verify purchase broadcasts expose only masked authorized data",
+        "Integrate card polling lifecycle and stop on disabled/unmounted state",
+        "Verify mobile player/checkout and start-notification idempotency"
+      ]
+    },
+    {
+      "path": "src/components/exit-intent-popup.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "9a4ad4c5eed4e9f4dde0841096b720800ed4f406",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_SHELL_SETTINGS_LOCALE_AND_ONBOARDING_EXTENSIONS",
+      "future_acceptance": [
+        "Reconcile with current sidebar/settings capabilities",
+        "Verify locale fallback, accessible labels and persisted choice",
+        "Verify PWA prompts and announcement timing in browser",
+        "Do not replace current role guards with navigation-only filtering"
+      ]
+    },
+    {
+      "path": "src/components/fixed-registration-form-builder.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f0a3bc2d74b1328820bcd7b8c3ec710c6e0df9a4",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "registration_and_funnel_editor",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "REUSE_PR211_EXPLICIT_REPLACEMENT_DECISION",
+      "future_acceptance": [
+        "Current independent LandingPage editor is not automatic equivalence for registration pageBlocks",
+        "Preserve current rich form editor product decision",
+        "Reconcile legacy document migration and editing before enabling old wizard"
+      ],
+      "evidence": "branch-integration-pr211-three-path-decisions-20261005.json"
+    },
+    {
+      "path": "src/components/funnel-builder/funnel-canvas-editor.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f9ec7e55f4f9c5e38016058fcaf056f9c5293d15",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "registration_and_funnel_editor",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_LEGACY_REGISTRATION_CANVAS",
+      "future_acceptance": [
+        "Current independent LandingPage editor is not automatic equivalence for registration pageBlocks",
+        "Preserve current rich form editor product decision",
+        "Reconcile legacy document migration and editing before enabling old wizard"
+      ]
+    },
+    {
+      "path": "src/components/funnel-builder/funnel-wizard.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "6733205c2678a6df7be865ca683f846648331e68",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "registration_and_funnel_editor",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_LEGACY_REGISTRATION_CANVAS",
+      "future_acceptance": [
+        "Current independent LandingPage editor is not automatic equivalence for registration pageBlocks",
+        "Preserve current rich form editor product decision",
+        "Reconcile legacy document migration and editing before enabling old wizard"
+      ]
+    },
+    {
+      "path": "src/components/instructor-chat-panel.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "7e4ec789c8d38eaca59ad31bc3a417b1b72386f4",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_ADDITIONAL_LIVE_UI_AND_NOTIFICATION_SURFACES",
+      "future_acceptance": [
+        "Verify private instructor chat role/live/vendor scope",
+        "Verify purchase broadcasts expose only masked authorized data",
+        "Integrate card polling lifecycle and stop on disabled/unmounted state",
+        "Verify mobile player/checkout and start-notification idempotency"
+      ]
+    },
+    {
+      "path": "src/components/language-switcher.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "0de6ced93e6ab0c3d7415d207d411214c7951c77",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_SHELL_SETTINGS_LOCALE_AND_ONBOARDING_EXTENSIONS",
+      "future_acceptance": [
+        "Reconcile with current sidebar/settings capabilities",
+        "Verify locale fallback, accessible labels and persisted choice",
+        "Verify PWA prompts and announcement timing in browser",
+        "Do not replace current role guards with navigation-only filtering"
+      ]
+    },
+    {
+      "path": "src/components/live-interaction-card.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "67aeb107bfabb6879dd3674760776fd725b4e6c0",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_ADDITIONAL_LIVE_UI_AND_NOTIFICATION_SURFACES",
+      "future_acceptance": [
+        "Verify private instructor chat role/live/vendor scope",
+        "Verify purchase broadcasts expose only masked authorized data",
+        "Integrate card polling lifecycle and stop on disabled/unmounted state",
+        "Verify mobile player/checkout and start-notification idempotency"
+      ]
+    },
+    {
+      "path": "src/components/live-mobile-preview-simulator.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "ee1408cf541d6e339364bc7fccb61e5b4b6470ac",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_ADDITIONAL_LIVE_UI_AND_NOTIFICATION_SURFACES",
+      "future_acceptance": [
+        "Verify private instructor chat role/live/vendor scope",
+        "Verify purchase broadcasts expose only masked authorized data",
+        "Integrate card polling lifecycle and stop on disabled/unmounted state",
+        "Verify mobile player/checkout and start-notification idempotency"
+      ]
+    },
+    {
+      "path": "src/components/live-purchase-ticker.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "9b31e53efab44e47d2c57af1ea72b70e753912ff",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_ADDITIONAL_LIVE_UI_AND_NOTIFICATION_SURFACES",
+      "future_acceptance": [
+        "Verify private instructor chat role/live/vendor scope",
+        "Verify purchase broadcasts expose only masked authorized data",
+        "Integrate card polling lifecycle and stop on disabled/unmounted state",
+        "Verify mobile player/checkout and start-notification idempotency"
+      ]
+    },
+    {
+      "path": "src/components/live-viewing-shell.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "364546d412177efa4728fc46a3875f4382e20695",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_ADDITIONAL_LIVE_UI_AND_NOTIFICATION_SURFACES",
+      "future_acceptance": [
+        "Verify private instructor chat role/live/vendor scope",
+        "Verify purchase broadcasts expose only masked authorized data",
+        "Integrate card polling lifecycle and stop on disabled/unmounted state",
+        "Verify mobile player/checkout and start-notification idempotency"
+      ]
+    },
+    {
+      "path": "src/components/onboarding-task-center.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "ce64d886e66ffd3684102bfde02d67f0e5528495",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_SHELL_SETTINGS_LOCALE_AND_ONBOARDING_EXTENSIONS",
+      "future_acceptance": [
+        "Reconcile with current sidebar/settings capabilities",
+        "Verify locale fallback, accessible labels and persisted choice",
+        "Verify PWA prompts and announcement timing in browser",
+        "Do not replace current role guards with navigation-only filtering"
+      ]
+    },
+    {
+      "path": "src/components/pwa-install-prompt.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "dc1918da117af87ab7ff02c6c67f3f55ea98cb08",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_SHELL_SETTINGS_LOCALE_AND_ONBOARDING_EXTENSIONS",
+      "future_acceptance": [
+        "Reconcile with current sidebar/settings capabilities",
+        "Verify locale fallback, accessible labels and persisted choice",
+        "Verify PWA prompts and announcement timing in browser",
+        "Do not replace current role guards with navigation-only filtering"
+      ]
+    },
+    {
+      "path": "src/components/settings-tabs.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "8b41775dccda56e1c5a6957df85fb14749e94d5b",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_SHELL_SETTINGS_LOCALE_AND_ONBOARDING_EXTENSIONS",
+      "future_acceptance": [
+        "Reconcile with current sidebar/settings capabilities",
+        "Verify locale fallback, accessible labels and persisted choice",
+        "Verify PWA prompts and announcement timing in browser",
+        "Do not replace current role guards with navigation-only filtering"
+      ]
+    },
+    {
+      "path": "src/components/sticky-announcement-bar.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "d31d99480a1fdb426c98391786472685050f7fcc",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_SHELL_SETTINGS_LOCALE_AND_ONBOARDING_EXTENSIONS",
+      "future_acceptance": [
+        "Reconcile with current sidebar/settings capabilities",
+        "Verify locale fallback, accessible labels and persisted choice",
+        "Verify PWA prompts and announcement timing in browser",
+        "Do not replace current role guards with navigation-only filtering"
+      ]
+    },
+    {
+      "path": "src/lib/i18n.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "bc23ed1a4328db1d9168511f1269202dc7442a62",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "shell_settings_and_other",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_SHELL_SETTINGS_LOCALE_AND_ONBOARDING_EXTENSIONS",
+      "future_acceptance": [
+        "Reconcile with current sidebar/settings capabilities",
+        "Verify locale fallback, accessible labels and persisted choice",
+        "Verify PWA prompts and announcement timing in browser",
+        "Do not replace current role guards with navigation-only filtering"
+      ]
+    },
+    {
+      "path": "src/lib/interaction-card-polling.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "fa91f5d89cd211388a025507abf152ce4a612639",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_ADDITIONAL_LIVE_UI_AND_NOTIFICATION_SURFACES",
+      "future_acceptance": [
+        "Verify private instructor chat role/live/vendor scope",
+        "Verify purchase broadcasts expose only masked authorized data",
+        "Integrate card polling lifecycle and stop on disabled/unmounted state",
+        "Verify mobile player/checkout and start-notification idempotency"
+      ]
+    },
+    {
+      "path": "src/lib/live-start-notifications.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "7fc5de8179704161bd3c8a336fca9a03dc15902f",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_ADDITIONAL_LIVE_UI_AND_NOTIFICATION_SURFACES",
+      "future_acceptance": [
+        "Verify private instructor chat role/live/vendor scope",
+        "Verify purchase broadcasts expose only masked authorized data",
+        "Integrate card polling lifecycle and stop on disabled/unmounted state",
+        "Verify mobile player/checkout and start-notification idempotency"
+      ]
+    },
+    {
+      "path": "src/lib/server-side-tracking.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "2f066a0b8b7c682e102714d89d3d1b24859b4c6f",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "tracking_and_notifications",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_EXTERNAL_TRACKING_AND_CHANNEL_INTEGRATION",
+      "future_acceptance": [
+        "Keep credentials encrypted and server-only",
+        "Define consent, suppression and retry/idempotency semantics",
+        "Use mock transport and synthetic events before sandbox integration",
+        "Verify owner/manager authorization and cross-tenant rejection"
+      ]
+    },
+    {
+      "path": "src/lib/sms-whatsapp-notification.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "da55011b189e30ed7800b67c0a009a2a84dbfef4",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "tracking_and_notifications",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_EXTERNAL_TRACKING_AND_CHANNEL_INTEGRATION",
+      "future_acceptance": [
+        "Keep credentials encrypted and server-only",
+        "Define consent, suppression and retry/idempotency semantics",
+        "Use mock transport and synthetic events before sandbox integration",
+        "Verify owner/manager authorization and cross-tenant rejection"
+      ]
+    },
+    {
+      "path": "src/lib/team-live-share-action-state.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f5deb422b685ecc99129d93db9a50077c9ab2056",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "live_interaction",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_ADDITIONAL_LIVE_UI_AND_NOTIFICATION_SURFACES",
+      "future_acceptance": [
+        "Verify private instructor chat role/live/vendor scope",
+        "Verify purchase broadcasts expose only masked authorized data",
+        "Integrate card polling lifecycle and stop on disabled/unmounted state",
+        "Verify mobile player/checkout and start-notification idempotency"
+      ]
+    },
+    {
+      "path": "src/lib/tracking-credentials.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "461a6fc3c8ae192301eb769770b0e53ddda50523",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "tracking_and_notifications",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_EXTERNAL_TRACKING_AND_CHANNEL_INTEGRATION",
+      "future_acceptance": [
+        "Keep credentials encrypted and server-only",
+        "Define consent, suppression and retry/idempotency semantics",
+        "Use mock transport and synthetic events before sandbox integration",
+        "Verify owner/manager authorization and cross-tenant rejection"
+      ]
+    }
+  ],
+  "scope": "Remaining source-only runtime paths; static purpose/export/dependency inspection. No claim of end-to-end equivalence, security certification, active external dispatch, or completed functionality.",
+  "authorization": "User explicitly requested merging independently verifiable milestones and recording unfinished work for future handling.",
+  "production_touched": false
+}

@@ -1,0 +1,28 @@
+{
+  "source": "eac0a3430df3ca0beed06a9c63cbd2cb13414fa7",
+  "scope": "Own leaf commit only, not all inherited changes on this branch",
+  "own_intent": "Accept matching GitHub target_url or environment_url while rejecting conflicting or unsafe URLs",
+  "decision": "OWN_INTENT_RETAINED",
+  "evidence": "Current normalizeDeploymentStatusHost enforces HTTPS/no port/no credentials/root-only/no query/no fragment. deploymentStatusHost accepts one unique nonempty host from both status fields. Original regression case remains present at secure-staging-runner.test.mjs line 256.",
+  "files": [
+    {
+      "path": "scripts/secure-staging-runner.mjs",
+      "source_blob": "0a81085e0c898473d20edd3e47e401649b52d93c",
+      "current_blob": "8b14996eeca4e1616743fb6c168991287c626b28"
+    },
+    {
+      "path": "scripts/secure-staging-runner.test.mjs",
+      "source_blob": "a1f3ff75a6786e6dfd11e0dad3f0b39bf6f0644f",
+      "current_blob": "6ae9708c2d8235acd1b40d0a6dd0921505cc2881"
+    }
+  ],
+  "validation_reuse": {
+    "unchanged_since": "fc28e1b8dcdba9ca3926f11d27153de048f597da",
+    "receipt": "branch-integration-staging-backup-lineage-supersession-20261004.json",
+    "tests": 40,
+    "passed": 40,
+    "unchanged_source_and_tests": true
+  },
+  "whole_branch": "IN_PROGRESS; inherited remaining paths still need disposition",
+  "external_operations": false
+}

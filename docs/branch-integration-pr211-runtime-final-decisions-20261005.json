@@ -1,0 +1,40 @@
+{
+  "source": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "candidate": "b5683e5ecc823a84e7af90c1b9cbc594b83c1c9d",
+  "decisions": [
+    {
+      "path": "src/app/(app)/forms/[id]/edit/page.tsx",
+      "source_blob": "caadb1a113a3df08baec7993b74b8d813dc3e519",
+      "candidate_blob": "854fcd3ae7e5e12c966caa7c872fde0b26c3258d",
+      "decision": "KEEP_CURRENT_TRADITIONAL_FORM_EDITOR_PR210_CANVAS_DEFERRED"
+    },
+    {
+      "path": "src/components/app-shell.tsx",
+      "source_blob": "bddb1180a66300750a757186f952c27d770b9e4e",
+      "candidate_blob": "9551a504e9eed0ee7d21de872d4bcb697a0c9cb2",
+      "decision": "MANAGER_AND_FEATURE_GATED_NAVIGATION_RETAINED"
+    },
+    {
+      "path": "src/components/commerce-checkout-form.tsx",
+      "source_blob": "d4e9c5c8ece4cbd4493f409e1ea816cb4b88d970",
+      "candidate_blob": "5686a56e929a4dd6e9553d9327b5dab874a6423c",
+      "decision": "FUNNEL_REFERENCE_AGREEMENT_TWO_STEP_RETAINED"
+    },
+    {
+      "path": "src/lib/landing-page-service.ts",
+      "source_blob": "28f6fd09bb754003d2003e7aa6965e5da220e801",
+      "candidate_blob": "57449a805a79e53beb5aed6881457bac6723bd7f",
+      "decision": "CORE_SCOPED_SERVICE_RETAINED_GLOBAL_COPY_SLUG_REPAIRED"
+    }
+  ],
+  "reviewer": "/root/portal_review_fallback",
+  "findings": [],
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "limits": [
+    "PR210 inherited registration pageBlocks/wizard editing has no proven replacement",
+    "PR210 post-purchase token form flow has no proven replacement",
+    "Flow undo/redo explicitly deferred",
+    "No fresh browser execution in review"
+  ]
+}

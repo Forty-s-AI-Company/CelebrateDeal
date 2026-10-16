@@ -1,0 +1,40 @@
+{
+  "master": "e2014b5d3eecf71e2bb9b66861d6c50fafc1f449",
+  "files": [
+    {
+      "path": "src/components/live-advanced-interactions.tsx",
+      "original_sha256": "5f4016f6bcdea21d98fe1e0077ae4cce54adc5396df14a2c097a16a9fe3783b2",
+      "master_exists": false,
+      "master_sha256": null,
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/app/(app)/settings/security/page.tsx",
+      "original_sha256": "4eebf593470e9dd3ebb546233efe7e06615104169cc82f10e77f18abfc66c9d9",
+      "master_exists": true,
+      "master_sha256": "17952e23d0a6de561321068af3b5a7f5780ab9a6359e4783ebcbf085329758ab",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/app/mfa/setup/page.tsx",
+      "original_sha256": "957a8f5ee9a8d92948b4758b0560031ccb0da3696f83a61872b3b40a9081a277",
+      "master_exists": true,
+      "master_sha256": "eb6399c22bb7ec34c890e7d46e106366a0616c648c9ed96cd2ad3933001d1c1a",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    },
+    {
+      "path": "src/app/actions/auth-security-actions.ts",
+      "original_sha256": "d35a9cd2bd5e2805fa40f835069f97e72435e79b43537fa4fc98e94d49d0d958",
+      "master_exists": true,
+      "master_sha256": "b294a36c053a766b7831cdd6142162a98864a28e250749d235e1be2c4821b848",
+      "state": "REQUIRES_SEMANTIC_RECONCILIATION"
+    }
+  ],
+  "findings": [
+    "Original advanced interaction component absent in master; no current imports found. Requires dependency/caller inventory before recovery.",
+    "Original settings security page includes QR generation; current MfaEnrollmentForm only handles confirmation POST and does not replace QR display. Preserve current member-management and MFA safeguards during recovery.",
+    "Original auth-security-actions exports registerAction missing in current same module; inspect alternate routes before declaring feature absent.",
+    "Original MFA setup visual changes remain separate from already delivered smoke-policy gate."
+  ],
+  "next": "Finish PR360 CI/acceptance, then independently scoped auth UI/registration and advanced interaction reconciliation. No files marked delivered by this audit."
+}

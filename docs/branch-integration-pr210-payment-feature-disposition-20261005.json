@@ -1,0 +1,107 @@
+{
+  "source": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "candidate": "eb5649645ac658f5e792a9ed1bd7f986e730a930",
+  "decisions": [
+    {
+      "path": "src/app/checkout/upsell/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "54fb44c23d10b06b95adea802e36a9e127bf7ee9",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_PENDING_END_TO_END_PROVIDER_OR_POST_PURCHASE_INTEGRATION"
+    },
+    {
+      "path": "src/app/checkout/upsell/upsell-offer.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f529332bdd9a7960428acfd436d3248b3f3a1586",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_PENDING_END_TO_END_PROVIDER_OR_POST_PURCHASE_INTEGRATION"
+    },
+    {
+      "path": "src/components/mvp-billing-notice.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "30c443278b0558a49877758eeca944a2be903cb9",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_PENDING_END_TO_END_PROVIDER_OR_POST_PURCHASE_INTEGRATION"
+    },
+    {
+      "path": "src/lib/mvp-usage-billing-policy.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "c1ae53d58a13c4003bc0888ab069267d4b7b3b58",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_PENDING_END_TO_END_PROVIDER_OR_POST_PURCHASE_INTEGRATION"
+    },
+    {
+      "path": "src/lib/payment-providers/ecpay.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "b5bc0f9cb3abf439018964126c65d8a4ac5fe8b4",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_PENDING_END_TO_END_PROVIDER_OR_POST_PURCHASE_INTEGRATION"
+    },
+    {
+      "path": "src/lib/payment-providers/index.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "4b1637d40ed8ebf1a712f78464aa3d58cd6f3293",
+      "base_blob": "9125e2ffa8b061e27ec3d9d61625ac70992c1002",
+      "master_blob": "9125e2ffa8b061e27ec3d9d61625ac70992c1002",
+      "candidate_blob": "9125e2ffa8b061e27ec3d9d61625ac70992c1002",
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_CHANGE_REQUIRES_REVIEW",
+      "decision": "DEFER_PENDING_END_TO_END_PROVIDER_OR_POST_PURCHASE_INTEGRATION"
+    },
+    {
+      "path": "src/lib/payment-providers/stripe.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "1b41631f696eb37a75fb95dfc33ecba87e745007",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_PENDING_END_TO_END_PROVIDER_OR_POST_PURCHASE_INTEGRATION"
+    },
+    {
+      "path": "src/lib/platform-refund-projection.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "828fa94ba180d50a52655496f0516ac7137265c3",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "payments_and_post_purchase",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_PENDING_END_TO_END_PROVIDER_OR_POST_PURCHASE_INTEGRATION"
+    }
+  ],
+  "verified_current_state": {
+    "provider_registry": "demo/payuni/ecpay-like registered; ecpay and stripe source adapters not registered",
+    "ecpay_like": "checkoutReadiness unavailable; manual pending adapter, not equivalent to ECPay CheckMacValue implementation",
+    "post_purchase": "offer/token/access libraries and grant-guarded API exist, source upsell page absent; end-to-end token checkout not demonstrated"
+  },
+  "future_acceptance": [
+    "ECPay/Stripe adapter conformance plus signed callback, replay/refund and isolated sandbox verification before activation",
+    "Keep provider readiness fail-closed until validated",
+    "Restore paid-order scoped upsell UI and token-bound server checkout amount/product/vendor validation",
+    "Exercise accept/decline, expired/replayed token, duplicate submission and original order isolation",
+    "Reconcile billing notice and refund projection with active finance policy before porting"
+  ],
+  "limits": "Deferred unfinished source capabilities per user authorization; not replacements or delivered features. No provider API or Production action executed."
+}

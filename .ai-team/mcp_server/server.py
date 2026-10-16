@@ -1,4 +1,4 @@
-"""AI Team Lite v5.4 的短時間、純本機狀態 MCP。
+"""AI Team v6 的短時間、純本機狀態 MCP。
 
 本 server 不啟動外部程序、不連網，也不代替 Codex Desktop 執行任務。
 """
@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from routing import assess_acceptance, load_config, route, snapshot_revision
 
 
 ROOT = Path(os.environ.get("AI_TEAM_ROOT", Path.cwd())).resolve()
@@ -32,151 +33,6 @@ SENSITIVE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-ROUTES: dict[str, dict[str, Any]] = {
-    "planning": {
-        "target": "planner",
-        "provider": "gemini_wrapper",
-        "model": "gemini-3.8-flash-high",
-        "reasoning_effort": "high",
-        "fallback_planner": "gpt-5.6-sol",
-    },
-    "explore": {
-        "target": "Invoke-AgyFast.ps1",
-        "provider": "gemini_wrapper",
-        "model": "gemini-3.8-flash-high",
-        "reasoning_effort": "high",
-    },
-    "analyze": {
-        "target": "Invoke-AgyDeep.ps1",
-        "provider": "gemini_wrapper",
-        "model": "gemini-3.1-pro-high",
-        "reasoning_effort": "high",
-    },
-    "implement": {
-        "target": "worker",
-        "profile": "luna_worker",
-        "provider": "native_agent",
-        "model": "gpt-5.6-luna",
-        "reasoning_effort": "medium",
-    },
-    "complex_implementation": {
-        "target": "worker-deep",
-        "provider": "native_agent",
-        "model": "gpt-5.6-terra",
-        "reasoning_effort": "high",
-    },
-    "review": {
-        "target": "reviewer",
-        "provider": "native_agent",
-        "model": "gpt-5.6-terra",
-        "reasoning_effort": "high",
-    },
-    "plan_review": {
-        "target": "Invoke-AgyPlanReview.ps1",
-        "provider": "agy_wrapper",
-        "model": "claude-sonnet-4.6-thinking",
-        "reasoning_effort": "high",
-    },
-    "gemini_fast": {
-        "target": "Invoke-AgyFast.ps1",
-        "provider": "gemini_wrapper",
-        "model": "gemini-3.8-flash-high",
-        "reasoning_effort": "high",
-    },
-    "gemini_deep": {
-        "target": "Invoke-AgyDeep.ps1",
-        "provider": "gemini_wrapper",
-        "model": "gemini-3.1-pro-high",
-        "reasoning_effort": "high",
-    },
-}
-
-ALIASES = {
-    "major_planning": "planning",
-    "architecture": "planning",
-    "find_files": "explore",
-    "trace_flow": "explore",
-    "root_cause": "analyze",
-    "dependency_analysis": "analyze",
-    "small_feature": "implement",
-    "bug_fix": "implement",
-    "cross_file_fix": "complex_implementation",
-    "hard_debugging": "complex_implementation",
-    "security_review": "review",
-    "regression_review": "review",
-    "plan_acceptance": "plan_review",
-    "plan_review": "plan_review",
-    "claude_plan_review": "plan_review",
-    "summarize": "gemini_fast",
-    "classify": "gemini_fast",
-    "log_summary": "gemini_fast",
-    "browser_qa": "gemini_fast",
-    "e2e": "gemini_fast",
-    "ui_validation": "gemini_fast",
-    "quick_second_opinion": "gemini_fast",
-    "deep_review": "gemini_deep",
-    "cross_file_second_opinion": "gemini_deep",
-    "complex_validation": "gemini_deep",
-}
-
-DIFFICULTY_LEVELS = ("trivial", "routine", "complex", "critical")
-NATIVE_REASONING_BY_DIFFICULTY = {
-    "gpt-5.6-sol": {
-        "trivial": "low",
-        "routine": "medium",
-        "complex": "high",
-        "critical": "high",
-    },
-    "gpt-5.6-terra": {
-        "trivial": "low",
-        "routine": "medium",
-        "complex": "high",
-        "critical": "high",
-    },
-    "gpt-5.6-luna": {
-        "trivial": "low",
-        "routine": "medium",
-        "complex": "high",
-        "critical": "high",
-    },
-    "gemini-3.8-flash-high": {
-        "trivial": "low",
-        "routine": "medium",
-        "complex": "high",
-        "critical": "high",
-    },
-}
-CRITICAL_TASK_TERMS = (
-    "production",
-    "release acceptance",
-    "security boundary",
-    "payment",
-    "refund",
-    "payout",
-    "migration",
-    "data loss",
-    "cross-domain",
-    "正式環境",
-    "金流",
-    "退款",
-    "撥款",
-    "資料遺失",
-    "跨域",
-)
-TRIVIAL_TASK_TERMS = (
-    "typo",
-    "format only",
-    "rename only",
-    "single-line",
-    "read-only lookup",
-    "錯字",
-    "只改格式",
-    "只改名稱",
-    "單行",
-    "唯讀查找",
-)
-
-
 def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
@@ -187,13 +43,7 @@ def ensure_not_sensitive_text(value: str) -> None:
 
 
 def read_config() -> dict[str, Any]:
-    try:
-        value = json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
-    except FileNotFoundError:
-        return {"version": "missing", "router": {}}
-    if not isinstance(value, dict):
-        raise ValueError("router.json 必須是 JSON object")
-    return value
+    return load_config(CONFIG_PATH)
 
 
 def atomic_write(path: Path, content: str) -> None:
@@ -227,208 +77,46 @@ def write_goal_state(state: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
-def normalized_task_type(task_summary: str, task_type: str) -> str:
-    candidate = (task_type or "").strip().lower().replace("-", "_").replace(" ", "_")
-    if candidate in ROUTES:
-        return candidate
-    if candidate in ALIASES:
-        return ALIASES[candidate]
-    summary = task_summary.lower()
-    keyword_routes = (
-        ("plan_review", ("plan review", "plan-review", "claude sonnet", "規劃複審", "計畫複審")),
-        ("gemini_deep", ("deep review", "cross file", "second opinion", "complex validation")),
-        ("gemini_fast", ("summar", "classif", "log", "browser", "e2e", "ui validation")),
-        ("complex_implementation", ("hard debugging", "cross file fix", "complex implementation")),
-        ("review", ("review", "security", "regression")),
-        ("planning", ("plan", "architecture")),
-        ("analyze", ("analy", "root cause", "dependency")),
-        ("implement", ("implement", "bug fix", "feature")),
-    )
-    for route, keywords in keyword_routes:
-        if any(keyword in summary for keyword in keywords):
-            return route
-    return "explore"
-
-
-def inferred_difficulty(task_summary: str, route: str, requested: str = "auto") -> str:
-    candidate = requested.strip().lower().replace("-", "_").replace(" ", "_")
-    if candidate in DIFFICULTY_LEVELS:
-        return candidate
-
-    summary = task_summary.lower()
-    if any(term in summary for term in CRITICAL_TASK_TERMS):
-        return "critical"
-    if any(term in summary for term in TRIVIAL_TASK_TERMS):
-        return "trivial"
-    if route in {"planning", "complex_implementation", "plan_review"}:
-        return "complex"
-    return "routine"
-
-
-def adaptive_reasoning_recommendation(
-    recommendation: dict[str, Any],
-    task_summary: str,
-    route: str,
-    requested_difficulty: str,
-    config: dict[str, Any],
-) -> tuple[str, str, dict[str, str] | None]:
-    model = recommendation["model"]
-    difficulty = inferred_difficulty(task_summary, route, requested_difficulty)
-    policy = config.get("reasoning_policy", {}).get("models", {}).get(model)
-    if not isinstance(policy, dict):
-        return recommendation["reasoning_effort"], difficulty, None
-
-    bounds = {
-        "strategy": str(config.get("reasoning_policy", {}).get("strategy", "adaptive_lowest_sufficient")),
-        "minimum": str(policy.get("minimum", "")),
-        "maximum": str(policy.get("maximum", "")),
-        "default": str(policy.get("default", "")),
-    }
-    locked_effort = recommendation.get("reasoning_lock")
-    if locked_effort in {"low", "medium", "high", "xhigh", "max"}:
-        return str(locked_effort), difficulty, bounds
-
-    maximum = policy.get("maximum", "high")
-    if maximum in {"xhigh", "max"}:
-        if model == "gpt-5.6-luna":
-            effort_map = {"trivial": "high", "routine": "high", "complex": "xhigh", "critical": "max"}
-        else:
-            effort_map = {"trivial": "low", "routine": "medium", "complex": "high", "critical": "xhigh"}
-    else:
-        effort_map = {"trivial": "low", "routine": "medium", "complex": "high", "critical": "high"}
-
-    return effort_map.get(difficulty, recommendation["reasoning_effort"]), difficulty, bounds
-
-
-def luna_escalation_recommendation(
-    config: dict[str, Any],
-    route: str,
-    task_summary: str,
-    difficulty: str,
-) -> dict[str, Any] | None:
-    """回傳 Explorer／Analyst 的唯讀 Luna 升級建議，不直接執行 agent。"""
-    agent_key = {"explore": "explorer", "analyze": "analyst"}.get(route)
-    if agent_key is None:
-        return None
-    agent_config = config.get("agents", {}).get(agent_key, {})
-    escalation = agent_config.get("luna_escalation") if isinstance(agent_config, dict) else None
-    if not isinstance(escalation, dict) or not escalation.get("enabled"):
-        return None
-    trigger_difficulties = escalation.get("trigger_difficulties", [])
-    if difficulty not in trigger_difficulties:
-        return None
-
-    recommendation = dict(escalation)
-    recommendation["target"] = "luna_readonly_escalation"
-    luna_policy = config.get("reasoning_policy", {}).get("models", {}).get("gpt-5.6-luna", {})
-    luna_max = luna_policy.get("maximum", "high")
-    if luna_max in {"xhigh", "max"}:
-        escalation_map = {"complex": "xhigh", "critical": "max"}
-    else:
-        escalation_map = {"complex": "high", "critical": "high"}
-    recommendation["reasoning_effort"] = escalation_map.get(difficulty, "high")
-    recommendation["reasoning_bounds"] = {
-        "strategy": str(config.get("reasoning_policy", {}).get("strategy", "adaptive_lowest_sufficient")),
-        "minimum": str(luna_policy.get("minimum", "low")),
-        "maximum": str(luna_policy.get("maximum", "high")),
-        "default": str(luna_policy.get("default", "medium")),
-    }
-    recommendation["execution"] = "native_agent_handoff_only"
-    return recommendation
-
-
 @mcp.tool()
 def router_status() -> dict[str, Any]:
-    """讀取 Lite router 設定；不啟動程序、不連網、不探測 Git。"""
+    """Local config only; never starts an agent or probes external accounts."""
     config = read_config()
-    return {
-        "status": "ok",
-        "server": MCP_NAME,
-        "version": config.get("version", "unknown"),
-        "probe_mode": "config_only",
-        "external_execution": False,
-        "allowed_tools": [
-            "router_status",
-            "route_task",
-            "goal_bootstrap",
-            "goal_get_state",
-            "goal_checkpoint",
-            "goal_resume",
-            "goal_finalize",
-        ],
-        "agents": config.get("agents", {}),
-        "reasoning_policy": config.get("reasoning_policy", {}),
-        "git_policy": config.get("git_policy", {}),
-        "plan_review": config.get("plan_review", {}),
-        "gemini_profiles": config.get("gemini_profiles", {}),
-        "codex_profiles": config.get("codex_profiles", {}),
-        "fallback_chains": config.get("fallback_chains", {}),
-    }
+    return {"status": "ok", "server": MCP_NAME, "probe_mode": "config_only",
+            "external_execution": False, **config}
 
 
 @mcp.tool()
-def route_task(task_summary: str, task_type: str = "", difficulty: str = "auto") -> dict[str, Any]:
-    """依任務難度回傳平衡的模型與推理建議；Lite MCP 永不執行或等待任務。"""
+def route_task(task_summary: str, task_type: str = "", difficulty: str = "auto",
+               task_signals: dict[str, Any] | None = None,
+               runtime: dict[str, Any] | None = None, team: str = "") -> dict[str, Any]:
+    """Compatible task-first routing; additive signals, quota and availability inputs."""
     ensure_not_sensitive_text(task_summary)
-    route = normalized_task_type(task_summary, task_type)
-    recommendation = dict(ROUTES[route])
     config = read_config()
+    task = {**(task_signals or {}), "task_summary": task_summary}
+    # Compatibility defaults are absence markers, not explicit caller overrides.
+    if task_type:
+        task["task_type"] = task_type
+    elif "task_type" not in task:
+        task["task_type"] = ""
+    if difficulty != "auto":
+        # An explicit compatibility argument outranks structured signals.
+        task.pop("complexity", None)
+        task["difficulty"] = difficulty
+    elif "difficulty" not in task and "complexity" not in task:
+        task["difficulty"] = "auto"
+    return route(task, runtime, team or config["active_mode_id"], config)
 
-    if route == "planning":
-        planner_cfg = config.get("agents", {}).get("planner", {})
-        if isinstance(planner_cfg, dict) and planner_cfg.get("model"):
-            recommendation["model"] = planner_cfg["model"]
-            if planner_cfg.get("provider") == "native_agent" or planner_cfg["model"] in {"gpt-5.6-sol", "codex-6-Astra"}:
-                recommendation["provider"] = "native_agent"
-                recommendation.pop("fallback_planner", None)
-            else:
-                recommendation["provider"] = "gemini_wrapper"
-                if "sol_fallback" in planner_cfg:
-                    recommendation["fallback_planner"] = planner_cfg["sol_fallback"].get("model", "gpt-5.6-sol")
-    elif route == "implement":
-        worker_cfg = config.get("agents", {}).get("worker", {})
-        if isinstance(worker_cfg, dict):
-            # Keep the active model and its execution profile consistent.
-            if worker_cfg.get("profile"):
-                recommendation["profile"] = worker_cfg["profile"]
-            if worker_cfg.get("model"):
-                recommendation["model"] = worker_cfg["model"]
-            if "reasoning_lock" in worker_cfg:
-                recommendation["reasoning_lock"] = worker_cfg["reasoning_lock"]
-            else:
-                recommendation.pop("reasoning_lock", None)
-            if "reasoning_effort" in worker_cfg:
-                recommendation["reasoning_effort"] = worker_cfg["reasoning_effort"]
 
-    reasoning_effort, selected_difficulty, reasoning_bounds = adaptive_reasoning_recommendation(
-        recommendation,
-        task_summary,
-        route,
-        difficulty,
-        config,
-    )
-    recommendation["reasoning_effort"] = reasoning_effort
-    fallback_chains = config.get("fallback_chains", {})
-    escalation = luna_escalation_recommendation(
-        config,
-        route,
-        task_summary,
-        selected_difficulty,
-    )
-    return {
-        "status": "planned",
-        "execution": "recommendation_only",
-        "task_type": route,
-        "task_summary": task_summary[:300],
-        "difficulty": selected_difficulty,
-        "reasoning_selection": config.get("reasoning_policy", {}).get("strategy", "fixed"),
-        "reasoning_bounds": reasoning_bounds,
-        "fallback_chain": fallback_chains.get(route, []),
-        **recommendation,
-        "escalation": escalation,
-        "post_plan_review": config.get("plan_review", {}) if route == "planning" else None,
-        "requires_accepted_plan": bool(recommendation.get("requires_accepted_plan", False)),
-    }
+@mcp.tool()
+def assess_task(decision: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+    """Task acceptance only; route or provider completion alone never means READY."""
+    return assess_acceptance(decision, evidence, ROOT)
+
+
+@mcp.tool()
+def snapshot_task(files: list[str]) -> dict[str, Any]:
+    """Hash only explicitly named project files for later stale-evidence checks."""
+    return {"root": str(ROOT), "files": files, "revision": snapshot_revision(ROOT, files)}
 
 
 @mcp.tool()
@@ -513,7 +201,7 @@ def goal_resume() -> dict[str, Any]:
         return {"status": "no_active_goal"}
     pending = next((item for item in state.get("phases", []) if item.get("status") != "completed"), None)
     if pending is None:
-        return {"status": "ready_to_finalize", "state": state}
+        return {"status": "phases_complete_validation_required", "state": state}
     return {
         "status": "resumable",
         "goal_id": state.get("goal_id"),
@@ -524,8 +212,9 @@ def goal_resume() -> dict[str, Any]:
 
 
 @mcp.tool()
-def goal_finalize(summary: str = "") -> dict[str, Any]:
-    """僅在所有 phase 完成時將 Goal 標記完成並寫入最終摘要。"""
+def goal_finalize(summary: str = "", decision: dict[str, Any] | None = None,
+                  evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+    """所有 phase 與同一 Goal 的執行、驗證、審查證據均通過才完成。"""
     ensure_not_sensitive_text(summary)
     state = read_goal_state()
     if state is None:
@@ -534,12 +223,18 @@ def goal_finalize(summary: str = "") -> dict[str, Any]:
     unresolved = [item for item in state.get("manual_blockers", []) if not item.get("resolved")]
     if pending or unresolved:
         return {"status": "not_finalizable", "pending_phases": pending, "manual_blockers": unresolved}
+    if not isinstance(decision, dict) or not isinstance(evidence, dict) or decision.get("task_id") != state.get("goal_id"):
+        return {"status": "not_finalizable", "acceptance": {"status": "BLOCKED", "blockers": ["goal_acceptance_evidence_missing"]}}
+    acceptance = assess_acceptance(decision, evidence, ROOT)
+    if acceptance["status"] != "READY":
+        return {"status": "not_finalizable", "acceptance": acceptance}
     state["status"] = "completed"
     state["final_summary"] = summary[:2000]
+    state["acceptance"] = acceptance
     state["next_step"] = ""
     write_goal_state(state)
     append_goal_log(f"finalize {state.get('goal_id', '')}")
-    return {"status": "completed", "state": state}
+    return {"status": "completed", "acceptance": acceptance, "state": state}
 
 
 def main() -> None:

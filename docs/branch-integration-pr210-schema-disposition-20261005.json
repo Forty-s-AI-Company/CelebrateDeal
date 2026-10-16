@@ -1,0 +1,463 @@
+{
+  "source": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "candidate": "eb5649645ac658f5e792a9ed1bd7f986e730a930",
+  "source_only_models": [
+    {
+      "model": "CommissionProductOverride",
+      "decision": "DEFER_UNFINISHED_FEATURE_MODEL"
+    },
+    {
+      "model": "CommissionQuantityTier",
+      "decision": "DEFER_UNFINISHED_FEATURE_MODEL"
+    },
+    {
+      "model": "CommissionRateTier",
+      "decision": "DEFER_UNFINISHED_FEATURE_MODEL"
+    },
+    {
+      "model": "CommissionRuleSet",
+      "decision": "DEFER_UNFINISHED_FEATURE_MODEL"
+    },
+    {
+      "model": "CommissionRuleStatus",
+      "decision": "DEFER_UNFINISHED_FEATURE_MODEL"
+    },
+    {
+      "model": "CommissionUplineLevel",
+      "decision": "DEFER_UNFINISHED_FEATURE_MODEL"
+    },
+    {
+      "model": "CommunityComment",
+      "decision": "DEFER_UNFINISHED_FEATURE_MODEL"
+    },
+    {
+      "model": "CommunityPost",
+      "decision": "DEFER_UNFINISHED_FEATURE_MODEL"
+    },
+    {
+      "model": "CommunityReaction",
+      "decision": "DEFER_UNFINISHED_FEATURE_MODEL"
+    },
+    {
+      "model": "CourseLesson",
+      "decision": "DEFER_UNFINISHED_FEATURE_MODEL"
+    },
+    {
+      "model": "CourseLessonProgress",
+      "decision": "DEFER_UNFINISHED_FEATURE_MODEL"
+    },
+    {
+      "model": "LineRichMenu",
+      "decision": "KEEP_DRAFT_MILESTONE_EXTERNAL_SYNC_DEFERRED"
+    }
+  ],
+  "missing_fields": [
+    {
+      "model": "Affiliate",
+      "field": "userId",
+      "source": "userId String?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Affiliate",
+      "field": "bankAccountEncrypted",
+      "source": "bankAccountEncrypted String?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Affiliate",
+      "field": "taxIdentityEncrypted",
+      "source": "taxIdentityEncrypted String?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Affiliate",
+      "field": "portalUser",
+      "source": "portalUser User? @relation(fields: [userId], references: [id], onDelete: SetNull)",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "currency",
+      "source": "currency String @default(\"TWD\")",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "recipientRole",
+      "source": "recipientRole String @default(\"promoter\")",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "uplineLevel",
+      "source": "uplineLevel Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "commissionRuleSetId",
+      "source": "commissionRuleSetId String?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "commissionRuleVersion",
+      "source": "commissionRuleVersion Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "policyVersion",
+      "source": "policyVersion Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "matchedTier",
+      "source": "matchedTier Json?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "appliedRateBps",
+      "source": "appliedRateBps Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "calculationSnapshot",
+      "source": "calculationSnapshot Json?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "monthlySalesBeforeCents",
+      "source": "monthlySalesBeforeCents Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "monthlySalesAfterCents",
+      "source": "monthlySalesAfterCents Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "orderQuantity",
+      "source": "orderQuantity Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "cumulativeSalesBeforeCount",
+      "source": "cumulativeSalesBeforeCount Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "cumulativeSalesAfterCount",
+      "source": "cumulativeSalesAfterCount Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliateCommission",
+      "field": "commissionRuleSet",
+      "source": "commissionRuleSet CommissionRuleSet? @relation(fields: [vendorId, commissionRuleSetId], references: [vendorId, id], onDelete: Restrict)",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliatePayout",
+      "field": "grossAmountCents",
+      "source": "grossAmountCents Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliatePayout",
+      "field": "withholdingTaxCents",
+      "source": "withholdingTaxCents Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliatePayout",
+      "field": "nhiSupplementaryTaxCents",
+      "source": "nhiSupplementaryTaxCents Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliatePayout",
+      "field": "bankFeeCents",
+      "source": "bankFeeCents Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliatePayout",
+      "field": "netPayoutAmountCents",
+      "source": "netPayoutAmountCents Int?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliatePayout",
+      "field": "taxCategory",
+      "source": "taxCategory String @default(\"92_other\")",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliatePayout",
+      "field": "withholdingRuleVersion",
+      "source": "withholdingRuleVersion String?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliatePayout",
+      "field": "requestedAt",
+      "source": "requestedAt DateTime?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliatePayout",
+      "field": "signedAt",
+      "source": "signedAt DateTime?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliatePayout",
+      "field": "requestedBankAccountEncrypted",
+      "source": "requestedBankAccountEncrypted String?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AffiliatePayout",
+      "field": "requestedTaxIdentityEncrypted",
+      "source": "requestedTaxIdentityEncrypted String?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "AnalyticsEvent",
+      "field": "project",
+      "source": "project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)",
+      "decision": "RELATION_RENAMED_SAME_DECLARATION",
+      "replacement": "salesProject"
+    },
+    {
+      "model": "CommerceOrder",
+      "field": "project",
+      "source": "project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)",
+      "decision": "RELATION_RENAMED_SAME_DECLARATION",
+      "replacement": "salesProject"
+    },
+    {
+      "model": "ConsultationEvent",
+      "field": "project",
+      "source": "project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)",
+      "decision": "RELATION_RENAMED_SAME_DECLARATION",
+      "replacement": "salesProject"
+    },
+    {
+      "model": "Live",
+      "field": "project",
+      "source": "project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)",
+      "decision": "RELATION_RENAMED_SAME_DECLARATION",
+      "replacement": "salesProject"
+    },
+    {
+      "model": "Product",
+      "field": "commissionProductOverrides",
+      "source": "commissionProductOverrides CommissionProductOverride[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Product",
+      "field": "courseLessons",
+      "source": "courseLessons CourseLesson[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Product",
+      "field": "courseLessonProgress",
+      "source": "courseLessonProgress CourseLessonProgress[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "RegistrationForm",
+      "field": "pageBlocks",
+      "source": "pageBlocks Json?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "RegistrationForm",
+      "field": "templateId",
+      "source": "templateId String?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "RegistrationForm",
+      "field": "archetype",
+      "source": "archetype String?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "RegistrationForm",
+      "field": "project",
+      "source": "project SalesProject? @relation(fields: [vendorId, projectId], references: [vendorId, id], onDelete: Restrict)",
+      "decision": "RELATION_RENAMED_SAME_DECLARATION",
+      "replacement": "salesProject"
+    },
+    {
+      "model": "TrackingSetting",
+      "field": "facebookAccessTokenEncrypted",
+      "source": "facebookAccessTokenEncrypted String?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "TrackingSetting",
+      "field": "facebookTestEventCode",
+      "source": "facebookTestEventCode String?",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "User",
+      "field": "affiliatePortals",
+      "source": "affiliatePortals Affiliate[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Vendor",
+      "field": "commissionRuleSets",
+      "source": "commissionRuleSets CommissionRuleSet[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Vendor",
+      "field": "commissionRateTiers",
+      "source": "commissionRateTiers CommissionRateTier[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Vendor",
+      "field": "commissionQuantityTiers",
+      "source": "commissionQuantityTiers CommissionQuantityTier[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Vendor",
+      "field": "commissionUplineLevels",
+      "source": "commissionUplineLevels CommissionUplineLevel[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Vendor",
+      "field": "commissionProductOverrides",
+      "source": "commissionProductOverrides CommissionProductOverride[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Vendor",
+      "field": "lineRichMenus",
+      "source": "lineRichMenus LineRichMenu[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Vendor",
+      "field": "courseLessons",
+      "source": "courseLessons CourseLesson[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Vendor",
+      "field": "courseLessonProgress",
+      "source": "courseLessonProgress CourseLessonProgress[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Vendor",
+      "field": "communityPosts",
+      "source": "communityPosts CommunityPost[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Vendor",
+      "field": "communityComments",
+      "source": "communityComments CommunityComment[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    },
+    {
+      "model": "Vendor",
+      "field": "communityReactions",
+      "source": "communityReactions CommunityReaction[]",
+      "decision": "DEFER_WITH_UNFINISHED_FEATURE",
+      "replacement": null
+    }
+  ],
+  "changed_declarations": [
+    {
+      "model": "LiveInteractionResponse",
+      "field": "run",
+      "source": "run LiveInteractionRun @relation(fields: [vendorId, runId], references: [vendorId, id], onDelete: Cascade)",
+      "candidate": "run LiveInteractionRun @relation(fields: [vendorId, liveId, runId], references: [vendorId, liveId, id], onDelete: Cascade)",
+      "status": "KEEP_CURRENT_COMPOSITE_LIVE_OWNERSHIP_GUARD",
+      "evidence": "prisma/migrations/20260911080000_live_interaction_tenant_integrity/migration.sql",
+      "reason": "Composite foreign keys bind response to same live/run/registration. Migration validates existing rows; original single-column SET NULL remains for registration deletion. Current 83-migration isolated run passed."
+    },
+    {
+      "model": "LiveInteractionResponse",
+      "field": "formSubmission",
+      "source": "formSubmission FormSubmission? @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)",
+      "candidate": "formSubmission FormSubmission? @relation(fields: [liveId, formSubmissionId], references: [liveId, id], onDelete: NoAction)",
+      "status": "KEEP_CURRENT_COMPOSITE_LIVE_OWNERSHIP_GUARD",
+      "evidence": "prisma/migrations/20260911080000_live_interaction_tenant_integrity/migration.sql",
+      "reason": "Composite foreign keys bind response to same live/run/registration. Migration validates existing rows; original single-column SET NULL remains for registration deletion. Current 83-migration isolated run passed."
+    }
+  ],
+  "limits": "Parsed declaration inventory, not database migration equivalence. Current data is preserved; no schema mutation. Missing source fields map to deferred affiliate finance, LMS/community, registration canvas and tracking features.",
+  "production_touched": false
+}

@@ -1,0 +1,201 @@
+{
+  "master": "fc28e1b8dcdba9ca3926f11d27153de048f597da",
+  "disposition": "CONTENT_SUPERSEDED",
+  "heads": [
+    {
+      "head": "0b10ff680117320544ade07a6deda358fb88e20a",
+      "refs": [
+        "refs/heads/codex/staging-browser-diagnostic-20260925",
+        "refs/remotes/origin/codex/staging-browser-diagnostic-20260925"
+      ],
+      "paths": [
+        {
+          "path": "scripts/staging-browser-smoke.mjs",
+          "source_blob": "92500dde7e82b37e0591539da640c4e167dd9c8d",
+          "master_blob": "9d5a638db5f932f8e3d776064c66e3dacdeacc5b",
+          "source_sha256": "86d937ac1aec308c3652f3695b99975147430e417fcd06059669bf034c77123f",
+          "master_sha256": "c69f722e3e2c8e2d7cca74d25a7f579cd14979718252da34cbb1cd0f66f51c76"
+        },
+        {
+          "path": "scripts/staging-browser-smoke.test.mjs",
+          "source_blob": "ebaef576b794c6d715da5d11f95b17a5eecee349",
+          "master_blob": "b38f8de6c0134103a346563bace38c6682ef1d9d",
+          "source_sha256": "ee4702b4a20152ac3288caaa632d4b440c748b1171e05403b7ca726aaf054b33",
+          "master_sha256": "218547dc51665255c2eaf0dc396f02949ef5c112c6e8a1d95760b772f2525a73",
+          "source_test_titles": [
+            "fixed source and host are required before launching a browser",
+            "synthetic session failure does not visit pages or expose the secret to Chromium",
+            "session status categories remain bounded",
+            "final URLs and blocked requests are reduced to fixed, non-sensitive categories"
+          ],
+          "retained_test_titles": [
+            "synthetic session failure does not visit pages or expose the secret to Chromium",
+            "session status categories remain bounded",
+            "final URLs and blocked requests are reduced to fixed, non-sensitive categories"
+          ],
+          "renamed_test_mapping": {
+            "fixed source and host are required before launching a browser": "validated source and immutable Preview host are required before launching a browser"
+          }
+        }
+      ]
+    },
+    {
+      "head": "4fac54930808b3184331aad342dd40cb232d228e",
+      "refs": [
+        "refs/heads/codex/staging-observability-20260926",
+        "refs/remotes/origin/codex/staging-observability-20260926"
+      ],
+      "paths": [
+        {
+          "path": "scripts/staging-browser-smoke.mjs",
+          "source_blob": "4bc3c063eec7e3df0b44cd7ab116596938a31202",
+          "master_blob": "9d5a638db5f932f8e3d776064c66e3dacdeacc5b",
+          "source_sha256": "2ddff2ed49f13fc695543f4403218153a2bdd357874b02187d0f7a1c514a707e",
+          "master_sha256": "c69f722e3e2c8e2d7cca74d25a7f579cd14979718252da34cbb1cd0f66f51c76"
+        },
+        {
+          "path": "scripts/staging-browser-smoke.test.mjs",
+          "source_blob": "d74cea80fd1837b2b687b947d339b4aebabfe346",
+          "master_blob": "b38f8de6c0134103a346563bace38c6682ef1d9d",
+          "source_sha256": "ed5d200f5f8a8a80e0e2139335221a50aca923b2db2a46ff3cae757868d65fa9",
+          "master_sha256": "218547dc51665255c2eaf0dc396f02949ef5c112c6e8a1d95760b772f2525a73",
+          "source_test_titles": [
+            "protected dispatch takes a deployment binding and verifies it before owner secret injection",
+            "validated source and immutable Preview host are required before launching a browser",
+            "failed lineage blocks before browser launch or owner session",
+            "fixed alias must resolve to the exact immutable Preview before a session is sent",
+            "synthetic session failure does not visit pages or expose the secret to Chromium",
+            "only fixed same-host telemetry and the exact attribution reset receive local no-op responses",
+            "a rendered journey remains blocked when an unexpected browser POST occurs",
+            "browser failures expose only fixed categories",
+            "a failed JavaScript chunk invalidates an otherwise rendered journey",
+            "session status categories remain bounded",
+            "desktop and mobile journeys target the visible app shell navigation",
+            "final URLs and blocked requests are reduced to fixed, non-sensitive categories"
+          ],
+          "retained_test_titles": [
+            "protected dispatch takes a deployment binding and verifies it before owner secret injection",
+            "validated source and immutable Preview host are required before launching a browser",
+            "failed lineage blocks before browser launch or owner session",
+            "fixed alias must resolve to the exact immutable Preview before a session is sent",
+            "synthetic session failure does not visit pages or expose the secret to Chromium",
+            "only fixed same-host telemetry and the exact attribution reset receive local no-op responses",
+            "a rendered journey remains blocked when an unexpected browser POST occurs",
+            "browser failures expose only fixed categories",
+            "a failed JavaScript chunk invalidates an otherwise rendered journey",
+            "session status categories remain bounded",
+            "desktop and mobile journeys target the visible app shell navigation",
+            "final URLs and blocked requests are reduced to fixed, non-sensitive categories"
+          ],
+          "renamed_test_mapping": {}
+        }
+      ]
+    },
+    {
+      "head": "0f44aea78434a3850ecb8c38ba6fb25586cbd0d4",
+      "refs": [
+        "refs/heads/codex/staging-browser-flow-20260925"
+      ],
+      "paths": [
+        {
+          "path": ".github/workflows/staging-browser-smoke.yml",
+          "source_sha256": "e2cb7b6847bb59b293ef414903be6be347d9933d6fabbc3dd06c644c37fde1f5",
+          "master_sha256": "b2e9db067a3dca27931e0429de7badf52101c1fe301bcba4f2e2de74eee5545d"
+        },
+        {
+          "path": "docs/codex-goal/API_CONTRACT_REGISTRY.md",
+          "source_sha256": "8753bdf233e1e0cec9bfe07b14b58cc6f47ea5caf18433c2c4504192ecbefd8c",
+          "master_sha256": "6a99221654b8199c4f7b4eab83b316640778be929d9bc76b421be02782d1e685",
+          "registry_review": "All original contract table rows retained verbatim; stale 71/71 prose replaced by dynamic route-method and same-path-test inventory checks."
+        },
+        {
+          "path": "scripts/staging-browser-smoke.mjs",
+          "source_sha256": "0e00fe5b6f6975bab51d76fe2d817e93e359893a706e94fa3ff0c08e96fbe82f",
+          "master_sha256": "c69f722e3e2c8e2d7cca74d25a7f579cd14979718252da34cbb1cd0f66f51c76"
+        },
+        {
+          "path": "scripts/staging-browser-smoke.test.mjs",
+          "source_sha256": "a3cdfb5976359ef762e46e810e69c3d5fba0f10c47cbf67555671cc3ff3f6ec8",
+          "master_sha256": "218547dc51665255c2eaf0dc396f02949ef5c112c6e8a1d95760b772f2525a73",
+          "source_test_titles": [
+            "protected dispatch takes a deployment binding and verifies it before owner secret injection",
+            "validated source and immutable Preview host are required before launching a browser",
+            "failed lineage blocks before browser launch or owner session",
+            "fixed alias must resolve to the exact immutable Preview before a session is sent",
+            "synthetic session failure does not visit pages or expose the secret to Chromium",
+            "only the exact empty-body attribution reset is allowed among browser POSTs",
+            "a rendered journey remains blocked when an unexpected browser POST occurs",
+            "a failed JavaScript chunk invalidates an otherwise rendered journey",
+            "session status categories remain bounded",
+            "desktop and mobile journeys target the visible app shell navigation",
+            "final URLs and blocked requests are reduced to fixed, non-sensitive categories"
+          ],
+          "test_title_changes": {
+            "only the exact empty-body attribution reset is allowed among browser POSTs": "only fixed same-host telemetry and the exact attribution reset receive local no-op responses"
+          }
+        }
+      ]
+    },
+    {
+      "head": "3e6bf78b2850373e1989b51666cd129798a93b70",
+      "refs": [
+        "refs/remotes/origin/codex/staging-browser-flow-20260925"
+      ],
+      "paths": [
+        {
+          "path": ".github/workflows/staging-browser-smoke.yml",
+          "source_sha256": "e2cb7b6847bb59b293ef414903be6be347d9933d6fabbc3dd06c644c37fde1f5",
+          "master_sha256": "b2e9db067a3dca27931e0429de7badf52101c1fe301bcba4f2e2de74eee5545d"
+        },
+        {
+          "path": "docs/codex-goal/API_CONTRACT_REGISTRY.md",
+          "source_sha256": "8753bdf233e1e0cec9bfe07b14b58cc6f47ea5caf18433c2c4504192ecbefd8c",
+          "master_sha256": "6a99221654b8199c4f7b4eab83b316640778be929d9bc76b421be02782d1e685",
+          "registry_review": "All original contract table rows retained verbatim; stale 71/71 prose replaced by dynamic route-method and same-path-test inventory checks."
+        },
+        {
+          "path": "scripts/staging-browser-smoke.mjs",
+          "source_sha256": "0e00fe5b6f6975bab51d76fe2d817e93e359893a706e94fa3ff0c08e96fbe82f",
+          "master_sha256": "c69f722e3e2c8e2d7cca74d25a7f579cd14979718252da34cbb1cd0f66f51c76"
+        },
+        {
+          "path": "scripts/staging-browser-smoke.test.mjs",
+          "source_sha256": "a3cdfb5976359ef762e46e810e69c3d5fba0f10c47cbf67555671cc3ff3f6ec8",
+          "master_sha256": "218547dc51665255c2eaf0dc396f02949ef5c112c6e8a1d95760b772f2525a73",
+          "source_test_titles": [
+            "protected dispatch takes a deployment binding and verifies it before owner secret injection",
+            "validated source and immutable Preview host are required before launching a browser",
+            "failed lineage blocks before browser launch or owner session",
+            "fixed alias must resolve to the exact immutable Preview before a session is sent",
+            "synthetic session failure does not visit pages or expose the secret to Chromium",
+            "only the exact empty-body attribution reset is allowed among browser POSTs",
+            "a rendered journey remains blocked when an unexpected browser POST occurs",
+            "a failed JavaScript chunk invalidates an otherwise rendered journey",
+            "session status categories remain bounded",
+            "desktop and mobile journeys target the visible app shell navigation",
+            "final URLs and blocked requests are reduced to fixed, non-sensitive categories"
+          ],
+          "test_title_changes": {
+            "only the exact empty-body attribution reset is allowed among browser POSTs": "only fixed same-host telemetry and the exact attribution reset receive local no-op responses"
+          }
+        }
+      ]
+    }
+  ],
+  "behavior_review": [
+    "Original fixed source/host preflight is replaced by source SHA + immutable Preview lineage and fixed project/alias binding, checked before each credential-bearing request.",
+    "Session failure still prevents navigation; browser environment remains sanitized; final path, session status and unsafe request categories stay bounded without URL/secret logging.",
+    "Dashboard KPI/details presence and actionable alert rejection remain required; Next route announcer alerts are classified separately rather than treating framework accessibility announcements as business failures.",
+    "Original telemetry no-op behavior is preserved. Sentry monitoring query strings are now accepted only as local 204 fulfill responses; business POSTs stay blocked and no external write is sent.",
+    "Same-host script/stylesheet failure checks delegate to richer category helpers; default fixed-alias behavior remains, with separately attested immutable-preview results.",
+    "Desktop/mobile journeys, navigation, hydration and synthetic session cleanup are now mandatory, extending the original SSR and read-only guard contract.",
+    "Two staging-browser-flow heads have identical remaining file blobs. Workflow retains protected master, immutable lineage and pre-owner-secret attestation; bounded surface choice selects a separately attested fixed alias or immutable Preview. All original API contract rows remain verbatim. Browser POST exemptions only fulfill local telemetry; no external business write is allowed."
+  ],
+  "tests": {
+    "tests": 16,
+    "pass": 16,
+    "fail": 0,
+    "skipped": 0
+  },
+  "validation_scope": "Node mocked contract tests only; no staging session or provider call executed"
+}

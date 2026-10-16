@@ -1,0 +1,9 @@
+{
+  "status": "SUCCESS",
+  "exitCode": 0,
+  "stdoutTruncated": false,
+  "selected_model": "claude-opus-4-6-thinking",
+  "observed_model": "unknown",
+  "reason": "format recovery after INVALID_REVIEW",
+  "reviewed_plan_sha256": "6B8F5F2407C7C505D7597D127631BEBED01E94A28859FBBD0C29A68CDADC3779"
+}

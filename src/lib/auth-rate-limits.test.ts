@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getLoginSourceLimit } from "@/lib/auth-rate-limits";
+import { getLoginSourceEmailLimit, getLoginSourceLimit } from "@/lib/auth-rate-limits";
 
 describe("getLoginSourceLimit", () => {
   it("allows the larger limit only for the strict local loopback E2E runtime", () => {
@@ -48,4 +48,14 @@ describe("getLoginSourceLimit", () => {
       expect(getLoginSourceLimit(env)).toBe(20);
     },
   );
+});
+
+describe("getLoginSourceEmailLimit", () => {
+  it("preserves the five-attempt account limit in strict local E2E", () => {
+    expect(getLoginSourceEmailLimit()).toBe(5);
+  });
+
+  it("keeps the deployed per-email limit at five", () => {
+    expect(getLoginSourceEmailLimit()).toBe(5);
+  });
 });

@@ -6,7 +6,10 @@ import os
 import tempfile
 import unittest
 import uuid
+import sys
 from pathlib import Path
+from validation_runner import run_check
+from routing import snapshot_revision
 
 
 HERE = Path(__file__).resolve().parent
@@ -38,235 +41,91 @@ def load_server(root: Path):
             os.environ["AI_TEAM_CONFIG"] = previous_config
 
 
-class LiteRouterTest(unittest.TestCase):
-    def test_router_json_is_lite(self) -> None:
-        config = json.loads(ROUTER.read_text(encoding="utf-8-sig"))
-        mode = config.get("active_mode", "low")
-        self.assertIn(mode, ("low", "high", "pro"))
-        self.assertEqual(config["version"], "5.4-pro" if mode == "pro" else "5.4-lite")
-        self.assertEqual(config["router"]["external_execution"], False)
-        self.assertEqual(config["router"]["reasoning_selection"], "adaptive_lowest_sufficient")
-        self.assertEqual(config["gemini_profiles"]["fast"]["model"], "gemini-3.8-flash-high")
-        self.assertEqual(config["gemini_profiles"]["deep"]["model"], "gemini-3.1-pro-high")
-        self.assertEqual(config["agents"]["reviewer"]["model"], "gpt-5.6-terra")
-        self.assertEqual(config["agents"]["reviewer"]["sandbox_mode"], "read-only")
-        self.assertEqual(config["agents"]["reviewer"]["availability"], "runtime_dependent")
-        mode = config.get("active_mode", "low")
-        if mode == "high":
-            self.assertEqual(config["agents"]["planner"]["model"], "gpt-5.6-sol")
-            self.assertEqual(config["agents"]["worker"]["model"], "gpt-5.6-luna")
-            self.assertEqual(config["agents"]["worker"]["reasoning_effort"], "high")
-            self.assertEqual(config["agents"]["worker"]["reasoning_lock"], "high")
-            self.assertEqual(
-                config["reasoning_policy"]["models"]["gpt-5.6-sol"],
-                {"minimum": "low", "maximum": "xhigh", "default": "high"},
-            )
-            self.assertEqual(
-                config["reasoning_policy"]["models"]["gpt-5.6-terra"],
-                {"minimum": "low", "maximum": "xhigh", "default": "medium"},
-            )
-            self.assertEqual(
-                config["reasoning_policy"]["models"]["gpt-5.6-luna"],
-                {"minimum": "high", "maximum": "max", "default": "high"},
-            )
-        elif mode == "pro":
-            self.assertEqual(config["agents"]["planner"]["model"], "codex-6-Astra")
-            self.assertEqual(config["agents"]["worker"]["model"], "codex-6-Astra")
-            self.assertNotIn("reasoning_lock", config["agents"]["worker"])
-            self.assertEqual(config["reasoning_policy"]["models"]["codex-6-Astra"], {"minimum": "low", "maximum": "max", "default": "high"})
-            self.assertEqual(config["reasoning_policy"]["models"]["gpt-5.6-terra"], {"minimum": "low", "maximum": "xhigh", "default": "medium"})
-            self.assertEqual(config["reasoning_policy"]["models"]["gpt-5.6-luna"], {"minimum": "high", "maximum": "max", "default": "high"})
-        else:
-            self.assertEqual(config["agents"]["planner"]["model"], "gemini-3.8-flash-high")
-            self.assertEqual(config["agents"]["planner"]["sol_fallback"]["model"], "gpt-5.6-sol")
-            self.assertEqual(config["agents"]["worker"]["model"], "gpt-5.6-luna")
-            self.assertEqual(config["agents"]["worker"]["reasoning_effort"], "medium")
-            self.assertNotIn("reasoning_lock", config["agents"]["worker"])
-            self.assertEqual(
-                config["reasoning_policy"]["models"]["gpt-5.6-sol"],
-                {"minimum": "low", "maximum": "high", "default": "medium"},
-            )
-            self.assertEqual(
-                config["reasoning_policy"]["models"]["gpt-5.6-terra"],
-                {"minimum": "low", "maximum": "high", "default": "medium"},
-            )
-            self.assertEqual(
-                config["reasoning_policy"]["models"]["gpt-5.6-luna"],
-                {"minimum": "low", "maximum": "high", "default": "medium"},
-            )
-        self.assertNotIn("worker-critical", config["agents"])
-        self.assertNotIn("luna_critical_worker", config["codex_profiles"])
-        self.assertEqual(config["codex_profiles"]["astra_worker" if mode == "pro" else "luna_worker"]["model"], "codex-6-Astra" if mode == "pro" else "gpt-5.6-luna")
-        self.assertEqual(config["codex_profiles"]["astra_worker" if mode == "pro" else "luna_worker"]["sandbox_mode"], "workspace-write")
-        self.assertEqual(config["agents"]["explorer"]["luna_escalation"]["model"], "gpt-5.6-luna")
-        self.assertEqual(config["agents"]["analyst"]["luna_escalation"]["model"], "gpt-5.6-luna")
-        self.assertEqual(config["plan_review"]["model"], "claude-sonnet-4-6")
-        self.assertFalse(config["plan_review"]["required"])
-        self.assertTrue(config["plan_review"]["skip_routine_tasks"])
-        self.assertEqual(len(config["plan_review"]["fallback_chain"]), 4)
-        self.assertEqual(config["plan_review"]["quota_policy"], "skip_if_unavailable")
-        self.assertEqual(config["plan_review"]["availability"], "runtime_dependent")
-        self.assertTrue(config["git_policy"]["auto_push"]["enabled"])
-        self.assertTrue(config["git_policy"]["auto_merge"]["enabled"])
-        self.assertFalse(config["git_policy"]["production_deploy"]["enabled"])
-        self.assertEqual(config["codex_profiles"]["luna_readonly_escalation" if mode == "pro" else "luna"]["model"], "gpt-5.6-luna")
-        self.assertEqual(config["codex_profiles"]["luna_readonly_escalation" if mode == "pro" else "luna"]["reasoning_effort"], "high")
-        self.assertEqual(config["codex_profiles"]["luna_readonly_escalation" if mode == "pro" else "luna"]["reasoning_minimum"], "high")
-        self.assertEqual(config["codex_profiles"]["luna_readonly_escalation" if mode == "pro" else "luna"]["reasoning_maximum"], "max")
-        self.assertEqual(config["codex_profiles"]["luna_readonly_escalation" if mode == "pro" else "luna"]["fallback_only"], mode != "pro")
-        self.assertEqual(config["codex_profiles"]["luna_readonly_escalation" if mode == "pro" else "luna"]["availability"], "runtime_dependent")
-        self.assertEqual(
-            [item["profile"] for item in config["fallback_chains"]["gemini_fast"]["profiles"]],
-            ["gemini_fast", "gemini_deep", "codex_astra" if mode == "pro" else "codex_luna"],
-        )
-        self.assertEqual(config["fallback_chains"]["gemini_fast"]["max_total_attempts"], 2)
-
-    def test_server_has_only_allowed_tools_and_no_external_runtime(self) -> None:
-        source = SERVER.read_text(encoding="utf-8")
-        self.assertEqual(source.count("@mcp.tool()"), 7)
-        for forbidden in ("import subprocess", "urllib", "Popen", "worktree", "urlopen"):
-            self.assertNotIn(forbidden, source)
-
-    def test_router_status_is_config_only(self) -> None:
+class RouterServerTest(unittest.TestCase):
+    def test_mcp_contract(self):
         with tempfile.TemporaryDirectory() as temporary:
             module = load_server(Path(temporary))
             status = module.router_status()
-            mode = module.read_config().get("active_mode", "low")
-            self.assertEqual(status["probe_mode"], "config_only")
+            self.assertEqual(status["version"], "6.0")
             self.assertFalse(status["external_execution"])
-            self.assertEqual(len(status["allowed_tools"]), 7)
-            self.assertEqual(status["codex_profiles"]["astra_worker" if mode == "pro" else "luna_worker"]["model"], "codex-6-Astra" if mode == "pro" else "gpt-5.6-luna")
-            self.assertEqual(status["reasoning_policy"]["strategy"], "adaptive_lowest_sufficient")
-            self.assertTrue(status["git_policy"]["auto_merge"]["enabled"])
-            self.assertEqual(status["plan_review"]["profile"], "claude_plan_review")
+            self.assertEqual(status["probe_mode"], "config_only")
+            self.assertEqual(set(status["router"]["allowed_tools"]), {
+                "router_status", "route_task", "assess_task", "snapshot_task", "goal_bootstrap", "goal_get_state",
+                "goal_checkpoint", "goal_resume", "goal_finalize"})
+            self.assertEqual(module.route_task("修改文案")["model"], "gpt-6-luna")
+            source_file = Path(temporary) / "source.py"
+            source_file.write_text("value = 1\n", encoding="utf-8")
+            self.assertEqual(module.snapshot_task(["source.py"])["revision"], snapshot_revision(Path(temporary), ["source.py"]))
+            result = module.route_task("one line payment webhook", "bug_fix", "trivial")
+            self.assertEqual(result["signals"]["risk"], "critical")
+            self.assertEqual(result["model"], "gpt-6.1-sol")
+            self.assertEqual(result["review_plan"][0]["model"], "gpt-6-astra")
+            self.assertEqual(result["execution"], "recommendation_only")
 
-    def test_route_task_uses_fixed_routes_without_execution(self) -> None:
+    def test_server_never_spawns(self):
+        import ast
+        source = SERVER.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        imports = {node.names[0].name for node in ast.walk(tree) if isinstance(node, ast.Import)}
+        self.assertFalse(imports & {"subprocess", "requests", "socket"})
+        self.assertNotIn("spawn_agent(", source)
+
+    def test_route_task_signal_precedence_and_difficulty_validation(self):
         with tempfile.TemporaryDirectory() as temporary:
             module = load_server(Path(temporary))
-            mode = module.read_config().get("active_mode", "low")
-            cases = {
-                "planning": "planner",
-                # Lite router 的預設探索／分析仍由明確的 AGY wrapper 執行，必要時再升級唯讀 Luna。
-                "find_files": "Invoke-AgyFast.ps1",
-                "root_cause": "Invoke-AgyDeep.ps1",
-                "bug_fix": "worker",
-                "hard_debugging": "worker-deep",
-                "security_review": "reviewer",
-                "plan_review": "Invoke-AgyPlanReview.ps1",
-                "summarize": "Invoke-AgyFast.ps1",
-                "deep_review": "Invoke-AgyDeep.ps1",
-            }
-            for task_type, target in cases.items():
-                result = module.route_task("safe task", task_type)
-                self.assertEqual(result["target"], target)
-                self.assertEqual(result["execution"], "recommendation_only")
-            fallback = module.route_task("summarize safely", "summarize")
-            self.assertEqual(
-                [item["profile"] for item in fallback["fallback_chain"]["profiles"]],
-                ["gemini_fast", "gemini_deep", "codex_astra" if mode == "pro" else "codex_luna"],
+            signals_only = module.route_task(
+                "bounded security review",
+                task_signals={"task_type": "security_review", "complexity": "low"},
             )
-            plan = module.route_task("plan a critical payment flow", "planning")
-            self.assertEqual(plan["post_plan_review"]["profile"], "claude_plan_review")
-            self.assertFalse(plan["post_plan_review"]["required"])
-            self.assertEqual(plan["provider"], "native_agent" if mode in ("high", "pro") else "gemini_wrapper")
-            if mode in ("high", "pro"):
-                self.assertNotIn("fallback_planner", plan)
-            mode = module.read_config().get("active_mode", "low")
-            worker = module.route_task("implement a bounded feature", "bug_fix")
-            self.assertEqual(worker["model"], "codex-6-Astra" if mode == "pro" else "gpt-5.6-luna")
-            self.assertEqual(worker["profile"], "astra_worker" if mode == "pro" else "luna_worker")
-            if mode == "high":
-                self.assertEqual(worker["reasoning_effort"], "high")
-                self.assertEqual(worker["reasoning_lock"], "high")
-            else:
-                self.assertEqual(worker["reasoning_effort"], "medium")
-                self.assertNotIn("reasoning_lock", worker)
+            self.assertEqual(signals_only["signals"]["task_type"], "security_review")
+            self.assertEqual(signals_only["signals"]["risk"], "critical")
+            self.assertEqual(signals_only["signals"]["complexity"], "low")
+            self.assertEqual(signals_only["signals"]["risk"], "critical")
+            self.assertEqual(signals_only["role"], "critical_review")
 
-            complex_explore = module.route_task("complex dependency exploration", "find_files", "complex")
-            self.assertEqual(complex_explore["target"], "Invoke-AgyFast.ps1")
-            self.assertEqual(complex_explore["escalation"]["model"], "gpt-5.6-luna")
-            self.assertEqual(complex_explore["escalation"]["sandbox_mode"], "read-only")
-            self.assertEqual(complex_explore["escalation"]["reasoning_effort"], "xhigh" if mode in ("high", "pro") else "high")
+            explicit = module.route_task(
+                "bounded task", "implement", "trivial",
+                {"task_type": "security_review", "difficulty": "critical"},
+            )
+            self.assertEqual(explicit["signals"]["task_type"], "implement")
+            self.assertEqual(explicit["signals"]["complexity"], "low")
+            self.assertEqual(explicit["model_key"], "luna")
 
-            routine_explore = module.route_task("read-only lookup", "find_files")
-            self.assertIsNone(routine_explore["escalation"])
+            explicit_critical = module.route_task(
+                "bounded task", "implement", "critical", {"complexity": "low"},
+            )
+            self.assertEqual(explicit_critical["signals"]["complexity"], "very_high")
+            self.assertNotEqual(explicit_critical["model_key"], "luna")
 
-            critical_analysis = module.route_task("critical security root cause", "root_cause", "critical")
-            self.assertEqual(critical_analysis["escalation"]["model"], "gpt-5.6-luna")
-            self.assertEqual(critical_analysis["escalation"]["reasoning_effort"], "max" if mode in ("high", "pro") else "high")
+            explicit_routine = module.route_task(
+                "bounded task", "implement", "routine", {"complexity": "high"},
+            )
+            self.assertEqual(explicit_routine["signals"]["complexity"], "medium")
+            self.assertEqual(explicit_routine["model_key"], "sol")
 
-            routine_review = module.route_task("routine security review", "security_review")
-            critical_review = module.route_task("critical security review", "security_review", "critical")
-            self.assertEqual(routine_review["model"], "gpt-5.6-terra")
-            self.assertEqual(routine_review["reasoning_effort"], "medium")
-            self.assertEqual(critical_review["model"], "gpt-5.6-terra")
-            self.assertEqual(critical_review["reasoning_effort"], "xhigh" if mode in ("high", "pro") else "high")
+            task_floor = module.route_task(
+                "bounded task", "cross_module", "trivial", {"complexity": "low"},
+            )
+            self.assertEqual(task_floor["signals"]["complexity"], "high")
+            risk_floor = module.route_task(
+                "bounded task", "implement", "trivial", {"risk": "critical"},
+            )
+            self.assertEqual(risk_floor["signals"]["complexity"], "low")
+            self.assertEqual(risk_floor["signals"]["risk_requirement"], "high")
 
-    def test_native_reasoning_is_adaptive_and_bounded(self) -> None:
+            for difficulty, expected in (("trivial", "low"), ("routine", "medium"), ("complex", "high"), ("critical", "very_high")):
+                self.assertEqual(module.route_task("bounded task", "implement", difficulty)["signals"]["complexity"], expected)
+            for invalid in ("high", "nonsense", "typo", "unsupported"):
+                with self.assertRaises(ValueError):
+                    module.route_task("bounded task", "implement", invalid)
+
+    def test_goal_gates_and_sensitive_input(self):
         with tempfile.TemporaryDirectory() as temporary:
             module = load_server(Path(temporary))
-            mode = module.read_config().get("active_mode", "low")
-            trivial = module.route_task("fix typo only", "bug_fix")
-            routine = module.route_task("implement a bounded form field", "bug_fix")
-            complex_task = module.route_task("cross file fix for a state transition", "cross_file_fix")
-            critical = module.route_task("cross-domain payment security boundary", "hard_debugging")
-            planner = module.route_task("plan a multi-step product flow", "planning")
-            other_model = module.route_task("critical browser QA", "browser_qa", "critical")
-
-            if mode == "high":
-                self.assertEqual((trivial["difficulty"], trivial["reasoning_effort"]), ("trivial", "high"))
-                self.assertEqual((routine["difficulty"], routine["reasoning_effort"]), ("routine", "high"))
-                self.assertEqual((complex_task["difficulty"], complex_task["reasoning_effort"]), ("complex", "high"))
-                self.assertEqual((critical["difficulty"], critical["reasoning_effort"]), ("critical", "xhigh"))
-                self.assertEqual((planner["difficulty"], planner["reasoning_effort"]), ("complex", "high"))
-                self.assertEqual(other_model["reasoning_effort"], "high")
-
-                luna_effort, luna_difficulty, luna_bounds = module.adaptive_reasoning_recommendation(
-                    {"model": "gpt-5.6-luna", "reasoning_effort": "high"},
-                    "release acceptance after repeated failures",
-                    "complex_implementation",
-                    "critical",
-                    module.read_config(),
-                )
-                self.assertEqual((luna_difficulty, luna_effort), ("critical", "max"))
-                self.assertEqual(luna_bounds["minimum"], "high")
-                self.assertEqual(luna_bounds["maximum"], "max")
-            else:
-                self.assertEqual((trivial["difficulty"], trivial["reasoning_effort"]), ("trivial", "low"))
-                self.assertEqual((routine["difficulty"], routine["reasoning_effort"]), ("routine", "medium"))
-                self.assertEqual((complex_task["difficulty"], complex_task["reasoning_effort"]), ("complex", "high"))
-                self.assertEqual((critical["difficulty"], critical["reasoning_effort"]), ("critical", "xhigh" if mode == "pro" else "high"))
-                self.assertEqual((planner["difficulty"], planner["reasoning_effort"]), ("complex", "high"))
-                self.assertEqual(other_model["reasoning_effort"], "high")
-
-                luna_effort, luna_difficulty, luna_bounds = module.adaptive_reasoning_recommendation(
-                    {"model": "gpt-5.6-luna", "reasoning_effort": "high"},
-                    "release acceptance after repeated failures",
-                    "complex_implementation",
-                    "critical",
-                    module.read_config(),
-                )
-                self.assertEqual((luna_difficulty, luna_effort), ("critical", "max" if mode == "pro" else "high"))
-                self.assertEqual(luna_bounds["minimum"], "high" if mode == "pro" else "low")
-                self.assertEqual(luna_bounds["maximum"], "max" if mode == "pro" else "high")
-
-    def test_all_templates_exist_and_are_valid(self) -> None:
-        pro_cfg = json.loads((ROUTER.parent / "router.pro.json").read_text(encoding="utf-8-sig"))
-        self.assertEqual(pro_cfg["active_mode"], "pro")
-        self.assertEqual(pro_cfg["agents"]["planner"]["model"], "codex-6-Astra")
-        self.assertEqual(pro_cfg["agents"]["worker"]["model"], "codex-6-Astra")
-        high_path = ROUTER.parent / "router.high.json"
-        low_path = ROUTER.parent / "router.low.json"
-        self.assertTrue(high_path.exists())
-        self.assertTrue(low_path.exists())
-        high_cfg = json.loads(high_path.read_text(encoding="utf-8-sig"))
-        low_cfg = json.loads(low_path.read_text(encoding="utf-8-sig"))
-        self.assertEqual(high_cfg["active_mode"], "high")
-        self.assertEqual(high_cfg["active_mode_name"], "高階模式")
-        self.assertEqual(high_cfg["agents"]["planner"]["model"], "gpt-5.6-sol")
-        self.assertEqual(low_cfg["active_mode"], "low")
-        self.assertEqual(low_cfg["active_mode_name"], "低階模式")
-        self.assertEqual(low_cfg["agents"]["planner"]["model"], "gemini-3.8-flash-high")
+            with self.assertRaises(ValueError):
+                module.route_task("token: synthetic")
+            module.goal_bootstrap("test", "Safe", ["phase"])
+            self.assertEqual(module.goal_finalize()["status"], "not_finalizable")
 
     def test_goal_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -276,8 +135,24 @@ class LiteRouterTest(unittest.TestCase):
             self.assertEqual(module.goal_resume()["status"], "resumable")
             checkpoint = module.goal_checkpoint("phase-one", "verified", True, "", ["unit test"])
             self.assertEqual(checkpoint["status"], "checkpointed")
-            self.assertEqual(module.goal_resume()["status"], "ready_to_finalize")
-            self.assertEqual(module.goal_finalize("done")["status"], "completed")
+            self.assertEqual(module.goal_resume()["status"], "phases_complete_validation_required")
+            self.assertEqual(module.goal_finalize("done")["status"], "not_finalizable")
+            receipt = Path(temporary) / "receipt.json"
+            (Path(temporary) / "source.py").write_text("value = 1\n", encoding="utf-8")
+            revision = snapshot_revision(Path(temporary), ["source.py"])
+            validation_path = Path(temporary) / "unit.json"
+            run_check("unit", revision, [sys.executable, "-c", "import sys; sys.exit(0)"], validation_path)
+            decision = module.route_task("bounded implementation", "implement", task_signals={
+                "task_id": "lite-test", "source_revision": revision, "snapshot_root": temporary,
+                "snapshot_files": ["source.py"], "required_checks": ["unit"]})
+            execution = {"revision": revision, "status": "COMPLETED",
+                                      "source": "desktop_native", "provider_terminal": True,
+                                      "tool_operations": "completed", "evidence_path": str(receipt)}
+            receipt.write_text(json.dumps({"kind": "execution", **execution}), encoding="utf-8")
+            evidence = {"execution": execution,
+                        "checks": [{"kind": "validation", "name": "unit", "revision": revision, "source": "validation_runner",
+                                    "status": "PASS", "exit_code": 0, "evidence_path": str(validation_path)}]}
+            self.assertEqual(module.goal_finalize("done", decision, evidence)["status"], "completed")
 
     def test_goal_does_not_overwrite_active_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -285,6 +160,44 @@ class LiteRouterTest(unittest.TestCase):
             module.goal_bootstrap("first", "First", ["phase"])
             result = module.goal_bootstrap("second", "Second", ["phase"])
             self.assertEqual(result["status"], "active_goal_exists")
+
+    def test_legacy_goal_completion_requires_current_independent_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            module = load_server(Path(temporary))
+            module.goal_bootstrap("critical-goal", "Critical fixture", ["fix"])
+            module.goal_checkpoint("fix", "implementation reported complete")
+            receipt = Path(temporary) / "evidence.json"
+            review_path = Path(temporary) / "review.json"
+            (Path(temporary) / "source.py").write_text("value = 1\n", encoding="utf-8")
+            revision = snapshot_revision(Path(temporary), ["source.py"])
+            validation_path = Path(temporary) / "unit.json"
+            run_check("unit", revision, [sys.executable, "-c", "import sys; sys.exit(0)"], validation_path)
+            decision = module.route_task("payment posting edit", "implement", "trivial", {
+                "task_id": "critical-goal", "source_revision": revision, "snapshot_root": temporary,
+                "snapshot_files": ["source.py"], "required_checks": ["unit"],
+                "risk_categories": ["payment"]})
+            execution = {"revision": revision, "status": "COMPLETED", "source": "desktop_native",
+                         "provider_terminal": True, "tool_operations": "completed",
+                         "evidence_path": str(receipt)}
+            receipt.write_text(json.dumps({"kind": "execution", **execution}), encoding="utf-8")
+            check = {"kind": "validation", "name": "unit", "revision": revision, "source": "validation_runner",
+                     "status": "PASS", "exit_code": 0, "evidence_path": str(validation_path)}
+            review = {"revision": revision, "status": "PASS", "independent": True,
+                      "source": "agy_wrapper", "role": decision["review_plan"][0]["role"],
+                      "model": decision["review_plan"][0]["model"],
+                      "evidence_path": str(review_path)}
+            review_path.write_text(json.dumps({"kind": "review", **review}), encoding="utf-8")
+            self.assertEqual(decision["model_key"], "sol")
+            self.assertEqual(decision["signals"]["risk"], "critical")
+            self.assertEqual(decision["review_plan"][0]["role"], "critical_review")
+            self.assertEqual(module.goal_finalize("done")["status"], "not_finalizable")
+            self.assertEqual(module.assess_task(decision, {"execution": execution, "checks": [check]})["status"], "BLOCKED")
+            self.assertEqual(module.goal_finalize("done", decision, {"execution": execution, "checks": [check]})["status"], "not_finalizable")
+            stale = {"execution": execution, "checks": [{**check, "revision": "old"}], "review": review}
+            self.assertEqual(module.goal_finalize("done", decision, stale)["status"], "not_finalizable")
+            valid = {"execution": execution, "checks": [check], "review": review}
+            self.assertEqual(module.assess_task(decision, valid)["status"], "READY")
+            self.assertEqual(module.goal_finalize("done", decision, valid)["status"], "completed")
 
 
 if __name__ == "__main__":

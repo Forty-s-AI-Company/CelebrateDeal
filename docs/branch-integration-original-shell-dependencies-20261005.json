@@ -1,0 +1,121 @@
+{
+  "state": "DEPENDENCY_RECONCILIATION_REQUIRED",
+  "scope": "Original app-shell UI and dependent navigation E2E; not delivered by dev-hygiene checkpoint",
+  "master": "9c45f10314faff768a33fac3f3770517b859ddce",
+  "files": [
+    {
+      "path": "src/components/app-shell.tsx",
+      "lines": 312,
+      "imports": [
+        "next/link",
+        "lucide-react",
+        "@/app/actions",
+        "@/components/app-shell-nav-link",
+        "@/components/app-shell-nav-group",
+        "@/components/app-shell-account-menu",
+        "@/components/csrf-field",
+        "@/components/form-submit-button",
+        "@/components/feature-access-boundary",
+        "@/lib/vendor-feature-toggles",
+        "@/components/workspace-project-switcher",
+        "@/components/onboarding-task-panel"
+      ],
+      "source_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+      "master_present": true
+    },
+    {
+      "path": "src/components/app-shell-nav-link.tsx",
+      "lines": 38,
+      "imports": [
+        "next/link",
+        "next/navigation",
+        "clsx"
+      ],
+      "source_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+      "master_present": false
+    },
+    {
+      "path": "src/components/app-shell-nav-group.tsx",
+      "lines": 36,
+      "imports": [
+        "lucide-react",
+        "next/navigation",
+        "react"
+      ],
+      "source_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+      "master_present": false
+    },
+    {
+      "path": "src/components/app-shell-account-menu.tsx",
+      "lines": 46,
+      "imports": [
+        "lucide-react",
+        "react"
+      ],
+      "source_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+      "master_present": false
+    },
+    {
+      "path": "src/components/workspace-project-switcher.tsx",
+      "lines": 61,
+      "imports": [
+        "react",
+        "next/link",
+        "lucide-react"
+      ],
+      "source_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+      "master_present": false
+    },
+    {
+      "path": "src/components/onboarding-task-panel.tsx",
+      "lines": 57,
+      "imports": [
+        "react",
+        "next/navigation",
+        "next/link",
+        "lucide-react",
+        "@/app/actions/sales-workspace-actions"
+      ],
+      "source_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+      "master_present": false
+    }
+  ],
+  "onboarding_action": {
+    "path": "src/app/actions/sales-workspace-actions.ts",
+    "master_present": true,
+    "exports_confirmed": [
+      "persistTaskPanelCollapsedAction",
+      "selectSalesProjectAction"
+    ]
+  },
+  "dependent_original_tests": [
+    "tests/e2e/loading-route-segments.spec.ts",
+    "tests/e2e/accountant-affiliate-detail-direct-url.spec.ts"
+  ],
+  "next": [
+    "Recover shell and five components as a coherent candidate, preserving listed current behaviors",
+    "Integrate server-side manager-scoped minimal project/onboarding DTO without changing schema",
+    "Add role-boundary layout tests and interactive menu/mobile browser coverage",
+    "Run independent permission review before protected PR acceptance"
+  ],
+  "tests_executed": false,
+  "caller_gap": "Current app layout passes vendorName, memberRole and enabledModules only; project switcher and onboarding task data require explicit caller integration.",
+  "integration_constraints": [
+    {
+      "item": "platform MFA navigation",
+      "evidence": "Current app-shell role test requires /mfa/setup; original source test omits this expectation. Preserve current voluntary setup route."
+    },
+    {
+      "item": "public support and policy links",
+      "evidence": "Current shell renders PublicResourceLinks and tests require /policies and /support; original shell removes the import. Preserve usable access during shell redesign."
+    },
+    {
+      "item": "role-scoped onboarding DTO",
+      "evidence": "Original protected layout queries vendor projects and onboarding for every requireVendorContext caller. Current sales-workspace mutation actions requireVendorManagerContext. Gate manager-only read/props at server boundary before passing into client switcher/task panel."
+    },
+    {
+      "item": "existing test strength",
+      "evidence": "Keep current cross-tenant, unknown-role, support-only and platform navigation assertions; adapt rendering assertions to actual interactive account menu instead of deleting security tests."
+    }
+  ]
+}

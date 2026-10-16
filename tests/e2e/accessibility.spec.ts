@@ -78,6 +78,12 @@ async function loginOwner(page: Page) {
   await expect(page.getByRole("link", { name: "跳至主要內容" })).toBeVisible();
 }
 
+test.beforeEach(async ({ page }, testInfo) => {
+  // Keep each accessibility scenario's synthetic login attempts in its own
+  // loopback rate-limit bucket; the dedicated security E2E keeps one stable IP.
+  await page.context().setExtraHTTPHeaders({ "x-forwarded-for": `e2e-${testInfo.testId}` });
+});
+
 async function enableOwnerMfa(page: Page) {
   await gotoStableRoute(page, "/settings/security");
   await page.getByRole("button", { name: "開始設定 TOTP", exact: true }).click();

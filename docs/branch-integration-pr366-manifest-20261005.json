@@ -1,0 +1,44 @@
+{
+  "pr": 366,
+  "head": "9af80668c362b76d8050d34ec8b42b0790316aa9",
+  "integration_base": "e3b2507456e93b39de117392e8b52e8c977995f7",
+  "parent_pr": 365,
+  "state": "DELIVERED_IN_MASTER_VIA_PR364",
+  "files": [
+    {
+      "path": "tests/e2e/helpers/direct-url-guard.ts",
+      "candidate_sha256": "e32e64e02a963788b5f9fd013accf5ac305f4317caf052ce4f1127573eaa3d34"
+    }
+  ],
+  "validation": {
+    "eslint": "PASS",
+    "typescript": "PASS",
+    "browser": {
+      "stats": {
+        "startTime": "2026-10-05T00:02:42.349Z",
+        "duration": 159892.28699999998,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "report": ".ai-team/tmp/direct-url-load-browser-results.json",
+      "diagnosticTimeout": 180000
+    }
+  },
+  "review": {
+    "status": "PASS",
+    "findings": [],
+    "reviewer": "/root/portal_review_fallback",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "scope": "Exact one-file original restoration; HTTP/status/canary/zero POST and DB snapshot preserved; redirects retain early capture",
+    "executedTests": false
+  },
+  "parent_sync": "Merged latest parent; sole reviewed helper hash unchanged",
+  "delivered_master": "9a76580124edf373f9ad4d8d18aaa45a8150d1d1",
+  "delivery_evidence": "branch-integration-pr364-merged-20261005.json",
+  "remaining": []
+}

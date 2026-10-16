@@ -1,0 +1,859 @@
+{
+  "refs": {
+    "master": "361a37da2b487bbfa17f419d7b72b9306da07c99",
+    "pr358": "a139b9d96227563fd28926c803c6c92efa44fde9"
+  },
+  "scope": "Normalized byte comparison only; differing files may include already-preserved semantics. No semantic completion inferred. PR358 remains pending CI.",
+  "counts": {
+    "master": {
+      "EXACT_NORMALIZED_MATCH": 44,
+      "DIFFERS_REQUIRES_SEMANTIC_REVIEW": 62,
+      "ABSENT": 12,
+      "LOCAL_DELETION_REQUIRES_SEMANTIC_REVIEW": 2
+    },
+    "pr358": {
+      "EXACT_NORMALIZED_MATCH": 57,
+      "DIFFERS_REQUIRES_SEMANTIC_REVIEW": 49,
+      "ABSENT": 12,
+      "LOCAL_DELETION_REQUIRES_SEMANTIC_REVIEW": 2
+    }
+  },
+  "files": [
+    {
+      "path": ".agents/skills/ai-team-lite/SKILL.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "330f93cec498bb5235f9bee9612b817f1400c39fe8360f35dc47172c085bfbbd",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".agents/skills/ai-team-style/SKILL.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "06d8d4cb9d450b57e019b94741b1ccb071e448f0139f08eaa93f15eb973967b4",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/config/router.astra-standard.json",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "accec45a720e1e8155aaa6a2675c1b3492f772326f9bfbb606bd0631ffa12f53",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/config/router.high.json",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "ce760f50fb1b54a46254c723211c278ba65c510c413026dfb199f41447d65eb7",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/config/router.json",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "949a0de00859805c048cabcb8a16e16b59627aba5aedc88b29f5e3626552a79a",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/config/router.low.json",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "949a0de00859805c048cabcb8a16e16b59627aba5aedc88b29f5e3626552a79a",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/config/router.pro.json",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "accec45a720e1e8155aaa6a2675c1b3492f772326f9bfbb606bd0631ffa12f53",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/config/router.style.json",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "2f43787c1f03040d42c9e9228ac07483484ca0e27d470cb2bf95afac998de370",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/mcp_server/requirements.txt",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "3618e02fd26f65ebc81ca5a2e805b88aaf03ef1f02272451d4aad85049b103a7",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/mcp_server/server.py",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "28abd6fd5bc8dbe951e267cbd0db0e54f87216fa946b757b41cbf2577ff1b857",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/mcp_server/test_server.py",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "25511392dc9a14f6af1c96d08a3828fd1c3d1d805a9994adfd01e83e77b5eca3",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AgyDeep.ps1",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "1a08e19204e92f0bf4d5aab8b01d878ce0d0c8dc7964b7228091ed874eda6b30",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AgyFast.ps1",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "4d25f3bc69b97b29e7f4ef7ec30e01b157d9e494fe7d029da73be17679829945",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AgyPlanReview.ps1",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "8e11d1e201fd73503b3573c843b95c332c5be0f8ad43bcf6d4c6be691cf7a61d",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AiTeamProcess.ps1",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "90edfc67bb1aeaef30ad4f99a953d277ddfc7cb190cf0f0179034723c3ac7ea9",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AiTeamReadOnlyFailover.ps1",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "68b4b68b028588e5e018a2c1341827d67a37db4f8ffe9453a2a252d43ab18df3",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Switch-AiTeamMode.ps1",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "e381e05f09f94a105dddc20c8d44765cec816fd15a5c05624a6979eac1591453",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Test-AiTeamHandoff.ps1",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "2acb409d95d243f7e7699393e8d70269244c92adb4f10b8dcd990c4c3ac4e891",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Test-AiTeamResilience.ps1",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "57aed153527810988ca46274bf1dca71c272bbed6ace536ef77f3320563ff319",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".codex/config.toml",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "c0c24ca242b96d2a4dea3f3381cdb9a7c8f394627b34ef489e61b4c3e5465db2",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "f0d43bf3ce91b0b948762cc19e049fe82b9cfcadd307e86e45faf44fc962e803",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": ".gitignore",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "7fcee66d6aeecfe328c418c7cf8b8fd0d9b5e2c4aa2c1f037bbc172d9984d5e1",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "AGENTS.md",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "4bd481880514f4fb966fbdb81bcccad582c49e8014ffb759b4730a27533d8300",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "docs/ai-team-payuni-sandbox-qa.md",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "df6b56a94cdb998084b4738f3534f6ef28481ef458e9a4dc43747b9ec3bde46f",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "docs/ai-team/ARCHITECTURE.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "d117ff1ff4cb1e1d27ec19dc0a5f56c1290627c220b5c1aa430c86012cf71ae5",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "docs/ai-team/GOAL-PROTOCOL.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "fab57deee5c11e17d8e08a92a176b668c050004868fbe20049cea8c959f22dc3",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "docs/ai-team/README.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "13c22c0ef2ad71d831754bd4626a25416f2b5ff50b7e8808d051485ff0eded4e",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "docs/ai-team/ROUTING.md",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "fb20fefd0d8020648bb67b4f8840195a8fa72fb9d5fab9d48e604d70cf5182ca",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "docs/ai-team/TROUBLESHOOTING.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "1bbced0c36cc9543805b84a601f8705e1692966f1056c79d7ba86dc4b6533dbf",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt.json",
+      "previous_disposition": "ABSENT_FROM_MASTER",
+      "original_sha256": "40b15d1bea43ff0c789143c1f43e7a0f04a6b4f801a5a451a7a91af7353378c7",
+      "master": "ABSENT",
+      "pr358": "ABSENT"
+    },
+    {
+      "path": "docs/ai-team/handoff-schema.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "9d1cc235f0bc4ae537c744b3c1432303fe3ad5bf0dae1e60ac79230fc584c33a",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "docs/ai-team/prompts/executor-prompt.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "6f61574675e12f52ed9102aa62f6672e277dabfd33ca7bb7868a37a504657fa4",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "docs/ai-team/prompts/planner-prompt.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "5c48c414a05c46308401a93c2448c70fea56a55b155ff1cec04cbe8a995201a9",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "docs/ai-team/workflow-policy.md",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "1cc4246847e9ab5ceb7ab8c7ec57d190336aef66d59f710c232dbdbff3ffda47",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "docs/external-service-validation-runbook.md",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "838e12f20c58bfe3314a0e2b946fb3c468a569296643fa6b5e4c9a6bfd2552e6",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "docs/launch/current-release-completion-audit-20260821.md",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "58242d88f50f1cc86fd229b6cfdca94279028f52ae9c56ce5f86a0da8f7dded0",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "docs/launch/current-release-gate-handoff-20260821.md",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "7281e9a730e7b46f69353c490a0172121acb88566a890e7f6999856e7baa8ca6",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "docs/launch/current-release-owner-action-packet-20260822.md",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "7a4d6a4a9479e582618abd713c855311864050275af6c75af104b1d36449c8f9",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "docs/launch/manual-blockers.md",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "1a41ba53771c4f307eec7988a6f16b02e3632dcf8cae8dcda9169a10303054d3",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "docs/report-3-product-roadmap-and-priorities.md",
+      "previous_disposition": "ABSENT_FROM_MASTER",
+      "original_sha256": "7aa7485d48885478f5148727e5c0febab61267c1fafe0ec684fdc90d919867b3",
+      "master": "ABSENT",
+      "pr358": "ABSENT"
+    },
+    {
+      "path": "eslint.config.mjs",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "2e5fded1f130e09c64cc43d6f3f749b3c7a2b0741c3b4fe81f61e202d9065054",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "next.config.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "960b93ae86500a8533a846733ab4716832be0a9cee52d0cb315290a2685f4370",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "package.json",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "78a2063d620ac50dd6139339569e6f76f0fd042451590103d0893ae31f92f448",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "playwright.config.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "fe1736f6175c215ffce50daa2460a877a723ceaf7d468077a36a33c5faa972e1",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "scripts/external-smoke-safety.test.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "324de44641837622cb73bfbd6f687b2aa6dd7ecad15f8a37be83643a4122e44d",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "scripts/external-smoke-safety.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "c9cd7febcc92d964ec67925875768ca375a0496f7c58c10c243520d2ce1f7670",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "scripts/external-smoke.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "1ad456a8351a73aa02b8a982c44d5af72346822e6098c25a46112e3d087356dd",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "scripts/payuni-sandbox-external-qa.mjs",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "817ef9e38c4bb6093b0db2d2ea4b417f5848746998ec90dee8d6a08f86ba898c",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "scripts/payuni-sandbox-external-qa.test.mjs",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "7dbcdadcd2b0d8285f6465af58c6cd959335efac0bf668ae6549082828a1f1f9",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "scripts/validate-non-production-owner-authorization.mjs",
+      "previous_disposition": "DELETED_OR_NOT_HASHED",
+      "status": "LOCAL_DELETION_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "scripts/validate-non-production-owner-authorization.test.mjs",
+      "previous_disposition": "DELETED_OR_NOT_HASHED",
+      "status": "LOCAL_DELETION_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/app/(app)/landing-pages/[id]/operations/page.test.tsx",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "c901ab59147368d67923c9063d82e2c2e2bdb1a58bc965eda4af0aee3a75379a",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/app/(app)/landing-pages/[id]/operations/page.tsx",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "c105522db3eee9b0b7e06d93ef848c2cec5f661335b6762e5d00f82fa841c7dc",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/app/(app)/landing-pages/[id]/page.tsx",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "c84382439b8073356ca1074af8d0b2f2dc6541c0ece28fe30cdc58546b121f88",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/app/(app)/landing-pages/page.tsx",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "6899bf7264805470aa6d2c325ad19953ab3895af21d03cee2407508f2845cd84",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/app/(app)/settings/security/page.tsx",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "4eebf593470e9dd3ebb546233efe7e06615104169cc82f10e77f18abfc66c9d9",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/app/actions.test.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "5e9d7546a5b20f1ec0e5cf7791d14bcf7603164106f90b9ad5994f4534a62b5d",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/app/actions/auth-security-actions.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "d35a9cd2bd5e2805fa40f835069f97e72435e79b43537fa4fc98e94d49d0d958",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/app/mfa/setup/page.tsx",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "957a8f5ee9a8d92948b4758b0560031ccb0da3696f83a61872b3b40a9081a277",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/components/app-shell.tsx",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "b76ee4b3041ce80721e07a47ab9a435d02269c37e27d50727db55cbd1fddf3e8",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/components/landing-page-workspace.tsx",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "40525a35ebf11a0f090c0563fac71dd9b739e49d21f038a26985569d323c0212",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/components/live-advanced-interactions.tsx",
+      "previous_disposition": "ABSENT_FROM_MASTER",
+      "original_sha256": "defec718155b0951e1b1ced4180eb6927ab221138f93ecd81c061821c6f5344c",
+      "master": "ABSENT",
+      "pr358": "ABSENT"
+    },
+    {
+      "path": "src/lib/auth-rate-limits.test.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "791aa8aa00e6ca7ee2d0385b11172a9161caffe323ebbe7cc880b9a0a46e3e33",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/lib/auth-rate-limits.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "ce0b8b8a7152bdfd8bb86e4cf7062e9b6041df8afcf10142a442ce438254febd",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/lib/funnel-goal-step-pages.test.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "125b88ca017f57357e3d01ce7139b4193f984ea78e01dfe4c7dc30601e861e8e",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/lib/funnel-goal-step-pages.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "2b0351b6266e2a36f3a0584b644fe038cc83ae5971abf72dc6a25e043ba5ea89",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "src/lib/funnel-step-pages.test.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "59a032e4105ddcb2480a51e9d198de4ee669e8322db98428ed7fa655edd15610",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "tests/e2e/accessibility.spec.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "ed4bf84f9a42334ddde8bd141c1e742955748788967c2deceaa4bed1d62466da",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "tests/e2e/accountant-affiliate-detail-direct-url.spec.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "2e400cd3d4661b10c7ab9e22ad45209ab1542e3fadb996f5c2c52f2c00435ff2",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "tests/e2e/admin-cross-tenant-affiliate-edit.spec.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "09f6c5958d956d15966dae7676bbac415565c0f1654729ff3b9a4dfe8bc998c7",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "tests/e2e/admin-cross-tenant-video-edit.spec.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "b27fed2727f3197db0102ad6239c56b20cd54040f3cfd3a1bd8769a2b2ce02a1",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "tests/e2e/commerce-orders.spec.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "2cc9fc6b4829048e74ca8f63094317e051f8b5fb18d51b5116a65d31291f96ed",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "tests/e2e/funnel-commerce.spec.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "7ed03e7ab7e4c213b0076362e962240d19bfd6173a7d7452b4729801174ac1a0",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "tests/e2e/funnel-operations-transport.spec.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "d8fdc82e6769a4dfae56b7c4943f040f988ba46f362319291d7e695ca19183fb",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "tests/e2e/helpers/direct-url-guard.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "e32e64e02a963788b5f9fd013accf5ac305f4317caf052ce4f1127573eaa3d34",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "tests/e2e/loading-route-segments.spec.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "5e7444e61f7e62929b7631b4297f9f4ed8834601c1328616cc9cd1fca99ada2f",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "tests/e2e/merchant-invitation.spec.ts",
+      "previous_disposition": "ABSENT_FROM_MASTER",
+      "original_sha256": "6b9dd57a6dd8ed194443d812fdb0091cfa9695147825d61fff3bbb9aac42d131",
+      "master": "ABSENT",
+      "pr358": "ABSENT"
+    },
+    {
+      "path": "tests/e2e/video-media-experience.spec.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "f07c2799dfc052f0c3ea0e308fde1b85fe478f3d5fb61868124dd1ca50b3fe64",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "tests/e2e/webinar-funnel-flow.spec.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "e8ae13416e662c43207130fbd2b8ee04714221d8afe3017e358902725e7626f5",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "tests/e2e/wp88-direct-url-guard-matrix.spec.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "e0263e9c12c37580100ef75517b6e6a64f2a246e80f62a49e536f1048f99e855",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "tsconfig.json",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "3a5ba0cde14e5c0b90025a166ba05345004260f3a5a391723ab115ac332471a5",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "vitest.synthetic-db-coverage.config.ts",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "7f8bf9d5a8b5e571803298f21ce661d8a9882356c181bd3b877b4691a8cf17ef",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": ".agents/skills/ai-team-pro/SKILL.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "41fdb675c945950e212b65455d3458a42bee7fab746c6016701fe45a322c813c",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".agents/skills/ai-team/SKILL.md",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "8fe80fe0a250350d8dfdb87a74d3f85e1fae7417c5691d606c2e8acecd7b84a5",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/config/routing-policy.json",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "f2e6ff3c747a19af5834116b483d87a3ba9352fb342eba7f8df2ed82e10570d5",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/mcp_server/bootstrap_probe.py",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "eacac82a582124d2a3849580597efd1fd776f4bb5177a9143f01c93bcaf083a6",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/mcp_server/route_cli.py",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "51e14c6f039e0bf5acb37927a57271b9001fe4da4b9863caf83ef482afb06b83",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/mcp_server/routing.py",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "50a16af8a777c25153e070bd9022a3eec1dc956052fbcbc8f1d60b8035bdb1e0",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/mcp_server/schemas/review-result.schema.json",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "55d9c58cb1c3c73203218f86c7ee55f1d7c3e6404a24f0ae6b39bdb13aef3fc1",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/mcp_server/test_routing.py",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "029d5517685cf2ed01e4325b6293ea4f96f9923be33b135004087eb3a81aa3f5",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/mcp_server/validation_runner.py",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "c36b352dcac1a612ee7358e864179f755cabfc583d4dd0fcd0dd220e3cd9d245",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/prompts/reviewer-prompt.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "d02f520fa6655ffc2f190d96bc21864093e9b9717bec414ed11d73fcc9720bdd",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AiTeamNodeValidation.ps1",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "7f2c95c27de416b3c4219fe060cdcdc57b9352b62154e8e2a84b50dbc388e681",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Invoke-AiTeamTask.ps1",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "c05209eade8fa5a75d92200d427420b4e737ce1fe457ceca80e0abf1c024e332",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Probe-AiTeamNative.py",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "99712ed49c2b08e9164e9c4814389c29995fc24aca2cc99a154e1ac901c8b18a",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Probe-AiTeamShell.py",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "ce5e0b06b6d85726b7a53b561f3d5aad69fc04bc5d4a1e086f93e86df9e99253",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Start-AiTeamMcp.ps1",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "8b3ad52409e8676bda839eb8318327314d947bef03b260caf891972e5608d5ad",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Test-AiTeamBootstrap.ps1",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "ace6d5a501012fef57002608f19dd96af701f2c1813e4ff38db40f798f933ea1",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Test-AiTeamNodeValidation.ps1",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "6fe7597afbee00cd323e9f0d844df9fbf540781d523bedfc7084e9de78218e1f",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".ai-team/scripts/Test-AiTeamRouting.ps1",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "96bced99ac0a6ae321a4164306ef7039c894d3eb71e5830b2ce1c602c3a0eed1",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".codex/agents/analyst.toml",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "69ed4755d510a48c1e2026a633b58818b41a906c6f9503f3a7cb6c52e20c91ef",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".codex/agents/explorer.toml",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "d31d5506f8183221b7f5dca22fa1c3e8a3da82f264eef73d935e55f89ce0df7c",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".codex/agents/planner.toml",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "c142b0ec7777d3fc018d788e25d7c116483ab9bf0c9481a8b7d9f715f5fbea0d",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".codex/agents/reviewer.toml",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "70fbe46cd88b364f7100acd437161f9882c2880c58c2832323aa9a0913dbe891",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".codex/agents/worker-deep.toml",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "f439807a8b13962b77c4261cb47e02bf9938f615e4f70d92f6a4163f2205554f",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": ".codex/agents/worker.toml",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "e9b8d2f04aeb0f15e1842bb8e68678bc71af89bdd029ef2da7921f3be51b73ed",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "docs/ai-team-vnext-plan.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "670c2f9d2385de552ab31534cf29d7fe5a4c6cd6cb664af6c5bb3b767d44ad49",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "docs/ai-team/evidence/funnel-commerce-20260917/receipt-c3a3d7fa283a.json",
+      "previous_disposition": "ABSENT_FROM_MASTER",
+      "original_sha256": "40b15d1bea43ff0c789143c1f43e7a0f04a6b4f801a5a451a7a91af7353378c7",
+      "master": "ABSENT",
+      "pr358": "ABSENT"
+    },
+    {
+      "path": "docs/ai-team/evidence/release-baseline-sandbox-20260922.md",
+      "previous_disposition": "ABSENT_FROM_MASTER",
+      "original_sha256": "fa826e4b3550cdb44146b18d6e2eee82be1dc20d0cf83cc9679d39ec57117c7b",
+      "master": "ABSENT",
+      "pr358": "ABSENT"
+    },
+    {
+      "path": "docs/ai-team/prompts/reviewer-prompt.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "cbb6b951db69dac209949f581c8d4b4247e90306aa0fb4ac5064144192f5b9d0",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "docs/ai-team/vnext-node-failure-manifest.json",
+      "previous_disposition": "ABSENT_FROM_MASTER",
+      "original_sha256": "2b197df5f8dda9947d08964a3d1dafb9540fb93022b5982c8c252e7ce4a43ef2",
+      "master": "ABSENT",
+      "pr358": "ABSENT"
+    },
+    {
+      "path": "docs/ai-team/vnext-validation.md",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "3a6c8abf50eaaebf1fab80ff96be73584c422b1f46d7570b5d6f233c4a624d62",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "docs/launch/goal-plan-20260924.md",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "c3b79dd64bd8a440b3021186da57e828663f77b0a39a4522a5c3b41bd23bad6e",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "docs/launch/goal-plan-opus-recovery-20260924.json",
+      "previous_disposition": "ABSENT_FROM_MASTER",
+      "original_sha256": "d8c2035a6f0d68aae40a620e836bc66a8e37fbff04e170625a004514ea2fd7e6",
+      "master": "ABSENT",
+      "pr358": "ABSENT"
+    },
+    {
+      "path": "docs/launch/goal-plan-opus-response-20260924.txt",
+      "previous_disposition": "ABSENT_FROM_MASTER",
+      "original_sha256": "306df1e0850e94a6b1213f212894c9dc4f6e88b896592f1d2a2177be87cc39ac",
+      "master": "ABSENT",
+      "pr358": "ABSENT"
+    },
+    {
+      "path": "docs/launch/goal-plan-opus-review-20260924.json",
+      "previous_disposition": "ABSENT_FROM_MASTER",
+      "original_sha256": "85cb243d446c9c238b984ddf59554b90a33e1edf1615c12365572012ecc50430",
+      "master": "ABSENT",
+      "pr358": "ABSENT"
+    },
+    {
+      "path": "docs/launch/goal-plan-review-status-20260924.md",
+      "previous_disposition": "DIFFERS_FROM_MASTER",
+      "original_sha256": "eb96ef7340f0f82e8aa4101ebaf96179e4d3d176e3282f035ee835ad3fd51804",
+      "master": "DIFFERS_REQUIRES_SEMANTIC_REVIEW",
+      "pr358": "DIFFERS_REQUIRES_SEMANTIC_REVIEW"
+    },
+    {
+      "path": "docs/launch/goal-preflight-20260924.md",
+      "previous_disposition": "CONTENT_IN_MASTER",
+      "original_sha256": "7aceb16653c687765d0697fec2135422add71cefaa8e587a386c43cc4f76a61c",
+      "master": "EXACT_NORMALIZED_MATCH",
+      "pr358": "EXACT_NORMALIZED_MATCH"
+    },
+    {
+      "path": "src/lib/password-reset-smoke-policy.test.ts",
+      "previous_disposition": "ABSENT_FROM_MASTER",
+      "original_sha256": "5c52162e3ae5a825fa829e8b1b302dcd88313fbd9277af4fc7844fbf0b4ace64",
+      "master": "ABSENT",
+      "pr358": "ABSENT"
+    },
+    {
+      "path": "src/lib/password-reset-smoke-policy.ts",
+      "previous_disposition": "ABSENT_FROM_MASTER",
+      "original_sha256": "cf1ab7f20a9ccaf452c63c0e203dd55450dcfa31731415ebb8ae84cbecbb96f6",
+      "master": "ABSENT",
+      "pr358": "ABSENT"
+    }
+  ]
+}

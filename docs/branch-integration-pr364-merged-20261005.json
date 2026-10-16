@@ -1,0 +1,19 @@
+{
+  "pr": 364,
+  "state": "MERGED_VERIFIED",
+  "head": "0eec941b3a13a81078c9681c05f7c92f33ed1ad9",
+  "merge": "9a76580124edf373f9ad4d8d18aaa45a8150d1d1",
+  "accepted_and_merged_tree": "f6b75583a50d5f582f1b50a54d1adc6113677c2b",
+  "ci_runs": [
+    37246883421,
+    37246880468
+  ],
+  "acceptance": "READY",
+  "revision": "sha256:a152e41943d7bd834ab5757f438ab7c1a4f7b2e990e57b2d99acef994e607b38",
+  "included_prs": [
+    365,
+    366
+  ],
+  "pr366_exact_helper_verified": true,
+  "production": "Not operated"
+}

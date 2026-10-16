@@ -1,5 +1,7 @@
 # CelebrateDeal current release owner action packet
 
+> 歷史文件：本 packet 綁定舊 source RC `5fd1c61`，其中逐次 owner authorization、opaque authorization references、`newExecutionApproved`、`forbiddenProbeReuse` 與一次性 execution 限制已退役，不再是新的非 Production 開發／Sandbox 驗證前置條件。Production 與正式資料／金流仍需獨立授權。
+
 ## 目的
 
 這份 packet 把 current source RC `5fd1c61` 從 local `PASS_LOCAL_ONLY` 推進到可驗證的 non-Production staging／release readiness。它不授權 Production、正式付款、正式退款、正式寄信、正式資料刪除或正式部署。

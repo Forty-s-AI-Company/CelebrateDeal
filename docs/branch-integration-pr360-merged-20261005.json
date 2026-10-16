@@ -1,0 +1,17 @@
+{
+  "pr": 360,
+  "state": "MERGED",
+  "head": "bb2207311bd7015dd828065f3a29fa4b954985c1",
+  "merge_commit": "11541b6ac097ea957f2152710e7d9f405b4bfccb",
+  "accepted_and_merged_tree": "37f3009e4ab0c9291939a625ec853e56d0bea21b",
+  "ci": {
+    "37225033134": "success",
+    "37225030561": "success"
+  },
+  "acceptance": {
+    "status": "READY",
+    "revision": "sha256:1b1fd5c0cc6701bb7f9991c5f9356983a73446732cb56f60fff93dc4ee15f9df"
+  },
+  "method": "Protected squash with exact head match; no admin bypass",
+  "remaining": "Registration, MFA, advanced interactions and historical branch/original reconciliation remain active"
+}

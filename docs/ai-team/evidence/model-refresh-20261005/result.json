@@ -1,0 +1,88 @@
+{
+  "date": "2026-10-05",
+  "requested_team": "ai-team",
+  "effective_team": "ai-team",
+  "selected_model": "gpt-5.6-sol",
+  "reasoning": "high",
+  "observed_model": "unknown",
+  "fallback_events": [],
+  "review_plan": [],
+  "ownership": "primary agent; no delegates",
+  "limits": {
+    "max_agent_depth": 1,
+    "max_parallel_agents": 1,
+    "max_writers": 1,
+    "max_readonly_helpers": 1,
+    "max_dispatches_per_task": 4,
+    "max_attempts_per_model": 1,
+    "max_external_attempts": 2,
+    "automatic_spawn": false
+  },
+  "cli_catalog": {
+    "codex_version": "0.145.0",
+    "method": "app-server model/list",
+    "models": [
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-5.5"
+    ],
+    "nextCursor": null,
+    "agy_selected": [
+      "claude-sonnet-5-5-high",
+      "claude-opus-5-5-high"
+    ]
+  },
+  "smoke": [
+    {
+      "model": "gpt-5.6-luna",
+      "status": "PASS",
+      "exit_code": 0,
+      "output_match": true,
+      "seconds": 4.9,
+      "observed_model": "unknown"
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "status": "PASS",
+      "exit_code": 0,
+      "output_match": true,
+      "seconds": 5.1,
+      "observed_model": "unknown"
+    },
+    {
+      "model": "claude-sonnet-5-5-high",
+      "status": "PASS",
+      "exit_code": 0,
+      "output_match": true,
+      "seconds": 6.8,
+      "observed_model": "unknown"
+    },
+    {
+      "model": "claude-opus-5-5-high",
+      "status": "PASS",
+      "exit_code": 0,
+      "output_match": true,
+      "seconds": 5.1,
+      "observed_model": "unknown"
+    }
+  ],
+  "additional_checks": {
+    "python_tests": 45,
+    "powershell_routing_integration": "PASS",
+    "bootstrap": "PASS",
+    "diff_whitespace": "PASS"
+  },
+  "self_review": {
+    "security": "No credential reads or production operations; existing validation gates preserved.",
+    "performance": "Alias comparisons are bounded by seven registry entries.",
+    "readability": "Compatibility behavior documented; exact CLI slugs used.",
+    "maintainability": "Canonical policy, presets and regression tests aligned; old evidence preserved."
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:4205eb3e9116d8372582c5399505e8434e41736637bb9b5c5857bdd80108b802"
+  },
+  "next_action": "Use refreshed CLI mappings; Desktop active conversation unchanged."
+}

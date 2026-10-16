@@ -261,6 +261,7 @@ test("new video browser flow exposes metadata, timeline, crop controls and mocke
   await loginOwner(page);
   await page.goto("/videos/new", { waitUntil: "load" });
   await page.getByLabel("影片名稱").fill("瀏覽器上傳影片 E2E");
+  await page.getByText("進階設定", { exact: true }).click();
 
   const videoInput = page.locator('input[type="file"][accept="video/*"]');
   await videoInput.setInputFiles({ name: "browser-e2e.mp4", mimeType: "video/mp4", buffer: Buffer.from("synthetic-video") });
@@ -281,8 +282,8 @@ test("new video browser flow exposes metadata, timeline, crop controls and mocke
     element.dispatchEvent(new Event("loadedmetadata", { bubbles: true }));
   });
 
-  await expect(page.getByLabel("長度秒數")).toHaveValue("125");
-  await expect(page.getByLabel("估算用量分鐘")).toHaveValue("3");
+  await expect(page.getByLabel("系統偵測長度（秒）")).toHaveValue("125");
+  await expect(page.getByLabel("系統估算用量（分鐘）")).toHaveValue("3");
   const timeline = page.getByRole("slider", { name: "選取影片縮圖畫面" });
   await expect(timeline).toBeVisible();
   await timeline.fill("30");
@@ -339,10 +340,11 @@ test("provider polling updates processing video to ready and authoritative durat
   }));
   await loginOwner(page);
   await page.goto(`/videos/${fixture.processingVideoId}/edit`, { waitUntil: "load" });
+  await page.getByText("進階設定", { exact: true }).click();
   await expect(page.getByText("Provider 狀態：ready")).toBeVisible();
   await expect(page.getByText("Cloudflare ready，影片可播放。")).toBeVisible();
-  await expect(page.getByLabel("長度秒數")).toHaveValue("321");
-  await expect(page.getByLabel("估算用量分鐘")).toHaveValue("6");
+  await expect(page.getByLabel("系統偵測長度（秒）")).toHaveValue("321");
+  await expect(page.getByLabel("系統估算用量（分鐘）")).toHaveValue("6");
 });
 
 test("mobile video flow keeps metadata, thumbnail controls and loading feedback usable", async ({ page }) => {
@@ -379,6 +381,7 @@ test("mobile video flow keeps metadata, thumbnail controls and loading feedback 
   await loginOwner(page);
   await page.goto("/videos/new", { waitUntil: "load" });
   await page.getByLabel("影片名稱").fill("手機版影片 E2E");
+  await page.getByText("進階設定", { exact: true }).click();
   await page.locator('input[type="file"][accept="video/*"]').setInputFiles({
     name: "mobile-e2e.mp4",
     mimeType: "video/mp4",
@@ -402,8 +405,11 @@ test("mobile video flow keeps metadata, thumbnail controls and loading feedback 
     element.dispatchEvent(new Event("loadedmetadata", { bubbles: true }));
   });
 
-  await expect(page.getByLabel("長度秒數")).toHaveValue("61");
-  await expect(page.getByLabel("估算用量分鐘")).toHaveValue("2");
+  await expect(page.getByLabel("系統偵測長度（秒）")).toHaveValue("61");
+  await expect(page.getByLabel("系統估算用量（分鐘）")).toHaveValue("2");
+  const onboardingToggle = page.getByRole("button", { name: /商家上線任務/u });
+  await onboardingToggle.click();
+  await expect(onboardingToggle).toHaveAttribute("aria-expanded", "false");
   const timeline = page.getByRole("slider", { name: "選取影片縮圖畫面" });
   await timeline.fill("12");
   await expect(timeline).toHaveValue("12");

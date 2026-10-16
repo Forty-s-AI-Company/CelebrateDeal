@@ -1,0 +1,93 @@
+{
+  "source_pr": 211,
+  "source_head": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "candidate": "24d9c7c76d6273329e2aff0b27ae9299da04d364",
+  "whole_pr_status": "IN_PROGRESS",
+  "decisions": [
+    {
+      "path": "src/components/landing-pages/funnel-webinar-experience.tsx",
+      "source_blob": "d4412e11a9e633a8a798b61fa056d3e9adf1d217",
+      "candidate_blob": "31fc0d902ab44b57f57470f06e457c8f0946c9e8",
+      "decision": "KEEP_CURRENT_IMPLEMENTATION",
+      "reason": "Preserves webinar state, registration and player while adding trusted landingPageId/funnelStepId hidden context."
+    },
+    {
+      "path": "src/components/landing-pages/public-funnel-document.tsx",
+      "source_blob": "2735905ba9b6db26cd463d98b894d70e04ba05b5",
+      "candidate_blob": "6b328da4999dc201880c33b39a9b8ecfdab8df14",
+      "decision": "KEEP_CURRENT_IMPLEMENTATION",
+      "reason": "Preserves responsive renderer and popup mapping; adds server-provided consultation resources and CSRF context."
+    },
+    {
+      "path": "src/components/landing-pages/funnel-popup-preview.tsx",
+      "source_blob": "6ec4c94511bf3920a86b95ce40820591167359ae",
+      "candidate_blob": "e6ed17228471c105b52621b5d72949547061c128",
+      "decision": "KEEP_CURRENT_IMPLEMENTATION",
+      "reason": "Preserves delayed/manual popup behavior and adds desktop-only one-shot exit listener with cleanup."
+    },
+    {
+      "path": "src/lib/funnel-page-document.ts",
+      "source_blob": "00c8c10cabc1be81e8a804abf0c4ee2e034d4f56",
+      "candidate_blob": "788080402b685749e4572547946d81e1a2abb078",
+      "decision": "KEEP_CURRENT_IMPLEMENTATION",
+      "reason": "Only difference is exit-intent capability changed from unverified to available; matching runtime implementation exists."
+    },
+    {
+      "path": "src/lib/funnel-goal-step-pages.ts",
+      "source_blob": "9e3ffb4e657c9cb4effae1f0be87bc0d741edb5b",
+      "candidate_blob": "44bd5294ae6aad6bce7928a683145324e0b0f35f",
+      "decision": "KEEP_CURRENT_IMPLEMENTATION",
+      "reason": "Preserves system and webinar steps; sell/audience now require explicit template selection via operations configuration; thank-you copy also recognizes opt-in thank-you."
+    },
+    {
+      "path": "src/lib/funnel-flow.ts",
+      "source_blob": "b0dafbc9aeb62979079f40f6e4301908ba21f972",
+      "candidate_blob": "b10f89befeacd90cb67c0a2c52c8256a3b83ab0c",
+      "decision": "KEEP_CURRENT_IMPLEMENTATION",
+      "reason": "Preserves mutation/validation logic; replaces prior placeholder-tab metadata with operations panel entries and explicit template selection state."
+    },
+    {
+      "path": "src/lib/funnel-block-library.ts",
+      "source_blob": "04a2241a1aa2566fa766a89a29a178b966a96cfa",
+      "candidate_blob": "6832045213ab5b819de46d8a38a68930871eb533",
+      "decision": "KEEP_CURRENT_IMPLEMENTATION",
+      "reason": "Preserves nine block factory compositions; registry expands to 27 variants. Stored pages contain instantiated node trees rather than registry ID references."
+    },
+    {
+      "path": "src/lib/funnel-template-gallery.ts",
+      "source_blob": "8feed8d59cf1ba1891e590aff197f16137a06ce6",
+      "candidate_blob": "dca436b574bb4c8b0b73b6239c6924c8e5c30f42",
+      "decision": "KEEP_CURRENT_IMPLEMENTATION",
+      "reason": "Preserves existing template IDs and instantiation; expands webinar layouts and filters templates by step type."
+    },
+    {
+      "path": "src/components/landing-pages/funnel-page-editor.tsx",
+      "source_blob": "3620513e2b5fa4866a15eaade79e5506293a0eee",
+      "candidate_blob": "fb39234b6b8d731b47a7201a028a0c363d259c9d",
+      "decision": "KEEP_CURRENT_IMPLEMENTATION",
+      "reason": "Only meaningful delta removes secondary-tab status list from in-canvas flow panel; corresponding controls now live in dedicated funnel-operations-panel."
+    }
+  ],
+  "targeted_tests": {
+    "numTotalTests": 50,
+    "numPassedTests": 50,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true,
+    "exit": 0,
+    "files": [
+      "src/lib/funnel-flow.test.ts",
+      "src/lib/funnel-goal-step-pages.test.ts",
+      "src/lib/funnel-block-library.test.ts",
+      "src/lib/funnel-template-gallery.test.ts",
+      "src/components/landing-pages/funnel-popup-preview.test.tsx",
+      "src/components/landing-pages/funnel-webinar-experience.test.tsx"
+    ]
+  },
+  "limitations": [
+    "Targeted tests cover flow/template/block/popup/webinar contracts, not every operational backend or provider flow.",
+    "Legacy source-only disposable QA helper scripts remain preserved on source branch; consolidating them into a maintained runner is future work.",
+    "PR210 inherited public form blocks, referral cards, post-purchase handoff still need separate disposition."
+  ],
+  "pending_delivery": "This audit is local and will be included in the next protected report delivery."
+}

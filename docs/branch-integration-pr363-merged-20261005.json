@@ -1,0 +1,14 @@
+{
+  "pr": 363,
+  "status": "MERGED_VERIFIED",
+  "head": "202cafcd1aa9fcf1ad184c5cb85d7869d37d2ffa",
+  "merge_commit": "52b81e3a624960ce9479be3c1bd682d2e7cb308d",
+  "accepted_tree": "edda4856475dcf7b75d0d4c51bf915bdfc1c12dd",
+  "merged_tree_matches": true,
+  "ci_runs": [
+    37244591925,
+    37244594859
+  ],
+  "acceptance": "READY",
+  "master_auto_deployment": false
+}

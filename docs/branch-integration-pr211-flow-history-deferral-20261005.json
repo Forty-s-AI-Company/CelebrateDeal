@@ -1,0 +1,19 @@
+{
+  "head": "3d2ab020e85d4b95da7fa487d343e5b9494fad40",
+  "requirement": "PR211 flow-level undo/redo",
+  "status": "DEFERRED_NOT_DELIVERED",
+  "decision": "依使用者授權，保留目前可驗收的流程新增/刪除/排序/名稱/路徑儲存段落；復原與重做排入未來處理，不宣稱等價完成。",
+  "evidence": {
+    "active_workspace": "src/components/landing-page-workspace.tsx imports FunnelPageEditor, not FunnelStepPagesEditor",
+    "active_operations": "src/components/landing-pages/funnel-operations-panel.tsx persistContent saves immediately with revision CAS; no flow history",
+    "unused_history_ui": "src/components/landing-pages/funnel-step-pages-editor.tsx has undo/redo history but is not mounted by active workspace"
+  },
+  "acceptance_for_future": [
+    "Active operations UI exposes flow undo/redo for add/delete/reorder/rename/path changes",
+    "Undo/redo persistence uses current server revision and does not overwrite concurrent changes",
+    "Failed save preserves local state and history consistently",
+    "Browser verifies undo/redo, reload persistence and conflict handling"
+  ],
+  "original_source_preserved": "PR211 b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "production_touched": false
+}

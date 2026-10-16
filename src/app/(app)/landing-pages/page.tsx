@@ -1,7 +1,12 @@
 import { FunnelList } from "@/components/landing-pages/funnel-list";
 import { PageHeader, Card, ButtonLink } from "@/components/ui";
+import { requireVendorManagerContext } from "@/lib/auth";
 import { listLandingPages } from "@/lib/landing-page-service";
 export default async function LandingPagesPage() {
+  // Keep the direct URL boundary explicit at the page entrypoint. The service
+  // applies the same scope to its queries, but the route must declare the
+  // authorization family for review and future maintenance.
+  await requireVendorManagerContext();
   const { pages, scope } = await listLandingPages();
   const publishedCount = pages.filter((page) => page.status === "published").length;
   return <>

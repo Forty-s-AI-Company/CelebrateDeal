@@ -1,0 +1,115 @@
+{
+  "source": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "candidate": "3d2ab020e85d4b95da7fa487d343e5b9494fad40",
+  "decisions": [
+    {
+      "path": "src/app/api/form-submissions/route.ts",
+      "source_blob": "5f73ef5c3f7ff7f437789cafb581144e3d16ccd7",
+      "candidate_blob": "3a73034ad36bd629c32e70e49d2c04ee1f2b92d7",
+      "decision": "REVIEWED_BEHAVIOR_RETAINED_OR_REPAIRED",
+      "limits": "Requirement mapping below; not whole-file content equivalence or fresh E2E proof"
+    },
+    {
+      "path": "src/app/api/payments/checkout/route.ts",
+      "source_blob": "7fa7fd07316f8b78789695719dc6e703bfd3ecdd",
+      "candidate_blob": "8bd9806433c6fc16841526b76508c49f9bd93ed4",
+      "decision": "REVIEWED_BEHAVIOR_RETAINED_OR_REPAIRED",
+      "limits": "Requirement mapping below; not whole-file content equivalence or fresh E2E proof"
+    },
+    {
+      "path": "src/app/api/payments/checkout/route.test.ts",
+      "source_blob": "77d5097658f2e763920b3ff9d28b9e74ac8f1861",
+      "candidate_blob": "462697ccd8a249fff2ea40d094d37936dc0bf12e",
+      "decision": "REVIEWED_BEHAVIOR_RETAINED_OR_REPAIRED",
+      "limits": "Requirement mapping below; not whole-file content equivalence or fresh E2E proof"
+    },
+    {
+      "path": "src/app/form/[slug]/page.tsx",
+      "source_blob": "a683b5b5f13a4720c27b30085da93805a9095cf4",
+      "candidate_blob": "d7e31020ffa52387c1ea9b0005be19c2877c4eef",
+      "decision": "REVIEWED_BEHAVIOR_RETAINED_OR_REPAIRED",
+      "limits": "Requirement mapping below; not whole-file content equivalence or fresh E2E proof"
+    },
+    {
+      "path": "src/app/form/[slug]/page.test.tsx",
+      "source_blob": "f67f4e936fceed6f829f51480f961ba4ea76155c",
+      "candidate_blob": "9e54fe320ee2993cbccaf9d519f33f76faa3c8d9",
+      "decision": "REVIEWED_BEHAVIOR_RETAINED_OR_REPAIRED",
+      "limits": "Requirement mapping below; not whole-file content equivalence or fresh E2E proof"
+    },
+    {
+      "path": "src/app/lp/[slug]/page.tsx",
+      "source_blob": "e44cf933349e9be9ea2bea4ac4bbb6f936b86b70",
+      "candidate_blob": "edc334ca13f41290abfcdd5c7ce219d09addd201",
+      "decision": "REVIEWED_BEHAVIOR_RETAINED_OR_REPAIRED",
+      "limits": "Requirement mapping below; not whole-file content equivalence or fresh E2E proof"
+    },
+    {
+      "path": "src/app/lp/[slug]/page.test.tsx",
+      "source_blob": "009c1fdda21c939bf4c0f5f3bc22345629722ad0",
+      "candidate_blob": "cc4f9b30867c45e4f58a2881ec799c8bead44508",
+      "decision": "REVIEWED_BEHAVIOR_RETAINED_OR_REPAIRED",
+      "limits": "Requirement mapping below; not whole-file content equivalence or fresh E2E proof"
+    },
+    {
+      "path": "src/app/lp/[slug]/[stepPath]/page.tsx",
+      "source_blob": "638246ae0aa45c0b51e0896bc8555650242b687c",
+      "candidate_blob": "fd792b3c458e13e516fb9aa20059e82af6eeb9c2",
+      "decision": "REVIEWED_BEHAVIOR_RETAINED_OR_REPAIRED",
+      "limits": "Requirement mapping below; not whole-file content equivalence or fresh E2E proof"
+    },
+    {
+      "path": "src/app/lp/[slug]/[stepPath]/play/route.ts",
+      "source_blob": "80ae298ba75a96a7dd434874a9c04ba6fc8090fa",
+      "candidate_blob": "8aa972d8f766ecca05b87df7a5a1af39ce44e558",
+      "decision": "REVIEWED_BEHAVIOR_RETAINED_OR_REPAIRED",
+      "limits": "Requirement mapping below; not whole-file content equivalence or fresh E2E proof"
+    },
+    {
+      "path": "src/app/lp/[slug]/[stepPath]/play/route.test.ts",
+      "source_blob": "359ac1f6b2f00c3e1bdb6dd7dd0ae705c6c24f4b",
+      "candidate_blob": "facd154e5f7c172051c9182c4bc0a870acbda5c1",
+      "decision": "REVIEWED_BEHAVIOR_RETAINED_OR_REPAIRED",
+      "limits": "Requirement mapping below; not whole-file content equivalence or fresh E2E proof"
+    },
+    {
+      "path": "src/app/lp/[slug]/[stepPath]/checkout/page.tsx",
+      "source_blob": "21eeaf637c34c99f8af70e7dd9d734d2a40a2ecd",
+      "candidate_blob": "f0ae40b10a747519ca871c5e8ad276daccb39b92",
+      "decision": "REVIEWED_BEHAVIOR_RETAINED_OR_REPAIRED",
+      "limits": "Requirement mapping below; not whole-file content equivalence or fresh E2E proof"
+    },
+    {
+      "path": "src/app/lp/[slug]/[stepPath]/checkout/page.test.tsx",
+      "source_blob": "abd40921533fafa67ce53cc8969886c57491c5cb",
+      "candidate_blob": "0126fa3eec9d33eca6be0f54d73cacae3b99d5bf",
+      "decision": "REVIEWED_BEHAVIOR_RETAINED_OR_REPAIRED",
+      "limits": "Requirement mapping below; not whole-file content equivalence or fresh E2E proof"
+    }
+  ],
+  "reviewer": "/root/portal_review_fallback",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "requirements": {
+    "specified_live_selection": "retained; invalid selection notFound",
+    "public_root_and_step": "published snapshots, bindings, SEO, step routing retained",
+    "webinar_play": "server time, wait/expired states, safe private redirect retained",
+    "checkout_entry": "server vendor/project/product/bump scope and two-step/agreement retained",
+    "registration_project": "repaired in 5014a459; reviewer closed finding",
+    "standalone_page_marketing": "repaired in 2f9f1b1d; client_reported separate from trusted provenance",
+    "price_snapshot": "repaired in 3d2ab020; explicit price/currency and revision checks",
+    "idempotency": "existing order replay preserved; signed registration replaces raw cookie"
+  },
+  "not_closed": [
+    "PR210 inherited pageBlocks renderer/ReferralShareCard/post-purchase offers/UTM and customerKeyHash reconciliation",
+    "Full browser journey for current delta",
+    "Flow history deferred per separate receipt"
+  ],
+  "validation": {
+    "checkout_order_unit_tests": 88,
+    "forms_unit_tests": 49,
+    "eslint": "PASS",
+    "typescript": "PASS",
+    "exact_head_ci": "RUNNING"
+  }
+}

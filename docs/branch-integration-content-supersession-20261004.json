@@ -1,0 +1,89 @@
+{
+  "master_base": "bdbae2f53491afd518b97ee597e117d6a585b55c",
+  "reviews": [
+    {
+      "head": "7f07a5f615ee6011c5eb559a60687f966653d1d9",
+      "decision": "CONTENT_SUPERSEDED",
+      "scope": "All remaining two paths reviewed; other branch-changed paths match master.",
+      "preserved_package_entries": 794,
+      "existing_entry_metadata_changes": [
+        {
+          "package": "node_modules/@types/react",
+          "metadata_change": {
+            "dev": [
+              true,
+              null
+            ]
+          }
+        },
+        {
+          "package": "node_modules/@types/react-dom",
+          "metadata_change": {
+            "dev": [
+              true,
+              null
+            ]
+          }
+        },
+        {
+          "package": "node_modules/csstype",
+          "metadata_change": {
+            "dev": [
+              true,
+              null
+            ]
+          }
+        }
+      ],
+      "dependency_version_changes": 0,
+      "existing_dependency_specs_and_overrides": "EXACT_MATCH",
+      "master_addition": "@puckeditor/core 0.22.4 plus associated lock entries and additional secure staging tests",
+      "files": [
+        {
+          "path": "package.json",
+          "source_sha256": "f845844fd5aea5b1f87e2c1263ec16e0115838f8ef4453c540dbc57e9119f6f9",
+          "master_sha256": "885c86acacdb5de8271e7504864a7ea668d0a3d7286f4b7f9b7fd9c731a778a1"
+        },
+        {
+          "path": "package-lock.json",
+          "source_sha256": "e46459a285b85d23338f1258339cb1a809b77b3edc878e19e31f198ed728182c",
+          "master_sha256": "9b05d1c2156ff3b5b3d272b517840aaa0f3e82f1165607241d5a4cb60894f3b7"
+        }
+      ],
+      "limit": "No claim of current npm vulnerability audit; this verifies historical dependency remediation is preserved."
+    },
+    {
+      "head": "22f06a69bf79149f673d7800225045990e68cb07",
+      "decision": "CONTENT_SUPERSEDED",
+      "scope": "Only remaining changed file reviewed. Both original test intents are present in current expanded test suite.",
+      "test_mapping": [
+        {
+          "original": "shows stable default copy in the blank-state publishing preview",
+          "master": "shows stable default copy in the empty publish preview",
+          "assertions": "same three empty-state messages"
+        },
+        {
+          "original": "updates the publishing phone preview when title, promotion, and products change",
+          "master": "updates the publish phone preview with entered copy and selected product summary",
+          "assertions": "edited title and promotion; first two selected products plus remaining count; master also rejects empty-selection message"
+        }
+      ],
+      "files": [
+        {
+          "path": "src/components/live-stepper-form.test.tsx",
+          "source_sha256": "f9c9d3fc7a81eda1b57e964c4938f6e0485c39a14d458d102fc6aedb4eea910b",
+          "master_sha256": "fd991ce07c7dcc706c85e68f7706157007897cc1da9844023fa6e10f74bca3d7"
+        }
+      ],
+      "validation": {
+        "command": "node node_modules/vitest/vitest.mjs run src/components/live-stepper-form.test.tsx",
+        "cwd": ".ai-team/tmp/pr351-integration-20261004",
+        "source_head": "863218bba4d64ee2f97e8db43c19583ea9fdccd8",
+        "component_and_test_blobs_match_master": true,
+        "result": "PASS",
+        "tests": 31,
+        "browser_e2e": "NOT_RUN"
+      }
+    }
+  ]
+}

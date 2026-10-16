@@ -2,8 +2,10 @@ import { FunnelOperationsPanel } from "@/components/landing-pages/funnel-operati
 import FunnelOperationsUnavailable from "./unavailable";
 import { FunnelOperationsError, loadFunnelOperations, loadFunnelReports } from "@/lib/funnel-operations-service";
 import { CSRF_FIELD_NAME, getCsrfToken } from "@/lib/csrf";
+import { requireVendorManagerContext } from "@/lib/auth";
 
 export default async function FunnelOperationsPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
+  await requireVendorManagerContext();
   const { id } = await params;
   // Missing/foreign resources share the same expected unavailable state. Do not
   // interrupt an already-streaming authenticated layout with an HTTP fallback.

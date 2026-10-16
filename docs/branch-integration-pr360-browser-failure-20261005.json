@@ -1,0 +1,19 @@
+{
+  "pr": 360,
+  "head": "87401848b16d72c1688338b2219fb4169abd561d",
+  "failed_push_run": 37223468930,
+  "live_pr_run": 37223471705,
+  "failure": {
+    "file": "tests/e2e/accountant-affiliate-detail-direct-url.spec.ts",
+    "line": 352,
+    "assertion": "Commission navigation link visible after lawful accountant dashboard redirect",
+    "retries_failed": 2
+  },
+  "flaky": {
+    "file": "tests/e2e/funnel-operations.spec.ts",
+    "line": 78,
+    "scope": "Return from editor to Configuration URL"
+  },
+  "next": "Inspect recovered navigation disclosure behavior; preserve accountant access and all sensitive-data denial assertions, reproduce targeted browser case before publishing fix",
+  "raw_logs_saved": false
+}

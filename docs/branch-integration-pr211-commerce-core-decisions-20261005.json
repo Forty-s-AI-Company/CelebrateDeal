@@ -1,0 +1,52 @@
+{
+  "source": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "base": "e1f38be324e349969a657be376aa1602e804c2dd",
+  "master": "9a76580124edf373f9ad4d8d18aaa45a8150d1d1",
+  "scope": "PR211 delta relative to stack base, core modules only. Inherited post-purchase/automation features of PR210 not declared complete by this review.",
+  "files": [
+    {
+      "path": "src/lib/commerce-checkout.ts",
+      "source_blob": "f63ca9a5a5c67ecf773c2d2248b09394bffc773c",
+      "master_blob": "c17952aaffb1af930ce60e654ce9023ad1de88c1"
+    },
+    {
+      "path": "src/lib/commerce-orders.ts",
+      "source_blob": "716070a1c91262c24e13453acecf2cf5dcb5cc99",
+      "master_blob": "48e81d2aecddc00290171c48555e7cb5bf35fe38"
+    },
+    {
+      "path": "src/lib/inventory-reservations.ts",
+      "source_blob": "535efe607ed6f34188bce781cb7b9591a4039863",
+      "master_blob": "db1550233bf754cfbf7a20f6cf84173f98171a5a"
+    }
+  ],
+  "requirements": [
+    {
+      "requirement": "Funnel locator and agreement schema",
+      "decision": "Retained; published reference still schema-bound, request values remain locator only; API re-resolution separately reviewed"
+    },
+    {
+      "requirement": "Server-owned project attribution",
+      "decision": "Retained in order input/persistence; master additionally re-reads primary/bump product project links inside transaction"
+    },
+    {
+      "requirement": "Primary and bump atomic inventory snapshots, stale revision rejection, idempotency, expiry/failure release and late-paid reacquisition",
+      "decision": "Source logic retained; master adds reservation revision evidence to callback for flash-sale same-transaction checks"
+    },
+    {
+      "requirement": "503 availability message",
+      "decision": "Keep master correction: unknown outcome directs buyer to order status instead of asserting no charge"
+    }
+  ],
+  "validation": {
+    "passed": 37,
+    "failed": 0,
+    "kind": "Vitest unit suites; not claimed real provider or live DB proof",
+    "receipt": ".ai-team/tmp/pr211-commerce-core-results.json"
+  },
+  "pending": [
+    "Full API integration decision",
+    "PR210 inherited post-purchase and CRM semantics",
+    "Whole PR closure"
+  ]
+}

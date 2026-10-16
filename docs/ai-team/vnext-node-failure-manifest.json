@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "command": "npm ci --include=dev --include=optional --no-audit --no-fund; npm run db:generate; npm test -- --reporter=json --outputFile=<snapshot-result>",
+  "source": "complete Git tracked-file set from current working tree; .env* and ignored runtime excluded",
+  "snapshot": {
+    "status": "SNAPSHOT_READY",
+    "source": "git_ls_files_current_worktree",
+    "tracked_count": 3954,
+    "copied_count": 3951,
+    "excluded_sensitive_count": 3,
+    "required_config_present": true,
+    "destination": "<workspace>/.ai-team/tmp/vnext-node-validation"
+  },
+  "install_exit_code": 0,
+  "prisma_generate_exit_code": 0,
+  "test_exit_code": 0,
+  "test_summary": {
+    "total_suites": 1376,
+    "passed_suites": 1376,
+    "failed_suites": 0,
+    "pending_suites": 0,
+    "total_tests": 4571,
+    "passed_tests": 4531,
+    "failed_tests": 0,
+    "pending_tests": 40
+  },
+  "counts": {
+    "VNEXT_RELATED": 0,
+    "BASELINE_EXISTING": 0,
+    "ENVIRONMENT_BLOCKED": 0,
+    "UNDETERMINED": 0
+  },
+  "failures": []
+}

@@ -1,0 +1,164 @@
+{
+  "state": "DEPENDENCY_AUDIT_NOT_DELIVERED",
+  "candidate_head": "164ad4a952628c06d6f88d1093334c1d6a352445",
+  "files": [
+    {
+      "path": "src/components/live-advanced-interactions.tsx",
+      "original_sha256": "5f4016f6bcdea21d98fe1e0077ae4cce54adc5396df14a2c097a16a9fe3783b2",
+      "candidate_exists": false,
+      "dependencies": [
+        {
+          "import": "lib/interaction-event",
+          "candidate_exists": true,
+          "original_exists": true
+        }
+      ]
+    },
+    {
+      "path": "src/app/api/live-interactions/route.ts",
+      "original_sha256": "c95ed35061d831dc1aab0bf6513cb056e601235370e45f5a389f8c1a0a2a5b89",
+      "candidate_exists": false,
+      "dependencies": [
+        {
+          "import": "lib/api-security",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/db",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/interaction-event",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/live-interaction",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/live-question",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/live-quota-admission",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/live-runtime-state",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/rate-limit",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/sensitive-data",
+          "candidate_exists": true,
+          "original_exists": true
+        }
+      ]
+    },
+    {
+      "path": "src/components/live-playback.tsx",
+      "original_sha256": "913f18afe4ead376205e8221a5121cf6ff4e0b38fdd1d4bdee182b52bf3da922",
+      "candidate_exists": true,
+      "dependencies": [
+        {
+          "import": "components/lead-form",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "components/live-advanced-interactions",
+          "candidate_exists": false,
+          "original_exists": true
+        },
+        {
+          "import": "components/live-chat-panel",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "components/live-danmaku",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "components/live-interaction-card",
+          "candidate_exists": false,
+          "original_exists": true
+        },
+        {
+          "import": "components/live-media-receiver",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "components/live-purchase-ticker",
+          "candidate_exists": false,
+          "original_exists": true
+        },
+        {
+          "import": "components/live-viewing-shell",
+          "candidate_exists": false,
+          "original_exists": true
+        },
+        {
+          "import": "lib/client-analytics",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/external-url",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/format",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/live-chat-contract",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/live-runtime-state",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/stream-usage-client",
+          "candidate_exists": true,
+          "original_exists": true
+        },
+        {
+          "import": "lib/visitor-id",
+          "candidate_exists": true,
+          "original_exists": true
+        }
+      ]
+    }
+  ],
+  "findings": [
+    "Original advanced component requires /api/live-interactions, absent from current candidate; only /api/live-interactions/cards exists",
+    "Current playback has no LiveAdvancedInteractions reference; original playback imports and renders it",
+    "Canonical schema already has LiveInteractionRun and LiveInteractionResponse; helper and normalization libraries present, but runtime parity remains unverified"
+  ],
+  "required_work": [
+    "Recover API with viewer-session, tenant, same-origin, rate-limit and runtime-window checks",
+    "Integrate player event timeline and live response lifecycle",
+    "Validate polls, lucky draw ownership/claim privacy, flash voucher limits and question spotlight",
+    "Independent security/data review plus isolated database/browser proof before protected merge"
+  ],
+  "preservation": "Read original files only; no feature marked delivered"
+}

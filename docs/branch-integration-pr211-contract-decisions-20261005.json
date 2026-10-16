@@ -1,0 +1,40 @@
+{
+  "source": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "master": "9a76580124edf373f9ad4d8d18aaa45a8150d1d1",
+  "decisions": [
+    {
+      "path": "prisma/migrations/20260912103000_sales_workspace_onboarding/migration.sql",
+      "decision": "CONTENT_EQUIVALENT",
+      "basis": "Trailing whitespace only",
+      "source_blob": "19765044f3e46e1bd9dff4137a736e2701461def",
+      "master_blob": "ae6e80f025b22ac92e43cdc47887714d40053634"
+    },
+    {
+      "path": "src/lib/sales-project-scope.ts",
+      "decision": "CONTENT_EQUIVALENT",
+      "basis": "Trailing whitespace only",
+      "source_blob": "a37e8d11b917b0d73b698915704c40c49092fe04",
+      "master_blob": "aaa248618cc0fd41e7b5a406721ea0ff8b61db88"
+    },
+    {
+      "path": "src/lib/vendor-feature-toggles.ts",
+      "decision": "CONTENT_EQUIVALENT",
+      "basis": "Parsed TypeScript AST node kinds, child structure and leaf token texts identical; formatting/comments excluded",
+      "source_blob": "189949e3ed2720625fde9361a427722b8f78be74",
+      "master_blob": "deb0dd3f5f3ea0cb96e933fa060da7fe392c4500"
+    },
+    {
+      "path": "src/lib/registration-form-fields.ts",
+      "decision": "KEEP_CURRENT_VALIDATION",
+      "basis": "Only adds funnelStepId to reserved keys, preventing custom-field collision with trusted step context",
+      "source_blob": "ce3436da1958e33fff6d6149e9bb0e752e6e4cc5",
+      "master_blob": "7336f2efc0f6798ddd860a950975c6d3a6143b76"
+    }
+  ],
+  "validation": {
+    "passed": 17,
+    "failed": 0,
+    "receipt": ".ai-team/tmp/pr211-contract-reconciliation-results.json"
+  },
+  "whole_pr_status": "INCOMPLETE"
+}

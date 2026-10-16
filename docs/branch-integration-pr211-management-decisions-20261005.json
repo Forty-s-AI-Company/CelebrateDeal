@@ -1,0 +1,62 @@
+{
+  "source": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "master": "9a76580124edf373f9ad4d8d18aaa45a8150d1d1",
+  "decisions": [
+    {
+      "path": "src/app/(app)/landing-pages/[id]/page.tsx",
+      "source_blob": "f2c5230da9feda03593466b61cf44cd0af9d31d2",
+      "master_blob": "e000f9910058ae9477fb5649fbd07add87ba8d42",
+      "decision": "KEEP_CURRENT_MANAGER_GUARDED_OPERATIONS_FLOW"
+    },
+    {
+      "path": "src/app/(app)/landing-pages/new/page.tsx",
+      "source_blob": "954963c5dbf07c5d6d7f78649af939e8c07eb019",
+      "master_blob": "d977049431681c8bddabbf0bacffae6bea9dc27a",
+      "decision": "KEEP_CURRENT_MANAGER_GUARDED_OPERATIONS_FLOW"
+    },
+    {
+      "path": "src/app/(app)/landing-pages/page.tsx",
+      "source_blob": "7d575ae3d59dd33e1e8026b56608142b2b267f13",
+      "master_blob": "d7c26ba0a3c769e3b4af484251d99e3c419c47e5",
+      "decision": "KEEP_CURRENT_MANAGER_GUARDED_OPERATIONS_FLOW"
+    },
+    {
+      "path": "src/app/actions/landing-page-actions.ts",
+      "source_blob": "a88db978aeaa6f68617ac94c88429c7ee5def376",
+      "master_blob": "065e87b259687b9433c3ac8db77ee2315eae5262",
+      "decision": "KEEP_CURRENT_MANAGER_GUARDED_OPERATIONS_FLOW"
+    },
+    {
+      "path": "src/components/landing-page-workspace.tsx",
+      "source_blob": "4a4640a535a91f3edd6ccf45c5e6a1fdc4e2cbea",
+      "master_blob": "ba44b5a1a27bfa993e3d5c3770a2b3ece465037a",
+      "decision": "KEEP_CURRENT_MANAGER_GUARDED_OPERATIONS_FLOW"
+    }
+  ],
+  "basis": [
+    "Explicit manager check before editor data and CSRF access; existing service scope retained",
+    "New goal picker persists before opening operations rather than exposing unsaved workspace",
+    "Validated requested step selects editor state, returning to matching operations configuration",
+    "Landing action adds operations-reference conflict explanation without changing other error mappings",
+    "Workspace uses current contentRef and revisionRef for saves, queues return until successful save, preserves published history and failure draft",
+    "Step add/remove/move/rename/path operations are implemented in operations panel instead of the old embedded step editor"
+  ],
+  "validation": {
+    "reuse": "PR364 accepted exact-head full CI37246883421/37246880468 at identical reviewed runtime blobs; no additional browser execution claimed"
+  },
+  "pending": [
+    {
+      "path": "src/components/landing-page-workspace.tsx",
+      "requirement": "Old step-management undo/redo availability on active operations path",
+      "status": "UNPROVEN_NOT_EQUIVALENT_BY_UNUSED_COMPONENT",
+      "next": "Verify product route behavior; preserve explicit unresolved requirement if deferred"
+    },
+    {
+      "path": "src/components/lead-form.tsx",
+      "requirement": "PR211 added top-level landingPageId from lp query; current master removes it",
+      "status": "API_REVIEW_PENDING",
+      "next": "Verify trusted alternate attribution path for standalone form"
+    }
+  ],
+  "whole_pr_status": "INCOMPLETE"
+}

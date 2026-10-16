@@ -1,0 +1,265 @@
+{
+  "decision": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "live-interactions-and-checkout",
+    "signals": {
+      "task_type": "feature",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "payment"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "feature",
+    "difficulty": "high",
+    "requested_team": "ai-team",
+    "team": "ai-team",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "required": true,
+        "fallback_events": [
+          {
+            "model": "opus",
+            "reason": "unavailable"
+          },
+          {
+            "model": "astra",
+            "reason": "quota_exhausted"
+          }
+        ],
+        "status": "planned",
+        "model_key": "sol",
+        "model": "gpt-6.1-sol",
+        "provider": "native_agent",
+        "reasoning_effort": "high",
+        "effort_floor": null,
+        "effort_reason": null,
+        "sandbox_mode": "read-only",
+        "execution": "native_agent_handoff_only",
+        "candidate_findings_only": false,
+        "may_spawn": false
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:8c03902bee8e3174b78b6a876732669031ef6500aacb765d3663985d400be4dd",
+    "snapshot_root": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal",
+    "snapshot_files": [
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/docs/branch-integration-original-live-interactions-progress-20261005.json",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/docs/branch-integration-pr361-merged-20261005.json",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/docs/codex-goal/API_CONTRACT_REGISTRY.md",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/scripts/live-advanced-interactions-browser-qa.mjs",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/app/(viewer)/live/[slug]/page.test.tsx",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/app/(viewer)/live/[slug]/page.tsx",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/app/api/live-interactions/route.db.test.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/app/api/live-interactions/route.test.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/app/api/live-interactions/route.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/app/api/live-share-commercial-flow.test.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/app/api/payments/checkout/admission/route.test.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/app/api/payments/checkout/admission/route.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/app/api/payments/checkout/route.test.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/app/api/payments/checkout/route.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/app/checkout/[vendorId]/[productId]/page.tsx",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/components/commerce-checkout-entry.test.tsx",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/components/commerce-checkout-entry.tsx",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/components/commerce-checkout-form-recovery.test.tsx",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/components/commerce-checkout-form.tsx",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/components/live-advanced-interactions.test.tsx",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/components/live-advanced-interactions.tsx",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/components/live-playback.test.tsx",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/components/live-playback.tsx",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/lib/checkout-admission.test.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/lib/checkout-admission.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/lib/checkout-voucher-claim.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/lib/commerce-checkout.test.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/lib/commerce-checkout.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/lib/inventory-reservations.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/lib/live-flash-sale.db.test.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/lib/live-flash-sale.test.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/lib/live-flash-sale.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/lib/live-interaction.test.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/lib/live-interaction.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/lib/public-interaction-metadata.test.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/src/lib/public-interaction-metadata.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/tests/e2e/commerce-orders.spec.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/tests/e2e/funnel-commerce.spec.ts",
+      ".ai-team/tmp/pr363-evidence-20261005/snapshot/tests/e2e/live-flash-sale-checkout.spec.ts"
+    ],
+    "required_checks": [
+      "new-head-ci-quality"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "evidence": {
+    "execution": {
+      "kind": "execution",
+      "source": "desktop_native",
+      "revision": "sha256:8c03902bee8e3174b78b6a876732669031ef6500aacb765d3663985d400be4dd",
+      "status": "COMPLETED",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "head": "202cafcd1aa9fcf1ad184c5cb85d7869d37d2ffa",
+      "scope": "Implemented and pushed PR363; immutable manifest binds published candidate to independently reviewed code",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr363-evidence-20261005\\execution.json"
+    },
+    "checks": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "new-head-ci-quality",
+        "revision": "sha256:8c03902bee8e3174b78b6a876732669031ef6500aacb765d3663985d400be4dd",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 3.718,
+        "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr363-evidence-20261005\\new-head-ci-quality.json"
+      }
+    ],
+    "review": {
+      "kind": "review",
+      "source": "desktop_native",
+      "revision": "sha256:8c03902bee8e3174b78b6a876732669031ef6500aacb765d3663985d400be4dd",
+      "status": "PASS",
+      "independent": true,
+      "role": "critical_review",
+      "model": "gpt-6.1-sol",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "reviewer": "/root/portal_review_fallback",
+      "head": "202cafcd1aa9fcf1ad184c5cb85d7869d37d2ffa",
+      "reviewed_files": {
+        "scripts/live-advanced-interactions-browser-qa.mjs": "84f209d42ac4a3f90509c1a9d7f905a88e68256b16b61c5e54e45f32d3fad10c",
+        "src/app/(viewer)/live/[slug]/page.test.tsx": "b4036879622daa9764712a823b8ce40917ea814bb534e1606a3e824d515810c5",
+        "src/app/(viewer)/live/[slug]/page.tsx": "f6ce935949b4b1a36e0fb55166381e1e769bc0a29f312da3382102e7bdb70fd2",
+        "src/app/api/live-interactions/route.db.test.ts": "ee5a33d5cbbef4601887900114d076dc39c899ff4dbb47e80fe86b46087c2fd5",
+        "src/app/api/live-interactions/route.test.ts": "12a122b5081c0dcfe5790b5a580e2ee3dc0959920b098820f74bf6e05e24c3e4",
+        "src/app/api/live-interactions/route.ts": "69b3c54744056908f4b6d61532b31a88c86d6cb98ffbc65e33e72dc353b316b9",
+        "src/app/api/live-share-commercial-flow.test.ts": "19b58d5837058b11a0d27275b7a26bee6e1b5fd9fd72cb094b896e7b95eec290",
+        "src/app/api/payments/checkout/admission/route.test.ts": "114369c8a755e3599bdc3643cb2d041bc64aacbfc7d49e5edd04e4de15983a11",
+        "src/app/api/payments/checkout/admission/route.ts": "05a98bea6a26140b8114c76154d97e5c71e5300756d8d24f05f9fd32cc5f4d4e",
+        "src/app/api/payments/checkout/route.test.ts": "f424601dc23a937388601391552e030e25a39d54c3ee08f413c3c4ac6d6ad4c3",
+        "src/app/api/payments/checkout/route.ts": "9a6996fa0ef2749d224ebe65c6e8ca92fc9a7be130f0cf512e1177dd4fb5dea1",
+        "src/app/checkout/[vendorId]/[productId]/page.tsx": "f1a885c91352c7d9e71fc2426f549f019b7e4e290b22d62662a72be6f7f6d3a9",
+        "src/components/commerce-checkout-entry.test.tsx": "71a2d6b44d7c3e1f2380b9cd28d0498c921c6d21815afc9b1f0df2711b947be6",
+        "src/components/commerce-checkout-entry.tsx": "feef237a3dffec8fd5330f7c94c242c8edd6f3a3a69e66c28e1053096dee4e31",
+        "src/components/commerce-checkout-form-recovery.test.tsx": "0942ef3f5c2c1f3bd65fe2f33ebf145e8d3c5047dc266f0c53dc183587d95ef6",
+        "src/components/commerce-checkout-form.tsx": "4a8659e6e4651540442033d3b70786a9b8137112ce18ea9e59025e5ec2f9191a",
+        "src/components/live-advanced-interactions.test.tsx": "7cd2d408ebcb8e5f9f525cf29451b94ab2e47a165bb4248ee1abc352e756734e",
+        "src/components/live-advanced-interactions.tsx": "eccdf19323296a72c536c47c0c701ff91233f4563162ab2c480d4d4aafeaeb11",
+        "src/components/live-playback.test.tsx": "c66889564b397b4292e8b0c3e644986d1ff9b454d3c06d482dc7d3eb7e45cd22",
+        "src/components/live-playback.tsx": "945f11f7ebc9e963b6173befea8426b0cff6556adb953adb09d02d37870005a0",
+        "src/lib/checkout-admission.test.ts": "c8260a43b72a1936670b3c77ce04d42a56230c1ea11dc3c92f2dfc6f05209362",
+        "src/lib/checkout-admission.ts": "c5d1c0dfe972937ef9e20e1738e6e18473d913a77d5bea1a247a7b01fc191213",
+        "src/lib/checkout-voucher-claim.ts": "9fda1b226a1b3af4e37d888b20f4fba65616ad6fc18ab56f1d4e131d53d31900",
+        "src/lib/commerce-checkout.test.ts": "f3580db48d55b3ab2b57bf931e7573425f2182ffdd0346eb3ac19b741b06e798",
+        "src/lib/commerce-checkout.ts": "4ac74aa30135967fe69417883e635f8622e7498580dad9cf6876e85a34bea25b",
+        "src/lib/inventory-reservations.ts": "3af3cfa41a427bb540839724adf1c0436fded3c54700cc7604085de1937acb2d",
+        "src/lib/live-flash-sale.db.test.ts": "54cc8a7d346afc26575a9f6580386c8eed27609df8cf5ceefc60bf42a48bf739",
+        "src/lib/live-flash-sale.test.ts": "8f0c21cc9f6a44bf065e5be979e20ae2503a705f43152c68e9872a2fbc84ff72",
+        "src/lib/live-flash-sale.ts": "6a5c9fe8b3e9ae4f666412a46f3f41cd99361b42461c0d37f6a92efdd578af32",
+        "src/lib/live-interaction.test.ts": "56f9220546996cdbc4eb264e94496821fac5ccc44b1047dd4f4a8c82664bfaf0",
+        "src/lib/live-interaction.ts": "8042556d82554adeb6fa200397b339ce3f375b1a58babaac44cf75660a83eef4",
+        "src/lib/public-interaction-metadata.test.ts": "86f20ad83abe5508e59d54425c1213767d517c78d96dd83c6f1173b28340f399",
+        "src/lib/public-interaction-metadata.ts": "f69a41d5d695174ecbb23c8062161c55e98ecb0bc55656a3019bdb9a2fa4e9ac",
+        "tests/e2e/commerce-orders.spec.ts": "503b4ae03b28705213fdcaf7e5f49efeb4a3e4e3b114a2634f0cd20346cc0baf",
+        "tests/e2e/funnel-commerce.spec.ts": "b6f016cc0463db8cddf862e11b554cd688f82ada32c73807897700aa3374eb62",
+        "tests/e2e/live-flash-sale-checkout.spec.ts": "cf0a3e26617c7d7b8afcf90606a443700ee61efc6c2d60624e48fa6c69304cbc"
+      },
+      "scope": "Independent reviewer portal_review_fallback confirmed zero findings at 202cafcd1aa9fcf1ad184c5cb85d7869d37d2ffa against fadfe59d044290c69c8bfd9919dcbf571a5f7f41; all 39 manifest paths and SHA256 values matched. Review covers tenant isolation, signed admission, single claim redemption, failed-order access and mobile controls. Reviewer inspected receipts but did not run tests. Primary browser 4 PASS (failed-state projection, not external transport), DB 21 PASS (synthetic provider failure and late paid domain event), component 5 PASS. Final delta changes only browser expectations/title synchronization and progress docs, no runtime blobs. Reviewer confirmed exact-head manifest and zero findings. Primary also ran checkout browser regressions 2 PASS and isolated next build/start buyer capability desktop/mobile journey 1 PASS with unchanged cache and axe assertions. External provider transport and automatic terminal-state recovery are not asserted. Observed model/effort unknown.",
+      "findings": [],
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr363-evidence-20261005\\review.json"
+    },
+    "findings": []
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:8c03902bee8e3174b78b6a876732669031ef6500aacb765d3663985d400be4dd"
+  },
+  "publication": "PUSHED_PR_OPEN"
+}

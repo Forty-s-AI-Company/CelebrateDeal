@@ -1,0 +1,172 @@
+{
+  "decision": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "funnel-form-recovery",
+    "signals": {
+      "task_type": "implement",
+      "complexity": "low",
+      "risk": "low",
+      "risk_score": 0,
+      "engineering_profile": "routine",
+      "large_workload": false,
+      "risk_categories": [],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "low",
+      "risk_requirement": "low",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "implement",
+    "difficulty": "low",
+    "requested_team": "ai-team",
+    "team": "ai-team",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:f3c7b75196d1901337a0815a042a19dcaf0efde220e93418a3907ff6dcc2046d",
+    "snapshot_root": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal",
+    "snapshot_files": [
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-deferred-work-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-delivery-state-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-final-receipt-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-funnel-recovery-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-future-work.md",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-historical-smoke-supersession-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-original-dirty-equivalence-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-payuni-idempotency-supersession-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-pr13-preview-manifest-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-pr211-layout-migration-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-pr211-tests-manifest-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-pr352-acceptance-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-pr352-delivery-manifest-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-pr352-remote-ci-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-pr354-acceptance-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-pr354-manifest-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-pr354-remote-ci-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-preservation-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-progress-20261004.md",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-publication-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-staging-apply-supersession-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-staging-backup-lineage-supersession-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-staging-browser-supersession-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-staging-provider-supersession-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/docs/branch-integration-staging-replay-supersession-20261004.json",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/src/app/form/[slug]/page.test.tsx",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/src/app/form/[slug]/page.tsx",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/src/components/app-shell.test.ts",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/src/components/app-shell.tsx",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/src/components/lead-form.tsx",
+      ".ai-team/tmp/pr355-evidence-20261004/snapshot/tests/e2e/smoke.spec.ts"
+    ],
+    "required_checks": [
+      "new-head-ci-quality"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "low",
+    "effort_floor": "low",
+    "effort_reason": null,
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "low",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "low",
+      "effort_floor": "low",
+      "effort_reason": null,
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": true,
+    "finding_escalation": null
+  },
+  "evidence": {
+    "execution": {
+      "kind": "execution",
+      "source": "desktop_native",
+      "revision": "sha256:f3c7b75196d1901337a0815a042a19dcaf0efde220e93418a3907ff6dcc2046d",
+      "status": "COMPLETED",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "head": "24d9c7c76d6273329e2aff0b27ae9299da04d364",
+      "scope": "Implemented and pushed PR355; immutable manifest binds published candidate to primary-reviewed code",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr355-evidence-20261004\\execution.json"
+    },
+    "checks": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "new-head-ci-quality",
+        "revision": "sha256:f3c7b75196d1901337a0815a042a19dcaf0efde220e93418a3907ff6dcc2046d",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 3.219,
+        "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr355-evidence-20261004\\new-head-ci-quality.json"
+      }
+    ],
+    "findings": []
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:f3c7b75196d1901337a0815a042a19dcaf0efde220e93418a3907ff6dcc2046d"
+  },
+  "publication": "PUSHED_PR_OPEN"
+}

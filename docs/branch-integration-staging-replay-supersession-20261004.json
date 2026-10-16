@@ -1,0 +1,53 @@
+{
+  "disposition": "CONTENT_SUPERSEDED",
+  "master": "fc28e1b8dcdba9ca3926f11d27153de048f597da",
+  "head": "4c44431c9769bef50704bb6183707655eb34883c",
+  "paths": [
+    {
+      "path": "docs/launch/staging-migration-compat-preflight.md",
+      "source_sha256": "5ded5f96f9ecf8ae34eee3dc087b1c17f7ede737f155758977e223306b301dd5",
+      "master_sha256": "28b545c399cf3ab427237a7b6f474bcc2b8f1b5fa9e61e8c52d30b12258a4ed7",
+      "validated_candidate_sha256": "28b545c399cf3ab427237a7b6f474bcc2b8f1b5fa9e61e8c52d30b12258a4ed7"
+    },
+    {
+      "path": "scripts/staging-migration-compat-preflight.mjs",
+      "source_sha256": "115cc782afc8ec360a69ba6db493c440e5f062bd4405c6b5cf901da5a0b08cb5",
+      "master_sha256": "c28f6f479132230a5577b22d70c48726124e72ed7fed9240f5b949f2cd2ae580",
+      "validated_candidate_sha256": "c28f6f479132230a5577b22d70c48726124e72ed7fed9240f5b949f2cd2ae580"
+    },
+    {
+      "path": "scripts/staging-migration-compat-preflight.test.mjs",
+      "source_sha256": "e6b6bb6a826bd0f6b05e51a043d460b7eeb5b360b4fe66dfee267f482716b524",
+      "master_sha256": "aed2b817ad6ccea2db99a73b183de6843a547b001b9b0673478189862ee594df",
+      "validated_candidate_sha256": "876eea25affa0f69f7ca69bbdf930f656d1b1466b1ba3b979cfc06ff44a864b5"
+    },
+    {
+      "path": "scripts/staging-migration-isolated-replay.mjs",
+      "source_sha256": "2c374c9303c26e8e2ec94dfd4e3e5605acd28c6e20d3ab8b95f1f1f5a8124571",
+      "master_sha256": "35e696a1edbb3365ae8208673ecb55449e09a7dd76efcbe48a2f442e999c0a33",
+      "validated_candidate_sha256": "35e696a1edbb3365ae8208673ecb55449e09a7dd76efcbe48a2f442e999c0a33"
+    },
+    {
+      "path": "scripts/staging-migration-isolated-replay.test.mjs",
+      "source_sha256": "33e5c5cd57173959112f903c0f524f0039e275b8d7583c9d504a044a646ade6a",
+      "master_sha256": "584938d0dada9fe7fee93bce861967db00abbbecb05f9d4a3f7911f5f4912206",
+      "validated_candidate_sha256": "a853641d384265a7666d9b49b4887bc19dc2510a4c517355b7d3d9f5c72d9e71"
+    }
+  ],
+  "decisions": [
+    "原 read-only 來源、固定 Preview/source 身分、58/79 checksum prefix、21 SQL 隔離重播、network=none tmpfs 與 ownership cleanup 保留。",
+    "主線只接受一筆同名同 checksum 完成 counterpart 的歷史 rollback，未完成或多餘歷史仍拒絕；替代旧版不支援此已知來源的判斷。",
+    "表筆數先檢查每個名稱唯一、完整、有效再排序，保留 row counts 與 metadata/extension 比對；跨資料庫 collation 不再造成偽差異，缺表、重複、額外表或不同筆數仍拒絕。",
+    "文件保留驗證限制，新增歷史失敗原因，未冒稱固定 staging 執行通過。",
+    "現行候選新增 LINE migration 只更新測試總 inventory 為82及精確名稱，runtime及79歷史prefix不變。"
+  ],
+  "validation": {
+    "command": "node --test scripts/staging-migration-compat-preflight.test.mjs scripts/staging-migration-isolated-replay.test.mjs",
+    "head": "23fcae9871cec124cdb940a339be806081d5f849",
+    "tests": 6,
+    "passed": 6,
+    "skipped": 0,
+    "external_migration_executed": false
+  },
+  "original_branch_deleted": false
+}

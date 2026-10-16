@@ -1,0 +1,66 @@
+{
+  "master": "0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2",
+  "scope": "Two common sandbox source UI paths only; not whole-branch completion",
+  "rows": [
+    {
+      "path": "src/components/vendor-member-deactivation-confirmation.tsx",
+      "source_blob": "e5305caad8cb294a8b9a108f7b9843aa70705b96",
+      "source_heads": [
+        "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+        "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+        "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+        "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+        "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+        "30230f4ab63c65481324a128ff1369deee073c83",
+        "35d8f59341bcb776e548c69fe874a3f4d1fe2528",
+        "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
+        "39b8dedf2ea140bc264088c9d1843d99196586ff",
+        "3ace54c10b581285a297c5e95e677178314e1c52",
+        "62fb1655dc47c7156a68a09ee18b42d4120d9b61",
+        "638707f9f043498136107b38968e49a0c38e9133",
+        "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
+        "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+        "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+        "ded82898a687220496add74827691676e84c8b31",
+        "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3"
+      ],
+      "master_blob": "5f6367c2ac4da70f4c2f293823930b01fecf0515",
+      "reviewed_diff_sha256": "38e9a050ffadb37f5b1148e85f81f1b11625670a6553fe8ea7cff54d0d87129d",
+      "decision": "SOURCE_BEHAVIOR_PRESERVED_WITH_PENDING_SUBMIT_GUARD",
+      "evidence": "The only component change replaces the original submit button with FormSubmitButton, retaining required confirmation checkbox, id and CSRF fields, tenant/session action and self/inactive-member rejection. Existing tests preserved; adds aria-disabled assertion."
+    },
+    {
+      "path": "src/components/vendor-member-deactivation-confirmation.test.tsx",
+      "source_blob": "766f3bde414ca4646093e811bf65533edcf81046",
+      "source_heads": [
+        "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+        "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+        "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+        "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+        "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+        "30230f4ab63c65481324a128ff1369deee073c83",
+        "35d8f59341bcb776e548c69fe874a3f4d1fe2528",
+        "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
+        "39b8dedf2ea140bc264088c9d1843d99196586ff",
+        "3ace54c10b581285a297c5e95e677178314e1c52",
+        "62fb1655dc47c7156a68a09ee18b42d4120d9b61",
+        "638707f9f043498136107b38968e49a0c38e9133",
+        "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
+        "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+        "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+        "ded82898a687220496add74827691676e84c8b31",
+        "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3"
+      ],
+      "master_blob": "37513a4043abf5398b516b03c1a984b73d84fdcc",
+      "reviewed_diff_sha256": "9a42d0ca66e0170e9cdc34d9b0c785d81a2cdcd797590fbdebb8da637ec7e205",
+      "decision": "SOURCE_BEHAVIOR_PRESERVED_WITH_PENDING_SUBMIT_GUARD",
+      "evidence": "The only component change replaces the original submit button with FormSubmitButton, retaining required confirmation checkbox, id and CSRF fields, tenant/session action and self/inactive-member rejection. Existing tests preserved; adds aria-disabled assertion."
+    }
+  ],
+  "tests": {
+    "passed": 2,
+    "failed": 0
+  },
+  "product_changes": false,
+  "whole_goal": "IN_PROGRESS"
+}

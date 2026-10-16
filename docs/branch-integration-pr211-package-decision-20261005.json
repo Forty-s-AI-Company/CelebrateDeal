@@ -1,0 +1,10 @@
+{
+  "source": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "master": "9a76580124edf373f9ad4d8d18aaa45a8150d1d1",
+  "decision": "PR211_DIRECT_DEPENDENCY_DELTA_RETAINED",
+  "scope": "Compared source to stack base: only direct dependency/script/override change is @puckeditor/core 0.22.4; current manifest and full lock entry identical. Other inherited PR210 package differences not silently accepted.",
+  "dependency": "@puckeditor/core",
+  "version": "0.22.4",
+  "lock_entry_exact": true,
+  "validation": "Accepted PR364 full npm ci, dependency audit, build and browser CI at same dependency blobs"
+}

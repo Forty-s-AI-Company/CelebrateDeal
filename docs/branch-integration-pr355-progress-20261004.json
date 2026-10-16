@@ -1,0 +1,22 @@
+{
+  "pr": {
+    "headRefOid": "24d9c7c76d6273329e2aff0b27ae9299da04d364",
+    "mergeStateStatus": "MERGED",
+    "state": "MERGED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/355",
+    "mergeCommit": "c071b2d655b0d875fa9d616920c5a554d462dbe6"
+  },
+  "run_id": 37210769933,
+  "push_run_id": 37210766776,
+  "run_status": "completed",
+  "run_conclusion": "success",
+  "current_steps": [],
+  "wait_session": null,
+  "next": "Merged at c071b2d6; follow PR356 and remaining branch integration.",
+  "goal": "IN_PROGRESS",
+  "original_dirty_preservation": "120 entries,118 hashes unchanged",
+  "additional_local_audit_reports": [
+    "branch-integration-pr211-library-decisions-20261004.json",
+    "branch-integration-remaining-refresh-20261004.json"
+  ]
+}

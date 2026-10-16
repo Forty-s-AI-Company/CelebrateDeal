@@ -64,7 +64,9 @@ export default withSentryConfig(nextConfig, {
   sourcemaps: {
     disable: disableSentryAutoUpload,
   },
-  tunnelRoute: "/monitoring",
+  // 開發模式的 Next HTTP 代理會在 Sentry 上報時累加 response listeners。
+  // 本機直接使用 SDK 的原始端點；部署環境仍保留既有 tunnel。
+  tunnelRoute: process.env.NODE_ENV === "development" ? undefined : "/monitoring",
   webpack: {
     automaticVercelMonitors: true,
     treeshake: {

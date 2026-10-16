@@ -1,0 +1,22 @@
+{
+  "reviewed_head": "202cafcd1aa9fcf1ad184c5cb85d7869d37d2ffa",
+  "reviewer": "/root/portal_review_fallback",
+  "findings": [],
+  "manifest_files_verified": 39,
+  "runtime_delta_from_prior_review": "none",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "reviewer_executed_tests": false,
+  "primary_validation": {
+    "checkout_regression_browser": {
+      "passed": 2,
+      "failed": 0
+    },
+    "production_mode_buyer_capability_browser": {
+      "passed": 1,
+      "failed": 0,
+      "scope": "desktop/mobile title, safe order projection, cache-control and accessibility"
+    }
+  },
+  "acceptance": "PENDING_REMOTE_CI_NOT_READY"
+}

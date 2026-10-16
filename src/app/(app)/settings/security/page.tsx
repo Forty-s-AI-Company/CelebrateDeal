@@ -6,6 +6,7 @@ import {
   regenerateRecoveryCodesAction,
   revokeAllSessionsAction,
   revokeOtherSessionsAction,
+  sendPasswordResetSmokeAction,
   updatePasswordAction,
 } from "@/app/actions";
 import { CsrfField } from "@/components/csrf-field";
@@ -16,6 +17,7 @@ import { getDb } from "@/lib/db";
 import { applyE2eLoadingDelay } from "@/lib/e2e-loading-diagnostic";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
 import { requireAuth } from "@/lib/auth";
+import { isPasswordResetSmokeEnabled } from "@/lib/password-reset-smoke-policy";
 
 const errorMessages: Record<string, string> = {
   current_password: "目前密碼不正確。",
@@ -83,6 +85,7 @@ export default async function SecuritySettingsPage({
     })
     : null;
   const activeRecoveryCodeCount = auth.user.recoveryCodes.filter((code) => !code.usedAt).length;
+  const showPasswordResetSmoke = isPasswordResetSmokeEnabled();
   // The local and E2E PostgreSQL instances intentionally use a one-connection
   // pool. Keep this read independent so a Server Action cannot wait behind a
   // sibling query while this page is still rendering.
@@ -249,6 +252,30 @@ export default async function SecuritySettingsPage({
           </div>
         </Card>
       </div>
+
+      {showPasswordResetSmoke ? <div className="mt-5">
+        <Card className="border-slate-200 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-950">Password reset email smoke</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                只寄送到環境設定的測試收件人；正式環境已停用此功能。
+              </p>
+            </div>
+            <Badge tone="blue">非正式環境</Badge>
+          </div>
+          <form action={sendPasswordResetSmokeAction}>
+            <CsrfField />
+            <FormSubmitButton
+              pendingChildren="寄送中…"
+              pendingMessage="正在寄送測試信，請稍候。"
+              className="h-11 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              寄送目前帳號的 reset 測試信
+            </FormSubmitButton>
+          </form>
+        </Card>
+      </div> : null}
     </>
   );
 }

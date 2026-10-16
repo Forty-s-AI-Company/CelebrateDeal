@@ -85,11 +85,11 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   await expect(page.getByRole("status").filter({ hasText: /草稿已儲存|已儲存/u }).first()).toBeVisible();
   await toolbar.getByRole("button", { name: /返回 Configuration$/u }).click();
   await expect(page).toHaveURL(new RegExp(`${operationsPath.replaceAll("/", "\\/")}\\?step=`, "u"));
-  await management.getByLabel("Funnel steps").getByRole("button", { name: /Webinar 感謝頁/u }).click();
+  await management.getByLabel("Funnel steps").getByRole("button", { name: "Webinar 感謝頁 webinar_thank_you_page", exact: true }).click();
   await management.getByRole("button", { name: "Edit Page", exact: true }).click();
   await expect(headline).not.toHaveText(editedHeadline);
   await page.getByRole("button", { name: /返回 Configuration$/u }).click();
-  await management.getByLabel("Funnel steps").getByRole("button", { name: /TEST ONLY Webinar 報名頁/u }).click();
+  await management.getByLabel("Funnel steps").getByRole("button", { name: "TEST ONLY Webinar 報名頁 webinar_registration_page", exact: true }).click();
   await management.getByRole("button", { name: "Edit Page", exact: true }).click();
   await expect(headline).toHaveText(editedHeadline);
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();
@@ -98,7 +98,7 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   await page.getByLabel("Webinar 結束時間（UTC）", { exact: true }).fill("2030-08-01T03:00:00.000Z");
   await page.getByLabel("重播截止時間（UTC）", { exact: true }).fill("2030-08-08T03:00:00.000Z");
   await page.getByRole("button", { name: "儲存草稿", exact: true }).click();
-  await expect(page).toHaveURL(/\/landing-pages\/(?!new$)[^/?]+$/u);
+  await expect(page).toHaveURL(new RegExp(`/landing-pages/${createdId}\\?step=webinar_registration$`, "u"));
   const editorPath = new URL(page.url()).pathname;
   const id = editorPath.split("/").at(-1)!;
   await page.reload();
@@ -155,7 +155,7 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
   const handoff = await page.request.get(`/lp/${slug}/broadcast/play`, { maxRedirects: 0 });
   expect(handoff.status()).toBe(303);
   expect(new URL(handoff.headers().location, page.url()).pathname).toBe(`/live/${fixture.live.slug}`);
-  for (const step of ["registration", "thank-you", "broadcast", "inactive"]) {
+  for (const step of ["registration", "thank-you", "broadcast"]) {
     await page.goto(`/lp/${slug}/${step}`);
     await expect(page.locator("[data-funnel-renderer]")).toBeVisible();
     await page.reload();
@@ -165,5 +165,8 @@ test("Webinar owner saves settings, resolves publish validation and opens every 
     await page.screenshot({ path: shot(`webinar-${step}-mobile.png`), fullPage: true });
     await page.setViewportSize({ width: 1280, height: 900 });
   }
+  await page.goto(`/lp/${slug}/inactive`);
+  await expect(page.getByRole("heading", { name: "404", exact: true })).toBeVisible();
+  await expect(page.locator("[data-funnel-renderer]")).toHaveCount(0);
   expect(errors).toEqual([]);
 });

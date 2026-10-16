@@ -1,0 +1,213 @@
+{
+  "decision": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "registration-onboarding-recovery",
+    "signals": {
+      "task_type": "feature",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "feature",
+    "difficulty": "high",
+    "requested_team": "ai-team",
+    "team": "ai-team",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "required": true,
+        "fallback_events": [
+          {
+            "model": "opus",
+            "reason": "unavailable"
+          },
+          {
+            "model": "astra",
+            "reason": "quota_exhausted"
+          }
+        ],
+        "status": "planned",
+        "model_key": "sol",
+        "model": "gpt-6.1-sol",
+        "provider": "native_agent",
+        "reasoning_effort": "high",
+        "effort_floor": null,
+        "effort_reason": null,
+        "sandbox_mode": "read-only",
+        "execution": "native_agent_handoff_only",
+        "candidate_findings_only": false,
+        "may_spawn": false
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:54cd593246bab5f4107a67d4d055e9f572cab5ff709a4f63dfb3653041d9f878",
+    "snapshot_root": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal",
+    "snapshot_files": [
+      ".ai-team/tmp/pr361-evidence-20261005/snapshot/docs/branch-integration-original-onboarding-progress-20261005.json",
+      ".ai-team/tmp/pr361-evidence-20261005/snapshot/docs/branch-integration-pr360-merged-20261005.json",
+      ".ai-team/tmp/pr361-evidence-20261005/snapshot/src/app/actions/registration-actions.db.test.ts",
+      ".ai-team/tmp/pr361-evidence-20261005/snapshot/src/app/actions/registration-actions.test.ts",
+      ".ai-team/tmp/pr361-evidence-20261005/snapshot/src/app/actions/registration-actions.ts",
+      ".ai-team/tmp/pr361-evidence-20261005/snapshot/src/app/login/page.tsx",
+      ".ai-team/tmp/pr361-evidence-20261005/snapshot/src/app/register/page.tsx",
+      ".ai-team/tmp/pr361-evidence-20261005/snapshot/src/app/welcome/page.tsx",
+      ".ai-team/tmp/pr361-evidence-20261005/snapshot/src/app/welcome/preparing/page.test.tsx",
+      ".ai-team/tmp/pr361-evidence-20261005/snapshot/src/app/welcome/preparing/page.tsx",
+      ".ai-team/tmp/pr361-evidence-20261005/snapshot/src/components/personalized-onboarding-questionnaire.tsx",
+      ".ai-team/tmp/pr361-evidence-20261005/snapshot/src/components/workspace-preparing-progress.tsx",
+      ".ai-team/tmp/pr361-evidence-20261005/snapshot/tests/e2e/registration-onboarding.spec.ts"
+    ],
+    "required_checks": [
+      "new-head-ci-quality"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "evidence": {
+    "execution": {
+      "kind": "execution",
+      "source": "desktop_native",
+      "revision": "sha256:54cd593246bab5f4107a67d4d055e9f572cab5ff709a4f63dfb3653041d9f878",
+      "status": "COMPLETED",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "head": "25e6827c0ff209ccd48e4af99872c347be99bacf",
+      "scope": "Implemented and pushed PR361; immutable manifest binds published candidate to independently reviewed code",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr361-evidence-20261005\\execution.json"
+    },
+    "checks": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "new-head-ci-quality",
+        "revision": "sha256:54cd593246bab5f4107a67d4d055e9f572cab5ff709a4f63dfb3653041d9f878",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 2.984,
+        "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr361-evidence-20261005\\new-head-ci-quality.json"
+      }
+    ],
+    "review": {
+      "kind": "review",
+      "source": "desktop_native",
+      "revision": "sha256:54cd593246bab5f4107a67d4d055e9f572cab5ff709a4f63dfb3653041d9f878",
+      "status": "PASS",
+      "independent": true,
+      "role": "critical_review",
+      "model": "gpt-6.1-sol",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "reviewer": "/root/portal_review_fallback",
+      "head": "25e6827c0ff209ccd48e4af99872c347be99bacf",
+      "reviewed_files": {
+        "src/app/actions/registration-actions.db.test.ts": "c38bdb789db6b17dd99b49e1d9cf5c1d3569008f38ee9bbd71b648c6bed6cdee",
+        "src/app/actions/registration-actions.test.ts": "fc9500d1aee1912f36fcba7b3b050b9306b2c4b35350b063792f05baf1558708",
+        "src/app/actions/registration-actions.ts": "1fa211adf7bf509ac00499cea0b06a2b5491c552e85c20547e3296675ba12eba",
+        "src/app/login/page.tsx": "d3cb5334b5718877e5f4ebbeccd9de93c060110bd488e0106094a755ba7cccfa",
+        "src/app/register/page.tsx": "2827e3c90bfa02457fa1e3575318480a090abad86a514e437ccc582095199ed8",
+        "src/app/welcome/page.tsx": "8c02e70ad0bc97838704bc854e533b4b8adef7ef17d25be2743fdf2be1e195b4",
+        "src/app/welcome/preparing/page.test.tsx": "67a13fc347096fb9e81c21d9491c705ad76dd7052d7802422bec221a29a04ad1",
+        "src/app/welcome/preparing/page.tsx": "00033653ec708764f699c34e56bc4b27b1e40c514faa6529bb08ace25d7e6b10",
+        "src/components/personalized-onboarding-questionnaire.tsx": "5917ed80d13d765dba9cdc8d3d51a8c07415d31382bcbb57a775b718a777bc09",
+        "src/components/workspace-preparing-progress.tsx": "78a029a44aba6cdd8531fe57e2c0ea4d96a84c914b4fdfde9e3e0c33fc78005c",
+        "tests/e2e/registration-onboarding.spec.ts": "d477cf1f0c140dcd48886108efb0c547b6ed1f4875f40744aac5c9df93f6b71e"
+      },
+      "scope": "Independent read-only review of registration, password/login consistency, atomic provisioning, session failure recovery, questionnaire serialization and tenant scoped preparation. Findings closed by portal_review_fallback. Reviewer inspected source and unit14, PostgreSQL5, preparation5, component-browser2 receipts; did not execute tests. Primary verified full desktop/mobile registration/logout/login browser2 in isolated development environment. Eleven source/test blobs remain byte-identical to reviewed ef15a5bc after master sync. Documentation only updated subsequently. Observed model/effort unknown.",
+      "findings": [],
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr361-evidence-20261005\\review.json"
+    },
+    "findings": []
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:54cd593246bab5f4107a67d4d055e9f572cab5ff709a4f63dfb3653041d9f878"
+  },
+  "publication": "PUSHED_PR_OPEN"
+}

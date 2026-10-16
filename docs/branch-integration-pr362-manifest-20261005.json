@@ -1,0 +1,98 @@
+{
+  "pr": 362,
+  "head": "ea576e1a05b2e405e423081b5208e8338e672d06",
+  "integration_base": "de0addfd895723db797b85aab7a0abb466bc624e",
+  "state": "PENDING_EXACT_HEAD_CI",
+  "files": [
+    {
+      "path": "docs/branch-integration-original-mfa-progress-20261005.json",
+      "candidate_sha256": "f8b3c7ea6c34b5d35332ddc53d2c7de8f96bcbe9bf0b2470a37ece1d137e9b59"
+    },
+    {
+      "path": "src/app/(app)/settings/security/page.tsx",
+      "candidate_sha256": "cc022a31e9b70b5297cc6e46ad9b62a46877a435fb74f3436419b75231d750b1"
+    },
+    {
+      "path": "src/app/actions.test.ts",
+      "candidate_sha256": "489d780d3e8890143f37628df5a5a85e277a79fdac350600511132680f2be0c1"
+    },
+    {
+      "path": "src/app/actions/auth-security-actions.ts",
+      "candidate_sha256": "b322a8601225b3d33b9865899b253368c48abbebf3f0382853a05ee5c1905714"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/confirm/route.test.ts",
+      "candidate_sha256": "faaaf19a6acede3435eccca176031bd459611e7cce220ce73a9919f7f201c284"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/confirm/route.ts",
+      "candidate_sha256": "8680b95a1a40d8ff569a84af49c27698850fbda0fdaff5416c87c14f375f4e91"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/recovery-codes/regenerate/route.test.ts",
+      "candidate_sha256": "714a5820c9a722e28615608b2e7baba7e40fed5267e4d3dcb0cc3e7e3fd8e57f"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/recovery-codes/regenerate/route.ts",
+      "candidate_sha256": "26873278f5a2545e5514b2dc5bc259722137af142d565782b06bc5db7fdfa123"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/start/route.test.ts",
+      "candidate_sha256": "46f15a7ac9843d49a7bc66b2bafb49afe7a340b2931fd9e3311306f5e059a78c"
+    },
+    {
+      "path": "src/app/api/settings/security/mfa/start/route.ts",
+      "candidate_sha256": "de16f3d57045431106413657630531fe13a48407579cab5a12ed9ccc91e362ce"
+    },
+    {
+      "path": "src/app/mfa/setup/page.test.tsx",
+      "candidate_sha256": "de0b01dc14d702635daf31076436bd723f2cfbbd8d35e9a20978799fd29d6da4"
+    },
+    {
+      "path": "src/app/mfa/setup/page.tsx",
+      "candidate_sha256": "bb3f46dae88c910255772764b5b863dbf34b90f910836177165862f21a5ca5e5"
+    },
+    {
+      "path": "src/components/mfa-enrollment-form.tsx",
+      "candidate_sha256": "332589581669f2a4c1ac0c78e82a39b3b672c843cae05b325d56b084375ff5a4"
+    },
+    {
+      "path": "src/components/mfa-return-field.tsx",
+      "candidate_sha256": "549afbd57df8e60260885532185482813f777ed6f75172d216d0818600436b73"
+    },
+    {
+      "path": "src/lib/mfa-enrollment.test.ts",
+      "candidate_sha256": "ce928039ab626b8c5118fe16b2fff90563d59d3e903ec50aafa999d661409f4c"
+    },
+    {
+      "path": "src/lib/mfa-enrollment.ts",
+      "candidate_sha256": "261cb660a05b88e37aba46eea89b68ec550bb73ba526979dd44a415e1f58ed9f"
+    },
+    {
+      "path": "src/lib/mfa-return-path.test.ts",
+      "candidate_sha256": "e5275b2495531a4ae0b1d62cfd27533e1450c34324f4d37bb2b2e794bf41a59d"
+    },
+    {
+      "path": "src/lib/mfa-return-path.ts",
+      "candidate_sha256": "dd05fdfd775e9327186be58373c9d6ea425671b2693ecf4df74f41f1438ea821"
+    },
+    {
+      "path": "tests/e2e/smoke.spec.ts",
+      "candidate_sha256": "887d4cd656c28b2bc6d659e1e2c61e8fa467dcc250f59aa8300242e07eccaba5"
+    }
+  ],
+  "ci_runs": [
+    {
+      "databaseId": 37228702572,
+      "event": "pull_request",
+      "headSha": "ea576e1a05b2e405e423081b5208e8338e672d06",
+      "status": "in_progress"
+    },
+    {
+      "databaseId": 37228683931,
+      "event": "push",
+      "headSha": "ea576e1a05b2e405e423081b5208e8338e672d06",
+      "status": "in_progress"
+    }
+  ]
+}

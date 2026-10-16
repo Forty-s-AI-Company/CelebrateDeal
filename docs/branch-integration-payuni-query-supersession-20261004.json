@@ -1,0 +1,33 @@
+{
+  "candidate": "b3ddc37b370b51ca30f87c80217f75b24d924686",
+  "decision": "CONTENT_PRESERVED_IN_MASTER",
+  "heads": [
+    "45612059ab90eb89eae83d418c4af115427370eb",
+    "abc55736ff4e5ff0c8e39399f4d1571cd0c4e08d",
+    "177554e10d2bfa4e500173b5b0557904d3d5b749"
+  ],
+  "scope": "Both remaining paths; the only unique non-merge commit adds safe production query reconciliation. Three historical heads have identical blobs for these two paths.",
+  "checks": [
+    {
+      "path": "src/lib/payment-providers/payuni.ts",
+      "historical_sha256": "0fe783a7ee42fe5b435662c295236d58f76724c691388a4863e466df0ceb8185",
+      "candidate_sha256": "c648324837e868673737d5ed302e457d0e3fe517715f6c7537475541d23d604d"
+    },
+    {
+      "path": "src/lib/payment-providers/payuni.test.ts",
+      "historical_sha256": "6db24b12aa63455ca20fff61d0815ec57fa5a231f534ab309746f6ca8e4edfe8",
+      "candidate_sha256": "50ee4b87e6b81e47e5934fd3f9c040facf5f65e43ad3086cce817914b00e65cc"
+    }
+  ],
+  "test_evidence": "PR351 mocked local 131/131 and new-head quality CI 37200997791 PASS; no real provider call executed.",
+  "preserved": [
+    "Pinned production endpoint; no caller-supplied query URL",
+    "Known PayUni provider/reference/order/positive integer amount required before network",
+    "Exactly one POST with redirect:error, timeout, signed encrypted request",
+    "Authenticated decrypt and SUCCESS response; order, provider reference and amount correlation",
+    "Original transport block exactly extracted to fetchPayUniQueryPayload",
+    "All production query regression assertions preserved; only credential fixture selection changed"
+  ],
+  "improvement": "activePayUniCredentials separates Sandbox and Production credential namespaces; signed unreferenced Sandbox query is separately gated.",
+  "master_after_merge": "40db1781aa9d2bf17013c328a390dfecef7eee11"
+}

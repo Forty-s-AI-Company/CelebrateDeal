@@ -108,9 +108,10 @@ async function expectNoBlockingAxeViolations(page: Page) {
     .map((violation) => ({
       id: violation.id,
       impact: violation.impact,
-      targets: violation.nodes.map((node) => node.target.map((selector) => (
-        String(selector).split(" > ").slice(-3).join(" > ")
-      ))),
+      nodes: violation.nodes.map((node) => ({
+        targets: node.target.map((selector) => String(selector).split(" > ").slice(-3).join(" > ")),
+        failureSummary: node.failureSummary,
+      })),
     }));
 
   if (blocking.length > 0) {

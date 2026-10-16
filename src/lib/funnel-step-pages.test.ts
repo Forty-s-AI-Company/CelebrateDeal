@@ -150,6 +150,35 @@ describe("Funnel step pages", () => {
     expect(switchFunnelStep(switched.state, "missing")).toMatchObject({ ok: false });
   });
 
+  it("一般頁面編輯保存 commerce 綁定，套用模板時才保留既有綁定", () => {
+    const initial = createFunnelStepPages(flow("sell"))!;
+    const originalBinding = { schemaVersion: 1 as const, productId: "product_original", formMode: "single" as const };
+    const changedBinding = { schemaVersion: 1 as const, productId: "product_changed", formMode: "two_step" as const };
+    const originalPage = parsePageDocument({ ...initial.pages.order_form, commerce: originalBinding });
+    expect(originalPage).not.toBeNull();
+    if (!originalPage) return;
+    const withBinding = parseFunnelStepPages({
+      ...initial,
+      pages: { ...initial.pages, order_form: originalPage },
+    });
+    expect(withBinding).not.toBeNull();
+    if (!withBinding) return;
+
+    const ordinaryEditPage = parsePageDocument({ ...originalPage, commerce: changedBinding });
+    expect(ordinaryEditPage).not.toBeNull();
+    if (!ordinaryEditPage) return;
+    const edited = replaceFunnelStepPage(withBinding, "order_form", ordinaryEditPage);
+    if (!edited.ok) throw new Error(edited.error);
+    expect(edited.state.pages.order_form?.commerce).toEqual(changedBinding);
+
+    const templateDocument = parsePageDocument({ ...ordinaryEditPage, commerce: undefined });
+    expect(templateDocument).not.toBeNull();
+    if (!templateDocument) return;
+    const templated = replaceFunnelStepPage(edited.state, "order_form", templateDocument, "sell-product-checkout");
+    if (!templated.ok) throw new Error(templated.error);
+    expect(templated.state.pages.order_form?.commerce).toEqual(changedBinding);
+  });
+
   it("round-trip 保留各 step snapshot，並拒絕遺失、重複或失效動作", () => {
     const initial = createFunnelStepPages(flow(), { initialStepId: "opt_in", initialPage: editablePage() })!;
     const restored = deserializeFunnelStepPages(serializeFunnelStepPages(initial));

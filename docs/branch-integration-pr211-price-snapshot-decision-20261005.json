@@ -1,0 +1,14 @@
+{
+  "head": "3d2ab020e85d4b95da7fa487d343e5b9494fad40",
+  "decision": "RESTORE_EXPLICIT_PRICE_AND_CURRENCY_SNAPSHOT_COMPARISON",
+  "evidence": [
+    "src/app/actions/product-actions.ts persistProduct uses revision CAS and increment",
+    "src/lib/wp4-sandbox-fixture.ts ensureProduct writes fixed synthetic price without increment",
+    "src/lib/inventory-reservations.ts reservation/restock/reacquisition increment revision",
+    "src/lib/commerce-orders.ts transaction revalidates currency and calculated total"
+  ],
+  "limits": "Static src/scripts/prisma writer search is not proof against arbitrary external SQL. Explicit comparison avoids relying solely on that assumption. No Production execution.",
+  "tests": 88,
+  "typescript": "PASS",
+  "eslint": "PASS"
+}

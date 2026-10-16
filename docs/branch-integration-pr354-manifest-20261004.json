@@ -1,0 +1,163 @@
+{
+  "pr": 354,
+  "head": "23fcae9871cec124cdb940a339be806081d5f849",
+  "integration_base": "fc28e1b8dcdba9ca3926f11d27153de048f597da",
+  "source_pr": 210,
+  "source_head": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "files": [
+    {
+      "path": "docs/branch-integration-line-drafts-20261004.md",
+      "candidate_sha256": "7e8e79a5ec572b1ffb011fb701bf8d873cdb5951dfe06195cc8e11e4d8ae44db"
+    },
+    {
+      "path": "docs/codex-goal/PRISMA_INVARIANTS.md",
+      "candidate_sha256": "18da556e260abe0a0deadfa1e6f5b273196dcb631fe24bf42e98c2734c967a03"
+    },
+    {
+      "path": "prisma/migrations/20261004140000_line_rich_menu_drafts/migration.sql",
+      "candidate_sha256": "1f9f904ade93d4da977bd78d7807a5edcfbcc93288afc5e6a59f21d8005b216c"
+    },
+    {
+      "path": "prisma/schema.prisma",
+      "candidate_sha256": "19bebbcf80a3b4f7d5f75b389ea484b3ebc4285cf2865486a0af16080f0f659e"
+    },
+    {
+      "path": "scripts/g7-email-operations-browser-qa.test.mjs",
+      "candidate_sha256": "560f92ca929eb24b334de038b766adf7e0769cf2c4636207e86b8d832cc93ca9"
+    },
+    {
+      "path": "scripts/prisma-invariant-inventory.test.ts",
+      "candidate_sha256": "cbd5e43d4259110efb5d4bbb1d3fa615d79882051c818cccfdf9b9971856dc22"
+    },
+    {
+      "path": "scripts/staging-migration-compat-preflight.test.mjs",
+      "candidate_sha256": "876eea25affa0f69f7ca69bbdf930f656d1b1466b1ba3b979cfc06ff44a864b5"
+    },
+    {
+      "path": "scripts/staging-migration-isolated-replay.test.mjs",
+      "candidate_sha256": "a853641d384265a7666d9b49b4887bc19dc2510a4c517355b7d3d9f5c72d9e71"
+    },
+    {
+      "path": "scripts/staging-payuni-management-migrate.test.ts",
+      "candidate_sha256": "172ec886e08518cd6a9d942aba9ebbb28af226a1662ca91c38097b2fa5de78d2"
+    },
+    {
+      "path": "src/app/(app)/settings/line/page.test.tsx",
+      "candidate_sha256": "d877281d6f4cb7d3f193f4a3e8d24539a99befb5df20d9d3441b1bf96949ca2a"
+    },
+    {
+      "path": "src/app/(app)/settings/line/page.tsx",
+      "candidate_sha256": "b76f469f9f9c698810aa2972df21bcd85fe0f6129b7d9549ce8393c0872c5053"
+    },
+    {
+      "path": "src/app/actions/line-rich-menu-actions.test.ts",
+      "candidate_sha256": "d222142aec4851958b1e3f4bac49fe172cfca42e1296acad6473d285deb8fae7"
+    },
+    {
+      "path": "src/app/actions/line-rich-menu-actions.ts",
+      "candidate_sha256": "706a21e3c5ca98ece6b63f0c11f9ce3017776a03d3d27fe348a462ca7338c8c3"
+    },
+    {
+      "path": "src/components/line-rich-menu-studio.test.tsx",
+      "candidate_sha256": "f11e3b85eeac7c0e8ac4647f335acdc00a9e824df9d40435cd004a5113648d3a"
+    },
+    {
+      "path": "src/components/line-rich-menu-studio.tsx",
+      "candidate_sha256": "0115da793f94cd656f36cc8d9b95d9834f7f796106563749b6b48c4a15f87a22"
+    },
+    {
+      "path": "src/lib/line-rich-menu-draft.db.test.ts",
+      "candidate_sha256": "f91eccca4e79910d973335a5b26c9d1d037fe152a9c1585d1aea8b5a8fd09389"
+    },
+    {
+      "path": "src/lib/line-rich-menu.test.ts",
+      "candidate_sha256": "31085fae9d596c28cc445e963261d2e4493a43382e69b7ed2c0f102fc3572acd"
+    },
+    {
+      "path": "src/lib/line-rich-menu.ts",
+      "candidate_sha256": "32d3b3a520411b446010cd313e85997bc675bd94442441e56f1e74f26b34d2d9"
+    },
+    {
+      "path": "tests/e2e/smoke.spec.ts",
+      "candidate_sha256": "8364b6d8a3aef6df24038fd0506c3d53f18e9e05a15cdf13a0aa1d2b57344366"
+    }
+  ],
+  "scope": "Owner-scoped persisted draft lifecycle, not provider publication",
+  "local_validation": {
+    "unit_ssr_pass": 42,
+    "postgres_pass": 3,
+    "typecheck": "PASS",
+    "eslint": "PASS",
+    "browser": {
+      "status": "PASS",
+      "tests": 1,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0,
+      "duration_ms": 182816.716,
+      "scope": "Actual Playwright production build and server on loopback with isolated synthetic DB"
+    },
+    "inventory_vitest_pass": 5,
+    "historical_migration_node_pass": 6
+  },
+  "review": {
+    "reviewer": "/root/pr351_review",
+    "role": "critical_review",
+    "model": "gpt-6-astra",
+    "effort": "high",
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "status": "PASS",
+    "minor_closed": [
+      "enable_rls"
+    ],
+    "blocking_findings": [],
+    "last_change": "line-rich-menu.ts trailing blank line removed after review, no executable content changed; documentation finalized",
+    "additional_scope": "Four inventory/adapter test files and canonical Prisma inventory independently reviewed; no findings; runtime adapter remains unchanged"
+  },
+  "previous_head": "f73f78457b5b3059419223d0860b621b854eea90",
+  "historical_runner_review": {
+    "status": "PASS",
+    "reviewer": "/root/pr351_review",
+    "findings": [],
+    "scope": "Exact 79+3 inventory and final migration names; runtime still rejects expanded inventory",
+    "observed_model": "unknown",
+    "observed_effort": "unknown"
+  },
+  "local_full_coverage": {
+    "exit": 0,
+    "summary": [
+      " Test Files  583 passed (583)",
+      "      Tests  4210 passed (4210)",
+      "File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s ",
+      "# tests 1063",
+      "# fail 0",
+      "Statements   : 64.78% ( 32575/50285 )",
+      "Branches     : 63.54% ( 31078/48907 )",
+      "Functions    : 68.28% ( 6249/9151 )",
+      "Lines        : 70.33% ( 28341/40293 )",
+      "{\"disposableDatabase\":\"PASS\",\"migrationCount\":82}",
+      "{\"disposableCleanup\":{\"container\":\"PASS\",\"tempRoot\":\"PASS\"}}"
+    ],
+    "head": "23fcae9871cec124cdb940a339be806081d5f849"
+  },
+  "publication": "MERGED",
+  "master_after_merge": "42bce600e9c6b88003bd3b2a924d0ea96c70aee8",
+  "merge": {
+    "headRefOid": "23fcae9871cec124cdb940a339be806081d5f849",
+    "mergeCommit": {
+      "oid": "42bce600e9c6b88003bd3b2a924d0ea96c70aee8"
+    },
+    "mergedAt": "2026-10-04T14:26:55Z",
+    "state": "MERGED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/354"
+  },
+  "ci_runs_passed": [
+    37207666809,
+    37207662788
+  ],
+  "acceptance": "READY",
+  "master_tree_equals_candidate": true
+}

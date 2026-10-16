@@ -1,5 +1,7 @@
 # CelebrateDeal current release gate handoff
 
+> 歷史 handoff：本文件保存 2026-08-21 當時的 source、readiness 與執行邊界。逐次 owner authorization、WP-196／WP-197 no-rerun、一次性 probe 與 attempt budget 已由現行 workflow policy 退役，不再限制新的固定非 Production 開發／Sandbox 工作；下文不得當作目前執行命令。
+
 日期：2026-08-21（Asia/Taipei）  
 狀態：`READY_FOR_AUTHORIZED_NON_PRODUCTION_EXECUTION`  
 Source RC：`dbbffcf`

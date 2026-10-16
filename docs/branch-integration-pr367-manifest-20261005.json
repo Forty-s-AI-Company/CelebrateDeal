@@ -1,0 +1,117 @@
+{
+  "pr": 367,
+  "head": "eb5649645ac658f5e792a9ed1bd7f986e730a930",
+  "integration_base": "9a76580124edf373f9ad4d8d18aaa45a8150d1d1",
+  "state": "PENDING_EXACT_HEAD_CI",
+  "files": [
+    {
+      "path": "prisma/schema.prisma",
+      "candidate_sha256": "2ea573e323f8ca624708d3d111418b1dfc8ad19f2548bcc829f8eed90f416728"
+    },
+    {
+      "path": "src/app/api/form-submissions/route.test.ts",
+      "candidate_sha256": "2b53a16bb7b90f53c1cdd1314888774354c67ae9022928870e1e8aee84fb18db"
+    },
+    {
+      "path": "src/app/api/form-submissions/route.ts",
+      "candidate_sha256": "6dbaa59451d8edf1e7f63fdcb06ed72f8a8d05d85e0c611a57355c6b918651f3"
+    },
+    {
+      "path": "src/app/api/payments/checkout/route.test.ts",
+      "candidate_sha256": "5ef1c93eb0f915c33b0b4fe138a01e1a1070635d26f8d8c338e0620d5e2ca7a6"
+    },
+    {
+      "path": "src/app/api/payments/checkout/route.ts",
+      "candidate_sha256": "5cf0a76fc1c32e17c23fe549ffd2073ab103d8ad330a55a8200d92eac2d378a3"
+    },
+    {
+      "path": "src/components/commerce-checkout-form.test.tsx",
+      "candidate_sha256": "02d559117cef72bd2d3ccce6a4a45532471728fea4ce717c850c2139d6b1803c"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-page-editor.tsx",
+      "candidate_sha256": "247ce374f55e15f65144de6039a7922f379faee335ee286d1dddbe1d1a2080a3"
+    },
+    {
+      "path": "src/components/lead-form.test.tsx",
+      "candidate_sha256": "0f925221c028e919bbf11d29ba92afd6b1ce3499eeb40d4234dd7d2848fd461d"
+    },
+    {
+      "path": "src/components/lead-form.tsx",
+      "candidate_sha256": "803e563437f49b5a627a42b00436859ea4d007474fe54fb2fbac761c69740e03"
+    },
+    {
+      "path": "src/lib/commerce-checkout.test.ts",
+      "candidate_sha256": "0c32baa3e3767a10675da6bbeea1a0bc65c146dc607bb8e31dbbcb6cfe013d2e"
+    },
+    {
+      "path": "src/lib/commerce-orders.test.ts",
+      "candidate_sha256": "2cf3d9700741b13decc57290e39d12b231cf083317ad49a4a36f2a65e229c092"
+    },
+    {
+      "path": "src/lib/inventory-reservations.test.ts",
+      "candidate_sha256": "ae8adcd352ebd70e6ce7868665acf1743db5c45d980ed3e6c55c83b9c348f64a"
+    },
+    {
+      "path": "src/lib/landing-page-service.test.ts",
+      "candidate_sha256": "b3bc32098b784d083525c61e86c2a3e91920046fb60531a7e87512352aff5226"
+    },
+    {
+      "path": "src/lib/landing-page-service.ts",
+      "candidate_sha256": "d3b4574af45d22b32be8b0717d6edb0dbd51c01e619893cee9a1154321c64bb1"
+    }
+  ],
+  "validation": {
+    "checkout_order_tests": 88,
+    "form_tests": 49,
+    "popup_tests": 11,
+    "eslint": "PASS",
+    "typescript": "PASS",
+    "browser": "NOT_RUN_FOR_THIS_DELTA",
+    "landing_page_service_tests": 13,
+    "restored_contract_tests": 14,
+    "inventory_real_database_tests": 14,
+    "isolated_migrations": 83
+  },
+  "review": {
+    "reviewer": "/root/portal_review_fallback",
+    "findings": [],
+    "observed_model": "unknown",
+    "observed_effort": "unknown",
+    "scope": "fed00934 schema/copy prior review; 5014a459 checkout and 2f9f1b1d forms independent review, all zero findings",
+    "price_delta": {
+      "status": "zero findings",
+      "head": "3d2ab020e85d4b95da7fa487d343e5b9494fad40",
+      "reviewer": "/root/portal_review_fallback",
+      "observed_model": "unknown",
+      "observed_effort": "unknown"
+    },
+    "copy_slug_delta": {
+      "status": "zero findings",
+      "reviewer": "/root/portal_review_fallback",
+      "observed_model": "unknown",
+      "observed_effort": "unknown",
+      "scope": "Reviewed exact two-file delta present in b5683e5e after source comparison; no test execution by reviewer"
+    },
+    "restored_tests_delta": {
+      "status": "zero findings",
+      "reviewer": "/root/portal_review_fallback",
+      "observed_model": "unknown",
+      "observed_effort": "unknown",
+      "head": "eb5649645ac658f5e792a9ed1bd7f986e730a930"
+    }
+  },
+  "remaining": [
+    "PR211 active workspace undo/redo not verified",
+    "PR210 inherited requirements remain open",
+    "Original 120 changes and 27 historical branch groups remain in reconciliation ledger"
+  ],
+  "ci_runs_previous_head": [
+    37250807828,
+    37250806031
+  ],
+  "ci_runs": [
+    37251596179,
+    37251593112
+  ]
+}

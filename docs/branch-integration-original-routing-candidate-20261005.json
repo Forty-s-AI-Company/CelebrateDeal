@@ -1,0 +1,121 @@
+{
+  "status": "PREPARED_NOT_PUBLISHED",
+  "scope": "Original uncommitted AI Team routing model/effort policy and companion contracts; compare working bytes, because Git index treats several paths as untracked on original branch",
+  "master": "0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2",
+  "files": [
+    {
+      "path": ".agents/skills/ai-team/SKILL.md",
+      "master_sha256": "7294d8ae99d55d1bdb65db1a3be2b82b33e7f785f83b805b7bdb8de1802f3ae2",
+      "original_working_sha256": "8fe80fe0a250350d8dfdb87a74d3f85e1fae7417c5691d606c2e8acecd7b84a5",
+      "added_lines": 1,
+      "removed_lines": 1
+    },
+    {
+      "path": ".ai-team/config/routing-policy.json",
+      "master_sha256": "fb642951edc78d668a8be7374ce403c75263f44e699a0beb1f05ef2e96685a19",
+      "original_working_sha256": "f2e6ff3c747a19af5834116b483d87a3ba9352fb342eba7f8df2ed82e10570d5",
+      "added_lines": 10,
+      "removed_lines": 6
+    },
+    {
+      "path": ".ai-team/mcp_server/routing.py",
+      "master_sha256": "5242325696b03a9b47cc40f47cfcaeb67552638603640f343e3cc2957338577b",
+      "original_working_sha256": "50a16af8a777c25153e070bd9022a3eec1dc956052fbcbc8f1d60b8035bdb1e0",
+      "added_lines": 34,
+      "removed_lines": 12
+    },
+    {
+      "path": ".ai-team/mcp_server/test_routing.py",
+      "master_sha256": "c88862a84a2ee35feccf3b7f671d10c6892284f5eb1ab396b2d363fdc904931c",
+      "original_working_sha256": "029d5517685cf2ed01e4325b6293ea4f96f9923be33b135004087eb3a81aa3f5",
+      "added_lines": 63,
+      "removed_lines": 18
+    },
+    {
+      "path": ".ai-team/mcp_server/test_server.py",
+      "master_sha256": "4d41fdade1beac078d463b0d61c79a21ff2e7db127416bc84deb2a217372a4b7",
+      "original_working_sha256": "25511392dc9a14f6af1c96d08a3828fd1c3d1d805a9994adfd01e83e77b5eca3",
+      "added_lines": 3,
+      "removed_lines": 3
+    },
+    {
+      "path": ".ai-team/scripts/Test-AiTeamRouting.ps1",
+      "master_sha256": "9c44ebfd8c7a9f4416db0b4c5c5a9beb96e0da001546949b1227eccdf945dc2b",
+      "original_working_sha256": "96bced99ac0a6ae321a4164306ef7039c894d3eb71e5830b2ce1c602c3a0eed1",
+      "added_lines": 3,
+      "removed_lines": 3
+    },
+    {
+      "path": ".codex/agents/planner.toml",
+      "master_sha256": "4ec6b9a8da71b780f6e18a6b207870af11ae74e48d96f55eec0c57636620432b",
+      "original_working_sha256": "c142b0ec7777d3fc018d788e25d7c116483ab9bf0c9481a8b7d9f715f5fbea0d",
+      "added_lines": 1,
+      "removed_lines": 1
+    },
+    {
+      "path": ".codex/agents/reviewer.toml",
+      "master_sha256": "4f264c7df4f4b2149223617f45901872ec73f5abbe167fcdbb9473c47a089e8e",
+      "original_working_sha256": "70fbe46cd88b364f7100acd437161f9882c2880c58c2832323aa9a0913dbe891",
+      "added_lines": 1,
+      "removed_lines": 1
+    },
+    {
+      "path": ".codex/agents/worker.toml",
+      "master_sha256": "fc26ac0bb9eaab2adf41f382813d44040191e3355b9048addb090a4d27e79ab6",
+      "original_working_sha256": "e9b8d2f04aeb0f15e1842bb8e68678bc71af89bdd029ef2da7921f3be51b73ed",
+      "added_lines": 3,
+      "removed_lines": 3
+    },
+    {
+      "path": ".codex/agents/worker-deep.toml",
+      "master_sha256": "9e46ec9308e99ea17bdf0b23a8dffd8099bf07964643b4d3c70008195f1edee6",
+      "original_working_sha256": "f439807a8b13962b77c4261cb47e02bf9938f615e4f70d92f6a4163f2205554f",
+      "added_lines": 2,
+      "removed_lines": 2
+    },
+    {
+      "path": "AGENTS.md",
+      "master_sha256": "05035435ee3b9e3971142efb7ea7a2854c1527c411f155b7c65f43e3067df665",
+      "original_working_sha256": "4bd481880514f4fb966fbdb81bcccad582c49e8014ffb759b4730a27533d8300",
+      "added_lines": 12,
+      "removed_lines": 2
+    },
+    {
+      "path": "docs/ai-team/ROUTING.md",
+      "master_sha256": "2e3c3490f802df4f16974cbbb17188258ec563515a4febaa847c34c17dec5a55",
+      "original_working_sha256": "fb20fefd0d8020648bb67b4f8840195a8fa72fb9d5fab9d48e604d70cf5182ca",
+      "added_lines": 9,
+      "removed_lines": 5
+    },
+    {
+      "path": "docs/ai-team/vnext-validation.md",
+      "master_sha256": "842be539f7519f7e3c30b07d7b1d4bc64f1c29093354be84093e28e27c2fc343",
+      "original_working_sha256": "3a6c8abf50eaaebf1fab80ff96be73584c422b1f46d7570b5d6f233c4a624d62",
+      "added_lines": 22,
+      "removed_lines": 0
+    },
+    {
+      "path": "docs/ai-team/workflow-policy.md",
+      "master_sha256": "e62bf368f4698f13e6a7c634d5348cc57f9d1b3120bf7acb03516c0f4bf3cfb9",
+      "original_working_sha256": "1cc4246847e9ab5ceb7ab8c7ec57d190336aef66d59f710c232dbdbff3ffda47",
+      "added_lines": 1,
+      "removed_lines": 1
+    }
+  ],
+  "candidate_tests": {
+    "exit": 0,
+    "elapsed_seconds": 3.2,
+    "summary": [
+      "Ran 43 tests in 3.003s",
+      "OK"
+    ],
+    "scope": "Original uncommitted routing and MCP server contracts; no external model dispatch"
+  },
+  "ownership": "Primary read-only inventory; no original source writes, no AI Team model dispatch",
+  "next": [
+    "After portal PR gate, port exact scoped working bytes into managed codex branch",
+    "Review model/effort floor and hard-team-cap semantics; run routing/server/CLI contracts and protected CI",
+    "Keep user host approval settings out of repository policy changes unless separately required"
+  ],
+  "whole_goal": "IN_PROGRESS"
+}

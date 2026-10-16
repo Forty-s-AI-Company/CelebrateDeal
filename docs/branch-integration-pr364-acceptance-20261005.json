@@ -1,0 +1,205 @@
+{
+  "decision": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "consolidated-funnel-browser-verification",
+    "signals": {
+      "task_type": "feature",
+      "complexity": "high",
+      "risk": "critical",
+      "risk_score": 9,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth",
+        "migration",
+        "permission"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "high",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "feature",
+    "difficulty": "high",
+    "requested_team": "ai-team",
+    "team": "ai-team",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "required": true,
+        "fallback_events": [
+          {
+            "model": "opus",
+            "reason": "unavailable"
+          },
+          {
+            "model": "astra",
+            "reason": "quota_exhausted"
+          }
+        ],
+        "status": "planned",
+        "model_key": "sol",
+        "model": "gpt-6.1-sol",
+        "provider": "native_agent",
+        "reasoning_effort": "high",
+        "effort_floor": null,
+        "effort_reason": null,
+        "sandbox_mode": "read-only",
+        "execution": "native_agent_handoff_only",
+        "candidate_findings_only": false,
+        "may_spawn": false
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:a152e41943d7bd834ab5757f438ab7c1a4f7b2e990e57b2d99acef994e607b38",
+    "snapshot_root": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal",
+    "snapshot_files": [
+      ".ai-team/tmp/pr364-evidence-20261005/snapshot/src/app/(app)/landing-pages/[id]/operations/page.test.tsx",
+      ".ai-team/tmp/pr364-evidence-20261005/snapshot/src/app/(app)/landing-pages/page.tsx",
+      ".ai-team/tmp/pr364-evidence-20261005/snapshot/playwright.config.ts",
+      ".ai-team/tmp/pr364-evidence-20261005/snapshot/prisma.playwright.config.ts",
+      ".ai-team/tmp/pr364-evidence-20261005/snapshot/scripts/playwright-prisma-config.test.ts",
+      ".ai-team/tmp/pr364-evidence-20261005/snapshot/tests/e2e/helpers/direct-url-guard.ts"
+    ],
+    "required_checks": [
+      "new-head-ci-quality"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "evidence": {
+    "execution": {
+      "kind": "execution",
+      "source": "desktop_native",
+      "revision": "sha256:a152e41943d7bd834ab5757f438ab7c1a4f7b2e990e57b2d99acef994e607b38",
+      "status": "COMPLETED",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "head": "0eec941b3a13a81078c9681c05f7c92f33ed1ad9",
+      "scope": "Consolidated and pushed PR364; six immutable reviewed file hashes match published head",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr364-evidence-20261005\\execution.json"
+    },
+    "checks": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "new-head-ci-quality",
+        "revision": "sha256:a152e41943d7bd834ab5757f438ab7c1a4f7b2e990e57b2d99acef994e607b38",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 2.453,
+        "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr364-evidence-20261005\\new-head-ci-quality.json"
+      }
+    ],
+    "review": {
+      "kind": "review",
+      "source": "desktop_native",
+      "revision": "sha256:a152e41943d7bd834ab5757f438ab7c1a4f7b2e990e57b2d99acef994e607b38",
+      "status": "PASS",
+      "independent": true,
+      "role": "critical_review",
+      "model": "gpt-6.1-sol",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "reviewer": "/root/portal_review_fallback",
+      "head": "0eec941b3a13a81078c9681c05f7c92f33ed1ad9",
+      "reviewed_files": {
+        "src/app/(app)/landing-pages/[id]/operations/page.test.tsx": "32cd4a20041e34dad066bf1c31db5ab5bc0b0703a7e00a74d1e35197c09b9e2b",
+        "src/app/(app)/landing-pages/page.tsx": "4f853e4025c131f3c841de46e2930bf93cb83d530a2033de4ad6720be16526b8",
+        "playwright.config.ts": "7146c909eff480f6ce62ee5d782b7d2c01300ff3b1ad07c0c22a32ab0a8aebd0",
+        "prisma.playwright.config.ts": "3407ffdb6aa3364461b9d8d91bbce647a320504ab9c54e7bc8f1807007849963",
+        "scripts/playwright-prisma-config.test.ts": "72d1c9e2e7cba5878d972e571cd0035b5bae23ef6b1a78b780538a5f19c5b2fc",
+        "tests/e2e/helpers/direct-url-guard.ts": "e32e64e02a963788b5f9fd013accf5ac305f4317caf052ce4f1127573eaa3d34"
+      },
+      "scope": "Independent reviewer portal_review_fallback reviewed each component: PR364 two files, PR365 three files, PR366 one helper. Consolidation verified all six reviewed hashes; subsequent two-line synthetic fixture annotation delta independently reviewed by portal_review_fallback with zero findings. Final manifest binds updated test hash; scanner, assertions and runtime unchanged. Prisma plus secret scanner tests 11 PASS and six-file scan PASS. Page/API tests 5 PASS, Prisma boundary tests 6 PASS, actual isolated migration/build/browser capability journey 1 PASS and direct URL browser journeys 2 PASS, ESLint and TypeScript PASS. Diagnostic browser timeout 180 seconds; canonical test and assertion timeout stays 30 seconds. Reviewer did not run tests. Observed model and effort unknown.",
+      "findings": [],
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr364-evidence-20261005\\review.json"
+    },
+    "findings": []
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:a152e41943d7bd834ab5757f438ab7c1a4f7b2e990e57b2d99acef994e607b38"
+  },
+  "publication": "PUSHED_PR_OPEN"
+}

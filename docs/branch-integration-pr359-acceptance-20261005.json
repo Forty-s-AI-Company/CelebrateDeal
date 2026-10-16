@@ -1,0 +1,202 @@
+{
+  "decision": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "password-reset-smoke-recovery",
+    "signals": {
+      "task_type": "feature",
+      "complexity": "low",
+      "risk": "critical",
+      "risk_score": 3,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "auth"
+      ],
+      "important_findings": false,
+      "required_capabilities": [],
+      "task_type_floor": "low",
+      "complexity_requirement": "low",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "feature",
+    "difficulty": "low",
+    "requested_team": "ai-team",
+    "team": "ai-team",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "required": true,
+        "fallback_events": [
+          {
+            "model": "opus",
+            "reason": "unavailable"
+          },
+          {
+            "model": "astra",
+            "reason": "quota_exhausted"
+          }
+        ],
+        "status": "planned",
+        "model_key": "sol",
+        "model": "gpt-6.1-sol",
+        "provider": "native_agent",
+        "reasoning_effort": "high",
+        "effort_floor": null,
+        "effort_reason": null,
+        "sandbox_mode": "read-only",
+        "execution": "native_agent_handoff_only",
+        "candidate_findings_only": false,
+        "may_spawn": false
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:9726a5cdbed398c1d24b2f39354c5c8f0641b9c5230e03d4171950fd6f590412",
+    "snapshot_root": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal",
+    "snapshot_files": [
+      ".ai-team/tmp/pr359-evidence-20261005/snapshot/docs/branch-integration-original-auth-smoke-progress-20261005.json",
+      ".ai-team/tmp/pr359-evidence-20261005/snapshot/src/app/(app)/settings/security/page.tsx",
+      ".ai-team/tmp/pr359-evidence-20261005/snapshot/src/app/actions.test.ts",
+      ".ai-team/tmp/pr359-evidence-20261005/snapshot/src/app/actions/auth-security-actions.ts",
+      ".ai-team/tmp/pr359-evidence-20261005/snapshot/src/app/mfa/setup/page.tsx",
+      ".ai-team/tmp/pr359-evidence-20261005/snapshot/src/lib/password-reset-smoke-policy.test.ts",
+      ".ai-team/tmp/pr359-evidence-20261005/snapshot/src/lib/password-reset-smoke-policy.ts"
+    ],
+    "required_checks": [
+      "new-head-ci-quality"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "evidence": {
+    "execution": {
+      "kind": "execution",
+      "source": "desktop_native",
+      "revision": "sha256:9726a5cdbed398c1d24b2f39354c5c8f0641b9c5230e03d4171950fd6f590412",
+      "status": "COMPLETED",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "head": "1184c1226771bf41af45ec1c8601f6b4b7103543",
+      "scope": "Implemented and pushed PR359; immutable manifest binds published candidate to independently reviewed code",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr359-evidence-20261005\\execution.json"
+    },
+    "checks": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "new-head-ci-quality",
+        "revision": "sha256:9726a5cdbed398c1d24b2f39354c5c8f0641b9c5230e03d4171950fd6f590412",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 2.437,
+        "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr359-evidence-20261005\\new-head-ci-quality.json"
+      }
+    ],
+    "review": {
+      "kind": "review",
+      "source": "desktop_native",
+      "revision": "sha256:9726a5cdbed398c1d24b2f39354c5c8f0641b9c5230e03d4171950fd6f590412",
+      "status": "PASS",
+      "independent": true,
+      "role": "critical_review",
+      "model": "gpt-6.1-sol",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "reviewer": "/root/portal_review_fallback",
+      "head": "1184c1226771bf41af45ec1c8601f6b4b7103543",
+      "reviewed_files": {
+        "src/app/(app)/settings/security/page.tsx": "17952e23d0a6de561321068af3b5a7f5780ab9a6359e4783ebcbf085329758ab",
+        "src/app/actions.test.ts": "be4dcd7f912c70733d5a0691def6bdb8a0aa3886cbfbb40b7cf5658d247afe5e",
+        "src/app/actions/auth-security-actions.ts": "b294a36c053a766b7831cdd6142162a98864a28e250749d235e1be2c4821b848",
+        "src/app/mfa/setup/page.tsx": "eb6399c22bb7ec34c890e7d46e106366a0616c648c9ed96cd2ad3933001d1c1a",
+        "src/lib/password-reset-smoke-policy.test.ts": "5c52162e3ae5a825fa829e8b1b302dcd88313fbd9277af4fc7844fbf0b4ace64",
+        "src/lib/password-reset-smoke-policy.ts": "cf1ab7f20a9ccaf452c63c0e203dd55450dcfa31731415ebb8ae84cbecbb96f6"
+      },
+      "scope": "Independent read-only review of all six auth policy, action, tests and page files: CSRF/auth precede environment gate; deployed production blocked before token or mail work; both pages share policy; no unrelated MFA/member/registration regression. Zero findings. 328 targeted tests, typecheck and lint passed separately. Actual page rendering not performed. Master synchronization preserves reviewed tree. Observed runtime model/effort unknown.",
+      "findings": [],
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr359-evidence-20261005\\review.json"
+    },
+    "findings": []
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:9726a5cdbed398c1d24b2f39354c5c8f0641b9c5230e03d4171950fd6f590412"
+  },
+  "publication": "PUSHED_PR_OPEN"
+}

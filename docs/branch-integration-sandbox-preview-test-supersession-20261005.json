@@ -1,0 +1,46 @@
+{
+  "scope": "File-level preview regression coverage reconciliation; whole branches still require remaining dispositions",
+  "path": "src/components/live-stepper-form.test.tsx",
+  "source_blob": "9618c1012b86ccf24d808ae35154d69be0c22c0e",
+  "source_heads": [
+    "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+    "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+    "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+    "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+    "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+    "2cceebba802dec508faaad166e37fa1e51b09ed5",
+    "30230f4ab63c65481324a128ff1369deee073c83",
+    "35d8f59341bcb776e548c69fe874a3f4d1fe2528",
+    "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
+    "39b8dedf2ea140bc264088c9d1843d99196586ff",
+    "3ace54c10b581285a297c5e95e677178314e1c52",
+    "62fb1655dc47c7156a68a09ee18b42d4120d9b61",
+    "638707f9f043498136107b38968e49a0c38e9133",
+    "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
+    "7f1b3fd26e48a41e9e003c848594fa102000f220",
+    "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+    "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+    "ded82898a687220496add74827691676e84c8b31",
+    "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3"
+  ],
+  "master_blob": "2a33f97bd1957af313a8f574d5d36b5ad679db74",
+  "decision": "BOTH_HISTORICAL_PREVIEW_ASSERTION_SETS_PRESERVED",
+  "evidence": {
+    "default_preview": [
+      "unnamed live",
+      "default promotion",
+      "no selected products"
+    ],
+    "updated_preview": [
+      "entered title",
+      "entered promotion",
+      "first two product names",
+      "one additional product count",
+      "empty-state removed"
+    ],
+    "adaptation": "Current ProductSelection callback replaces old direct input handler; updated fixture fields follow current schema; panel traversal now rerenders each step",
+    "tests": 31,
+    "status": "PASS"
+  },
+  "production_operations": false
+}

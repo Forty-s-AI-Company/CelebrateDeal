@@ -32,6 +32,7 @@ const wp18 = readCoverageOwner("wp18");
 // The payout concurrency case reaches the same fail-closed encryption
 // boundary as the normal Vitest suite. Keep this deterministic key scoped to
 // the runner process; it never reads developer or deployment configuration.
+process.env.CSRF_SECRET = "celebratedeal-local-synthetic-csrf-secret-v1";
 process.env.BANK_ACCOUNT_KEYRING_JSON = JSON.stringify({
   activeKeyId: "synthetic",
   keys: {
@@ -47,6 +48,10 @@ const testExclude = [
   // Playwright support journeys run in their own required Browser gate, not
   // inside the PostgreSQL concurrency coverage process.
   "tests/e2e-support/**",
+  // Root-level temporary browser/migration snapshots are mirrors of this
+  // source tree, not independent test suites. Keep coverage and concurrency
+  // assertions scoped to canonical workspace files.
+  "tmp/**",
   ".ai-team/tmp/**",
   ...nodeTapContractTests,
 ];

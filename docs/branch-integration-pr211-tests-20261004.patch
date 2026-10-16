@@ -1,0 +1,151 @@
+diff --git a/src/components/landing-pages/funnel-commerce-element.test.tsx b/src/components/landing-pages/funnel-commerce-element.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/components/landing-pages/funnel-commerce-element.test.tsx
+@@ -0,0 +1,56 @@
++import { renderToStaticMarkup } from "react-dom/server";
++import { describe, expect, it } from "vitest";
++import { createEmptyPageDocument, type FunnelNode, type FunnelNodeType } from "@/lib/funnel-page-document";
++import type { FunnelCommerceView } from "@/lib/funnel-commerce";
++import { FunnelPageDocumentRenderer } from "./funnel-page-document-renderer";
++import { instantiateFunnelTemplate } from "@/lib/funnel-template-gallery";
++import { FunnelPageEditor } from "./funnel-page-editor";
++
++const commerce: FunnelCommerceView = { product: { id: "p", name: "可信商品", currency: "TWD", priceCents: 12300, fulfillmentType: "physical" }, orderBump: { id: "b", name: "可信加購", currency: "TWD", priceCents: 5000, fulfillmentType: "physical" }, checkoutPath: "/lp/shop/order/checkout" };
++function document(type: FunnelNodeType) {
++  const node = (type: FunnelNodeType, id: string, children?: FunnelNode[]): FunnelNode => ({ schemaVersion: 1, id, type, props: { priceCents: 1, label: "惡意價格", href: "https://evil.test" }, overrides: {}, style: {}, visible: true, actions: [], attributes: {}, ...(children ? { children } : {}) });
++  return { ...createEmptyPageDocument("page"), commerce: { schemaVersion: 1 as const, productId: "p", orderBumpProductId: "b", formMode: "two_step" as const, agreement: { label: "額外購買同意" } }, root: [node("section", "s", [node("row", "r", [node(type, "leaf")])])] };
++}
++describe("Funnel commerce renderer", () => {
++  it("keeps checkout template children visible even when a lead form is bound", () => {
++    const page = { ...instantiateFunnelTemplate("sell-product-checkout", "checkout"), commerce: document("offer_price").commerce };
++    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={page} commerce={commerce} publicSurface submission={{ landingPageId: "lp", form: { id: "lead", fields: [], submitLabel: "不應取代付款", successMessage: "ok" } }} />);
++    expect(html).toContain("可信商品");
++    expect(html).toContain('href="/lp/shop/order/checkout"');
++    expect(html).not.toContain("不應取代付款");
++  });
++  it("lets editors add the supported payment elements while scripts remain disabled", () => {
++    const html = renderToStaticMarkup(<FunnelPageEditor document={document("payment_button")} commerceProducts={[commerce.product]} commerceEnabled onChange={() => {}} />);
++    for (const label of ["付款按鈕", "方案價格", "加購方案", "兩步驟結帳", "同意條款", "運費狀態"]) {
++      expect(html).toMatch(new RegExp(`<button(?![^>]*\\sdisabled=)[^>]*>${label}</button>`, "u"));
++    }
++    expect(html).toMatch(/<button[^>]*\sdisabled=""[^>]*>Raw HTML/u);
++  });
++  it("uses trusted prices equally in editor and mobile preview, never node overrides", () => {
++    for (const mode of ["editor", "preview"] as const) {
++      const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={document("offer_price")} commerce={commerce} mode={mode} viewport="mobile" />);
++      expect(html).toContain("可信商品"); expect(html).toContain("123"); expect(html).not.toContain("惡意價格");
++    }
++  });
++  it("only enables checkout on public surface and never accepts node hrefs", () => {
++    const draft = renderToStaticMarkup(<FunnelPageDocumentRenderer document={document("payment_button")} commerce={commerce} />);
++    expect(draft).toContain("預覽不收款"); expect(draft).not.toContain('href=');
++    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={document("payment_button")} commerce={commerce} publicSurface />);
++    expect(html).toContain('href="/lp/shop/order/checkout"'); expect(html).not.toContain("evil.test");
++  });
++  it("disables mismatched or missing trusted products", () => {
++    for (const view of [undefined, { ...commerce, product: { ...commerce.product, id: "other" } }]) {
++      const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={document("payment_button")} commerce={view} publicSurface />);
++      expect(html).toContain("尚未連結商品"); expect(html).not.toContain('href=');
++    }
++  });
++  it.each(["payment_method", "physical_product", "customer_type", "agreement", "order_bump", "coupon", "shipping_fees", "two_step_order_form"] as const)("renders an honest %s capability", (type) => {
++    const html = renderToStaticMarkup(<FunnelPageDocumentRenderer document={document(type)} commerce={commerce} />);
++    expect(html).not.toContain("目前無法在此預覽");
++    expect(html).not.toContain("惡意價格");
++    if (type === "coupon") expect(html).toContain("尚未提供手動輸入優惠碼");
++    if (type === "shipping_fees") expect(html).toContain("未提供獨立運費規則");
++    if (type === "agreement") expect(html).toContain("額外購買同意");
++    if (type === "order_bump") expect(html).toContain("可信加購");
++  });
++});
+diff --git a/src/components/landing-pages/funnel-webinar-experience.test.tsx b/src/components/landing-pages/funnel-webinar-experience.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/components/landing-pages/funnel-webinar-experience.test.tsx
+@@ -0,0 +1,56 @@
++import { renderToStaticMarkup } from "react-dom/server";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { FunnelWebinarExperience, type WebinarExperienceResource } from "./funnel-webinar-experience";
++import { createGoalFunnelStepPages } from "@/lib/funnel-goal-step-pages";
++
++const resource: WebinarExperienceResource = {
++  live: { id: "owned_live", slug: "owned-live", videoId: "owned_video", videoTitle: "已授權來源" },
++  form: { id: "owned_form", fields: [{ key: "name", label: "姓名", required: true }, { key: "email", label: "Email", type: "email", required: true }], submitLabel: "送出報名", successMessage: "待確認" },
++};
++function state() {
++  const result = createGoalFunnelStepPages({ id: "test_flow", name: "Webinar", goal: "webinar", domain: "old-slug" })!;
++  result.flow.webinar = { timezone: "Asia/Taipei", startsAt: "2030-01-01T01:00:00.000Z", endsAt: "2030-01-01T02:00:00.000Z", replayEndsAt: "2030-01-02T02:00:00.000Z" };
++  return result;
++}
++afterEach(() => vi.useRealTimers());
++describe("Webinar shared preview/public experience", () => {
++  it("never renders an arbitrary video URL from a broadcast snapshot", () => {
++    const draft = state();
++    draft.pages.webinar_broadcast!.root.push({ schemaVersion: 1, id: "raw_video", type: "video", props: { src: "https://untrusted.example/video.mp4" }, visible: true, style: {}, overrides: {}, attributes: {}, actions: [] });
++    const html = renderToStaticMarkup(<FunnelWebinarExperience state={draft} slug="current-slug" stepId="webinar_broadcast" resource={resource} />);
++    expect(html).toContain("請在編輯器移除");
++    expect(html).not.toContain("untrusted.example");
++    expect(html).not.toContain("<video");
++  });
++  it("renders actionable missing configuration without a fake form or playback success", () => {
++    const html = renderToStaticMarkup(<FunnelWebinarExperience state={state()} slug="current-slug" stepId="webinar_registration" preview />);
++    expect(html).toContain('data-webinar-state="missing"');
++    expect(html).toContain("請開啟頁面設定");
++    expect(html).not.toContain('action="/api/form-submissions"');
++  });
++  it("posts the existing owned resources and redirects only to the current funnel thank-you path", () => {
++    vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
++    const html = renderToStaticMarkup(<FunnelWebinarExperience state={state()} slug="current-slug" stepId="webinar_registration" resource={resource} />);
++    expect(html).toContain('action="/api/form-submissions"');
++    expect(html).toContain('value="owned_form"');
++    expect(html).toContain('value="owned_live"');
++    expect(html).toContain('value="/lp/current-slug/thank-you"');
++    expect(html).toContain("完成確認");
++  });
++  it("shares mobile rendering and blocks preview submission", () => {
++    vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T01:30:00.000Z"));
++    const html = renderToStaticMarkup(<FunnelWebinarExperience state={state()} slug="current-slug" stepId="webinar_registration" resource={resource} preview viewport="mobile" />);
++    expect(html).toContain('data-viewport="mobile"');
++    expect(html).toContain("預覽模式，不送出報名");
++    expect(html).toContain("disabled");
++  });
++  it("offers only the server-validated playback handoff and removes it after expiry", () => {
++    vi.useFakeTimers(); vi.setSystemTime(new Date("2030-01-01T03:00:00.000Z"));
++    const props = { state: state(), slug: "current-slug", stepId: "webinar_broadcast", resource };
++    expect(renderToStaticMarkup(<FunnelWebinarExperience {...props} />)).toContain('href="/lp/current-slug/broadcast/play"');
++    vi.setSystemTime(new Date("2030-01-02T02:00:00.000Z"));
++    const html = renderToStaticMarkup(<FunnelWebinarExperience {...props} />);
++    expect(html).toContain('data-webinar-state="expired"');
++    expect(html).not.toContain('/broadcast/play');
++  });
++});
+diff --git a/src/components/landing-pages/landing-page-interactive-blocks.test.tsx b/src/components/landing-pages/landing-page-interactive-blocks.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/components/landing-pages/landing-page-interactive-blocks.test.tsx
+@@ -0,0 +1,24 @@
++import { renderToStaticMarkup } from "react-dom/server";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { LandingPageCountdown } from "./landing-page-interactive-blocks";
++
++// Keep the recovered regression independent of the machine's wall clock.
++beforeEach(() => {
++  vi.useFakeTimers();
++  vi.setSystemTime(new Date("2029-12-30T00:00:00.000Z"));
++});
++afterEach(() => vi.useRealTimers());
++
++describe("LandingPageCountdown", () => {
++  it("renders four stable countdown cells and preserves the CTA link", () => {
++    const html = renderToStaticMarkup(<LandingPageCountdown targetAt="2030-01-01T00:00:00+08:00" expiredMessage="已截止" cta={{ label: "立即報名", href: "/form/demo", pageId: "page_1" }} />);
++    expect(html).toContain("立即報名");
++    expect(html).toContain("/form/demo?lp=page_1");
++    expect(html).toContain("grid-cols-4");
++  });
++
++  it("hides the countdown content after expiry when configured to hide its CTA", () => {
++    const html = renderToStaticMarkup(<LandingPageCountdown targetAt="2020-01-01T00:00:00+08:00" expiredMessage="已截止" expiredAction="hide_cta" cta={{ label: "立即報名", href: "/form/demo" }} />);
++    expect(html).toBe("");
++  });
++});

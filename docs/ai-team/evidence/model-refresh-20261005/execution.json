@@ -1,0 +1,33 @@
+{
+  "kind": "execution",
+  "source": "desktop_native",
+  "revision": "sha256:4205eb3e9116d8372582c5399505e8434e41736637bb9b5c5857bdd80108b802",
+  "status": "COMPLETED",
+  "provider_terminal": true,
+  "tool_operations": "completed",
+  "observed": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "scope": [
+    ".agents/skills/ai-team-lite/SKILL.md",
+    ".agents/skills/ai-team-pro/SKILL.md",
+    ".agents/skills/ai-team/SKILL.md",
+    ".ai-team/config/routing-policy.json",
+    ".ai-team/mcp_server/routing.py",
+    ".ai-team/mcp_server/test_routing.py",
+    ".ai-team/mcp_server/test_server.py",
+    ".ai-team/scripts/Probe-AiTeamNative.py",
+    ".ai-team/scripts/Test-AiTeamBootstrap.ps1",
+    ".ai-team/scripts/Test-AiTeamRouting.ps1",
+    ".codex/agents/analyst.toml",
+    ".codex/agents/explorer.toml",
+    ".codex/agents/planner.toml",
+    ".codex/agents/reviewer.toml",
+    ".codex/agents/worker-deep.toml",
+    ".codex/agents/worker.toml",
+    "AGENTS.md",
+    "docs/ai-team/ROUTING.md",
+    "docs/ai-team/vnext-validation.md"
+  ]
+}

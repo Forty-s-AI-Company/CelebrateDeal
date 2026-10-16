@@ -1,0 +1,118 @@
+{
+  "source_head": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "current_master": "c071b2d655b0d875fa9d616920c5a554d462dbe6",
+  "status": "SOURCE_REVIEW_IN_PROGRESS_NOT_PORTED",
+  "scope": "Student portal auth, actions, access route and dashboard boundary; not full PR210 review.",
+  "files": [
+    {
+      "path": "src/app/actions/student-portal-actions.ts",
+      "sha256": "37f7bbc5d45cb8dc33feb269e366dc4747003fa790067f5b21a24c97cb938fc2",
+      "lines": 133
+    },
+    {
+      "path": "src/lib/student-portal-auth.ts",
+      "sha256": "84a4e18ebf6f1e407fa1c01b4b6fc0fe5b3b2bb1489eaca0e475509f5c8c4dc1",
+      "lines": 367
+    },
+    {
+      "path": "src/lib/student-portal.ts",
+      "sha256": "aa31fd1f99b60d7881a27c63b5b7a89c3c9d344a6878c77ebf3031cda1f3adda",
+      "lines": 139
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/access/route.ts",
+      "sha256": "930d28d68150ea47c0852bdb33df1a94343ffdffccf04f003f07bd291c7d262f",
+      "lines": 26
+    }
+  ],
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "file": "src/app/actions/student-portal-actions.ts",
+      "area": "enterStudentPortalFromCheckoutAction",
+      "issue": "Order-scoped buyer support capability is exchanged for an email-wide student session without proving mailbox ownership.",
+      "evidence": "Action resolves an order grant, decrypts its buyer email, issues checkout_redirect; access route accepts that purpose and sets a vendor/customerKeyHash session. Dashboard queries every paid/refunded order with the same tenant and customerKeyHash. Current checkout issues buyer grant to its requesting browser.",
+      "impact": "A checkout made with another student email can cross the intended order scope when this source is ported.",
+      "recommended_fix": "Require a mailbox-delivered single-use magic link before granting account-wide portal access. Checkout may navigate to login; an order grant must remain limited to that order.",
+      "required_test": "Two orders share an email; browser possesses only the newer order grant. Checkout entry must not create portal session or access the other order. Only consuming the emailed capability can authenticate.",
+      "confidence": "high",
+      "verification": "Isolated mocked Server Action regression reproduces the unexpected checkout capability issue; fixed candidate redirects to verified login. Not an end-to-end exploit."
+    },
+    {
+      "severity": "MAJOR",
+      "file": "src/app/actions/student-portal-actions.ts",
+      "area": "requestMagicLinkAction non-production mockLink",
+      "issue": "NODE_ENV non-production returns a valid login capability directly to an unauthenticated caller.",
+      "evidence": "After account lookup, the action returns mockLink before email delivery whenever NODE_ENV is not production.",
+      "impact": "Any accessible development server with seeded or non-isolated data bypasses mailbox verification. Preview builds normally set production, so this is not a claim that every Preview deployment is affected.",
+      "recommended_fix": "Queue email consistently; browser tests capture a synthetic local mail sink internally instead of exposing the capability in action response.",
+      "required_test": "No response contains mockLink under development, test or production; synthetic mail sink only exists inside local test harness.",
+      "confidence": "high",
+      "verification": "Mocked action regressions reproduce capability disclosure under development and test. Fixed candidate queues encrypted email in all three environments."
+    },
+    {
+      "severity": "MINOR",
+      "file": "src/lib/student-portal-auth.ts",
+      "area": "verifyStudentPortalAccessToken/readStudentPortalSessionToken",
+      "issue": "Temporal validation rejects expiry but does not reject future issuance; session validation also does not require positive duration.",
+      "evidence": "Access verifies expiresAt > now and exact TTL. Session verifies expiry and duration <= max only.",
+      "impact": "Malformed but authenticated payloads can pass temporal policy; no unsigned token forgery is claimed.",
+      "recommended_fix": "Require issuedAt <= now and expiresAt > issuedAt, keeping existing max TTL and exact token TTL.",
+      "required_test": "Future-issued signed/encrypted payloads and nonpositive session duration fail closed.",
+      "confidence": "high",
+      "verification": "Four added synthetic temporal tests fail against exact source and pass against candidate; original seven auth tests also pass with deterministic clock."
+    }
+  ],
+  "milestone": {
+    "deliver": "Email-verified login, tenant-bound dashboard, existing encrypted delivery snapshots, bookings/calendar, vouchers and invoices. Checkout navigates to verified login.",
+    "dependencies": "New StudentPortalAccessToken Prisma model/migration, email delivery queue, CSRF, public login route and browser tests.",
+    "later": "Native course lessons/progress/certificate, community, multilingual/PWA additions require separate dependencies and functional acceptance."
+  },
+  "validation_required": [
+    "unit: tamper/purpose/expiry/replay/tenant/identity separation",
+    "disposable PostgreSQL: concurrent single-use token consume and migration/RLS",
+    "local browser: mail sink -> login -> own dashboard -> logout; other tenant and checkout capability rejection",
+    "independent Critical auth/migration review",
+    "final published head quality CI and canonical acceptance gate"
+  ],
+  "production_operations": false,
+  "runtime_verified": false,
+  "candidate_validation": {
+    "scope": "Isolated recovery candidate; not merged or fully accepted",
+    "source_head": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+    "temporal_baseline": {
+      "passed": 7,
+      "failed": 4
+    },
+    "actions_baseline_with_temporal_fix": {
+      "passed": 13,
+      "failed": 3
+    },
+    "candidate": {
+      "exit": 0,
+      "passed": 16,
+      "failed": 0,
+      "pending": 0
+    },
+    "files": [
+      {
+        "file": "student-portal-actions-boundary.test.ts",
+        "sha256": "a50ae5fa05a4c1e8e3bed2aacc0f162d9dc250e5589978ace688fd8d4423732b"
+      },
+      {
+        "file": "student-portal-actions.ts",
+        "sha256": "bc7e5b03a871fd20e31c901729ad57d38cc8bf8f7080df0d674bca7ae55774bf"
+      },
+      {
+        "file": "student-portal-auth.test.ts",
+        "sha256": "67711b8fac4519c4c3a98e5e22a666891496484028e6748ef933d3cffdbae528"
+      },
+      {
+        "file": "student-portal-auth.ts",
+        "sha256": "b7b98ee1bc89dd4b4b8fd9ab37d81662682eed4b830520bbc73961134917babb"
+      }
+    ],
+    "external_operations": false,
+    "remaining": "Port complete portal, disable checkout-purpose acceptance in access route, migration, real database isolation/consume races, browser mail sink, full independent review and CI."
+  }
+}

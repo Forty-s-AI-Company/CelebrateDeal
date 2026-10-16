@@ -1,0 +1,316 @@
+{
+  "pr": 360,
+  "head": "bb2207311bd7015dd828065f3a29fa4b954985c1",
+  "integration_base": "e2014b5d3eecf71e2bb9b66861d6c50fafc1f449",
+  "files": [
+    {
+      "path": ".gitignore",
+      "candidate_sha256": "7fcee66d6aeecfe328c418c7cf8b8fd0d9b5e2c4aa2c1f037bbc172d9984d5e1"
+    },
+    {
+      "path": "docs/branch-integration-delivery-state-20261004.json",
+      "candidate_sha256": "23110aadd4ca23879830c6ee2570eb8995c72615ad8dff376a1aed21b1d6f52b"
+    },
+    {
+      "path": "docs/branch-integration-future-work.md",
+      "candidate_sha256": "9ae077d4004a261b26f3e6f80e5c79372b03177b3639324dbf8885ff244e276b"
+    },
+    {
+      "path": "docs/branch-integration-original-deletions-auth-limit-20261005.json",
+      "candidate_sha256": "da8baac27767717d61d4578eeb1f1fbc2b86e8275e4b72265b09ab8c66297add"
+    },
+    {
+      "path": "docs/branch-integration-original-dev-hygiene-progress-20261005.json",
+      "candidate_sha256": "aa2a500f4bfa31ac41870f849009da84fa7dbba425b01aa9b616eee70151e9da"
+    },
+    {
+      "path": "docs/branch-integration-original-disposition-ledger-20261005.json",
+      "candidate_sha256": "8b30d358769a618446bb0136ac33286ccef4e5401d37d6c4d636b7dd7ffbf5e2"
+    },
+    {
+      "path": "docs/branch-integration-original-funnel-semantics-20261005.json",
+      "candidate_sha256": "71aaabbdf443da67b805e00774ca89e91837d5246034d084fa98bc2631b57b1e"
+    },
+    {
+      "path": "docs/branch-integration-original-routing-semantics-20261005.json",
+      "candidate_sha256": "4c1808767ac95a13bd88bbe1baee15a645f084f3c213bc9ed883df2f811bca04"
+    },
+    {
+      "path": "docs/branch-integration-original-shell-dependencies-20261005.json",
+      "candidate_sha256": "d87256bf45f7a9ef8187ba00b86ee5fb866dc6601f33ab55c066a13bfc7a834f"
+    },
+    {
+      "path": "docs/branch-integration-original-shell-progress-20261005.json",
+      "candidate_sha256": "c2af75771920b59673dc257e1d32abcd476b092a16df420153735819add0566a"
+    },
+    {
+      "path": "docs/branch-integration-pr358-acceptance-20261005.json",
+      "candidate_sha256": "a8a5189e5d4d65bff30627b0c781e4da2b2a45ee61ebcfb0b62e64425def0399"
+    },
+    {
+      "path": "docs/branch-integration-pr358-progress-20261005.json",
+      "candidate_sha256": "e4f1867aaf41d9f31e46dc744959ca3cbc5ec99eb9ffb4acb65ee6dc99aceb4c"
+    },
+    {
+      "path": "docs/branch-integration-pr358-remote-ci-20261004.json",
+      "candidate_sha256": "1a8b191c1b1d3918bdfe7a9d1e0d945d3d709300f62f7f4fa66a8c42bdf3e80c"
+    },
+    {
+      "path": "docs/branch-integration-pr359-manifest-20261005.json",
+      "candidate_sha256": "4c8e82a286b957c5600a90dc269f6782a35bb50bcf09051452991be5350915e2"
+    },
+    {
+      "path": "docs/branch-integration-pr359-merged-20261005.json",
+      "candidate_sha256": "06d46151173b91a9b323d1fbf7f30987d921851e432ac190cee79e859fa6dcde"
+    },
+    {
+      "path": "docs/branch-integration-preservation-20261004.json",
+      "candidate_sha256": "285f8cf9fbb4e43dc29a8b20de462a2d52a0024cc9b7e60d8bf7956ab14ef9c1"
+    },
+    {
+      "path": "docs/branch-integration-sandbox-library-supersession-20261005.json",
+      "candidate_sha256": "36334e32ff1315f7bd9518ff0d2b89d02645bb5553164e66e7770b013a1765d6"
+    },
+    {
+      "path": "docs/branch-integration-sandbox-preview-test-supersession-20261005.json",
+      "candidate_sha256": "d8e6f8202b65bade0b6ce778353c092cb7e4815d812a2b46298eb0060934ccc1"
+    },
+    {
+      "path": "eslint.config.mjs",
+      "candidate_sha256": "2e5fded1f130e09c64cc43d6f3f749b3c7a2b0741c3b4fe81f61e202d9065054"
+    },
+    {
+      "path": "next.config.test.ts",
+      "candidate_sha256": "3a01fe0428fd4f0d26ad99bc35eff419f84cccd4db15c64639676000aa4c6cae"
+    },
+    {
+      "path": "next.config.ts",
+      "candidate_sha256": "960b93ae86500a8533a846733ab4716832be0a9cee52d0cb315290a2685f4370"
+    },
+    {
+      "path": "src/app/(app)/forms/new/page.tsx",
+      "candidate_sha256": "fae7a80ec47e7cc947cb6a7e8e71090eebf60471d322d944d6659f8cb08d2ba0"
+    },
+    {
+      "path": "src/app/(app)/layout.test.tsx",
+      "candidate_sha256": "dba9801d8714b4b7d0b83abbcb087eb1159bd915ae272a591b8fcd62cfebead4"
+    },
+    {
+      "path": "src/app/(app)/layout.tsx",
+      "candidate_sha256": "a54683b01c5d3589885d28d377ae76fedcbac9e5a5823fd9e1303495b05523b6"
+    },
+    {
+      "path": "src/app/(app)/lives/new/page.test.tsx",
+      "candidate_sha256": "e3f72a79d9a0108a913cab4c43fd2d1be64b450f69dd81f35fca8aeda9aabf25"
+    },
+    {
+      "path": "src/app/(app)/lives/new/page.tsx",
+      "candidate_sha256": "c6c86a1077f7a854d737ce20f575837bffdec935adde452c1606e41e9f2da9a3"
+    },
+    {
+      "path": "src/app/(app)/products/new/page.tsx",
+      "candidate_sha256": "8bcd7fd9a948457fabf5de158b7efc7d0a80be27f11579237d55181eb7526195"
+    },
+    {
+      "path": "src/app/actions.test.ts",
+      "candidate_sha256": "63690a930ee2cc377f86a188adcae69aff24c1eb2496777b45c431a56f28e45c"
+    },
+    {
+      "path": "src/app/actions.ts",
+      "candidate_sha256": "773810f280bbeeded58e041f9cfb375f6411e54230b1b5bdc55478cbca14009f"
+    },
+    {
+      "path": "src/app/actions/consultation-actions.test.ts",
+      "candidate_sha256": "91764458996839e290a3e2dade5c07e9f18353ae53a7989d12ee3693142d915c"
+    },
+    {
+      "path": "src/app/actions/consultation-actions.ts",
+      "candidate_sha256": "0d179e2e4461dc70fc4b988793fa627f3073a554c35ef8025aeadfd3e014b050"
+    },
+    {
+      "path": "src/app/actions/form-actions.test.ts",
+      "candidate_sha256": "1551c4aca8bb6d047809a0ee980d887ca0422da10d60e7ec7cf877ca55a20104"
+    },
+    {
+      "path": "src/app/actions/form-actions.ts",
+      "candidate_sha256": "0df1d314578d4e3ce43d13e5ec044f64be8f09639b3c5ebe797fa705d73e511b"
+    },
+    {
+      "path": "src/app/actions/product-actions.test.ts",
+      "candidate_sha256": "3dd10722d52d25fdb988447e3154f6e35e651e689c63ea1e6ede8aa964005a72"
+    },
+    {
+      "path": "src/app/actions/product-actions.ts",
+      "candidate_sha256": "603c85be90c686907d4c15c144a3d5462074d4b3dfa63dfeaf6a45181760a20d"
+    },
+    {
+      "path": "src/app/actions/product-server-actions.ts",
+      "candidate_sha256": "863099ec4ed2f5943059bb0d5a478bf21811be650659a401a1e6879f8a8527bf"
+    },
+    {
+      "path": "src/app/actions/project-resource-binding.db.test.ts",
+      "candidate_sha256": "1bd56a65b42f54779b805f7774d7f73963d9fee03ae9d1f9ba9fafc15f0e6ccc"
+    },
+    {
+      "path": "src/components/app-shell-account-menu.tsx",
+      "candidate_sha256": "7efaad6a80a69c16d88251897227dcf61cfe2b1b9ef86fb0725d6928990c9a97"
+    },
+    {
+      "path": "src/components/app-shell-nav-group.tsx",
+      "candidate_sha256": "4da3641d75c7dc4cbb65502b6be461f6300b605ce208d47f3d7897140965f93c"
+    },
+    {
+      "path": "src/components/app-shell-nav-link.tsx",
+      "candidate_sha256": "f28d70c4086565d409885b9f30d8cd97c1dfe1cacfd1fc7d99c1a23307939e22"
+    },
+    {
+      "path": "src/components/app-shell.test.ts",
+      "candidate_sha256": "717d0e6419e843f7cc3ee262a8587f745b355fcea5a4c0b85aadcd760d95bbea"
+    },
+    {
+      "path": "src/components/app-shell.tsx",
+      "candidate_sha256": "4b291f806157758ef1bf38d451496a644fa1828e06d6354ecb1549acfa8d2565"
+    },
+    {
+      "path": "src/components/form-builder-client.tsx",
+      "candidate_sha256": "84625e63efc9a972bcf6ad9b081d4d42cf1174b26f0e71c40b6cb5672c9ebbbc"
+    },
+    {
+      "path": "src/components/form-builder.tsx",
+      "candidate_sha256": "120ab0dec3dffec94639287e2c1dbc798abaf3f2aa9d870a0d51f34fa1ad5453"
+    },
+    {
+      "path": "src/components/live-stepper-form.tsx",
+      "candidate_sha256": "91d80228f721ac54985b5be1dab2b8e5dc76f3b3845f9fda62775cacf7be99a3"
+    },
+    {
+      "path": "src/components/onboarding-task-panel.tsx",
+      "candidate_sha256": "defae6198d925794ba0052241f3936ccdb21b487ec665b3d7311b9f0c680ed39"
+    },
+    {
+      "path": "src/components/product-form-client.tsx",
+      "candidate_sha256": "c79d712a2572dee1f9b7060e5cc6615c241040e8b236af8afd5785ed5d636175"
+    },
+    {
+      "path": "src/components/product-form.tsx",
+      "candidate_sha256": "920e65f4767d643ad49600cf33d16b8e23cc20d6aabcc7eb37e0c760dfafb828"
+    },
+    {
+      "path": "src/components/workspace-project-switcher.tsx",
+      "candidate_sha256": "d20a93aa4c29ea0d9f02570cfd2ef2e23573078a65093b649373831d7bd10d62"
+    },
+    {
+      "path": "src/lib/live-status-transition.ts",
+      "candidate_sha256": "5401abdaa944f37dc801d9cbbc3f580de5d575dc2615759bd21189b988190075"
+    },
+    {
+      "path": "src/lib/live-studio-draft-client.test.ts",
+      "candidate_sha256": "b0d474c5b74aa51d98dac16f562a5456f1509d65e2aa2f9abe0b1f2aaa9ed7c8"
+    },
+    {
+      "path": "src/lib/live-studio-draft-client.ts",
+      "candidate_sha256": "9490179c985570bde749c57bb4c51a6097426a569f70e3779bb918954fc5a27e"
+    },
+    {
+      "path": "src/lib/live-studio-draft.ts",
+      "candidate_sha256": "37d0c215e777b2de13527705759ec8aa6f36e230411f22d4c69c0ee0994b7231"
+    },
+    {
+      "path": "src/lib/sales-project-binding.test.ts",
+      "candidate_sha256": "ea7427632a1ee7efe85fb569c48dfc1e4429f8986756fe9873ef856b0141f42f"
+    },
+    {
+      "path": "src/lib/sales-project-binding.ts",
+      "candidate_sha256": "c92dcb30676b59b7399c3d21874ecbcabceb81aef641cdbb56bb30ca2f93e3f2"
+    },
+    {
+      "path": "tests/e2e/accountant-affiliate-detail-direct-url.spec.ts",
+      "candidate_sha256": "3bfeef62d1f55275768d89c5aaa2b5f8c0450db11ac9a0ee9a0a75c5ad66e65c"
+    },
+    {
+      "path": "tests/e2e/loading-route-segments.spec.ts",
+      "candidate_sha256": "5e7444e61f7e62929b7631b4297f9f4ed8834601c1328616cc9cd1fca99ada2f"
+    },
+    {
+      "path": "tests/e2e/project-shell-binding.spec.ts",
+      "candidate_sha256": "403e32fe0c99b03eb85dab647c1a758d0f07fae3aba47d0b59573d67bf579608"
+    }
+  ],
+  "local_validation": {
+    "unit_tests": "398 live/layout + 46 product/form + 18 consultation/layout; overlapping scopes",
+    "postgresql": {
+      "passed": 11,
+      "migrations": 83,
+      "isolated_port": 54463
+    },
+    "browser": {
+      "passed": 2,
+      "viewports": [
+        1440,
+        390
+      ],
+      "mode": "development env-free mirror",
+      "assertions": [
+        "real login",
+        "form persistence with project relation",
+        "sidebar next task without reload",
+        "project switch persistence"
+      ]
+    },
+    "typecheck": "PASS",
+    "targeted_eslint": "PASS",
+    "independent_review_findings": [],
+    "loading_browser": {
+      "passed": 4,
+      "skipped": 0,
+      "unexpected": 0,
+      "mode": "development env-free mirror"
+    },
+    "full_lint": {
+      "errors": 0,
+      "warnings": 3
+    },
+    "architecture_fix": {
+      "unit_passed": 332,
+      "database_passed": 11,
+      "root_lines": 2489,
+      "limit": 2500,
+      "threshold_unchanged": true,
+      "typecheck": "PASS",
+      "eslint": "PASS"
+    },
+    "architecture_delta_review": {
+      "findings": [],
+      "reviewer": "portal_review_fallback",
+      "scope": "Extracted transition table/parser keeps original semantics",
+      "observed_model": "unknown",
+      "observed_effort": "unknown"
+    }
+  },
+  "ci_handles": {
+    "pull_request": 37225033134,
+    "push": 37225030561,
+    "prior_failed": [
+      37222596910,
+      37222592284,
+      37223468930
+    ],
+    "superseded_cancel_requested": [
+      37223471705
+    ]
+  },
+  "state": "PENDING_EXACT_HEAD_CI",
+  "accountant_browser_fix": {
+    "stats": {
+      "startTime": "2026-10-04T18:34:38.817Z",
+      "duration": 46942.309,
+      "expected": 1,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "change": "Open account menu, assert current commission label and exact existing href; retain all tenant and sensitive-data denial assertions",
+    "scope": "Test-only adjustment; no application changes",
+    "environment": "Isolated local PostgreSQL54463, env-free Next development mirror"
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "master": "fc28e1b8dcdba9ca3926f11d27153de048f597da",
+  "disposition": "CONTENT_SUPERSEDED",
+  "heads": [
+    {
+      "head": "708a8d77072f6e7d7090c0cbb09721b78a247bd0",
+      "refs": [
+        "refs/heads/codex/staging-apply-gate-v2-20260925"
+      ],
+      "paths": [
+        {
+          "path": ".github/workflows/staging-migration-apply.yml",
+          "source_sha256": "57783bd5bc4ab92bb597736d1e3d276a5d359f0ac667ca499f8dd8d3da012e9c",
+          "master_sha256": "6832b00d8b6b271ce5488a72ef8596c430eda887fb0199f3e537a0324c65aa63"
+        },
+        {
+          "path": "docs/launch/staging-migration-apply.md",
+          "source_sha256": "47a3c1496ebffeff445e7b41751d34fd5205e45f8f0b9509a86d5d6b5131f286",
+          "master_sha256": "58fa908dd36dd2e385d578b483281732ae9a6fe53899bdf4c99e378f8c948eb9"
+        },
+        {
+          "path": "scripts/staging-migration-apply.mjs",
+          "source_sha256": "18d226f14e2b762c7b9f8ca0eb7a1488dd201c8b14304279e921524ec02da5ce",
+          "master_sha256": "704710bf2b41a64cb3560ec49817eea0c6b9d3fd707da43097b0b949077fe6e3"
+        },
+        {
+          "path": "scripts/staging-migration-apply.test.mjs",
+          "source_sha256": "ecf12a7b25ead394c30ba2f6ca507c81bd8ac1ebf462268cfad7c3523a8d258c",
+          "master_sha256": "5b2d46b342745b8c52fe8be5b9248bd918213251673815ef72f66bf0dda57747"
+        }
+      ]
+    },
+    {
+      "head": "b447582b0ef45bf920ddc5196801048ce787489e",
+      "refs": [
+        "refs/remotes/origin/codex/staging-apply-gate-v2-20260925"
+      ],
+      "paths": [
+        {
+          "path": ".github/workflows/staging-migration-apply.yml",
+          "source_sha256": "57783bd5bc4ab92bb597736d1e3d276a5d359f0ac667ca499f8dd8d3da012e9c",
+          "master_sha256": "6832b00d8b6b271ce5488a72ef8596c430eda887fb0199f3e537a0324c65aa63"
+        },
+        {
+          "path": "docs/launch/staging-migration-apply.md",
+          "source_sha256": "47a3c1496ebffeff445e7b41751d34fd5205e45f8f0b9509a86d5d6b5131f286",
+          "master_sha256": "58fa908dd36dd2e385d578b483281732ae9a6fe53899bdf4c99e378f8c948eb9"
+        },
+        {
+          "path": "scripts/staging-migration-apply.mjs",
+          "source_sha256": "18d226f14e2b762c7b9f8ca0eb7a1488dd201c8b14304279e921524ec02da5ce",
+          "master_sha256": "704710bf2b41a64cb3560ec49817eea0c6b9d3fd707da43097b0b949077fe6e3"
+        },
+        {
+          "path": "scripts/staging-migration-apply.test.mjs",
+          "source_sha256": "ecf12a7b25ead394c30ba2f6ca507c81bd8ac1ebf462268cfad7c3523a8d258c",
+          "master_sha256": "5b2d46b342745b8c52fe8be5b9248bd918213251673815ef72f66bf0dda57747"
+        }
+      ]
+    }
+  ],
+  "tests": {
+    "tests": 11,
+    "pass": 11,
+    "fail": 0,
+    "skipped": 0
+  },
+  "behavior_review": [
+    "Both source heads have identical four remaining path blobs. Existing trusted source/tree, protected workflow/branch, immutable deployment, producer run and exact replay receipt checks are unchanged.",
+    "The obsolete ALL_DISPOSABLE_SYNTHETIC dispatch string was removed by later master policy: the string did not prove data scope. Fixed non-Production identity and the additive 21-SQL gate remain. This audit does not run the migration workflow or expand authorization.",
+    "Current runner requires direct/session port 5432, rejects transaction pooler 6543, duplicate/unknown query keys, unsafe SSL modes, arbitrary URL options and out-of-range runtime hints. Known hints are removed before applying bounded server-side lock_timeout and statement_timeout.",
+    "Current runner sanitizes failure phase codes, retains non-retry behavior and backup limitations. Historical runner would remove these protections if blindly merged."
+  ],
+  "validation_scope": "11 mocked/synthetic Node contract tests; no staging connection or database mutation executed"
+}

@@ -1,0 +1,275 @@
+{
+  "source": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "candidate": "eb5649645ac658f5e792a9ed1bd7f986e730a930",
+  "decisions": [
+    {
+      "path": "src/app/(app)/settings/commissions/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "a88f2e5f957906bd5c165b72d43c451dcc5cebf9",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/app/actions/affiliate-payout-validation.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "acfd66e36868739d0ca2934cce8a3f4291708b11",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/app/actions/affiliate-portal-actions.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "2d49421dafcb8873c9af1330c17a41ebaddedac7",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/app/actions/commission-rule-actions.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "4069bef1dd10bb8a9ed69c1d457e6f8dd0098791",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/app/affiliate-portal/layout.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "246270ce3d92fbf53c61382ca3712fecdef10448",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/app/affiliate-portal/login/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f575ff2b26be9347fbfa57e445720b45434b7f57",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/app/affiliate-portal/page.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "5522bc2706a090f1b91fdbc54493b4dda904f65f",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/app/api/affiliates/payouts/export/route.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "1000cc864ac7374b1746c450c0ff59ce8eac0b0b",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/components/affiliate-remuneration-dialog.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "fb5bd9510874581d02a4238aef2f7f39657cbf07",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/components/commission-simulator.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "68d1e4753b52eb8ce9819eeedf0f2707c1646709",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/components/copy-referral-link.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "88eae8456f455d05c1fab85952fdf2d7dcfaa2dd",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/components/referral-share-card.tsx",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f8b656e7667714182cdde4aaa27da7a74be31241",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/lib/affiliate-payout-csv.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "9dccfb3c5479d7bb0d22200b878e11991fc2f5fa",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/lib/affiliate-portal-auth.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "bbecbe1147189f3b9267e89d8ee4654d2028cb17",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/lib/affiliate-portal-payout.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "6ce2028c551c5c2938195c2565e82bf386d71b85",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/lib/affiliate-portal.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "d8bb88aa94334ae9e1eec5939e8e5704901e52b6",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/lib/commission-rule-engine.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "a6eeeb6cbe5a9c911048878d1357635053c31583",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/lib/commission-rule-form.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "e282b9fa40cc8f09a26f2d0043ce5a887fc5e80e",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/lib/mvp-commission-policy.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "ae4548c78f6882e1ebced2cce562fd276d9e8de7",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/lib/referral-card.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "9dc05daee523797c91986a6d3625d510c029be78",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/lib/taiwan-tax-withholding.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "f384ae221c96f3eb4ac62f8ea03e9057d3f0ffc8",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/lib/tax-identity.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "3c9b819245054e6f76b5830cbc52ce80aa0c486c",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    },
+    {
+      "path": "src/lib/tiered-commission-engine.ts",
+      "state": "UNCHANGED_BASE_IN_MASTER",
+      "source_blob": "c964acc8ff795c4125f24aff0d68de673b692aa0",
+      "base_blob": null,
+      "master_blob": null,
+      "candidate_blob": null,
+      "feature_group": "affiliate_commission_tax",
+      "status": "SOURCE_ONLY_REQUIRES_FEATURE_DECISION",
+      "decision": "DEFER_AFFILIATE_PORTAL_TIERED_RULES_TAX_EXTENSIONS"
+    }
+  ],
+  "current_scope": "Existing affiliate commission status/accounting and payout paths remain. They do not prove delivery of source affiliate portal, configurable tiered commission rules, tax identity/withholding and CSV export extensions.",
+  "source_evidence": [
+    "commission-rule-actions uses owner/CSRF boundary and versioned rule set transaction",
+    "tiered-commission-engine includes quantity tiers and product overrides",
+    "affiliate-portal-auth resolves user/affiliate identity and requires tenant-qualified session",
+    "taiwan-tax-withholding contains a fixed versioned arithmetic policy; legal correctness/current applicability has NOT been validated"
+  ],
+  "future_acceptance": [
+    "Reconcile new rules with immutable earned commission snapshots, refunds and locked/paid payouts; never retroactively reprice payouts",
+    "Test tenant/affiliate portal isolation, login limits and revoked membership",
+    "Validate tax identity encryption/masking and CSV formula-injection handling",
+    "Obtain authoritative current policy verification before activating withholding formulas; do not treat historical comments as approval",
+    "Run real DB concurrent rule activation/payout/refund tests and relevant browser journeys"
+  ],
+  "production_touched": false,
+  "status": "EXPLICIT_USER_AUTHORIZED_MILESTONE_DEFERRAL_NOT_DELIVERED"
+}

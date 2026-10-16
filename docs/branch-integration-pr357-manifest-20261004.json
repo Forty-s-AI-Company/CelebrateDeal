@@ -1,0 +1,216 @@
+{
+  "pr": 357,
+  "head": "a214d277811809d581660e2b1b3c5856fb62a7d2",
+  "integration_base": "0f6cdbfa19e2bfe16c64513e85b0b4741d42f7a2",
+  "source_head": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "files": [
+    {
+      "path": "docs/ai-team-payuni-sandbox-qa.md",
+      "candidate_sha256": "9fbd17dbd60e51449e9063b6b360b0313bcba716291bd72b2da3966bd0f683b8"
+    },
+    {
+      "path": "docs/branch-integration-deferred-work-20261004.json",
+      "candidate_sha256": "8a94f2c94f15ab6ebbfff964c1381eb0e99ae4dacd46c77a79ed4542307b7e1f"
+    },
+    {
+      "path": "docs/branch-integration-future-work.md",
+      "candidate_sha256": "5c047fbb73d3264add8badbf8184fd8cf7c6cdd009a060c7ffd4928e6bac769d"
+    },
+    {
+      "path": "docs/branch-integration-pr210-student-portal-review-20261004.json",
+      "candidate_sha256": "f4ca97255d82c827438f87730e3c1d9748fe2c00b527c2b48d5b11e1bf18443f"
+    },
+    {
+      "path": "docs/branch-integration-pr356-acceptance-20261004.json",
+      "candidate_sha256": "fd26d82076146212132c773fcb0ae1eb38b9ee408d06154fa17363b12105206a"
+    },
+    {
+      "path": "docs/branch-integration-pr356-manifest-20261004.json",
+      "candidate_sha256": "a1a1cedd1986229725921c295771a9be12d7550ab7c78e5b22ee4018de6d9ff9"
+    },
+    {
+      "path": "docs/branch-integration-pr356-remote-ci-20261004.json",
+      "candidate_sha256": "e90059dedf7e94875a2767794b174043f708b45bf5c7aec87f90792c8a740d14"
+    },
+    {
+      "path": "docs/branch-integration-preservation-20261004.json",
+      "candidate_sha256": "d42dab42efdc53261d386d3b2ee6d4a6ae9c823c1f207d695abb17ca180fb427"
+    },
+    {
+      "path": "docs/branch-integration-progress-20261004.md",
+      "candidate_sha256": "88468c9212ad82273030fef48f24214b5bfa5862e5e64b199373e271ab85662f"
+    },
+    {
+      "path": "docs/branch-integration-provider-binding-recovery-20261004.json",
+      "candidate_sha256": "21587c442b80eedbf498955e1eef0f7e2a9a449c9f0ae88f75d0bf4497adafa5"
+    },
+    {
+      "path": "docs/branch-integration-publication-20261004.json",
+      "candidate_sha256": "621ebd3eed79f03c614753e9958f09a0392c60d93343e820dc6b3b8249803de2"
+    },
+    {
+      "path": "docs/branch-integration-sandbox-common-layer-20261004.json",
+      "candidate_sha256": "3b58c5496cfc922ece15b5741590124aef7839383a5dd23c5e996e1396a08bbf"
+    },
+    {
+      "path": "docs/branch-integration-student-portal-independent-review-20261005.json",
+      "candidate_sha256": "b95edfb36cfe362a41ded5be77a3d79d27e21d2bccbedf1c2fcde148d2051d2d"
+    },
+    {
+      "path": "docs/branch-integration-student-portal-progress-20261004.json",
+      "candidate_sha256": "570e6b73862ead4b42e43e0ccedfb6ccefa1980dde2bac1aba341633b1668fe1"
+    },
+    {
+      "path": "docs/codex-goal/API_CONTRACT_REGISTRY.md",
+      "candidate_sha256": "9471d07d304ba3cb68f0ec09b4ef927409b4c7a5d51c9edec6fb03f65a04b867"
+    },
+    {
+      "path": "docs/codex-goal/PRISMA_INVARIANTS.md",
+      "candidate_sha256": "494c574dd23d641ffdf6be3aca9a097bd9c2cd9ac265be8abecdbb41a6a8fd3c"
+    },
+    {
+      "path": "prisma/migrations/20261004154500_student_portal_access_tokens/migration.sql",
+      "candidate_sha256": "972dfa9876b30e9dadda6ab2fa6b1c5619611416cff6684f17c7a192c6074124"
+    },
+    {
+      "path": "prisma/schema.prisma",
+      "candidate_sha256": "1a78a8bdc51c7a16db5a87bdf7f1ea42b345149b59a5a4ee87deff86fcdfff10"
+    },
+    {
+      "path": "scripts/g7-email-operations-browser-qa.test.mjs",
+      "candidate_sha256": "ddf5da4eaf5bc6cbe143e288f4bb71c2b7fde92c43d5bba205103be51b80720a"
+    },
+    {
+      "path": "scripts/prisma-invariant-inventory.test.ts",
+      "candidate_sha256": "e32d2bf677214e763bd6008915d338a3c2a889675875169ada68ed09ddde9a86"
+    },
+    {
+      "path": "scripts/staging-migration-compat-preflight.test.mjs",
+      "candidate_sha256": "1e2b62df8a07b0439c6ddab7afee96fd130310862e862f713b6370b80af394a2"
+    },
+    {
+      "path": "scripts/staging-migration-isolated-replay.test.mjs",
+      "candidate_sha256": "52eaaf218f2c608ebd00891ef195b89f33a7cc105f30baf302596461c9c912ff"
+    },
+    {
+      "path": "scripts/staging-payuni-management-migrate.test.ts",
+      "candidate_sha256": "d8aa5ce1c4f0b8274bceb2b34242ddcf74d272f257fd8085d61eccaa841abc26"
+    },
+    {
+      "path": "src/app/actions/student-portal-actions-boundary.test.ts",
+      "candidate_sha256": "9d25dcc6edad6305df0ca791e68a07aff16fc95a4686ae52e95d04de64c34b7f"
+    },
+    {
+      "path": "src/app/actions/student-portal-actions.test.ts",
+      "candidate_sha256": "02d2ca2a1be116a1e8f0018cd643bb17e9d382229668c9e24715b25e62140e6a"
+    },
+    {
+      "path": "src/app/actions/student-portal-actions.ts",
+      "candidate_sha256": "83ce997926bb2f2cb098c2908989a80e851256f5d93f0212575ab82d32e85f9c"
+    },
+    {
+      "path": "src/app/api/automation/vouchers/redeem/route.test.ts",
+      "candidate_sha256": "2943687d37e1a65c32cb9a640360ae35a17b6092a30cf5a84149d8c6855f0718"
+    },
+    {
+      "path": "src/app/api/automation/vouchers/redeem/route.ts",
+      "candidate_sha256": "bfe2470d175b119824c3fbfd6decb73e430a67635ea2990688ab8ecc3659415a"
+    },
+    {
+      "path": "src/app/api/email/unsubscribe/route.test.ts",
+      "candidate_sha256": "2d627626315d567fddd53f034f04df00c41cf3287eb6413d819520ed31181f9c"
+    },
+    {
+      "path": "src/app/api/email/unsubscribe/route.ts",
+      "candidate_sha256": "fcce304e44254e1fa59cf63bf0a98cfa5e14167f66ba24f72dca9105a2ee6c1f"
+    },
+    {
+      "path": "src/app/checkout/result/page.test.tsx",
+      "candidate_sha256": "38d47af8bf699bdfd03a977d3d8a9af382e372a7bf899db0f72cf5ef1a45dd35"
+    },
+    {
+      "path": "src/app/checkout/result/page.tsx",
+      "candidate_sha256": "14c160c37f1b4e1b26133dead583dfb073df747389c4a235cbf5d5bfce807e57"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/access/route.test.ts",
+      "candidate_sha256": "a562109b32ff25ab680faaec85540e50b96ab5ac025b8c99f38ff71208f98737"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/access/route.ts",
+      "candidate_sha256": "6e0b9274a016fac0bf476bc9fed7547a3fe56852827a0e3fd2b5919c671be30c"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/calendar/[bookingId]/route.test.ts",
+      "candidate_sha256": "f22bcda80e849e8a8359336cd8d0f7a68b495f1ebe10214299378ed346d7cf82"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/calendar/[bookingId]/route.ts",
+      "candidate_sha256": "64df11818861d990870762eb9455f2b35e622443a5dade8c8e6510e55a459f54"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/login/page.test.tsx",
+      "candidate_sha256": "7019295450292b3b1f91bcaf476ff7722856fbb29fbd94ae8ccc53bf4d6847f2"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/login/page.tsx",
+      "candidate_sha256": "fe1c3e6677ddd14ae6db61687535ef72cfc3a52364864d88e6901eda1f3e1342"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/page.test.tsx",
+      "candidate_sha256": "1276e9410703e01caa8b7ad2a2db83e078693d119b8f87e44ba0345e7da97452"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/page.tsx",
+      "candidate_sha256": "ecde2824638f552cc18f80b9520b3e5f76dffa1540d29b239ec17bf4a5af769f"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/vouchers/[voucherId]/use/route.test.ts",
+      "candidate_sha256": "f0893ad4c177503a29b8df3482b09363c982a28ec88facc59db5bef90789c537"
+    },
+    {
+      "path": "src/app/portal/[vendorSlug]/vouchers/[voucherId]/use/route.ts",
+      "candidate_sha256": "e2f2079764ecc19c5a6006d07e0336f12623656ebdb13ba6e479bf71a01274c6"
+    },
+    {
+      "path": "src/components/student-portal-login-form.tsx",
+      "candidate_sha256": "cf7ad9d3161873803b3e227d7ece4a49c439e10eccce808e0804315f0e78501a"
+    },
+    {
+      "path": "src/lib/email-delivery.test.ts",
+      "candidate_sha256": "1e7c95200c2790511cb1905dbed790a0b45fc25ed36307b901082602af7d72ac"
+    },
+    {
+      "path": "src/lib/email-delivery.ts",
+      "candidate_sha256": "ad2fb396bd3ed9445dc0f3b2dfc1ee76c9cba33bfc1fae0412286deb95306092"
+    },
+    {
+      "path": "src/lib/student-portal-auth.db.test.ts",
+      "candidate_sha256": "bf408bee7bf1dcdbee96c1c0b21f4f34cf5a3dbf0aca670dc9df112dcb439ffc"
+    },
+    {
+      "path": "src/lib/student-portal-auth.test.ts",
+      "candidate_sha256": "41b049bcbc55e5f322d85264d2844389c06599469befcf7d56933280eaf7b321"
+    },
+    {
+      "path": "src/lib/student-portal-auth.ts",
+      "candidate_sha256": "c1fbbb7ac5de933c77c236f28edddd8468ed9528684a5138b281c1deb13ce2b8"
+    },
+    {
+      "path": "src/lib/student-portal-voucher.ts",
+      "candidate_sha256": "7f56a1a27455f8c49bc6de41f9e65f3969171eca4ddbed96de7425460855c305"
+    },
+    {
+      "path": "src/lib/student-portal.test.ts",
+      "candidate_sha256": "5d80d83365505ac42d070fd8ab3c17107486b63f9330d4a2f6bbdb345604e4ea"
+    },
+    {
+      "path": "src/lib/student-portal.ts",
+      "candidate_sha256": "2b618011e22fe6f1d0a232680721a3e7c667f076bdf6c7c7faad3bb8c33d71ac"
+    },
+    {
+      "path": "tests/e2e/student-portal.spec.ts",
+      "candidate_sha256": "1ef54d51c75eb8dc31c0d320d4649d5a513995f78c661f005eb34f6ad66b223d"
+    }
+  ]
+}

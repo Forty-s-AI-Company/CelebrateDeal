@@ -33,7 +33,7 @@ async function expectInvitationFailureRedirect(page: Page) {
     // The first invitation also derives a one-time scrypt password. Under the
     // full parallel E2E load that work can queue behind other crypto jobs, so
     // keep the redirect assertion strict while allowing a bounded CI margin.
-    await expect(page).toHaveURL(/\/settings\/security\?error=member_invitation$/u, { timeout: 75_000 });
+    await expect(page).toHaveURL(/\/settings\/team\?error=member_invitation$/u, { timeout: 75_000 });
   } catch (error) {
     test.info().annotations.push({ type: "security-action-outcome", description: invitationRedirectOutcome(page) });
     throw error;
@@ -136,16 +136,16 @@ test("local invitation state records member and mail failure without proving ema
   await page.getByRole("button", { name: "登入" }).click();
   await expect(page).toHaveURL(/\/dashboard/u);
 
-  await page.goto("/settings/security");
+  await page.goto("/settings/team");
   await page.waitForLoadState("networkidle");
   const invitationForm = page.locator("form").filter({
-    has: page.getByRole("button", { name: "寄送邀請 / 重新啟用成員", exact: true }),
+    has: page.getByRole("button", { name: "邀請成員", exact: true }),
   });
   await expect(invitationForm).toHaveCount(1);
   await invitationForm.getByLabel("姓名", { exact: true }).fill("Invited Support Member");
   await invitationForm.getByLabel("Email", { exact: true }).fill(invitedEmail);
   await invitationForm.locator('select[name="role"]').selectOption("support");
-  await submitServerAction(invitationForm.getByRole("button", { name: "寄送邀請 / 重新啟用成員", exact: true }));
+  await submitServerAction(invitationForm.getByRole("button", { name: "邀請成員", exact: true }));
 
   await expectInvitationFailureRedirect(page);
   await expect(page.getByText("成員已更新，但邀請信寄送失敗，請稍後重新邀請。", { exact: true })).toBeVisible();

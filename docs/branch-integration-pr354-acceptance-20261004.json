@@ -1,0 +1,235 @@
+{
+  "decision": {
+    "status": "planned",
+    "execution": "recommendation_only",
+    "task_id": "line-menu-drafts-integration",
+    "signals": {
+      "task_type": "feature",
+      "complexity": "medium",
+      "risk": "critical",
+      "risk_score": 6,
+      "engineering_profile": "complex",
+      "large_workload": false,
+      "risk_categories": [
+        "migration",
+        "tenant_isolation"
+      ],
+      "important_findings": false,
+      "required_capabilities": [
+        "database"
+      ],
+      "task_type_floor": "low",
+      "complexity_requirement": "medium",
+      "risk_requirement": "high",
+      "size_requirement": "low",
+      "changed_files": [],
+      "context_size": 0,
+      "expected_duration": 0,
+      "code_surface_area": 0,
+      "production_impact": "low",
+      "security_impact": "low",
+      "data_integrity_impact": "low"
+    },
+    "task_type": "feature",
+    "difficulty": "medium",
+    "requested_team": "auto",
+    "team": "ai-team-pro",
+    "escalated": false,
+    "selected_model": "sol",
+    "fallback_events": [],
+    "fallback_chain": [],
+    "limits": {
+      "max_agent_depth": 1,
+      "max_parallel_agents": 1,
+      "max_writers": 1,
+      "max_readonly_helpers": 1,
+      "max_dispatches_per_task": 4,
+      "max_attempts_per_model": 1,
+      "max_external_attempts": 2,
+      "automatic_spawn": false
+    },
+    "spawn_count": 0,
+    "review_plan": [
+      {
+        "role": "critical_review",
+        "required": true,
+        "fallback_events": [
+          {
+            "model": "opus",
+            "reason": "unavailable"
+          }
+        ],
+        "status": "planned",
+        "model_key": "astra",
+        "model": "gpt-6-astra",
+        "provider": "native_agent",
+        "reasoning_effort": "high",
+        "effort_floor": null,
+        "effort_reason": null,
+        "sandbox_mode": "read-only",
+        "execution": "native_agent_handoff_only",
+        "candidate_findings_only": false,
+        "may_spawn": false,
+        "astra_reason": "critical_review_no_equivalent"
+      }
+    ],
+    "escalation_reasons": [],
+    "astra_reason": null,
+    "source_revision": "sha256:30916f74221d09cc538c1a0aef848311448c32bec86926132d39ad2554815ad9",
+    "snapshot_root": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal",
+    "snapshot_files": [
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/docs/branch-integration-line-drafts-20261004.md",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/docs/codex-goal/PRISMA_INVARIANTS.md",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/prisma/migrations/20261004140000_line_rich_menu_drafts/migration.sql",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/prisma/schema.prisma",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/scripts/g7-email-operations-browser-qa.test.mjs",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/scripts/prisma-invariant-inventory.test.ts",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/scripts/staging-migration-compat-preflight.test.mjs",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/scripts/staging-migration-isolated-replay.test.mjs",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/scripts/staging-payuni-management-migrate.test.ts",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/src/app/(app)/settings/line/page.test.tsx",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/src/app/(app)/settings/line/page.tsx",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/src/app/actions/line-rich-menu-actions.test.ts",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/src/app/actions/line-rich-menu-actions.ts",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/src/components/line-rich-menu-studio.test.tsx",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/src/components/line-rich-menu-studio.tsx",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/src/lib/line-rich-menu-draft.db.test.ts",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/src/lib/line-rich-menu.test.ts",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/src/lib/line-rich-menu.ts",
+      ".ai-team/tmp/pr354-evidence-20261004/snapshot/tests/e2e/smoke.spec.ts"
+    ],
+    "required_checks": [
+      "new-head-ci-quality"
+    ],
+    "requested": {
+      "model_key": "sol",
+      "effort": "auto",
+      "speed": "standard"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown",
+      "source": "not_executed"
+    },
+    "role": "developer",
+    "model_key": "sol",
+    "model": "gpt-6.1-sol",
+    "provider": "native_agent",
+    "reasoning_effort": "xhigh",
+    "effort_floor": "xhigh",
+    "effort_reason": "engineering_profile:complex",
+    "sandbox_mode": "workspace-write",
+    "candidate_findings_only": false,
+    "may_spawn": false,
+    "resolved": {
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "speed": "standard",
+      "source": "router_policy"
+    },
+    "handoff": {
+      "role": "developer",
+      "model_key": "sol",
+      "model": "gpt-6.1-sol",
+      "provider": "native_agent",
+      "reasoning_effort": "xhigh",
+      "effort_floor": "xhigh",
+      "effort_reason": "engineering_profile:complex",
+      "sandbox_mode": "workspace-write",
+      "execution": "native_agent_handoff_only",
+      "candidate_findings_only": false,
+      "may_spawn": false
+    },
+    "target": "worker-deep",
+    "execution_requirement": {
+      "explicit_model": true,
+      "explicit_effort": true,
+      "verify_observed": true
+    },
+    "self_review": false,
+    "finding_escalation": null
+  },
+  "evidence": {
+    "execution": {
+      "kind": "execution",
+      "source": "desktop_native",
+      "revision": "sha256:30916f74221d09cc538c1a0aef848311448c32bec86926132d39ad2554815ad9",
+      "status": "COMPLETED",
+      "provider_terminal": true,
+      "tool_operations": "completed",
+      "head": "23fcae9871cec124cdb940a339be806081d5f849",
+      "scope": "Implemented and pushed PR354; immutable manifest binds published candidate to independently reviewed code",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr354-evidence-20261004\\execution.json"
+    },
+    "checks": [
+      {
+        "kind": "validation",
+        "source": "validation_runner",
+        "name": "new-head-ci-quality",
+        "revision": "sha256:30916f74221d09cc538c1a0aef848311448c32bec86926132d39ad2554815ad9",
+        "status": "PASS",
+        "exit_code": 0,
+        "duration_seconds": 2.734,
+        "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr354-evidence-20261004\\new-head-ci-quality.json"
+      }
+    ],
+    "review": {
+      "kind": "review",
+      "source": "desktop_native",
+      "revision": "sha256:30916f74221d09cc538c1a0aef848311448c32bec86926132d39ad2554815ad9",
+      "status": "PASS",
+      "independent": true,
+      "role": "critical_review",
+      "model": "gpt-6-astra",
+      "observed": {
+        "model": "unknown",
+        "effort": "unknown"
+      },
+      "reviewer": "/root/pr351_review",
+      "head": "23fcae9871cec124cdb940a339be806081d5f849",
+      "reviewed_files": {
+        "prisma/migrations/20261004140000_line_rich_menu_drafts/migration.sql": "1f9f904ade93d4da977bd78d7807a5edcfbcc93288afc5e6a59f21d8005b216c",
+        "prisma/schema.prisma": "19bebbcf80a3b4f7d5f75b389ea484b3ebc4285cf2865486a0af16080f0f659e",
+        "scripts/g7-email-operations-browser-qa.test.mjs": "560f92ca929eb24b334de038b766adf7e0769cf2c4636207e86b8d832cc93ca9",
+        "scripts/prisma-invariant-inventory.test.ts": "cbd5e43d4259110efb5d4bbb1d3fa615d79882051c818cccfdf9b9971856dc22",
+        "scripts/staging-migration-compat-preflight.test.mjs": "876eea25affa0f69f7ca69bbdf930f656d1b1466b1ba3b979cfc06ff44a864b5",
+        "scripts/staging-migration-isolated-replay.test.mjs": "a853641d384265a7666d9b49b4887bc19dc2510a4c517355b7d3d9f5c72d9e71",
+        "scripts/staging-payuni-management-migrate.test.ts": "172ec886e08518cd6a9d942aba9ebbb28af226a1662ca91c38097b2fa5de78d2",
+        "src/app/(app)/settings/line/page.test.tsx": "d877281d6f4cb7d3f193f4a3e8d24539a99befb5df20d9d3441b1bf96949ca2a",
+        "src/app/(app)/settings/line/page.tsx": "b76f469f9f9c698810aa2972df21bcd85fe0f6129b7d9549ce8393c0872c5053",
+        "src/app/actions/line-rich-menu-actions.test.ts": "d222142aec4851958b1e3f4bac49fe172cfca42e1296acad6473d285deb8fae7",
+        "src/app/actions/line-rich-menu-actions.ts": "706a21e3c5ca98ece6b63f0c11f9ce3017776a03d3d27fe348a462ca7338c8c3",
+        "src/components/line-rich-menu-studio.test.tsx": "f11e3b85eeac7c0e8ac4647f335acdc00a9e824df9d40435cd004a5113648d3a",
+        "src/components/line-rich-menu-studio.tsx": "0115da793f94cd656f36cc8d9b95d9834f7f796106563749b6b48c4a15f87a22",
+        "src/lib/line-rich-menu-draft.db.test.ts": "f91eccca4e79910d973335a5b26c9d1d037fe152a9c1585d1aea8b5a8fd09389",
+        "src/lib/line-rich-menu.test.ts": "31085fae9d596c28cc445e963261d2e4493a43382e69b7ed2c0f102fc3572acd",
+        "src/lib/line-rich-menu.ts": "32d3b3a520411b446010cd313e85997bc675bd94442441e56f1e74f26b34d2d9",
+        "tests/e2e/smoke.spec.ts": "8364b6d8a3aef6df24038fd0506c3d53f18e9e05a15cdf13a0aa1d2b57344366"
+      },
+      "scope": "Independent 11-file initial review plus RLS migration, DB test and E2E delta re-review, then four migration test files and canonical inventory independent review, and final G7-55 historical runner inventory test review. All findings closed. Only trailing empty line removal in lib after review; no executable changes. Documentation reviewed by primary.",
+      "findings": [],
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\.ai-team\\tmp\\pr354-evidence-20261004\\review.json"
+    },
+    "findings": []
+  },
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:30916f74221d09cc538c1a0aef848311448c32bec86926132d39ad2554815ad9"
+  },
+  "publication": "MERGED",
+  "merge": {
+    "headRefOid": "23fcae9871cec124cdb940a339be806081d5f849",
+    "mergeCommit": {
+      "oid": "42bce600e9c6b88003bd3b2a924d0ea96c70aee8"
+    },
+    "mergedAt": "2026-10-04T14:26:55Z",
+    "state": "MERGED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/354"
+  },
+  "master_tree_equals_candidate": true
+}

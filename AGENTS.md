@@ -6,104 +6,69 @@
 - 修改 Next.js 程式前，先閱讀對應的本機 Next.js 文件。
 - 直接推進使用者目標；只有安全、授權或不可驗證的阻擋才停下詢問。
 
-## Autonomous prelaunch mode
+## Canonical AI Team vNext
 
-CelebrateDeal 目前是尚未對外營運的專案，預設採 `PRELAUNCH_DEV_AUTONOMOUS`：
+AI Team 的唯一 routing source of truth 是 `.ai-team/config/routing-policy.json`，搭配 `.ai-team/mcp_server/routing.py`、`docs/ai-team/ROUTING.md` 與 `docs/ai-team/handoff-schema.md`。`.agents/skills/*` 與 `.codex/agents/*` 只提供 thin adapter、角色權限與最小必要 context，不得複製模型階梯、fallback table 或完整 prompt。
 
-- 一個長程 Goal 可以連續執行多個 Work Package，不需要每 30～90 分鐘停止。
-- Sol、一般 Worker／Luna、Worker Deep／Terra、Reviewer／Terra、AGY 與 Luna 唯讀升級可依工作需要自動協作；不強制每個 WP 都走相同階段。
-- 已核准 roadmap 內的下一個 WP 可在 checkpoint 後自動接續。
-- Planner 可重新規劃、更新 plan metadata；一般 Worker／Luna 可直接在同一 Goal 內實作與驗證，複雜跨檔工作交給 Worker Deep／Terra。
-- 低風險測試、文件、coverage 與本地功能修正可並行；高風險工作才需要額外 acceptance。
-- Agent 可以使用本機、loopback、disposable、staging 與 sandbox 資源，只要符合安全底線與明確 scope。
-- 允許建立精確 scope 的本地 checkpoint commit；可自動 push 到 `codex/*` 分支，並只透過受保護 PR 自動 merge。
-- Production deployment 不得因 push／merge 自動觸發，仍需獨立 workflow 與人工核准。
+- `ai-team-lite`：能力上限為 GPT-6 Luna 與已驗證的 Gemini Flash Medium；低風險任務優先單 Agent。
+- `ai-team`：額外允許 GPT-6.1 Sol、Gemini Flash High 與已驗證的 Sonnet；依 task signals 選模型與必要 review。
+- `ai-team-pro`：開放全部模型，含 Astra/Opus；Pro 不代表每次使用高階模型。
+- `ai-team-style`：Lite 能力上限加上 UI/UX 視覺偏好，不建立第四套 routing。
+- Routing 依 complexity、risk、context、task type、duration、surface、production/security/data impact、availability 與 quota 選最低足夠模型；Critical risk 提高驗證與獨立審查底線，不機械指定實作模型。
+- Routing 與 fallback 分離。agy failure 必須區分 `AUTH_REQUIRED`、`HOST_PERMISSION_BLOCKED`、`AGY_NOT_INSTALLED`、`MODEL_UNAVAILABLE`、`AGY_RUNTIME_ERROR`，並回到適合的 Codex fallback。
+- Native agent descriptor 是 preset；真正 dispatch 必須明示 resolved model 與 effort，且實際觀測不到時記為 unknown。主對話模型不會因子代理路由而改變。
+- 超簡單工作用 GPT-6 Luna；一般工程起用 GPT-6.1 Sol low，依 complexity、工作範圍與 risk 提高 effort，完整條件只維護於共享 routing policy。極高難度先用 Sol max；Astra 需具體 `astra_reason`。
+- 使用者的硬性 team cap 不得自動越界。Router 的結果是建議；只有具體執行回報才可填 observed model/effort。沒有 observed 就記 unknown。
+- Gemini 只提供廣域 candidate findings/QA；Sonnet 做深度 review；Opus 僅用於 Critical security、Auth、Permission、Payment、Billing、Production data、Migration 或重大爭議。
 
-## 不可放寬的安全底線
+不要啟動正在被修改的 AI Team 來修改自己。Router/MCP 不 spawn、不呼叫 Codex CLI、不呼叫自己的 MCP；`AI_TEAM_CHILD=1`、`parent_depth>0`、dispatch budget 用盡或 automatic spawn=false 時停止。Pro 的簡單 copy/UI 不得強制 Astra/Opus。
+
+## PRELAUNCH_DEV_AUTONOMOUS
+
+- Goal 可連續處理多個 Work Package，不受固定 30～90 分鐘或固定角色順序限制。
+- 主代理負責整合、ownership、evidence 與最終判斷；不要求每個任務都啟動 Planner、Developer、Reviewer、QA 全部角色。
+- 不相交 scope 可並行；同一檔案、資料資源或外部資源同一時間只有一個 writer。
+- 依風險選 targeted tests、integration、coverage、E2E、staging 或 sandbox；不能把未執行測試標成 PASS。
+- Production deployment、正式資料庫、正式付款、退款、寄信與破壞性 migration 仍需額外授權。
+
+## 安全底線
 
 - 不讀取、輸出或傳送 `.env*`、密碼、Token、Cookie、私鑰、正式 Secret、正式客戶資料或付款資料。
-- 不操作正式資料庫、正式付款、正式退款、正式寄信或其他正式服務；Production deployment 仍需另外明確授權。
-- 不執行未核准的破壞性 migration、資料刪除、廣域 Docker cleanup 或不可逆外部操作。
-- 不偽造 evidence，不把未執行、失敗或工具阻擋的測試標成 `PASS`。
-- 不降低 assertion、coverage threshold、資料驗證強度；不得用 skip、exclude 或刪資料掩蓋失敗。
-- 保留所有使用者既有變更；不得覆蓋未知 ownership，也不得使用 `reset`、`clean`、`stash`、`restore`、`checkout` 丟棄工作。
-- 同一檔案或資料資源同一時間只允許一個 writer；不同 scope 可並行。
-- 所有外部、staging、sandbox 與 disposable 操作必須保存最小化、可驗證的 sanitized evidence。
+- 不使用 `reset`、`clean`、`stash`、`restore`、`checkout`、`rebase` 丟棄未知變更。
+- 不降低 assertion、coverage threshold 或資料驗證強度；不得用 skip、exclude、刪資料或假 fixture 掩蓋失敗。
+- 本機、Preview、staging、固定 Sandbox、disposable PostgreSQL 與 agy 開發驗證不需要逐次 owner authorization；但必須使用非 Production 端點、最小 scope、合成資料，並保存 sanitized evidence。Host/Sandbox permission failure 不得繞過或誤標為 PASS。
 
-## Approved secret-aware runner
+## 非 Production 開發執行
 
-- Agent 只能觸發已合併至受保護預設分支的
-  `.github/workflows/secure-staging-validation.yml`，且只能選擇 workflow
-  明列的固定 task；feature branch、未受保護分支或任意 command 不得取得 Secret。
-- Agent 可以讀取 sanitized receipt，但不得列舉 GitHub Environment Secrets、
-  Secret Store、child-process environment 或 raw logs，也不得執行 `.env*`、
-  `vercel env pull`、`vercel env run` 等載入方式。
-- Trusted runner 必須先驗證 exact Preview source／deployment lineage，並維持
-  fixed-host outbound allowlist、固定 side-effect budget 與 canonical receipt
-  validator；任一條件不成立即 fail closed。
-- Trusted runner 的加入不授權 Production、正式付款／退款、migration write、
-  deployment、alias mutation、資料刪除、force push 或 merge。
+- 固定、可審查的本機／Preview／staging／Sandbox runner 可直接執行，不以每次 owner token、一次性 probe 或舊 Work Package attempt budget 作為前置條件。
+- Secret 只能由核准的工作階段 process environment、CI Environment 或平台 secret provider 注入；不得列舉 Secret Store、child-process environment、raw logs，也不得讀取或輸出 `.env*` 內容。
+- 歷史 evidence／WP 中的 no-rerun、single-attempt 或 authorization 結論只描述當時執行，不形成新工作的全域禁令。新的非 Production 工作仍須驗證目標環境與資料隔離。
+- Production deployment、正式資料庫、正式付款／退款、正式寄信與不可逆外部操作仍需另行明確授權。
 
-## 代理協作與審查機制
+## 驗證、handoff 與 Git
 
-- **主代理端到端直通（Direct Autonomous Delivery）**：主代理負責整合與最終判斷，具備直接規劃、編碼、自測與 checkpoint 提交權限，毋須進行多代理強制 handoff。
-- **日常任務免複審（Skip Routine Review）**：非重大金流、資安、資料庫 Migration 的日常任務（UI、文案、一般 Bug 修復），跑過本地 `typecheck` 與 targeted tests 即可直接交付，跳過 AI 複審以極限節省額度。
-- **高風險任務四級審查降級鏈（Review Fallback Ladder）**：
-  1. **Tier 1 首選**：`Claude Sonnet 4.6 thinking` 或 `Claude Opus`（以奧坎剃刀原則審核：嚴禁過度設計、抓真實致命漏洞，防止鑽牛角尖）。
-  2. **Tier 2 備選（Claude 額度不足時）**：`GPT-5.6-Sol (medium)`（當 Claude 額度竭盡時由 Sol 接手複審，平時由 Gemini Flash 規劃以節省 Sol 85%+ 額度）。
-  3. **Tier 3 備選（若 Sol 額度不足）**：`Gemini 3.8 Flash High`（零額度焦慮、百萬 Context、快速反向防呆把關）。
-  4. **Tier 4 終極防線（額度全竭時）**：直接跳過 AI 複審，以本地型別檢查與 3,134 個單元測試為最終驗證防線。
-- **多隊伍架構與一鍵切換（Team Modes: 高階 ai-team / 低階 ai-team-lite / 進階 ai-team-pro / 風格 ai-team-style）**：
-  - **低階模式（英文代稱 `ai-team-lite`，預設推薦省額度）**：
-    - **主規劃（Planner）**：由 `gemini-3.8-flash-high` 負責草擬與架構，出圖／出文零額度焦慮。
-    - **審查階梯**：Tier 1 Claude Sonnet 4.6 / Claude Opus -> Tier 2 Sol (medium，二線後備省 85%+ 額度) -> Tier 3 Gemini Flash -> Tier 4 Skip。
-    - **動態推理**：全隊解除鎖定，依難度在 `low`～`high` 彈性調整（routine 任務以 `medium` 推進，上限收斂至 `high`）。
-    - **適用時機**：ASTRA 剛發布額度吃緊、日常 UI/CRUD 功能迭代。
-  - **高階模式（英文代稱 `ai-team`，Full-Power 標準全開）**：
-    - **主規劃（Planner）**：由 `gpt-5.6-sol` 負責端到端全域深度架構規劃。
-    - **審查階梯**：Tier 1 Claude Sonnet 4.6 -> Tier 2 Gemini Flash -> Tier 3 Terra -> Tier 4 Skip。
-    - **推理鎖定**：Worker Luna 鎖定 `high` 推理，支援 `xhigh`／`max` 高難度深度診斷。
-    - **適用時機**：ASTRA 額度充足、重大資安／金流架構改版。
-  - **進階動態推理模式（英文代稱 `ai-team-pro`，頂規動態適配）**：
-    - **主規劃與實作（Planner & Worker）**：由 `codex-6-Astra` 全局負責。
-    - **動態推理（Dynamic Reasoning）**：依階段自動切換。Planning 鎖定 `max`/`xhigh`，高風險核心實作切換 `high`，日常開發切換 `medium`，單點修復切換 `low`。
-    - **異構深度複審（Cross-Review）**：由 `Claude Sonnet 4.6 Thinking` / `Opus` 擔任 Tier-1 對抗性審查，專抓 Astra 盲點。
-    - **適用時機**：無額度限制，且需要處理極度複雜端到端架構、且希望各階段推理解算力最佳化不浪費時使用。
-  - **風格模式（英文代稱 `ai-team-style`，前端視覺與極限省額度專用）**：
-    - **主規劃（Planner）**：由 `gemini-3.8-flash-high` 負責視覺拆解、Bento Grid 佈局規劃，零額度焦慮。
-    - **樣式實作（Worker）**：由 `gpt-5.6-luna` 負責，鎖定 `low` 推理（極限節省 70%+ 思考 Token），專注組裝 JSX 與 Tailwind 樣式。
-    - **審查階梯**：日常 UI 開發直接走 Tier 3 Skip Review（靠本機 `typecheck` 與測試驗證，省 85%+ 額度）；重要里程碑可選用 Claude Sonnet 4.6 視覺審核。
-    - **核心理念**：開源模板填空法（優先參考 Tremor Raw / shadcn / 21st.dev），嚴禁昂貴模型無中生有胡亂發明。
-    - **適用時機**：專案 UI/UX 美化、Dashboard 銷講戰情室改版、視覺重構。
-  - **中英文切換指令**：
-    - 切換風格：使用者說「**請使用 ai team style 模式**」或「**use ai-team-style**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team-style`。
-    - 切換進階：使用者說「**請使用 ai team pro 模式**」或「**use ai-team-pro**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team-pro`。
-    - 切換低階：使用者說「**請使用 ai team 低階模式**」或「**use ai-team-lite**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team-lite`。
-    - 切換高階：使用者說「**請使用 ai team 高階模式**」或「**use ai-team**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 ai-team`。
-    - 調閱清單：使用者說「**叫出 ai team 清單**」或「**list ai-team**」，Agent 執行 `.ai-team/scripts/Switch-AiTeamMode.ps1 -List` 輸出四隊完整陣容。
-- `ai_team_router` 可執行已核准的本地協作，但不得繞過安全底線或擴大 scope。
-- AGY Fast 失敗後可自動轉 Deep，再轉 native Luna；不可無限重試同一個失敗命令。
-
-## 上下文效率與快取優化（Context Efficiency & Caching）
-
-- **上下文效率為第一級約束（Context Efficiency as First-Class Constraint）**：預設嚴禁載入或向子代理分發全專案上下文（Repository-Wide Context）。每個子代理或任務只允許接收其分派工作嚴格必要的檔案、規範、合約與前置結果；優先採用結構化摘要與明確檔案路徑，禁止複製完整歷史紀錄。
-- **子代理進場門檻（Subagent Spawning Gate）**：只有在平行專業化能實質提高正確性或大幅縮減工時的情況下才允許 Spawn 子代理。進場前必須明確宣告該子代理的「唯一獨立工作（Unique Work）」與「最小必要上下文（Minimum Context）」；嚴禁衍生多個代理重複探索相同的程式碼庫上下文。
-- **Prompt Cache 友善原則（Cache-Friendly Prefix）**：固定專案指令、架構規範與角色定義必須保持完全穩定，嚴禁在前綴中插入隨機 ID、動態時間戳記或多變目錄樹，以最大化 OpenAI / Codex 的 Prompt Cache 命中率（享 1/10 成本優勢）。
-- **Checkpoint 接手代替盲目 Reset**：同一 Goal 內維持連續 Session 以累積快取效益；僅在上下文嚴重污染時透過精確的 `goal_checkpoint` 結構化摘要接手，不使用盲目 Reset 浪費重複探索成本。
-
-## 驗證與進度
-
-- 依產品價值選擇 targeted tests、integration tests、coverage、Browser、staging 或 sandbox 驗證，不強制每輪執行全部命令。
-- Coverage gate 是品質訊號；不得降低門檻，但不再阻擋功能測試或 E2E 的合理執行。
-- 發現同一失敗沒有改善時，停止該路徑並改用不同診斷或產品工作；不得在同一死路無限重試。
-- 每個 checkpoint 保存 scope、實際結果、證據、回滾方式與下一步；完整 handoff 只在角色或風險真正變更時輸出。
-- **結尾強制自動 Checkpoint Commit（Mandatory End-of-Goal Checkpoint Commit）**：所有驗證命令全數通過後，代理必須在回報前自動執行 `git add .` 與建立語義化本地 Checkpoint Commit（例如 `git commit -m "feat(<scope>): <description>"`），確保工作目錄處於 clean 狀態，不留未提交的變更，並在總結中明確回報 Commit Hash。
-- 最終 Goal 只有在所有目標與必要 release evidence 完成後才可標記 `COMPLETE`。
+- Handoff 至少記錄 requested/effective team、selected model、reasoning、fallback events、review plan、ownership、dispatch/depth limits 與下一步。
+- Task READY 必須經 MCP `assess_task` 或同一 `assess_acceptance` gate；Goal `goal_finalize` 也受此 gate 管理。路由、handoff、provider 完成與 phase checkpoint 不等於任務驗收。
+- Reviewer 只輸出 `BLOCKER`、`MAJOR`、`MINOR`、`NIT` findings，不直接修改 code；Developer 修正後依 risk 驗證受影響範圍。
+- 同一根因沒有改善時停止重試，改用明確 fallback 或記錄 blocked。
+- 只在有明確授權時建立精確 scope checkpoint；可推送 `codex/*` 並經 protected PR，禁止 force push、default branch 直推與 Production 自動部署。
 
 ## 文件優先順序
 
-- Canonical workflow：`docs/ai-team/workflow-policy.md`
-- Goal protocol：`docs/ai-team/GOAL-PROTOCOL.md`
+- Plan：`docs/ai-team-vnext-plan.md`
+- Workflow：`docs/ai-team/workflow-policy.md`
+- Goal：`docs/ai-team/GOAL-PROTOCOL.md`
 - Routing：`docs/ai-team/ROUTING.md`
-- Handoff schema：`docs/ai-team/handoff-schema.md`
-- 歷史 WP 的一次性 scope 只對該 WP 有效，不得被當成全域限制。
+- Handoff：`docs/ai-team/handoff-schema.md`
+- Validation：`docs/ai-team/vnext-validation.md`
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
+

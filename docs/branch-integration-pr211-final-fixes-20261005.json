@@ -1,0 +1,34 @@
+{
+  "head": "fed00934d05beee9b29b3824140c0f88585ad9f9",
+  "base": "9a76580124edf373f9ad4d8d18aaa45a8150d1d1",
+  "status": "LOCAL_CHECKPOINT_PENDING_CONSOLIDATED_PUBLICATION",
+  "files": [
+    {
+      "path": "prisma/schema.prisma",
+      "candidate_sha256": "2ea573e323f8ca624708d3d111418b1dfc8ad19f2548bcc829f8eed90f416728"
+    },
+    {
+      "path": "src/components/landing-pages/funnel-page-editor.tsx",
+      "candidate_sha256": "247ce374f55e15f65144de6039a7922f379faee335ee286d1dddbe1d1a2080a3"
+    }
+  ],
+  "review": {
+    "reviewer": "/root/portal_review_fallback",
+    "findings": [],
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "scope": "Two-line schema and UI copy fix; no SQL migration change"
+  },
+  "validation": {
+    "prisma_validate": "PASS with explicit disposable config, dotenv loading skipped",
+    "eslint": "PASS",
+    "popup_tests_passed": 11,
+    "isolated_db_index": "LandingPage_slug_key UNIQUE(slug) verified at loopback54463 celebratedeal_test"
+  },
+  "remaining": [
+    "Complete PR211 payment/API scope reconciliation",
+    "Consolidated protected publication and exact-head CI/gate"
+  ]
+}

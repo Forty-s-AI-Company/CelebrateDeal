@@ -1,0 +1,10 @@
+{
+  "version": "17.11 (Debian 17.11-1.pgdg13+2)",
+  "applied_migrations": 83,
+  "unresolved_migrations": 0,
+  "remaining_portal_tokens": 0,
+  "container_label_verified": true,
+  "task_container_removed": true,
+  "production_operations": false,
+  "other_containers_untouched": true
+}

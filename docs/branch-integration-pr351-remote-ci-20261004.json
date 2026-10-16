@@ -1,0 +1,362 @@
+{
+  "pr": 351,
+  "head": "ff9f446751d37be64bf2cf423e2e7c055135e0ce",
+  "run_id": 37200997791,
+  "ci": {
+    "conclusion": "success",
+    "event": "pull_request",
+    "headSha": "ff9f446751d37be64bf2cf423e2e7c055135e0ce",
+    "jobs": [
+      {
+        "completedAt": "2026-10-04T12:31:57Z",
+        "conclusion": "success",
+        "databaseId": 111432476362,
+        "name": "quality",
+        "startedAt": "2026-10-04T12:06:55Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-04T12:06:56Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-04T12:06:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:07:17Z",
+            "conclusion": "success",
+            "name": "Initialize containers",
+            "number": 2,
+            "startedAt": "2026-10-04T12:06:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:07:20Z",
+            "conclusion": "success",
+            "name": "Checkout",
+            "number": 3,
+            "startedAt": "2026-10-04T12:07:17Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:07:20Z",
+            "conclusion": "success",
+            "name": "Import fixed Preview source for staging contract tests",
+            "number": 4,
+            "startedAt": "2026-10-04T12:07:20Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:07:25Z",
+            "conclusion": "success",
+            "name": "Setup Node",
+            "number": 5,
+            "startedAt": "2026-10-04T12:07:20Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:07:55Z",
+            "conclusion": "success",
+            "name": "Install dependencies",
+            "number": 6,
+            "startedAt": "2026-10-04T12:07:25Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:07:56Z",
+            "conclusion": "success",
+            "name": "Production dependency audit",
+            "number": 7,
+            "startedAt": "2026-10-04T12:07:55Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:07:56Z",
+            "conclusion": "success",
+            "name": "Repository secret and archive scan",
+            "number": 8,
+            "startedAt": "2026-10-04T12:07:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:08:00Z",
+            "conclusion": "success",
+            "name": "Generate Prisma client",
+            "number": 9,
+            "startedAt": "2026-10-04T12:07:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:08:03Z",
+            "conclusion": "success",
+            "name": "Apply database migrations",
+            "number": 10,
+            "startedAt": "2026-10-04T12:08:00Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:08:47Z",
+            "conclusion": "success",
+            "name": "Lint",
+            "number": 11,
+            "startedAt": "2026-10-04T12:08:03Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:31Z",
+            "conclusion": "success",
+            "name": "Typecheck",
+            "number": 12,
+            "startedAt": "2026-10-04T12:08:47Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:32Z",
+            "conclusion": "success",
+            "name": "PayUni deployment environment binding contract",
+            "number": 13,
+            "startedAt": "2026-10-04T12:09:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:55Z",
+            "conclusion": "success",
+            "name": "Strict production index access",
+            "number": 14,
+            "startedAt": "2026-10-04T12:09:32Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:56Z",
+            "conclusion": "success",
+            "name": "Release readiness contract",
+            "number": 15,
+            "startedAt": "2026-10-04T12:09:55Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:56Z",
+            "conclusion": "success",
+            "name": "Readiness truth reconciliation",
+            "number": 16,
+            "startedAt": "2026-10-04T12:09:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:57Z",
+            "conclusion": "success",
+            "name": "Staging migration evidence contract",
+            "number": 17,
+            "startedAt": "2026-10-04T12:09:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:57Z",
+            "conclusion": "success",
+            "name": "Staging migration receipt validation contract",
+            "number": 18,
+            "startedAt": "2026-10-04T12:09:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:58Z",
+            "conclusion": "success",
+            "name": "Staging release evidence aggregation contract",
+            "number": 19,
+            "startedAt": "2026-10-04T12:09:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:58Z",
+            "conclusion": "success",
+            "name": "Staging release evidence receipt validation contract",
+            "number": 20,
+            "startedAt": "2026-10-04T12:09:58Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:58Z",
+            "conclusion": "success",
+            "name": "Human owner acceptance evidence contract",
+            "number": 21,
+            "startedAt": "2026-10-04T12:09:58Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:58Z",
+            "conclusion": "success",
+            "name": "Release evidence bundle contract",
+            "number": 22,
+            "startedAt": "2026-10-04T12:09:58Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:58Z",
+            "conclusion": "success",
+            "name": "Current release handoff evidence consistency",
+            "number": 23,
+            "startedAt": "2026-10-04T12:09:58Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:59Z",
+            "conclusion": "success",
+            "name": "External smoke output safety contract",
+            "number": 24,
+            "startedAt": "2026-10-04T12:09:58Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:59Z",
+            "conclusion": "success",
+            "name": "External provider evidence contract",
+            "number": 25,
+            "startedAt": "2026-10-04T12:09:59Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:09:59Z",
+            "conclusion": "success",
+            "name": "Bounded staging Stream resource contract",
+            "number": 26,
+            "startedAt": "2026-10-04T12:09:59Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:10:08Z",
+            "conclusion": "success",
+            "name": "Backup tooling static checks",
+            "number": 27,
+            "startedAt": "2026-10-04T12:09:59Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:11:27Z",
+            "conclusion": "success",
+            "name": "AI Team router and resilience tests",
+            "number": 28,
+            "startedAt": "2026-10-04T12:10:08Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:15:42Z",
+            "conclusion": "success",
+            "name": "Unit tests and coverage thresholds",
+            "number": 29,
+            "startedAt": "2026-10-04T12:11:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:15:46Z",
+            "conclusion": "success",
+            "name": "LINE integration contract",
+            "number": 30,
+            "startedAt": "2026-10-04T12:15:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:16:12Z",
+            "conclusion": "success",
+            "name": "Node TAP contract tests",
+            "number": 31,
+            "startedAt": "2026-10-04T12:15:46Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:19:07Z",
+            "conclusion": "success",
+            "name": "PostgreSQL concurrency tests",
+            "number": 32,
+            "startedAt": "2026-10-04T12:16:12Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:19:31Z",
+            "conclusion": "success",
+            "name": "Install Playwright browser",
+            "number": 33,
+            "startedAt": "2026-10-04T12:19:07Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:20:30Z",
+            "conclusion": "success",
+            "name": "Funnel development harness browser gate",
+            "number": 34,
+            "startedAt": "2026-10-04T12:19:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:29:08Z",
+            "conclusion": "success",
+            "name": "Release browser gates",
+            "number": 35,
+            "startedAt": "2026-10-04T12:20:30Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:29:49Z",
+            "conclusion": "success",
+            "name": "Build",
+            "number": 36,
+            "startedAt": "2026-10-04T12:29:08Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:31:55Z",
+            "conclusion": "success",
+            "name": "Controlled production preflight and build",
+            "number": 37,
+            "startedAt": "2026-10-04T12:29:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:31:55Z",
+            "conclusion": "success",
+            "name": "Preflight",
+            "number": 38,
+            "startedAt": "2026-10-04T12:31:55Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:31:55Z",
+            "conclusion": "success",
+            "name": "Post Setup Node",
+            "number": 74,
+            "startedAt": "2026-10-04T12:31:55Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:31:56Z",
+            "conclusion": "success",
+            "name": "Post Checkout",
+            "number": 75,
+            "startedAt": "2026-10-04T12:31:55Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:31:56Z",
+            "conclusion": "success",
+            "name": "Stop containers",
+            "number": 76,
+            "startedAt": "2026-10-04T12:31:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-04T12:31:56Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 77,
+            "startedAt": "2026-10-04T12:31:56Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/actions/runs/37200997791/job/111432476362"
+      }
+    ],
+    "status": "completed"
+  },
+  "files_match_reviewed_manifest": true,
+  "master_auto_deployment": false
+}

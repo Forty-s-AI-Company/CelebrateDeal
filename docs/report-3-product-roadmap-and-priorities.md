@@ -52,7 +52,7 @@ Perplexity 的建議方向大致正確，尤其是「先完成金流與結算閉
 
 工作內容：
 
-- 依 `current-release-owner-action-packet` 補齊 current source lineage、owner authorization、non-Production scope 與 callback host reference。
+- 直接核對 current source lineage、固定 non-Production scope 與 callback host；不再要求逐次 owner authorization 或沿用舊 RC action packet。
 - 以同一 source lineage 驗證 staging migration、backup／restore、rollback／forward identity 與 release bundle。
 - 完成 Cloudflare Stream、Resend、Sentry、PostHog、durable rate limit 的最小 provider smoke evidence。
 - 依 CAT04 規則完成 PayUni Sandbox 的 order、provider reference、amount、payment status、refund、callback、duplicate webhook 與安全邊界 reconciliation。

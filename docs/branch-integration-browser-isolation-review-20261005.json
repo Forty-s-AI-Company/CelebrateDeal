@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "reviewer": "/root/portal_review_fallback",
+  "observed": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "findings": [],
+  "scope": "Independent read-only review of migration loopback/disposable boundary, CI compatibility, synthetic key parity, external R2 isolation and unchanged individual test/assertion timeouts",
+  "reviewerExecutedTests": false,
+  "files": [
+    {
+      "path": "playwright.config.ts",
+      "sha256": "7146c909eff480f6ce62ee5d782b7d2c01300ff3b1ad07c0c22a32ab0a8aebd0"
+    },
+    {
+      "path": "prisma.playwright.config.ts",
+      "sha256": "3407ffdb6aa3364461b9d8d91bbce647a320504ab9c54e7bc8f1807007849963"
+    },
+    {
+      "path": "scripts/playwright-prisma-config.test.ts",
+      "sha256": "bf1f407cfd127344135d2f2e2091502beeb391a3943e6c09dd8af0cc6ccb4cd8"
+    }
+  ]
+}

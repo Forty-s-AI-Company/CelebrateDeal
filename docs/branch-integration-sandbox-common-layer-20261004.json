@@ -1,0 +1,560 @@
+{
+  "master_at_review": "c071b2d655b0d875fa9d616920c5a554d462dbe6",
+  "status": "PARTIAL_COMMON_LAYER_RECONCILED",
+  "scope": "19 sandbox-qa historical heads share six configuration/runner/documentation paths; five distinct runner versions reviewed by declaration comparison and targeted behavioral reading. This does not prove whole-branch equivalence.",
+  "variants": {
+    ".ai-team/project.yaml": {
+      "02858d4ae9927c4ceec87dd7df666c7e10ef86a9": [
+        "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+        "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+        "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+        "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+        "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+        "39b8dedf2ea140bc264088c9d1843d99196586ff",
+        "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+        "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+        "ded82898a687220496add74827691676e84c8b31",
+        "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3"
+      ],
+      "c10bcb58c3107d5e2b66f6421f725e27ec7a26ad": [
+        "2cceebba802dec508faaad166e37fa1e51b09ed5",
+        "30230f4ab63c65481324a128ff1369deee073c83",
+        "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
+        "3ace54c10b581285a297c5e95e677178314e1c52",
+        "62fb1655dc47c7156a68a09ee18b42d4120d9b61",
+        "638707f9f043498136107b38968e49a0c38e9133",
+        "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
+        "7f1b3fd26e48a41e9e003c848594fa102000f220"
+      ],
+      "986beff7b502262c43c0a18ac21076f439394f37": [
+        "35d8f59341bcb776e548c69fe874a3f4d1fe2528"
+      ]
+    },
+    ".env.example": {
+      "279db50c72f7e4361f3330d0803e2b8ae2800b6f": [
+        "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+        "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+        "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+        "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+        "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+        "2cceebba802dec508faaad166e37fa1e51b09ed5",
+        "30230f4ab63c65481324a128ff1369deee073c83",
+        "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
+        "39b8dedf2ea140bc264088c9d1843d99196586ff",
+        "3ace54c10b581285a297c5e95e677178314e1c52",
+        "62fb1655dc47c7156a68a09ee18b42d4120d9b61",
+        "638707f9f043498136107b38968e49a0c38e9133",
+        "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
+        "7f1b3fd26e48a41e9e003c848594fa102000f220",
+        "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+        "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+        "ded82898a687220496add74827691676e84c8b31",
+        "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3"
+      ],
+      "a8733c3b81e79fcf6e985467b08630dfea793fd7": [
+        "35d8f59341bcb776e548c69fe874a3f4d1fe2528"
+      ]
+    },
+    "docs/ai-team-payuni-sandbox-qa.md": {
+      "aa5e041db619f975c654c16352c13f511d19c681": [
+        "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+        "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+        "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+        "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+        "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+        "2cceebba802dec508faaad166e37fa1e51b09ed5",
+        "30230f4ab63c65481324a128ff1369deee073c83",
+        "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
+        "39b8dedf2ea140bc264088c9d1843d99196586ff",
+        "3ace54c10b581285a297c5e95e677178314e1c52",
+        "62fb1655dc47c7156a68a09ee18b42d4120d9b61",
+        "638707f9f043498136107b38968e49a0c38e9133",
+        "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
+        "7f1b3fd26e48a41e9e003c848594fa102000f220",
+        "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+        "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+        "ded82898a687220496add74827691676e84c8b31",
+        "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3"
+      ],
+      "31a9a3dcf084424d98ce50c5e7c939aa89d460a2": [
+        "35d8f59341bcb776e548c69fe874a3f4d1fe2528"
+      ]
+    },
+    "package.json": {
+      "d58ef21699662dc95be50ff8758cbf50babd4a20": [
+        "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+        "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+        "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+        "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+        "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+        "2cceebba802dec508faaad166e37fa1e51b09ed5",
+        "30230f4ab63c65481324a128ff1369deee073c83",
+        "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
+        "39b8dedf2ea140bc264088c9d1843d99196586ff",
+        "3ace54c10b581285a297c5e95e677178314e1c52",
+        "62fb1655dc47c7156a68a09ee18b42d4120d9b61",
+        "638707f9f043498136107b38968e49a0c38e9133",
+        "67b3fffd94a107c55e6ec4a8a1441645283e6ad0",
+        "7f1b3fd26e48a41e9e003c848594fa102000f220",
+        "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+        "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+        "ded82898a687220496add74827691676e84c8b31",
+        "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3"
+      ],
+      "d18d0d83a64bbc4e5a9c6700b7cbb98bd79ef80f": [
+        "35d8f59341bcb776e548c69fe874a3f4d1fe2528"
+      ]
+    },
+    "scripts/payuni-sandbox-external-qa.mjs": {
+      "d337206bc4f7ea99703bd33fd35165207a09256d": [
+        "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+        "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+        "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+        "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+        "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+        "39b8dedf2ea140bc264088c9d1843d99196586ff",
+        "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+        "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+        "ded82898a687220496add74827691676e84c8b31",
+        "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3"
+      ],
+      "4ce4ae55109888cfde7e982500fa4234b8fe65fd": [
+        "2cceebba802dec508faaad166e37fa1e51b09ed5",
+        "30230f4ab63c65481324a128ff1369deee073c83",
+        "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
+        "3ace54c10b581285a297c5e95e677178314e1c52",
+        "62fb1655dc47c7156a68a09ee18b42d4120d9b61",
+        "638707f9f043498136107b38968e49a0c38e9133"
+      ],
+      "0d64003abad80796dab8de073dbf9b0428d538a6": [
+        "35d8f59341bcb776e548c69fe874a3f4d1fe2528"
+      ],
+      "34584c9cde8b31e9129168ba3cf02ed1d3a8cdd7": [
+        "67b3fffd94a107c55e6ec4a8a1441645283e6ad0"
+      ],
+      "ce95f6314c735acc21382819b0ab20043d8fe1cd": [
+        "7f1b3fd26e48a41e9e003c848594fa102000f220"
+      ]
+    },
+    "scripts/payuni-sandbox-external-qa.test.mjs": {
+      "44dc1951e5f3ffede0c7c64679a21a072b03e1c3": [
+        "114689ccd3c4746d5bb8981ddc5c5b88bad7b29e",
+        "1a918f9e2e1974abc229c4bd76d97d17b398bf63",
+        "1ff1b5135f723c2da1e4509625284c376d8cf83e",
+        "227c102b7f49221a9d0fea17536ce2ed9e82312c",
+        "2401481ce4ea07b1bb7448c62be0db589b73c85e",
+        "39b8dedf2ea140bc264088c9d1843d99196586ff",
+        "94e66bdf36b446b12a05dc3312f0d12eeb86421f",
+        "b92d3e91a28f41e3f0fb219db5ad5b80746c387b",
+        "ded82898a687220496add74827691676e84c8b31",
+        "ebdbf2e0676e1de46dbef09256c0cb4edb3401c3"
+      ],
+      "ABSENT": [
+        "2cceebba802dec508faaad166e37fa1e51b09ed5",
+        "30230f4ab63c65481324a128ff1369deee073c83",
+        "36b38ad22f3369e4e5265983e36a7a19ab8eb369",
+        "3ace54c10b581285a297c5e95e677178314e1c52",
+        "62fb1655dc47c7156a68a09ee18b42d4120d9b61",
+        "638707f9f043498136107b38968e49a0c38e9133",
+        "7f1b3fd26e48a41e9e003c848594fa102000f220"
+      ],
+      "50000df7250c9852f02f11a92865ef4ec4e2d565": [
+        "35d8f59341bcb776e548c69fe874a3f4d1fe2528"
+      ],
+      "176781fec48099dd0af8541e84e94b510a5548ac": [
+        "67b3fffd94a107c55e6ec4a8a1441645283e6ad0"
+      ]
+    }
+  },
+  "declaration_comparison": [
+    {
+      "ref": "7f1b3fd26e48",
+      "identical": [
+        "PAYUNI_HOST",
+        "PAYUNI_API_ORIGIN",
+        "DEFAULT_LIVE_PATH",
+        "env",
+        "assert",
+        "safeEqual",
+        "encryptInfo",
+        "hashInfo",
+        "waitForRefund"
+      ],
+      "changed": [
+        "SCHEMA",
+        "assertExactHttpsHost",
+        "keyMaterial",
+        "decryptInfo",
+        "parseOuterPayload",
+        "payUniRequest",
+        "resultRow",
+        "queryTransaction",
+        "refundTransaction",
+        "runCheckout",
+        "main"
+      ],
+      "removed": [
+        "APP_HOST",
+        "DEFAULT_APP_URL",
+        "reference"
+      ]
+    },
+    {
+      "ref": "2cceebba802d",
+      "identical": [
+        "PAYUNI_HOST",
+        "PAYUNI_API_ORIGIN",
+        "DEFAULT_LIVE_PATH",
+        "env",
+        "assert",
+        "safeEqual",
+        "encryptInfo",
+        "hashInfo",
+        "resultRow",
+        "refundTransaction",
+        "waitForRefund"
+      ],
+      "changed": [
+        "SCHEMA",
+        "assertExactHttpsHost",
+        "keyMaterial",
+        "decryptInfo",
+        "parseOuterPayload",
+        "payUniRequest",
+        "queryTransaction",
+        "runCheckout",
+        "main"
+      ],
+      "removed": [
+        "APP_HOST",
+        "DEFAULT_APP_URL",
+        "reference",
+        "responseShape"
+      ]
+    },
+    {
+      "ref": "67b3fffd94a1",
+      "identical": [
+        "PAYUNI_HOST",
+        "PAYUNI_API_ORIGIN",
+        "DEFAULT_LIVE_PATH",
+        "CALLBACK_TIMEOUT_ERROR_MAX_LENGTH",
+        "CALLBACK_QUERY_ATTEMPTS",
+        "CALLBACK_QUERY_INTERVAL_MS",
+        "CALLBACK_QUERY_TIMEOUT_MS",
+        "PAYUNI_TRADE_STATUSES",
+        "env",
+        "assert",
+        "truncate",
+        "safeTradeStatus",
+        "safeEqual",
+        "encryptInfo",
+        "hashInfo",
+        "resultRow",
+        "refundTransaction",
+        "waitForRefund"
+      ],
+      "changed": [
+        "SCHEMA",
+        "assertExactHttpsHost",
+        "safeHttpsHostPath",
+        "safeDiagnosticToken",
+        "queryWithTimeout",
+        "reconcileCallbackTimeout",
+        "callbackTimeoutDiagnostic",
+        "CallbackTimeoutError",
+        "keyMaterial",
+        "decryptInfo",
+        "parseOuterPayload",
+        "payUniRequest",
+        "queryTransaction",
+        "runCheckout",
+        "main",
+        "cleanUpTimedOutPayment",
+        "execute"
+      ],
+      "removed": [
+        "APP_HOST",
+        "DEFAULT_APP_URL",
+        "PROVIDER_STATUS_MAX_LENGTH",
+        "reference",
+        "safeProviderStatusText",
+        "callbackQuerySummary",
+        "visiblePayUniStatus",
+        "responseShape"
+      ]
+    },
+    {
+      "ref": "114689ccd3c4",
+      "identical": [
+        "PAYUNI_HOST",
+        "PAYUNI_API_ORIGIN",
+        "DEFAULT_LIVE_PATH",
+        "CALLBACK_TIMEOUT_ERROR_MAX_LENGTH",
+        "CALLBACK_QUERY_ATTEMPTS",
+        "CALLBACK_QUERY_INTERVAL_MS",
+        "CALLBACK_QUERY_TIMEOUT_MS",
+        "CALLBACK_RECONCILIATION_MAX_WAIT_MS",
+        "PAYUNI_TRADE_STATUSES",
+        "PROVIDER_DIAGNOSTIC_JSON_TYPES",
+        "PROVIDER_DIAGNOSTIC_LENGTH_BUCKETS",
+        "PROVIDER_DIAGNOSTIC_REFERENCE",
+        "PROVIDER_DIAGNOSTIC_DISPOSITIONS",
+        "PAYUNI_FAILURE_DISPOSITIONS",
+        "CALLBACK_RECEIPT_DISPOSITIONS",
+        "RECONCILIATION_PAID_TRANSACTIONS",
+        "CALLBACK_TIMEOUT_CLEANUP",
+        "FLOW_STAGES",
+        "CALLBACK_QUERY_FAILURES",
+        "STRUCTURAL_VISIBILITY",
+        "env",
+        "assert",
+        "truncate",
+        "safeHttpsHostPath",
+        "safePageHttpsHostPath",
+        "safeDiagnosticToken",
+        "safeTradeStatus",
+        "safeHttpStatus",
+        "diagnosticJsonType",
+        "diagnosticValueText",
+        "diagnosticLengthBucket",
+        "diagnosticReference",
+        "providerResultValue",
+        "exactProviderDisposition",
+        "safeProviderDisposition",
+        "boundedQueryTimeout",
+        "PayUniQueryFailure",
+        "callbackQueryFailure",
+        "queryDisposition",
+        "buildCallbackReceipt",
+        "safeReceiptHostPath",
+        "queryWithTimeout",
+        "sleepWithinBudget",
+        "reconcileCallbackTimeout",
+        "paidTransactionFor",
+        "visibleLocatorState",
+        "paymentPageStructure",
+        "safePaymentPageStructure",
+        "callbackTimeoutDiagnostic",
+        "CallbackTimeoutError",
+        "safeEqual",
+        "encryptInfo",
+        "decryptInfo",
+        "hashInfo",
+        "parseOuterPayload",
+        "resultRow",
+        "queryTransaction",
+        "refundTransaction",
+        "waitForRefund",
+        "cleanUpTimedOutPayment"
+      ],
+      "changed": [
+        "SCHEMA",
+        "PROVIDER_DISPOSITIONS",
+        "PAYUNI_PROVIDER_DISPOSITION_TABLES",
+        "assertExactHttpsHost",
+        "diagnosticHashKey",
+        "providerValueDiagnostic",
+        "providerMessageDiagnostic",
+        "providerResultDiagnostic",
+        "safeProviderValueDiagnostic",
+        "safeProviderMessageDiagnostic",
+        "keyMaterial",
+        "payUniRequest",
+        "runCheckout",
+        "main",
+        "execute"
+      ],
+      "removed": [
+        "APP_HOST",
+        "DEFAULT_APP_URL",
+        "reference"
+      ]
+    },
+    {
+      "ref": "35d8f59341bc",
+      "identical": [
+        "SCHEMA",
+        "QA_ARTIFACT_SCHEMA",
+        "QA_ARTIFACT_DIRECTORY_SEGMENTS",
+        "QA_ARTIFACT_GATES",
+        "QA_ARTIFACT_GATE_RESULTS",
+        "QA_ARTIFACT_FAILURE_CATEGORIES",
+        "QA_ARTIFACT_SIGNER_ROLES",
+        "KNOWN_PRODUCTION_APP_HOST",
+        "PAYUNI_HOST",
+        "PAYUNI_API_ORIGIN",
+        "DEFAULT_LIVE_PATH",
+        "CALLBACK_TIMEOUT_ERROR_MAX_LENGTH",
+        "CALLBACK_QUERY_ATTEMPTS",
+        "CALLBACK_QUERY_INTERVAL_MS",
+        "CALLBACK_QUERY_TIMEOUT_MS",
+        "CALLBACK_RECONCILIATION_MAX_WAIT_MS",
+        "PAYUNI_TRADE_STATUSES",
+        "PROVIDER_DIAGNOSTIC_JSON_TYPES",
+        "PROVIDER_DIAGNOSTIC_LENGTH_BUCKETS",
+        "PROVIDER_DIAGNOSTIC_REFERENCE",
+        "PROVIDER_DISPOSITIONS",
+        "PROVIDER_MESSAGE_CATEGORIES",
+        "PAYUNI_DOCUMENTED_STATUS_DISPOSITIONS",
+        "PAYUNI_DOCUMENTED_MESSAGE_CATEGORIES",
+        "PAYUNI_PROVIDER_DISPOSITION_TABLES",
+        "PROVIDER_DIAGNOSTIC_DISPOSITIONS",
+        "PAYUNI_FAILURE_DISPOSITIONS",
+        "CALLBACK_RECEIPT_DISPOSITIONS",
+        "RECONCILIATION_PAID_TRANSACTIONS",
+        "CALLBACK_TIMEOUT_CLEANUP",
+        "CALLBACK_QUERY_FAILURES",
+        "STRUCTURAL_VISIBILITY",
+        "env",
+        "assert",
+        "safeQaArtifactGate",
+        "safeQaArtifactRevision",
+        "safeQaArtifactSignerRole",
+        "safeQaArtifactFailureCategory",
+        "artifactTimestamp",
+        "writeQaArtifact",
+        "truncate",
+        "safeHttpsHostPath",
+        "safePageHttpsHostPath",
+        "safeDiagnosticToken",
+        "safeQaErrorClass",
+        "safeTradeStatus",
+        "safeHttpStatus",
+        "diagnosticJsonType",
+        "diagnosticValueText",
+        "diagnosticLengthBucket",
+        "diagnosticReference",
+        "documentedProviderCode",
+        "providerMessageCategory",
+        "providerValueDiagnostic",
+        "providerMessageDiagnostic",
+        "providerResultValue",
+        "exactProviderDisposition",
+        "safeProviderDisposition",
+        "providerResultDiagnostic",
+        "safeProviderValueDiagnostic",
+        "safeProviderMessageDiagnostic",
+        "boundedQueryTimeout",
+        "PayUniQueryFailure",
+        "callbackQueryFailure",
+        "queryDisposition",
+        "buildCallbackReceipt",
+        "safeReceiptHostPath",
+        "queryWithTimeout",
+        "sleepWithinBudget",
+        "reconcileCallbackTimeout",
+        "paidTransactionFor",
+        "visibleLocatorState",
+        "paymentPageStructure",
+        "safePaymentPageStructure",
+        "callbackTimeoutDiagnostic",
+        "CallbackTimeoutError",
+        "SandboxBrowserFlowError",
+        "safeEqual",
+        "encryptInfo",
+        "decryptInfo",
+        "hashInfo",
+        "parseOuterPayload",
+        "resultRow",
+        "queryTransaction",
+        "refundTransaction",
+        "waitForRefund",
+        "cleanUpTimedOutPayment"
+      ],
+      "changed": [
+        "FLOW_STAGES",
+        "buildQaArtifact",
+        "assertExactHttpsHost",
+        "resolvePayUniStagingAppUrl",
+        "assertPublicPayUniCallbackHost",
+        "diagnosticHashKey",
+        "PayUniCallbackHostError",
+        "keyMaterial",
+        "payUniRequest",
+        "runCheckout",
+        "main",
+        "execute"
+      ],
+      "removed": [
+        "FINANCE_DASHBOARD_ERROR_CATEGORIES",
+        "vercelProtectionBypassCookieUrl",
+        "installVercelProtectionBypassCookie",
+        "reference",
+        "financeDashboardErrorCategory",
+        "SandboxFinanceDashboardError",
+        "stagingDatabaseUrl",
+        "waitForRefundPersistence",
+        "refundPersistencePassed",
+        "latestRefundableCheckout",
+        "refundThroughCelebrateDeal"
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "path": ".ai-team/project.yaml",
+      "decision": "KEEP_CANONICAL_VNEXT_POLICY",
+      "reason": "Three old variants add path triggers and four refund checks. Current AGENTS/workflow/router supersede old run-once and no-migration policy. Do not reintroduce removed project config. Four refund gates remain explicit pending values in payment handoff."
+    },
+    {
+      "path": "package.json",
+      "decision": "KEEP_CURRENT",
+      "reason": "Both source versions retain all script names and dependency names in current package. QA command intentionally no longer loads .env.local. Current build adds production preflight; TypeScript commands use node --import tsx."
+    },
+    {
+      "path": "docs/ai-team-payuni-sandbox-qa.md",
+      "decision": "CORRECT_CURRENT_DOCUMENTATION",
+      "reason": "Current docs overstate one runner as full payment-and-refund validation. Clarify normal PENDING_REFUND handoff, pending-chrome checks, and separate finance login; timeout direct refund is cleanup only."
+    },
+    {
+      "path": "scripts/payuni-sandbox-external-qa.mjs",
+      "decision": "KEEP_CURRENT_WITH_EXPLICIT_DEFERRED_AUTOMATION",
+      "reason": "Preserves encryption/signature, query order/amount checks, nested result parsing, route-based response capture, DOM-ready navigation, bounded callback reconciliation and timeout cleanup. Current fixed staging/production rejection and Sandbox-only credential names replace old production-host default and generic keys. Closed error categories/HMAC diagnostics replace raw provider status, structure and unkeyed diagnostic identifiers."
+    },
+    {
+      "path": "scripts/payuni-sandbox-external-qa.test.mjs",
+      "decision": "KEEP_CURRENT",
+      "reason": "Current Vitest tests cover fixed host, credential availability, provider envelope validation, bounded queries, sanitized errors and receipts. Import runner is guarded; no provider called by these tests."
+    },
+    {
+      "path": ".env.example",
+      "decision": "METADATA_ONLY_DEFERRED",
+      "reason": "Per project rules no .env* contents read, printed or copied. Record two historical blob IDs only; do not claim template equivalence."
+    }
+  ],
+  "deferred": [
+    {
+      "source": "35d8f59341bc",
+      "capability": "Fully automated finance-dashboard refund and duplicate-refund verification",
+      "source_symbols": [
+        "refundThroughCelebrateDeal",
+        "waitForRefundPersistence",
+        "refundPersistencePassed",
+        "latestRefundableCheckout"
+      ],
+      "next": "Port as a separate fixed-staging consumer of PENDING_REFUND, preserve role/CSRF and non-Production binding proof, verify refunded PaymentTransaction and exactly one processed RefundRecord plus repeat rejection. Do not restore broad database latest-order selection or deployment-protection bypass."
+    },
+    {
+      "capability": "Environment example reconciliation",
+      "next": "Retain source blobs under original refs; no environment template content acceptance claimed."
+    }
+  ],
+  "validation": {
+    "numTotalTests": 33,
+    "numPassedTests": 33,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true,
+    "exit": 0,
+    "files": [
+      "scripts/payuni-sandbox-external-qa.test.mjs",
+      "scripts/payuni-sandbox-payment-handoff.test.mjs"
+    ],
+    "runner": "Vitest",
+    "external_operations": false,
+    "prior_attempt": "Wrong Node test runner failed before executing tests; corrected to Vitest"
+  },
+  "production_operations": false,
+  "whole_goal": "IN_PROGRESS"
+}

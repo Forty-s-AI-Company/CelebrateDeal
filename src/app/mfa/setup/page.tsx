@@ -13,6 +13,7 @@ import { MfaEnrollmentForm } from "@/components/mfa-enrollment-form";
 import { Badge, Card } from "@/components/ui";
 import { requireAuth } from "@/lib/auth";
 import { generateTotpUri, MFA_RECOVERY_COOKIE, MFA_SETUP_COOKIE, parsePendingMfaSetup, parseRecoveryCodes } from "@/lib/mfa";
+import { isPasswordResetSmokeEnabled } from "@/lib/password-reset-smoke-policy";
 
 const errorMessages: Record<string, string> = {
   mfa_code: "TOTP 驗證碼不正確。",
@@ -50,6 +51,7 @@ export default async function MfaSetupPage({
   const nextPath = safeSetupNext(params.next);
   const returningToOrders = isOrdersReturn(nextPath);
   const auth = await requireAuth();
+  const showPasswordResetSmoke = isPasswordResetSmokeEnabled();
   const cookieStore = await cookies();
   const parsedPendingMfa = parsePendingMfaSetup(cookieStore.get(MFA_SETUP_COOKIE)?.value);
   const pendingMfa = parsedPendingMfa?.userId === auth.user.id ? parsedPendingMfa : null;
@@ -206,7 +208,7 @@ export default async function MfaSetupPage({
           </Card>
         </div>
 
-        <Card className="mt-6 rounded-2xl border-slate-200 bg-white/80 p-6 shadow-sm">
+        {showPasswordResetSmoke ? <Card className="mt-6 rounded-2xl border-slate-200 bg-white/80 p-6 shadow-sm">
           <div className="flex items-center gap-2"><ChevronRight className="size-4 text-slate-400" aria-hidden="true" /><h2 className="text-base font-semibold text-slate-950">Password reset email smoke</h2></div>
           <p className="mt-1 text-sm text-slate-600">
             僅寄送到環境設定的測試收件人，驗證 Resend、reset link、token TTL 與 session revoke 流程。
@@ -221,7 +223,7 @@ export default async function MfaSetupPage({
               寄送 password reset 測試信
             </FormSubmitButton>
           </form>
-        </Card>
+        </Card> : null}
       </section>
     </main>
   );

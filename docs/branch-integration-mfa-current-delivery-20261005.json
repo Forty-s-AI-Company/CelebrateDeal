@@ -1,0 +1,32 @@
+{
+  "state": "MFA_UI_DELIVERED_SECURITY_PAGE_FULL_SCOPE_INCOMPLETE",
+  "master": "52b81e3a624960ce9479be3c1bd682d2e7cb308d",
+  "pr": 362,
+  "files": [
+    {
+      "path": "src/app/(app)/settings/security/page.tsx",
+      "original_sha256": "4eebf593470e9dd3ebb546233efe7e06615104169cc82f10e77f18abfc66c9d9",
+      "master_sha256": "cc022a31e9b70b5297cc6e46ad9b62a46877a435fb74f3436419b75231d750b1",
+      "matches_accepted_pr362": true
+    },
+    {
+      "path": "src/app/mfa/setup/page.tsx",
+      "original_sha256": "957a8f5ee9a8d92948b4758b0560031ccb0da3696f83a61872b3b40a9081a277",
+      "master_sha256": "bb3f46dae88c910255772764b5b863dbf34b90f910836177165862f21a5ca5e5",
+      "matches_accepted_pr362": true
+    }
+  ],
+  "requirements": [
+    "Settings QR and manual MFA setup fallback restored",
+    "Setup visual flow and safe internal next preserved through forms, native routes and verification",
+    "Recovery regeneration retained through reviewed native transport",
+    "Smoke policy and existing tenant/member controls retained"
+  ],
+  "evidence": [
+    "branch-integration-mfa-reconciliation-20261005.json",
+    "branch-integration-pr362-manifest-20261005.json",
+    "branch-integration-pr362-acceptance-20261005.json",
+    "branch-integration-pr362-merged-20261005.json"
+  ],
+  "limits": "Only MFA QR/return/native transport requirements are verified delivered. Security page still includes invitation/resend controls contrary to original isolation requirement; whole-file delivery classification revoked. Auth actions and action tests still need full reconciliation."
+}

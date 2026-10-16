@@ -1,0 +1,53 @@
+{
+  "source": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "candidate": "eb5649645ac658f5e792a9ed1bd7f986e730a930",
+  "paths": [
+    "package.json",
+    "package-lock.json"
+  ],
+  "changes": {
+    "dependencies": {
+      "next": {
+        "source": "16.3.5",
+        "candidate": "16.3.8"
+      }
+    },
+    "devDependencies": {},
+    "overrides": {},
+    "scripts": {
+      "secure:staging:contract": {
+        "source": "node --import tsx --test scripts/secure-staging-runner.test.mjs scripts/secure-staging-wp4-payuni.test.mjs scripts/secure-staging-line-notifications.test.mjs scripts/secure-staging-workflow-contract.test.mjs scripts/validate-secure-staging-receipt.test.mjs scripts/validate-secure-staging-wp4-receipt.test.mjs scripts/validate-secure-staging-line-receipt.test.mjs scripts/mvp-payuni-sandbox-e2e.test.mjs",
+        "candidate": "node --import tsx --test scripts/secure-staging-runner.test.mjs scripts/staging-retained-backup.test.mjs scripts/staging-backup-recovery.test.mjs scripts/staging-backup-recovery-workflow.test.mjs scripts/secure-staging-wp4-payuni.test.mjs scripts/secure-staging-line-notifications.test.mjs scripts/secure-staging-workflow-contract.test.mjs scripts/validate-secure-staging-receipt.test.mjs scripts/validate-secure-staging-wp4-receipt.test.mjs scripts/validate-secure-staging-line-receipt.test.mjs scripts/mvp-payuni-sandbox-e2e.test.mjs"
+      },
+      "test:line": {
+        "source": "vitest run src/lib/line-client.test.ts src/lib/line-credentials.test.ts src/lib/line-login.test.ts src/lib/line-notification.test.ts src/lib/line-notification-materializer.test.ts src/lib/line-live-started.test.ts src/lib/line-rich-menu.test.ts src/lib/form-submission-line-binding-session.test.ts src/lib/line-schema-contract.test.ts src/app/actions/line-actions.test.ts src/app/actions/line-rich-menu-actions.test.ts src/app/api/auth/line/start/route.test.ts src/app/api/auth/line/callback/route.test.ts src/app/api/webhooks/line/[vendorId]/route.test.ts src/app/api/cron/line-notifications/route.test.ts src/app/api/cron/line-notifications/runtime-binding/route.test.ts src/app/api/jobs/email-deliveries/route.test.ts \"src/app/(app)/settings/line/page.test.tsx\"",
+        "candidate": "vitest run src/lib/line-client.test.ts src/lib/line-credentials.test.ts src/lib/line-login.test.ts src/lib/line-notification.test.ts src/lib/line-notification-materializer.test.ts src/lib/line-live-started.test.ts src/lib/form-submission-line-binding-session.test.ts src/lib/line-schema-contract.test.ts src/app/actions/line-actions.test.ts src/app/api/auth/line/start/route.test.ts src/app/api/auth/line/callback/route.test.ts src/app/api/webhooks/line/[vendorId]/route.test.ts src/app/api/cron/line-notifications/route.test.ts src/app/api/cron/line-notifications/runtime-binding/route.test.ts src/app/api/jobs/email-deliveries/route.test.ts \"src/app/(app)/settings/line/page.test.tsx\""
+      },
+      "test:interactions": {
+        "source": "vitest run src/lib/interaction-event.test.ts src/lib/live-interaction.test.ts src/lib/live-interaction-schema-contract.test.ts src/lib/live-question.test.ts src/lib/live-question-schema-contract.test.ts src/lib/commerce-orders.test.ts src/lib/tiered-commission-engine.test.ts src/lib/funnel-blocks-schema.test.ts src/lib/consultation-slot-engine.test.ts src/lib/customer-voucher.test.ts src/components/consultation-booking-calendar.test.tsx src/components/funnel-builder/funnel-wizard.test.tsx src/components/funnel-builder/funnel-canvas-editor.test.tsx src/components/live-question-ui-contract.test.ts src/components/live-mobile-preview-simulator.test.tsx src/components/commission-simulator.test.tsx src/components/interaction-script-form.test.tsx src/components/live-playback.test.tsx src/app/actions/form-actions.test.ts src/app/actions/interaction-actions.test.ts src/app/actions/consultation-actions.test.ts src/app/actions/customer-crm-actions.test.ts src/app/api/live-interactions/route.test.ts src/app/api/payments/checkout/route.test.ts \"src/app/(app)/customers/page.test.tsx\" \"src/app/(viewer)/live/[slug]/page.test.tsx\" \"src/app/checkout/[vendorId]/[productId]/page.test.tsx\"",
+        "candidate": "vitest run src/lib/interaction-event.test.ts src/lib/live-interaction.test.ts src/lib/live-interaction-schema-contract.test.ts src/lib/commerce-orders.test.ts src/components/interaction-script-form.test.tsx src/components/live-playback.test.tsx src/app/actions/interaction-actions.test.ts src/app/api/live-interactions/route.test.ts src/app/api/payments/checkout/route.test.ts \"src/app/(viewer)/live/[slug]/page.test.tsx\" \"src/app/checkout/[vendorId]/[productId]/page.test.tsx\""
+      },
+      "crm:backfill-identities": {
+        "source": "node --import tsx scripts/backfill-customer-crm-identity.ts",
+        "candidate": null
+      },
+      "test:automations": {
+        "source": "vitest run src/lib/automation-schema-contract.test.ts src/lib/automation-workflow.test.ts src/lib/live-interaction.test.ts src/lib/line-notification.test.ts src/lib/stream-usage.test.ts src/app/actions/automation-actions.test.ts src/app/api/automation/vouchers/redeem/route.test.ts src/app/api/stream-usage/route.test.ts src/app/api/webhooks/payments/route.test.ts src/components/app-shell.test.ts \"src/app/(app)/settings/automations/page.test.tsx\"",
+        "candidate": null
+      },
+      "typecheck": {
+        "source": "next typegen && tsc --noEmit",
+        "candidate": "tsc --noEmit"
+      }
+    }
+  },
+  "decisions": {
+    "dependencies": "Keep current Next16.3.8 and lockfile. Only direct package version delta is Next16.3.5 ->16.3.8; no missing direct packages found. Transitive lock not asserted byte-equivalent.",
+    "crm:backfill-identities": "Deferred data-maintenance tool; source script mutates nullable identity hashes in batches. No execution or customer-data read. Future isolated verification required.",
+    "secure:staging:contract": "Keep added backup/recovery contracts",
+    "test:automations/test:interactions/test:line": "Keep current aliases; removed source-only module tests belong to deferred features. Present tests still need ordinary suite verification; alias shortening is not evidence of equal feature coverage.",
+    "typecheck": "Keep current tsc command plus actual Next build gate; not claiming isolated typecheck regenerates routes"
+  },
+  "verification": "Latest npm ci, audit and typecheck steps completed successfully in current CI; complete CI still pending",
+  "limits": "No package upgrade or downgrade performed. No new test exclusions or weakened assertions."
+}

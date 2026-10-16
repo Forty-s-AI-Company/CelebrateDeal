@@ -1,5 +1,7 @@
 # CelebrateDeal current release completion audit
 
+> 歷史稽核快照：本文件的數值與 owner-authorization／no-rerun 敘述只適用 2026-08-21 當時 source。新的固定非 Production 開發、staging 與 Sandbox 驗證不需要逐次 owner authorization，也不受 WP-196／WP-197 的舊 attempt budget 限制；Production 與正式資料／金流邊界不變。
+
 稽核時間：2026-08-21（Asia/Taipei）  
 Source RC：`5fd1c61`
 CI／documentation checkpoint：`5fd1c61`

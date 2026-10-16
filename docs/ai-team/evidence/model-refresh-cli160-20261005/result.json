@@ -1,0 +1,107 @@
+{
+  "date": "2026-10-05",
+  "codex_version": "0.160.0",
+  "requested_team": "ai-team",
+  "effective_team": "ai-team",
+  "selected_model": "gpt-6.1-sol",
+  "reasoning": "high",
+  "observed_model": "unknown",
+  "fallback_events": [],
+  "review_plan": [],
+  "ownership": "primary agent; no delegates",
+  "limits": {
+    "max_agent_depth": 1,
+    "max_parallel_agents": 1,
+    "max_writers": 1,
+    "max_readonly_helpers": 1,
+    "max_dispatches_per_task": 4,
+    "max_attempts_per_model": 1,
+    "max_external_attempts": 2,
+    "automatic_spawn": false
+  },
+  "catalog": [
+    "gpt-6.1-sol",
+    "gpt-6-astra",
+    "gpt-6-sol",
+    "gpt-6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.5"
+  ],
+  "nextCursor": null,
+  "smoke": [
+    {
+      "model": "gpt-6-luna",
+      "status": "PASS",
+      "exit_code": 0,
+      "output_match": true,
+      "terminal": true,
+      "seconds": 6.3,
+      "observed_model": "unknown"
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "status": "PASS",
+      "exit_code": 0,
+      "output_match": true,
+      "terminal": true,
+      "seconds": 8.6,
+      "observed_model": "unknown"
+    },
+    {
+      "model": "gpt-6-astra",
+      "status": "PASS",
+      "exit_code": 0,
+      "output_match": true,
+      "terminal": true,
+      "seconds": 6.8,
+      "observed_model": "unknown"
+    }
+  ],
+  "checks": [
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "router_regression",
+      "revision": "sha256:0c6ae7d86884bdb3a60557f5a6fb7cd63914221519437262741b02f5809b3ae5",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 3.187,
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\docs\\ai-team\\evidence\\model-refresh-cli160-20261005\\router_regression.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "bootstrap",
+      "revision": "sha256:0c6ae7d86884bdb3a60557f5a6fb7cd63914221519437262741b02f5809b3ae5",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 3.578,
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\docs\\ai-team\\evidence\\model-refresh-cli160-20261005\\bootstrap.json"
+    },
+    {
+      "kind": "validation",
+      "source": "validation_runner",
+      "name": "routing_integration",
+      "revision": "sha256:0c6ae7d86884bdb3a60557f5a6fb7cd63914221519437262741b02f5809b3ae5",
+      "status": "PASS",
+      "exit_code": 0,
+      "duration_seconds": 36.453,
+      "evidence_path": "C:\\Users\\eden\\Downloads\\AI\\CelebrateDeal\\docs\\ai-team\\evidence\\model-refresh-cli160-20261005\\routing_integration.json"
+    }
+  ],
+  "acceptance": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:0c6ae7d86884bdb3a60557f5a6fb7cd63914221519437262741b02f5809b3ae5"
+  },
+  "self_review": {
+    "security": "No secrets read; no production or automatic delegation.",
+    "performance": "Bounded model registry lookup.",
+    "readability": "Old CLI conclusion explicitly superseded.",
+    "maintainability": "Distinct Astra restored, alias guard remains covered."
+  },
+  "supersedes": "model-refresh-20261005/result.json",
+  "next_action": "Use updated CLI and latest model mappings."
+}

@@ -1,0 +1,49 @@
+{
+  "source": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "master": "9a76580124edf373f9ad4d8d18aaa45a8150d1d1",
+  "whole_pr_status": "INCOMPLETE",
+  "migration": {
+    "source": "prisma/migrations/20260917093000_inventory_reservation_items_snapshot/migration.sql",
+    "current": "prisma/migrations/20260922120000_inventory_reservation_items_snapshot/migration.sql",
+    "exact": true,
+    "sha256": "2959fa23a1d662ae04bab91d282aa303904529431357621d815dc5bbdfc4b703"
+  },
+  "layout": {
+    "decision": "Existing Puck runtime injection retained",
+    "styleInjection": true,
+    "scope": "Installed runtime source inspected; accepted CI browser tests already passed, no fresh browser claim"
+  },
+  "fixed_form": {
+    "decision": "KEEP_CURRENT_RICH_EDITOR_EXPLICIT_PRODUCT_TRADEOFF",
+    "reason": "Same default required name/email and optional phone; preserve tenant/project binding, legacy edits, draft scope, validation errors and preview. Original fixed-only UI is not claimed identical and is not ported.",
+    "authorization": "User authorizes SaaS-appropriate conflict choices",
+    "files": [
+      {
+        "path": "src/app/(app)/forms/new/page.tsx",
+        "blob": "b003cb9cc6653eef8027b3eb11cc0b8c8bb84b1f"
+      },
+      {
+        "path": "src/components/form-builder.tsx",
+        "blob": "ec4c74380b45272eea7cf0baa2c0198c4ba26b27"
+      },
+      {
+        "path": "src/components/form-builder-client.tsx",
+        "blob": "fab0fe9ba437760705071475596627c46f9d5e7f"
+      },
+      {
+        "path": "src/lib/registration-form-builder.ts",
+        "blob": "a4238c0386b520365b438e9fde029948e67c3a70"
+      },
+      {
+        "path": "src/lib/sales-project-binding.ts",
+        "blob": "f4cb69956bdd5fbd80cae1c4b9a6ad7b2af18b36"
+      }
+    ],
+    "validation": {
+      "passed": 17,
+      "failed": 0,
+      "success": true,
+      "receipt": ".ai-team/tmp/pr211-form-reconciliation-results.json"
+    }
+  }
+}

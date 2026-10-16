@@ -16,10 +16,11 @@ import {
 } from "@/lib/auth";
 import { getCanonicalAppUrl } from "@/lib/app-url";
 import { auditSnapshot, writeAuditLog } from "@/lib/audit";
-import { getLoginSourceLimit } from "@/lib/auth-rate-limits";
+import { getLoginSourceEmailLimit, getLoginSourceLimit } from "@/lib/auth-rate-limits";
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { getDb } from "@/lib/db";
 import { isAllowedSmokeTestRecipient } from "@/lib/email";
+import { isPasswordResetSmokeEnabled } from "@/lib/password-reset-smoke-policy";
 import {
   decryptMfaSecret,
   generateRecoveryCodes,
@@ -35,7 +36,6 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { completeMfaEnrollment, dismissMfaRecoveryCodes, startMfaEnrollment } from "@/lib/mfa-enrollment";
 
 const LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_SOURCE_EMAIL_LIMIT = 5;
 
 function text(formData: FormData, key: string, fallback = "") {
   const value = formData.get(key);
@@ -100,7 +100,7 @@ export async function loginAction(formData: FormData) {
   const sourceEmailRateLimited = await checkRateLimit(
     rateLimitRequest,
     `login-source-email:${email}`,
-    LOGIN_SOURCE_EMAIL_LIMIT,
+    getLoginSourceEmailLimit(),
     LOGIN_RATE_LIMIT_WINDOW_MS,
   );
   if (sourceEmailRateLimited) {
@@ -367,9 +367,10 @@ export async function regenerateRecoveryCodesAction(formData: FormData) {
 export async function sendPasswordResetSmokeAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const auth = await requireAuth();
+  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
+  if (!isPasswordResetSmokeEnabled()) redirect(`${destination}?error=password_reset_smoke_unavailable`);
   const headerStore = await headers();
   const appUrl = getCanonicalAppUrl();
-  const destination = auth.isPlatformAdmin ? "/mfa/setup" : "/settings/security";
   if (!isAllowedSmokeTestRecipient(auth.user.email)) redirect(`${destination}?error=password_reset_smoke_recipient`);
   const rateLimited = await checkRateLimit(
     new Request(appUrl, { headers: forwardedRequestHeaders(headerStore) }),

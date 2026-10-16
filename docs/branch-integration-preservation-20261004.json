@@ -1,0 +1,10 @@
+{
+  "original_head": "60132971f60dbad83aae48ffa6f15d3f57682c6e",
+  "head_equal": true,
+  "original_entries_checked": 120,
+  "hashed_original_files": 118,
+  "changed_hashes": [],
+  "changed_statuses": [],
+  "excluded": "Task-owned docs/branch-integration-* reports",
+  "after_pr360_publication": true
+}

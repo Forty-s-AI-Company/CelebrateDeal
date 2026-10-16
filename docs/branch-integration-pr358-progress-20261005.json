@@ -1,0 +1,47 @@
+{
+  "updated_at": "2026-10-04T16:44:51.174874+00:00",
+  "pr": 358,
+  "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/358",
+  "status": "OPEN_CI_RUNNING",
+  "head": "a139b9d96227563fd28926c803c6c92efa44fde9",
+  "base": "361a37da2b487bbfa17f419d7b72b9306da07c99",
+  "ci_runs": {
+    "pull_request": 37217845342,
+    "push": 37217809574
+  },
+  "local_tests": {
+    "python": 43,
+    "routing_resilience": "PASS",
+    "handoff": "PASS",
+    "relocated_bootstrap": "PASS",
+    "tracked_snapshot": "PASS",
+    "secret_scan": "PASS"
+  },
+  "validation_failures_fixed": [
+    "Five native CI commands shared a step; preserve all current master gates and split commands",
+    "Original master MCP config had user absolute paths; recover portable launcher, keep live Desktop MCP disabled"
+  ],
+  "review": "Primary manual integration and review; no AI Team/model dispatch for self-modification",
+  "goal_status": "ACTIVE",
+  "remaining_historical_heads": 27,
+  "next": "Continue PR359 and original dirty/history reconciliation.",
+  "local_processes_still_running": [],
+  "production_operations": false,
+  "state": "MERGED",
+  "acceptance_revision": "sha256:a0c7a5d28eefd6c37114bd712fdad6e4f47c1c2dce54871013bc37363c28fa21",
+  "pr_ci": {
+    "run": 37217845342,
+    "status": "completed",
+    "conclusion": "success"
+  },
+  "push_ci": {
+    "run": 37217809574,
+    "status": "completed",
+    "conclusion": "success"
+  },
+  "merge_attempt": "Rejected by base branch protection; no admin bypass used",
+  "auto_merge": "Repository does not permit auto merge; no settings changed",
+  "merge_commit": "9c45f10314faff768a33fac3f3770517b859ddce",
+  "merged_at": "2026-10-04T17:09:41Z",
+  "accepted_tree_matches_master": true
+}

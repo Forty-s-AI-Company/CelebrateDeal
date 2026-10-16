@@ -98,6 +98,8 @@ const eslintConfig = defineConfig([
     "coverage/**",
     // Local staging deployment snapshots are generated copies, not source.
     "tmp/**",
+    // AI Team validation workspaces are generated copies, not authored source.
+    ".ai-team/tmp/**",
     // Pinned third-party MediaPipe distributions; our worker remains linted.
     "public/presenter-segmentation/vision_bundle.js",
     "public/presenter-segmentation/vision_wasm_internal.js",

@@ -1,0 +1,56 @@
+{
+  "source": "b7956d803f8dfebbbfdb3a4faeff497ab4bc140e",
+  "candidate": "eb5649645ac658f5e792a9ed1bd7f986e730a930",
+  "decisions": [
+    {
+      "path": "src/lib/consultation-slot-engine.ts",
+      "source_blob": "c22665b30b1e93b3939b0adf940710ebaac43e07",
+      "candidate_blob": "d14097733acf0df42cee7d2ae8eecaac157f72c4",
+      "decision": "KEEP_CURRENT_DUPLICATE_SLOT_FIX",
+      "basis": "Current adds emittedStarts deduplication for overlapping windows; other source logic retained."
+    },
+    {
+      "path": "src/lib/evergreen-webinar.ts",
+      "source_blob": "3dbaf7f3e4b04779aa4e12ae843b62e799ec6b62",
+      "candidate_blob": "1004e4ede5c06803ff125febea6103e5d037de32",
+      "decision": "KEEP_SERVER_PREVIEW_BOUNDARY_AND_DST_FIX",
+      "basis": "Current skips nonexistent local DST occurrences, validates schedule mode and takes merchantPreview from separate server context, not public sample.previewMode."
+    },
+    {
+      "path": "src/lib/live-studio-draft.ts",
+      "source_blob": "6c5a39c67ddf6e610e05fff36019b65f4dc2dcc5",
+      "candidate_blob": "a166c928d288d3458c66c08e24afea5a94f02b01",
+      "decision": "KEEP_PROJECT_DRAFT_BINDING_DEFER_ORIENTATION",
+      "basis": "Current adds bounded projectId; source landscape/portrait draft setting is missing and remains deferred with source mobile live shell."
+    },
+    {
+      "path": "src/lib/live-studio-draft-client.ts",
+      "source_blob": "faf4515596d267d93b55c4ede2cbefe6cb258644",
+      "candidate_blob": "b23eea21316b9e6768fc2ccd1373c123a6b12be1",
+      "decision": "KEEP_PROJECT_DRAFT_BINDING_DEFER_ORIENTATION",
+      "basis": "Form serialization preserves projectId; source orientation persistence is explicitly not delivered."
+    },
+    {
+      "path": "src/lib/product-action-state.ts",
+      "source_blob": "6243141f240f2f27051fc159c711490214df3fbe",
+      "candidate_blob": "515047413a3de6f19490dfc514e2f1e9e451ff25",
+      "decision": "DEFER_UPSELL_EDITOR_AND_COMMISSION_POLICY_EXTENSIONS",
+      "basis": "Source upsell/downsell form draft fields and commission_disabled variant are absent; tracked with deferred payment/commission features."
+    },
+    {
+      "path": "src/lib/sales-project-customer-membership.ts",
+      "source_blob": "3fb0a15ead5a837f0ffa106d573914e27741e299",
+      "candidate_blob": "280effe1346a9d5fb4c3fcd52a5015189904e0e0",
+      "decision": "WHITESPACE_EQUIVALENT",
+      "basis": "Trailing blank line only."
+    },
+    {
+      "path": "src/lib/sales-project-scope.ts",
+      "source_blob": "a37e8d11b917b0d73b698915704c40c49092fe04",
+      "candidate_blob": "aaa248618cc0fd41e7b5a406721ea0ff8b61db88",
+      "decision": "WHITESPACE_EQUIVALENT",
+      "basis": "Trailing blank line only."
+    }
+  ],
+  "limits": "Static source delta decisions. Current complete CI still pending; no full feature equivalence for deferred behavior."
+}

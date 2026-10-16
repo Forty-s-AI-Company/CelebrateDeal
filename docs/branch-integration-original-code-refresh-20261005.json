@@ -1,0 +1,144 @@
+{
+  "master": "52b81e3a624960ce9479be3c1bd682d2e7cb308d",
+  "scope": "Previously unresolved source, script and browser files only; normalized LF exact equality; non-equal files remain unresolved",
+  "files": [
+    {
+      "path": "scripts/external-smoke-safety.test.ts",
+      "original_sha256_lf": "324de44641837622cb73bfbd6f687b2aa6dd7ecad15f8a37be83643a4122e44d",
+      "master_sha256_lf": "1a0f3479db63fcea8a68281ac64bb8194cf5377acb01097a1dddffa70720e404",
+      "exact": false
+    },
+    {
+      "path": "scripts/external-smoke-safety.ts",
+      "original_sha256_lf": "c9cd7febcc92d964ec67925875768ca375a0496f7c58c10c243520d2ce1f7670",
+      "master_sha256_lf": "0c26840bc430188fde4a09d3dc5c2397e47ba881de23a7bd22a83b52f2a33c97",
+      "exact": false
+    },
+    {
+      "path": "scripts/external-smoke.ts",
+      "original_sha256_lf": "1ad456a8351a73aa02b8a982c44d5af72346822e6098c25a46112e3d087356dd",
+      "master_sha256_lf": "6668168e2591c0cbc3a788d8cb49262cb297835247d2bdc5b7ceade4fc45427c",
+      "exact": false
+    },
+    {
+      "path": "scripts/payuni-sandbox-external-qa.mjs",
+      "original_sha256_lf": "817ef9e38c4bb6093b0db2d2ea4b417f5848746998ec90dee8d6a08f86ba898c",
+      "master_sha256_lf": "6703431d3774f67c3111ed29d178f44f1b1cc394ecc57b0504a48cffe4fcf6bc",
+      "exact": false
+    },
+    {
+      "path": "scripts/payuni-sandbox-external-qa.test.mjs",
+      "original_sha256_lf": "7dbcdadcd2b0d8285f6465af58c6cd959335efac0bf668ae6549082828a1f1f9",
+      "master_sha256_lf": "0a5f3acd586092dfdf26b9153bf28cdb0cb59cc21301379e9e9c38d757ab58a1",
+      "exact": false
+    },
+    {
+      "path": "src/app/(app)/landing-pages/[id]/operations/page.test.tsx",
+      "original_sha256_lf": "c901ab59147368d67923c9063d82e2c2e2bdb1a58bc965eda4af0aee3a75379a",
+      "master_sha256_lf": "2eac8d5c39b420690f2e4b6e188e747d7dd353321d2f3edf42c92d4ab55bc0e5",
+      "exact": false
+    },
+    {
+      "path": "src/app/(app)/landing-pages/[id]/operations/page.tsx",
+      "original_sha256_lf": "c105522db3eee9b0b7e06d93ef848c2cec5f661335b6762e5d00f82fa841c7dc",
+      "master_sha256_lf": "94f27b58e9316a69a95aec64db6ce8a928f81a74851f22fe7b2ddb99ca38b44f",
+      "exact": false
+    },
+    {
+      "path": "src/app/(app)/landing-pages/[id]/page.tsx",
+      "original_sha256_lf": "c84382439b8073356ca1074af8d0b2f2dc6541c0ece28fe30cdc58546b121f88",
+      "master_sha256_lf": "2a09e12a139a37fa82a7c3d3b6343ff46224f89f9fec936077f5c01a01978855",
+      "exact": false
+    },
+    {
+      "path": "src/app/(app)/landing-pages/page.tsx",
+      "original_sha256_lf": "6899bf7264805470aa6d2c325ad19953ab3895af21d03cee2407508f2845cd84",
+      "master_sha256_lf": "f9aa4e5643e2823fe48b759d20d2dddaf5d056df5de8c142bd268d3bc635082a",
+      "exact": false
+    },
+    {
+      "path": "src/app/actions.test.ts",
+      "original_sha256_lf": "5e9d7546a5b20f1ec0e5cf7791d14bcf7603164106f90b9ad5994f4534a62b5d",
+      "master_sha256_lf": "489d780d3e8890143f37628df5a5a85e277a79fdac350600511132680f2be0c1",
+      "exact": false
+    },
+    {
+      "path": "src/app/actions/auth-security-actions.ts",
+      "original_sha256_lf": "d35a9cd2bd5e2805fa40f835069f97e72435e79b43537fa4fc98e94d49d0d958",
+      "master_sha256_lf": "b322a8601225b3d33b9865899b253368c48abbebf3f0382853a05ee5c1905714",
+      "exact": false
+    },
+    {
+      "path": "src/components/live-advanced-interactions.tsx",
+      "original_sha256_lf": "defec718155b0951e1b1ced4180eb6927ab221138f93ecd81c061821c6f5344c",
+      "master_sha256_lf": "eccdf19323296a72c536c47c0c701ff91233f4563162ab2c480d4d4aafeaeb11",
+      "exact": false
+    },
+    {
+      "path": "tests/e2e/accessibility.spec.ts",
+      "original_sha256_lf": "ed4bf84f9a42334ddde8bd141c1e742955748788967c2deceaa4bed1d62466da",
+      "master_sha256_lf": "d2b9b08ef9fbcd088caa2b1b4d9610e48a05f276750c2b5480966d1c994b51a1",
+      "exact": false
+    },
+    {
+      "path": "tests/e2e/accountant-affiliate-detail-direct-url.spec.ts",
+      "original_sha256_lf": "2e400cd3d4661b10c7ab9e22ad45209ab1542e3fadb996f5c2c52f2c00435ff2",
+      "master_sha256_lf": "3bfeef62d1f55275768d89c5aaa2b5f8c0450db11ac9a0ee9a0a75c5ad66e65c",
+      "exact": false
+    },
+    {
+      "path": "tests/e2e/admin-cross-tenant-affiliate-edit.spec.ts",
+      "original_sha256_lf": "09f6c5958d956d15966dae7676bbac415565c0f1654729ff3b9a4dfe8bc998c7",
+      "master_sha256_lf": "fc1c9637358e4189e9dbc35c07f36498e5e2d105ab1a693810e0de20bb80e1db",
+      "exact": false
+    },
+    {
+      "path": "tests/e2e/admin-cross-tenant-video-edit.spec.ts",
+      "original_sha256_lf": "b27fed2727f3197db0102ad6239c56b20cd54040f3cfd3a1bd8769a2b2ce02a1",
+      "master_sha256_lf": "a39b0685309214b13c8a6722c6f129cead26e1f4c948d20703c90f83014d8bec",
+      "exact": false
+    },
+    {
+      "path": "tests/e2e/commerce-orders.spec.ts",
+      "original_sha256_lf": "2cc9fc6b4829048e74ca8f63094317e051f8b5fb18d51b5116a65d31291f96ed",
+      "master_sha256_lf": "503b4ae03b28705213fdcaf7e5f49efeb4a3e4e3b114a2634f0cd20346cc0baf",
+      "exact": false
+    },
+    {
+      "path": "tests/e2e/funnel-commerce.spec.ts",
+      "original_sha256_lf": "7ed03e7ab7e4c213b0076362e962240d19bfd6173a7d7452b4729801174ac1a0",
+      "master_sha256_lf": "b6f016cc0463db8cddf862e11b554cd688f82ada32c73807897700aa3374eb62",
+      "exact": false
+    },
+    {
+      "path": "tests/e2e/funnel-operations-transport.spec.ts",
+      "original_sha256_lf": "d8fdc82e6769a4dfae56b7c4943f040f988ba46f362319291d7e695ca19183fb",
+      "master_sha256_lf": "8a3615cb18663a67503d754481533d7645201ad97270acd00cba439d48e75ae0",
+      "exact": false
+    },
+    {
+      "path": "tests/e2e/helpers/direct-url-guard.ts",
+      "original_sha256_lf": "e32e64e02a963788b5f9fd013accf5ac305f4317caf052ce4f1127573eaa3d34",
+      "master_sha256_lf": "be41d46639bdf943a0e56948e0ca0dc8415e531ea1059e76069d383ad5937c5f",
+      "exact": false
+    },
+    {
+      "path": "tests/e2e/video-media-experience.spec.ts",
+      "original_sha256_lf": "f07c2799dfc052f0c3ea0e308fde1b85fe478f3d5fb61868124dd1ca50b3fe64",
+      "master_sha256_lf": "752794af93dcdbcd004e8ab5e3f076396205c11072fecb5dc3bd2dab49123bed",
+      "exact": false
+    },
+    {
+      "path": "tests/e2e/webinar-funnel-flow.spec.ts",
+      "original_sha256_lf": "e8ae13416e662c43207130fbd2b8ee04714221d8afe3017e358902725e7626f5",
+      "master_sha256_lf": "7a4b2983ba87ca607da1fb8295666b507f9f93eba153499c39943f6c2df4dd8f",
+      "exact": false
+    },
+    {
+      "path": "tests/e2e/wp88-direct-url-guard-matrix.spec.ts",
+      "original_sha256_lf": "e0263e9c12c37580100ef75517b6e6a64f2a246e80f62a49e536f1048f99e855",
+      "master_sha256_lf": "18258a14f54c4b1db23736ef02867e84b91ef979a91d4a8ea7beb0f0e3fd567e",
+      "exact": false
+    }
+  ]
+}

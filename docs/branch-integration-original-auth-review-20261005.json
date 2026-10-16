@@ -1,0 +1,39 @@
+{
+  "master": "52b81e3a624960ce9479be3c1bd682d2e7cb308d",
+  "status": "PARTIALLY_DELIVERED_FULL_FILES_NOT_CLOSED",
+  "reviewer": "/root/portal_review_fallback",
+  "observed": {
+    "model": "unknown",
+    "effort": "unknown"
+  },
+  "executed_tests": false,
+  "delivered": [
+    "CSRF, source/email login limit 5 per 15 minutes, session/cookie/audit",
+    "Registration split with transaction audit and login recovery after session/cookie failure",
+    "Seven unchanged logout/password/reset/session-revocation actions",
+    "Non-production password-reset smoke fail-closed policy",
+    "MFA enrollment, QR, validated return paths and one-use recovery verification",
+    "Recovery-code regeneration shared service and native route"
+  ],
+  "explicitly_superseded": [
+    {
+      "requirement": "Mandatory MFA enrollment for platform administrators",
+      "basis": "docs/admin-mfa-hardening-plan.md owner voluntary enrollment policy; enabled factors still require verification"
+    }
+  ],
+  "remaining": [
+    {
+      "requirement": "Move invitation/resend controls and action return paths from security to team",
+      "evidence": "Original security isolation test absent; master renders both forms and redirects to security"
+    },
+    {
+      "requirement": "Explain and verify recovery regeneration forwarded source headers",
+      "evidence": "Shared helper no longer forwards cf-connecting-ip; behavior for header-only or conflicting forwarded headers not proven"
+    },
+    {
+      "requirement": "Reconcile remaining original action-test affiliate/live/refund deltas",
+      "evidence": "Not covered by this auth-only review; no direct relocation proof"
+    }
+  ],
+  "ancestry": "Reviewer confirmed PR361 and PR362 merges are ancestors of current master"
+}

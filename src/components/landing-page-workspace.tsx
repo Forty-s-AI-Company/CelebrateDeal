@@ -65,7 +65,9 @@ function WorkspaceEditor({ content, forms, live, pending, revision, onLegacyChan
       commerceEnabled={active.step.type === "order_form"}
       disabled={pending || !active.editable}
       onChange={(document) => {
-        const result = replaceFunnelStepPage(content, active.step.id, document, active.step.template.templateId);
+        // Normal editor updates must save the document's current commerce
+        // binding. The optional templateId is reserved for template swaps.
+        const result = replaceFunnelStepPage(content, active.step.id, document);
         if (result.ok) onDocumentChange(result.state);
       }}
     />;

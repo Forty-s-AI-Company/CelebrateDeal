@@ -74,9 +74,12 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
   const funnelId = new URL(page.url()).pathname.split("/").at(-2)!;
   await page.getByRole("button", { name: "套用模板", exact: true }).first().click();
   await expect(page.getByRole("status")).toContainText("模板已套用");
+  await page.getByRole("button", { name: /^訂單表單/u }).click();
   await page.getByRole("button", { name: "Edit Page", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/landing-pages/${funnelId}\\?step=`, "u"));
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();
+  await expect(page.getByRole("button", { name: "頁面", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "頁面", exact: true }).click();
   const productSelect = page.getByRole("combobox", { name: /^本步驟商品/u });
   await expect(productSelect).toBeVisible();
   await expect(productSelect.locator(`option[value="${fixture.unlinked.id}"]`)).toHaveCount(0);
@@ -88,8 +91,20 @@ test("商品綁定、可信價格與兩步驟結帳（付款 transport mock，�
   await page.getByRole("button", { name: "儲存草稿", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/landing-pages/${funnelId}\\?step=`, "u"));
   await expect(page.getByRole("button", { name: "發布已儲存草稿", exact: true })).toBeEnabled();
+  const savedDraft = await db.landingPage.findUniqueOrThrow({ where: { id: funnelId }, select: { draftContent: true } });
+  const savedStepId = new URL(page.url()).searchParams.get("step");
+  expect(savedStepId).not.toBeNull();
+  const savedPages = (savedDraft.draftContent as { pages?: Record<string, { commerce?: unknown }> }).pages;
+  expect(savedPages?.[savedStepId!]?.commerce).toMatchObject({
+    schemaVersion: 1,
+    productId: fixture.product.id,
+    orderBumpProductId: fixture.bump.id,
+    formMode: "two_step",
+    agreement: { label: agreement },
+  });
   await page.reload();
   await page.getByRole("button", { name: "頁面設定", exact: true }).click();
+  await page.getByRole("button", { name: "頁面", exact: true }).click();
   await expect(productSelect).toHaveValue(fixture.product.id);
   await expect(page.getByRole("combobox", { name: /^加購商品（選填）/u })).toHaveValue(fixture.bump.id);
   await expect(page.getByRole("combobox", { name: /^結帳版面/u })).toHaveValue("two_step");

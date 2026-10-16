@@ -1,0 +1,38 @@
+{
+  "pr": 360,
+  "published_head": "bb2207311bd7015dd828065f3a29fa4b954985c1",
+  "ci_handles": [
+    37225033134,
+    37225030561
+  ],
+  "last_observation": "Both new exact-head runs in progress; superseded PR run cancellation requested",
+  "full_lint": {
+    "errors": 0,
+    "warnings": 3
+  },
+  "pending_local_patch": null,
+  "browser_session": null,
+  "browser_report": ".ai-team/tmp/shell-loading-results.json",
+  "next": "Track PR361 and finish remaining historical/original integration",
+  "loading_browser": {
+    "passed": 4,
+    "skipped": 0,
+    "failed": 0
+  },
+  "original_preservation": {
+    "entries": 120,
+    "hashed_files": 118,
+    "changed": 0
+  },
+  "observed_at": "2026-10-04T18:22:21.108091+00:00",
+  "superseded_head_reason": "Previous head failed the root action line-count contract; extracted live status transitions without changing the threshold",
+  "onboarding_candidate": "ef15a5bc; local validation report reconciled, awaiting parent merge",
+  "accountant_browser": {
+    "passed": 1,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0
+  },
+  "state": "MERGED",
+  "merge_commit": "11541b6ac097ea957f2152710e7d9f405b4bfccb"
+}

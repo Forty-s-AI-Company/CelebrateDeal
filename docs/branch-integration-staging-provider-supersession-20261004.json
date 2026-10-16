@@ -1,0 +1,84 @@
+{
+  "master": "fc28e1b8dcdba9ca3926f11d27153de048f597da",
+  "disposition": "CONTENT_SUPERSEDED",
+  "heads": [
+    {
+      "head": "6c25a938041304a86617648e299815526131f0fd",
+      "refs": [
+        "refs/remotes/origin/codex/staging-runtime-provider-probe-20260925"
+      ],
+      "paths": [
+        {
+          "path": "docs/codex-goal/API_CONTRACT_REGISTRY.md",
+          "source_sha256": "b61abe4b34fcc7182869e2db6da23484c13aa5aafd9aec6fe15395d7abbf2242",
+          "master_sha256": "6a99221654b8199c4f7b4eab83b316640778be929d9bc76b421be02782d1e685"
+        },
+        {
+          "path": "docs/external-service-validation-runbook.md",
+          "source_sha256": "1dbae97e5a2c2eaf37aa7dc3f1db4c734b473f27cd803712b93be57b9ec51fff",
+          "master_sha256": "fb8ee300a26fcb79bed01971597f2d7c36196c565e3d603a704f7643d55a8a95"
+        },
+        {
+          "path": "scripts/staging-provider-readonly-probe.mjs",
+          "source_sha256": "8d3d5ab260307753fcec39e38faef31661b82115ddd5d436306a737a12d3e719",
+          "master_sha256": "b29fea8c16a3aaa5814c658ab02858be3e22973ab259546ebd96d3973357966d"
+        },
+        {
+          "path": "scripts/staging-provider-readonly-probe.test.mjs",
+          "source_sha256": "53ec392b00ebb5c6394522f27676e953f5b0071d8563e66426408fb18cedca01",
+          "master_sha256": "1992df5ce0b31fa35ad43b47cde529dd12ddd0a0bb9121ea9fe04eb9042bb022",
+          "preserved_test_titles": [
+            "protected workflow checks Preview lineage before injecting JOB_SECRET",
+            "actual Preview response is reduced to bounded reachability without scope PASS",
+            "missing binding, mismatched response, and provider denial cannot pass"
+          ]
+        }
+      ]
+    },
+    {
+      "head": "7dba71b835ad1d40b8b7c149fe16e55477a084f6",
+      "refs": [
+        "refs/heads/codex/staging-runtime-provider-probe-20260925"
+      ],
+      "paths": [
+        {
+          "path": "docs/codex-goal/API_CONTRACT_REGISTRY.md",
+          "source_sha256": "b61abe4b34fcc7182869e2db6da23484c13aa5aafd9aec6fe15395d7abbf2242",
+          "master_sha256": "6a99221654b8199c4f7b4eab83b316640778be929d9bc76b421be02782d1e685"
+        },
+        {
+          "path": "docs/external-service-validation-runbook.md",
+          "source_sha256": "1dbae97e5a2c2eaf37aa7dc3f1db4c734b473f27cd803712b93be57b9ec51fff",
+          "master_sha256": "fb8ee300a26fcb79bed01971597f2d7c36196c565e3d603a704f7643d55a8a95"
+        },
+        {
+          "path": "scripts/staging-provider-readonly-probe.mjs",
+          "source_sha256": "8d3d5ab260307753fcec39e38faef31661b82115ddd5d436306a737a12d3e719",
+          "master_sha256": "b29fea8c16a3aaa5814c658ab02858be3e22973ab259546ebd96d3973357966d"
+        },
+        {
+          "path": "scripts/staging-provider-readonly-probe.test.mjs",
+          "source_sha256": "53ec392b00ebb5c6394522f27676e953f5b0071d8563e66426408fb18cedca01",
+          "master_sha256": "1992df5ce0b31fa35ad43b47cde529dd12ddd0a0bb9121ea9fe04eb9042bb022",
+          "preserved_test_titles": [
+            "protected workflow checks Preview lineage before injecting JOB_SECRET",
+            "actual Preview response is reduced to bounded reachability without scope PASS",
+            "missing binding, mismatched response, and provider denial cannot pass"
+          ]
+        }
+      ]
+    }
+  ],
+  "tests": {
+    "tests": 4,
+    "pass": 4,
+    "fail": 0,
+    "skipped": 0
+  },
+  "behavior_review": [
+    "Both source heads have identical runner and test blobs. Current runner preserves source/host/secret preflight, one read-only request, manual redirect, no-store and timeout, bounded response enum, REACHABLE_SCOPE_UNVERIFIED rather than scope PASS, and sanitized receipt.",
+    "The only runner behavior delta tightens response validation with fixed boolean presence fields. Extra account/bucket/token/digest values are not retained. Current tests preserve every source test intent and add boolean-only evidence checks.",
+    "The old runbook paragraph is retained with an additional explanation of presence booleans; API registry changes only append later endpoints, preserving all original lines."
+  ],
+  "validation_scope": "Mocked Node contract tests; no external probe or credentials used"
+}

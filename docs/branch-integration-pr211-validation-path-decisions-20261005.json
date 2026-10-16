@@ -1,0 +1,59 @@
+{
+  "source": "b5397dbb45ddc4dc15a3059b7dec90b5a7771487",
+  "candidate": "eb5649645ac658f5e792a9ed1bd7f986e730a930",
+  "decisions": [
+    {
+      "path": "scripts/funnel-commerce-disposable-qa.mjs",
+      "source_blob": "ce929ff6c7ec0d88bf2c60cb04c8e458dc110159",
+      "candidate_blob": null,
+      "decision": "RETAIN_CANONICAL_CI_RUNNER_ARCHIVE_OLD_ORCHESTRATOR"
+    },
+    {
+      "path": "scripts/landing-page-disposable-qa.mjs",
+      "source_blob": "9e00a4e2de42ca3b26488dcdb887011c36f073a7",
+      "candidate_blob": null,
+      "decision": "RETAIN_CANONICAL_CI_RUNNER_ARCHIVE_OLD_ORCHESTRATOR"
+    },
+    {
+      "path": "scripts/webinar-funnel-disposable-qa.mjs",
+      "source_blob": "d97dbe7f16ed0724240c9c17698a483bc56c281b",
+      "candidate_blob": null,
+      "decision": "RETAIN_CANONICAL_CI_RUNNER_ARCHIVE_OLD_ORCHESTRATOR"
+    },
+    {
+      "path": "tests/e2e/funnel-commerce.spec.ts",
+      "source_blob": "bf1b589c329e2fd880d0432bbf2e04cf86b82a0f",
+      "candidate_blob": "b98bf0750706a24bb287b3fca86ec353fd8ba30d",
+      "decision": "KEEP_CURRENT_ACTIVE_UI_JOURNEY_WITH_EXPLICIT_GAPS"
+    },
+    {
+      "path": "tests/e2e/landing-page-flow.spec.ts",
+      "source_blob": "5d7efd7ff92786697d0633964301caad0b460cb3",
+      "candidate_blob": "23f6006db887ef7dc8aa904006e66859e000fe95",
+      "decision": "KEEP_CURRENT_ACTIVE_UI_JOURNEY_WITH_EXPLICIT_GAPS"
+    },
+    {
+      "path": "tests/e2e/webinar-funnel-flow.spec.ts",
+      "source_blob": "4445d1d7b552b4c5e10b3aabd4c1f8978eff339c",
+      "candidate_blob": "5ceb166d446d6f2fe6c19f9c4928cc6fade54afb",
+      "decision": "KEEP_CURRENT_ACTIVE_UI_JOURNEY_WITH_EXPLICIT_GAPS"
+    }
+  ],
+  "runner_evidence": [
+    ".github/workflows/ci.yml Release browser gates invokes npm run e2e -- --fail-on-flaky-tests",
+    "package.json e2e invokes playwright test",
+    "playwright.config.ts testDir=tests/e2e; no exclusion for these three files; isolated migrate/generate/build/start lifecycle"
+  ],
+  "test_mapping": {
+    "funnel-commerce": "Active operations navigation, persistent product/bump/two-step/agreement, admission/payment transport interception, forged amount rejection and retry identity retained; bump revision assertion added; unknown payment result message corrected. Transport mock is not provider payment evidence.",
+    "landing-page-flow": "Create/publish/reload/mobile journey retained and adapted to operations; one full journey timeout90s already present in master, assertions retained.",
+    "webinar-funnel-flow": "Page canvas Undo/Redo retained; flow-level Undo/Redo removed in current master and explicitly deferred; inactive system page direct-public expectation removed because public step route rejects step.isSystem. Full inactive lifecycle browser equivalence remains unproven."
+  },
+  "limits": [
+    "Latest exact-head CI still in progress; this document is static mapping, not a browser PASS",
+    "Three old standalone wrappers are not copied into current master; immutable source remains recoverable in Git",
+    "Old wrapper isolation/diagnostic artifact behavior is not claimed byte-for-byte equivalent",
+    "Flow history explicit deferral retains source and acceptance criteria"
+  ],
+  "production_touched": false
+}

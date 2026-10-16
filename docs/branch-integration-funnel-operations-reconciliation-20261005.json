@@ -1,0 +1,28 @@
+{
+  "master": "fadfe59d044290c69c8bfd9919dcbf571a5f7f41",
+  "status": "PARTIAL_RECONCILIATION",
+  "findings": [
+    {
+      "scope": "landing-pages list/edit/operations authorization",
+      "conclusion": "requireVendorManager awaits requireVendorManagerContext and returns vendor; same access boundary, before any private service query. Route params awaiting does not load private data."
+    },
+    {
+      "scope": "operations reports",
+      "conclusion": "Master deliberately replaced blocking initialReports load with scoped no-store reports API and client fetch, error/retry handling. Preserve master asynchronous design."
+    },
+    {
+      "scope": "operations page test",
+      "remaining": "Original explicitly asserts authorization function invoked; current test mocks wrapper without assertion. Preserve this boundary test in next scoped integration checkpoint rather than marking file equivalent."
+    },
+    {
+      "scope": "landing-pages list copy",
+      "remaining": "Original full-screen Chinese editor wording differs from current next-stage wording; reconcile with implemented editor rather than silently calling text identical."
+    }
+  ],
+  "validation": {
+    "passed": 18,
+    "failed": 0,
+    "receipt": "C:\\Users\\eden\\.codex\\worktrees\\branch-integration-20261004\\CelebrateDeal\\.ai-team\\tmp\\funnel-operations-equivalence-results.json"
+  },
+  "does_not_close_all_four_files": true
+}

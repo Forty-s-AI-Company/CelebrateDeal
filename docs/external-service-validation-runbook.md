@@ -44,13 +44,11 @@ npm run db:migrate:status
 驗收標準：
 
 ```bash
-vercel env ls production
-vercel env pull .env.production.local --environment=production --yes
 npm run preflight
 npm run external:smoke
 ```
 
-`npm run external:smoke` 僅可對 local、preview 或 staging 執行；遠端 target 必須同時提供 `SMOKE_ENVIRONMENT=preview|staging`、`ALLOW_STAGING_SMOKE=true`、完全相符的 `SMOKE_EXPECTED_HOSTNAME`，以及先通過 `scripts/validate-non-production-owner-authorization.mjs` 的新 owner authorization。`AI_TEAM_PROVIDER_ENVIRONMENT` 也必須與 `SMOKE_ENVIRONMENT` 完全相符；缺少或不相符時，runner 會在第一個 network request 前停止。loopback target 的 health／admin preflight 可做本地診斷，但 Resend、PostHog、Sentry、Cloudflare、PayUni 等 provider smoke route 仍會在第一個 provider request 前要求同一份 authorization。不要把 Production URL、Production credentials 或 `.env*` 內容帶入 smoke runner。
+`npm run external:smoke` 僅可對 local、preview 或 staging 執行；遠端 target 必須同時提供 `SMOKE_ENVIRONMENT=preview|staging`、`ALLOW_STAGING_SMOKE=true` 與完全相符的 `SMOKE_EXPECTED_HOSTNAME`。固定非 Production smoke 不需要逐次 owner authorization。各 provider 的 mutation 仍由個別 `RUN_*` 開關明確啟用；不要把 Production URL、Production credentials 或 `.env*` 內容帶入 smoke runner。
 
 Smoke runner 會在記憶體內讀取 response 以判斷結果，但 stdout 只輸出固定的 HTTP／transport／payload／application 分類與布林狀態，不輸出 raw provider response、URL、UID、stream key、order number、email、Token 或錯誤訊息。可保存的輸出仍只代表 sanitized local／non-Production evidence，不能直接升格為 provider PASS。
 
@@ -292,18 +290,13 @@ node scripts/validate-human-owner-acceptance-evidence.mjs docs/ai-team/evidence/
 
 CLI 只讀 `docs/ai-team/evidence` 或 `.ai-team/reports` 下的 receipt，要求 opaque `holderRef`、`scopeRef`、`manualSignatureRef` 與 `evidenceRef`，拒絕 `synthetic:` reference、raw URL、Token、Cookie、個資、Production approval、缺角色、缺 check 或 `GO` 搭配未完成 evidence。`CANDIDATE` 只代表 receipt schema 完整，不代表法務意見、外部服務、PayUni reconciliation、staging readiness 或 `PRODUCTION_READY`。
 
-## 12. Non-Production owner authorization
+## 12. Non-Production execution boundary
 
-所有新的 staging、Preview、Sandbox 或 external provider action，先由受控 broker 注入下列 allowlisted process-environment shape，再執行 authorization contract。validator 只輸出固定結果，不輸出 authorization reference、owner reference、scope reference 或任何 Secret；缺少授權時必須在任何 network／provider action 前停止。
+本機、Preview、staging、Sandbox 或 external provider 的開發驗證不需要逐次 owner authorization。每個 runner 應直接驗證固定非 Production 環境、精確 host allowlist、合成資料、隔離資料庫、必要 `RUN_*` 開關與 sanitized output；任一環境邊界不成立時，必須在 provider request 前停止。
 
-本機契約驗證：
+歷史的 `validate-non-production-owner-authorization.mjs`、opaque owner reference、`AI_TEAM_NEW_EXECUTION_APPROVED`、`AI_TEAM_FORBIDDEN_PROBE_REUSE` 與一次性 probe contract 已退役，不再是開發執行前置條件。歷史 receipts 保留原始結果，但不限制新的非 Production 工作。
 
-```bash
-node --test scripts/validate-non-production-owner-authorization.test.mjs
-node scripts/validate-non-production-owner-authorization.mjs
-```
-
-必要欄位為 `AI_TEAM_AUTHORIZATION_RECORD_REF`、`AI_TEAM_OWNER_REF`、`AI_TEAM_SCOPE_REF`、`AI_TEAM_NEW_EXECUTION_APPROVED=true`、`AI_TEAM_NON_PRODUCTION=true`、`AI_TEAM_FORBIDDEN_PROBE_REUSE=false` 與 `AI_TEAM_PROVIDER_ENVIRONMENT=preview|staging|sandbox`。`production`、缺漏欄位、非 opaque reference 或重用禁止 probe 都會 fail closed。這個 contract 只證明執行前 authorization shape，不代表 staging、external provider、PayUni 或 release readiness 已通過。
+Production deployment、正式資料庫、正式付款／退款、正式寄信或正式客戶資料仍需另行明確授權；非 Production runner 的通過也不代表 Production readiness。
 
 ## 13. Release evidence bundle aggregation
 
