@@ -138,9 +138,16 @@ describe("student portal encrypted sessions", () => {
 
     mocks.cookieGet.mockReturnValue({ value: createStudentPortalSessionToken({ vendorId: "vendor_1", customerKeyHash, now }) });
     mocks.vendorFindFirst.mockResolvedValue({ id: "vendor_1", slug: "acme", name: "Acme", logoUrl: null, primaryColor: "#2563eb" });
-    await expect(requireStudentPortalSession("acme")).resolves.toMatchObject({
-      session: { vendorId: "vendor_1", customerKeyHash }, vendor: { slug: "acme" },
-    });
+    // The session reader uses the wall clock, so pin it to the token's issue time.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now);
+    try {
+      await expect(requireStudentPortalSession("acme")).resolves.toMatchObject({
+        session: { vendorId: "vendor_1", customerKeyHash }, vendor: { slug: "acme" },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
     expect(mocks.vendorFindFirst).toHaveBeenCalledWith({
       where: { id: "vendor_1", slug: "acme" },
       select: { id: true, slug: true, name: true, logoUrl: true, primaryColor: true },
