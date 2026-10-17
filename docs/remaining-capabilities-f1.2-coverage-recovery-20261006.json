@@ -1,0 +1,25 @@
+{
+  "gate": "full_unit_coverage_lf_mirror",
+  "exit_code": 0,
+  "counts": [
+    "# tests 1067",
+    "# pass 1067",
+    "# fail 0",
+    "# skipped 0"
+  ],
+  "failedTitles": [],
+  "sourceEnvFilesRead": false,
+  "skippedSensitive": 3,
+  "coverageDiagnostics": [],
+  "source_revision": "sha256:99408aaf5e24295f3c0248a542325f5e66a8e68bad9524d4c912116de1213c64",
+  "validated_command": "scripts/run-combined-coverage.mjs",
+  "thresholds": "UNCHANGED_GLOBAL_63_57_60_65_LIB_86_80_88_88",
+  "delivery": "PENDING_REVIEW_EXTENSION_CANONICAL_ACCEPTANCE_AND_EXACT_HEAD_CI",
+  "vitest_terminal_observation": {
+    "passed": 4564,
+    "total": 4564,
+    "files_passed": 619,
+    "files_total": 619,
+    "source": "completed exec session 23041 terminal summary"
+  }
+}

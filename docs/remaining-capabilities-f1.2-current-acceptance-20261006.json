@@ -1,0 +1,44 @@
+{
+  "schema": "remaining-capabilities-current-acceptance/v1",
+  "batch": "F1.2",
+  "head": "c9687b443cfc4e72b23caf42e9351db26cabaa78",
+  "source_revision": "sha256:99408aaf5e24295f3c0248a542325f5e66a8e68bad9524d4c912116de1213c64",
+  "status": "LOCAL_VALIDATED_PENDING_INDEPENDENT_REVIEW_AUTHORIZATION",
+  "canonical_acceptance": {
+    "status": "BLOCKED",
+    "blockers": [
+      "independent_review_unverified"
+    ],
+    "revision": "sha256:99408aaf5e24295f3c0248a542325f5e66a8e68bad9524d4c912116de1213c64"
+  },
+  "checks": {
+    "targeted_unit": 17,
+    "node_tap": 1067,
+    "vitest": 4564,
+    "vitest_files": 619,
+    "migration_count": 85,
+    "database": 9,
+    "browser": 1,
+    "typecheck": "PASS",
+    "strict_index": "PASS",
+    "lint": "PASS",
+    "coverage_thresholds": "UNCHANGED",
+    "skipped": 0
+  },
+  "review": {
+    "dispatches": 4,
+    "limit": 4,
+    "extension": "AWAITING_USER",
+    "existing_review_revision": "sha256:1a6ed01dbf1b8a7277081d3b8039ea1690293e3187ab45dbcac4758f2e42b8aa",
+    "observed_model": "unknown",
+    "observed_effort": "unknown"
+  },
+  "remote_ci": {
+    "pr_run": 37389619909,
+    "pr_conclusion": "SUCCESS",
+    "push_run": 37389616232,
+    "push_conclusion": "PENDING_AT_OBSERVATION"
+  },
+  "delivery": "NOT_DELIVERED",
+  "observed_at": "2026-10-06T00:02:53.214356+00:00"
+}
