@@ -32,6 +32,7 @@ const paymentProviderMocks = vi.hoisted(() => ({ getPaymentProvider: vi.fn() }))
 const commerceOrderMocks = vi.hoisted(() => ({ createCommerceOrderForCheckout: vi.fn() }));
 const affiliatePolicyMocks = vi.hoisted(() => ({ freezeMerchantAffiliateCheckout: vi.fn(), MerchantAffiliatePolicyConflict: class MerchantAffiliatePolicyConflict extends Error {}, MerchantAffiliatePolicyDenied: class MerchantAffiliatePolicyDenied extends Error {} }));
 const buyerSupportMocks = vi.hoisted(() => ({ issueBuyerSupportGrant: vi.fn() }));
+const postPurchaseMocks = vi.hoisted(() => ({ quote: vi.fn(), consume: vi.fn(), replay: vi.fn() }));
 const funnelMocks = vi.hoisted(() => ({ resolvePublishedFunnelCheckout: vi.fn() }));
 const liveInteractionMocks = vi.hoisted(() => ({ resolveEligibleAutomationVoucherClaim: vi.fn(), resolveEligibleVoucherClaim: vi.fn(), consumeLive: vi.fn() }));
 const admissionMocks = vi.hoisted(() => ({
@@ -48,12 +49,19 @@ vi.mock("@/lib/inventory-reservations", () => inventoryMocks);
 vi.mock("@/lib/commerce-orders", () => commerceOrderMocks);
 vi.mock("@/lib/merchant-affiliate-policy-service", () => affiliatePolicyMocks);
 vi.mock("@/lib/buyer-support-access", () => ({
+  BUYER_SUPPORT_COOKIE_PREFIX: "celebrate_support_",
+  resolveBuyerSupportGrant: vi.fn(),
   issueBuyerSupportGrant: buyerSupportMocks.issueBuyerSupportGrant,
   buyerSupportCookieOptions: ({ expiresAt, secure }: { expiresAt: Date; secure: boolean }) => ({
     httpOnly: true, sameSite: "lax", secure, path: "/", expires: expiresAt,
   }),
 }));
 vi.mock("@/lib/checkout-admission", () => admissionMocks);
+vi.mock("@/lib/post-purchase-credit", async importOriginal => {
+  const original = await importOriginal<typeof import("@/lib/post-purchase-credit")>();
+  return { ...original, resolvePostPurchaseCreditQuote: postPurchaseMocks.quote,
+    consumePostPurchaseCredit: postPurchaseMocks.consume, assertPostPurchaseCreditReplay: postPurchaseMocks.replay };
+});
 vi.mock("@/lib/funnel-commerce-service", () => funnelMocks);
 vi.mock("@/lib/live-interaction", () => ({
   LiveVoucherAlreadyUsedError: class LiveVoucherAlreadyUsedError extends Error {},
@@ -67,9 +75,14 @@ import { POST } from "@/app/api/payments/checkout/route";
 import { createCommerceOrderIdentityHash } from "@/lib/commerce-order-pii";
 import { createCustomCheckoutIdentityHash } from "@/lib/commerce-custom-checkout";
 import { encodeAttributionCookie } from "@/lib/team-funnel-attribution";
+import { postPurchaseCreditQuoteHash, PostPurchaseUnavailableError } from "@/lib/post-purchase-credit";
 
 const idempotencyKey = "123e4567-e89b-12d3-a456-426614174000";
 const admissionToken = `ca1.${"a".repeat(64)}.${"b".repeat(43)}`;
+const postPurchaseToken = `ppu1.synthetic.${"b".repeat(43)}`;
+const upgradeQuote = { vendorId: "vendor-1", sourceOrderId: "source-order", buyerGrantId: "source-grant",
+  sourceProductId: "source-product", targetProductId: "product-1", kind: "upsell" as const, currency: "TWD",
+  creditAmountCents: 700, offerDiscountCents: 100, targetPriceCents: 1200, checkoutAmountCents: 400 };
 const buyer = { name: "王小明", email: "buyer@example.test", phone: "0912345678" };
 const shipping = {
   recipientName: "王小明",
@@ -148,6 +161,9 @@ function funnelResolution(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  postPurchaseMocks.quote.mockResolvedValue(upgradeQuote);
+  postPurchaseMocks.consume.mockResolvedValue({ id: "credit-1" });
+  postPurchaseMocks.replay.mockResolvedValue(upgradeQuote);
   vi.stubEnv("CSRF_SECRET", "checkout-route-test-secret-that-is-at-least-32-bytes");
   db.product.findFirst.mockResolvedValue({
     id: "product-1",
@@ -194,7 +210,7 @@ beforeEach(() => {
   inventoryMocks.createReservedPaymentTransaction.mockImplementation(async (
     { transactionData, createCommerceOrder }: {
       transactionData: unknown;
-      createCommerceOrder?: (tx: unknown, transaction: Record<string, unknown>) => Promise<void>;
+      createCommerceOrder?: (tx: unknown, transaction: Record<string, unknown>, reservations: unknown[]) => Promise<void>;
     },
   ) => {
     const transaction = await db.paymentTransaction.create({ data: transactionData });
@@ -202,7 +218,7 @@ beforeEach(() => {
       await createCommerceOrder({
         liveInteractionResponse: { updateMany: liveInteractionMocks.consumeLive },
         automationVoucherGrant: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-      }, transaction);
+      }, transaction, [{ vendorId: "vendor-1", productId: "product-1", beforeRevision: 4, afterRevision: 5 }]);
     }
     return transaction;
   });
@@ -238,6 +254,61 @@ function expectNoAffiliateAttribution() {
 }
 
 describe("successful checkout response", () => {
+  it("charges only the signed upgrade difference and consumes credit in the reservation transaction", async () => {
+    admissionMocks.verifyCheckoutAdmission.mockReturnValue({ productRevision: 4, idempotencyKey,
+      vendorId: "vendor-1", productId: "product-1", offerHash: postPurchaseCreditQuoteHash(upgradeQuote) });
+    const response = await POST(checkoutRequest(undefined, { postPurchaseToken }));
+    expect(response.status).toBe(200);
+    expect(db.paymentTransaction.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      grossAmountCents: 400, netAmountCents: 400, metadata: expect.objectContaining({ postPurchaseCredit: upgradeQuote }),
+    }) });
+    expect(commerceOrderMocks.createCommerceOrderForCheckout).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      totalAmountCents: 400, discountAmountCents: 800,
+    }));
+    expect(postPurchaseMocks.consume).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
+      token: postPurchaseToken, quote: upgradeQuote, targetOrderId: "order-1",
+      reserved: { vendorId: "vendor-1", productId: "product-1", beforeRevision: 4, afterRevision: 5 },
+    });
+    expect(createCheckoutSession).toHaveBeenCalledWith(expect.objectContaining({
+      transaction: expect.objectContaining({ grossAmountCents: 400, netAmountCents: 400 }),
+    }));
+    expect(liveInteractionMocks.resolveEligibleVoucherClaim).not.toHaveBeenCalled();
+    expect(JSON.stringify(db.paymentTransaction.create.mock.calls[0][0])).not.toContain(postPurchaseToken);
+  });
+  it("rejects a changed upgrade hash before reserving inventory or contacting the provider", async () => {
+    const response = await POST(checkoutRequest(undefined, { postPurchaseToken }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "POST_PURCHASE_UNAVAILABLE" });
+    expect(inventoryMocks.createReservedPaymentTransaction).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+  it("rejects revoked upgrade rights without silently charging full price", async () => {
+    postPurchaseMocks.quote.mockRejectedValueOnce(new PostPurchaseUnavailableError());
+    const response = await POST(checkoutRequest(undefined, { postPurchaseToken }));
+    expect(response.status).toBe(409);
+    expect(db.paymentTransaction.create).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+  it("rejects a failed credit consumer before provider checkout", async () => {
+    admissionMocks.verifyCheckoutAdmission.mockReturnValue({ productRevision: 4, idempotencyKey,
+      vendorId: "vendor-1", productId: "product-1", offerHash: postPurchaseCreditQuoteHash(upgradeQuote) });
+    postPurchaseMocks.consume.mockRejectedValueOnce(new PostPurchaseUnavailableError());
+    const response = await POST(checkoutRequest(undefined, { postPurchaseToken }));
+    expect(response.status).toBe(409);
+    expect(postPurchaseMocks.consume).toHaveBeenCalledTimes(1);
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+  it("maps a database-level credit rejection to the post-purchase 409 code, not a provider 502", async () => {
+    admissionMocks.verifyCheckoutAdmission.mockReturnValue({ productRevision: 4, idempotencyKey,
+      vendorId: "vendor-1", productId: "product-1", offerHash: postPurchaseCreditQuoteHash(upgradeQuote) });
+    // consumePostPurchaseCredit converts SQLSTATE 23514/23505 to this error (see post-purchase-credit.db.test.ts).
+    postPurchaseMocks.consume.mockRejectedValueOnce(new PostPurchaseUnavailableError());
+    const response = await POST(checkoutRequest(undefined, { postPurchaseToken }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "POST_PURCHASE_UNAVAILABLE" });
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
   it("does not silently charge full price when a previous order consumed the live voucher", async () => {
     const { LiveVoucherAlreadyUsedError } = await import("@/lib/live-interaction");
     liveInteractionMocks.resolveEligibleVoucherClaim.mockRejectedValueOnce(new LiveVoucherAlreadyUsedError());

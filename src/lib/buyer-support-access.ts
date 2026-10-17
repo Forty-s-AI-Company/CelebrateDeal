@@ -255,6 +255,7 @@ export async function resolveBuyerSupportGrants(
           totalAmountCents: true, refundedAmountCents: true, buyerMaskedName: true,
           buyerMaskedEmail: true, createdAt: true,
           vendor: { select: { name: true } },
+          postPurchaseCreditReceived: { select: { id: true } },
           items: { orderBy: { lineIndex: "asc" }, take: 1, select: { productId: true } },
         },
       },
