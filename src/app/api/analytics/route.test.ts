@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   liveViewerTokenFromRequest: vi.fn(),
   enqueueTracking: vi.fn(),
   transaction: vi.fn(),
+  trackingSettingFindFirst: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -18,6 +19,7 @@ vi.mock("@/lib/db", () => ({
     analyticsEvent: { create: mocks.analyticsCreate },
     live: { findFirst: mocks.liveFindFirst },
     liveProduct: { findFirst: mocks.liveProductFindFirst },
+    trackingSetting: { findFirst: mocks.trackingSettingFindFirst },
     $transaction: mocks.transaction,
   }),
 }));
@@ -64,6 +66,7 @@ beforeEach(() => {
   mocks.analyticsCreate.mockResolvedValue({ id: "event-1" });
   mocks.captureProductEvent.mockResolvedValue({ skipped: false });
   mocks.enqueueTracking.mockResolvedValue(null);
+  mocks.trackingSettingFindFirst.mockResolvedValue({ id: "tracking-setting-1" });
   mocks.transaction.mockImplementation(async callback => callback({ analyticsEvent: { create: mocks.analyticsCreate } }));
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -78,6 +81,29 @@ describe("analytics route", () => {
     expect(mocks.enqueueTracking).toHaveBeenCalledWith(expect.objectContaining({ analyticsEvent: { create: mocks.analyticsCreate } }), {
       vendorId: "vendor-1", eventName: "ViewContent", sourceId: "event-1", context: { sourceUrl: "https://app.example.test/live/trusted-live", userAgent: "SyntheticTrackingBrowser/1.0" },
     });
+  });
+  it("skips the interactive transaction when the tenant has no enabled, credentialed ViewContent tracking", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+    mocks.trackingSettingFindFirst.mockResolvedValue(null);
+    for (const event of [validEvent, { vendorId: "vendor-1", liveId: "live-1", eventType: "page_view", payload: { slug: "trusted-live" } }]) {
+      const response = await POST(analyticsRequest(event, undefined, { "user-agent": "SyntheticTrackingBrowser/1.0" }));
+      expect(response.status).toBe(200);
+    }
+    expect(mocks.trackingSettingFindFirst).toHaveBeenCalledTimes(2);
+    expect(mocks.trackingSettingFindFirst).toHaveBeenCalledWith({
+      where: { vendorId: "vendor-1", enablePageView: true, facebookPixelId: { not: null }, facebookAccessTokenEncrypted: { not: null } },
+      select: { id: true },
+    });
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.enqueueTracking).not.toHaveBeenCalled();
+    expect(mocks.analyticsCreate).toHaveBeenCalledTimes(2);
+  });
+  it("does not read tracking settings for events that cannot become provider events", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
+    expect((await POST(analyticsRequest({ vendorId: "vendor-1", liveId: "live-1", eventType: "play_progress", payload: { seconds: 30 } }, undefined, { "user-agent": "SyntheticTrackingBrowser/1.0" }))).status).toBe(200);
+    expect((await POST(analyticsRequest(validEvent))).status).toBe(200);
+    expect(mocks.trackingSettingFindFirst).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
   });
   it("does not create provider events for playback progress or a rejected viewer", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.example.test");
