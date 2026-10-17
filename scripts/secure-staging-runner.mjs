@@ -16,7 +16,8 @@ const GITHUB_STATUS_PAGE_SIZE = 1;
 const GITHUB_READ_BUDGET = 20;
 const GITHUB_DEPLOYMENT_PAGINATION_ERROR = "GITHUB_DEPLOYMENT_PAGINATION_INVALID";
 const POSTGRES_IMAGE = "postgres:17-alpine";
-const EXPECTED_MIGRATION_COUNT = 58;
+// Pin the backup gate to the exact RC source whose migration blobs are audited.
+export const BACKUP_SOURCE_SHA = "9193326824b8b6bf774bdfa28e4783a1a1b8f304";
 const SAFE_SHA = /^[a-f0-9]{40}$/u;
 const SAFE_HOST = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 const SAFE_MIGRATION = /^\d{12,14}_[a-z0-9_]+$/u;
@@ -65,7 +66,7 @@ function run(command, args, { env = baseEnvironment(), encoding = "utf8", input,
 export function validateInvocation(task, source = process.env) {
   if (task !== TASK) return { ok: false, reason: "TASK_NOT_ALLOWLISTED" };
   if (![...REQUIRED_SECRET_KEYS, ...REQUIRED_CONFIG_KEYS].every((key) => hasValue(source, key))) return { ok: false, reason: "REQUIRED_BINDING_MISSING" };
-  if (!SAFE_SHA.test(source.CELEBRATEDEAL_SOURCE_SHA)) return { ok: false, reason: "SOURCE_SHA_INVALID" };
+  if (source.CELEBRATEDEAL_SOURCE_SHA !== BACKUP_SOURCE_SHA) return { ok: false, reason: "SOURCE_SHA_INVALID" };
   if (!SAFE_HOST.test(source.CELEBRATEDEAL_DEPLOYMENT_HOST) || !source.CELEBRATEDEAL_DEPLOYMENT_HOST.endsWith(".vercel.app")) return { ok: false, reason: "DEPLOYMENT_HOST_INVALID" };
   try {
     const database = new URL(source.STAGING_DATABASE_URL);
@@ -90,7 +91,7 @@ export function createInitialReceipt(sourceCommit = "unknown") {
     executedAtUtc: new Date().toISOString(),
     lineage: { deploymentReads: 0, deploymentMatched: false, sourceMatched: false, preview: false, ready: false, healthStatus: null, noRedirect: false, deploymentDigest: null },
     database: { connectionAttempts: 0, firstTransactionReadOnly: false, identityMatched: false, readQueries: 0, disconnected: false },
-    migration: { expectedCount: EXPECTED_MIGRATION_COUNT, appliedCount: 0, unresolvedFailedCount: 0, rollbackEntryCount: 0, completedCounterpartCount: 0, exactChecksumCount: 0, formatVarianceCount: 0, unknownMismatchCount: 0, status: "NOT_RUN" },
+    migration: { expectedCount: 0, appliedCount: 0, unresolvedFailedCount: 0, rollbackEntryCount: 0, completedCounterpartCount: 0, exactChecksumCount: 0, formatVarianceCount: 0, unknownMismatchCount: 0, status: "NOT_RUN" },
     backup: { attempts: 0, result: "NOT_RUN", byteBucket: "not_run", digest: null },
     restore: { attempts: 0, result: "NOT_RUN", migrationCount: 0, schemaMatched: false, extensionsMatched: false, aggregateMatched: false, isolated: true },
     network: { policy: "fixed-host-egress", githubDeployments: true, stagingPreview: true, supabaseStaging: true, arbitraryOutbound: false },
@@ -120,11 +121,19 @@ export function validateReceipt(receipt) {
   if (/(?:postgres(?:ql)?:\/\/|https?:\/\/|Bearer\s+|BEGIN\s+(?:RSA|OPENSSH|EC)\s+PRIVATE\s+KEY|set-cookie|ocbugvgojrunvenozsbx)/iu.test(serialized)) errors.push("FORBIDDEN_TEXT");
   if (receipt?.result === "PASS") {
     const migration = receipt.migration ?? {};
+    // The validator independently loads the exact source manifest. A missing
+    // commit or an untrusted migration tree must fail the receipt closed.
+    let manifestCount = 0;
+    try { manifestCount = sourceInventory(BACKUP_SOURCE_SHA).size; } catch { errors.push("SOURCE_MANIFEST_UNVERIFIED"); }
     const complete = receipt.lineage?.deploymentMatched === true && receipt.lineage?.sourceMatched === true && receipt.lineage?.preview === true && receipt.lineage?.ready === true && receipt.lineage?.healthStatus === 200 && receipt.lineage?.noRedirect === true
       && receipt.database?.firstTransactionReadOnly === true && receipt.database?.identityMatched === true && receipt.database?.disconnected === true
-      && migration.appliedCount === EXPECTED_MIGRATION_COUNT && migration.unresolvedFailedCount === 0 && migration.rollbackEntryCount === 1 && migration.completedCounterpartCount === 1 && migration.unknownMismatchCount === 0 && migration.exactChecksumCount + migration.formatVarianceCount === EXPECTED_MIGRATION_COUNT && ["UP_TO_DATE", "UP_TO_DATE_FORMAT_VARIANCE"].includes(migration.status)
+      && receipt.sourceCommit === BACKUP_SOURCE_SHA && manifestCount > 0 && migration.expectedCount === manifestCount
+      && migration.appliedCount > 0 && migration.appliedCount <= migration.expectedCount
+      && migration.unresolvedFailedCount === 0 && migration.completedCounterpartCount === migration.rollbackEntryCount
+      && migration.unknownMismatchCount === 0 && migration.exactChecksumCount + migration.formatVarianceCount === migration.appliedCount
+      && migration.status === (migration.appliedCount < migration.expectedCount ? "BACKUP_READY_MIGRATIONS_PENDING" : (migration.formatVarianceCount === 0 ? "UP_TO_DATE" : "UP_TO_DATE_FORMAT_VARIANCE"))
       && receipt.backup?.attempts === 1 && receipt.backup?.result === "PASS" && /^sha256:[a-f0-9]{64}$/u.test(receipt.backup?.digest ?? "")
-      && receipt.restore?.attempts === 1 && receipt.restore?.result === "PASS" && receipt.restore?.migrationCount === EXPECTED_MIGRATION_COUNT && receipt.restore?.schemaMatched === true && receipt.restore?.extensionsMatched === true && receipt.restore?.aggregateMatched === true && receipt.restore?.isolated === true
+      && receipt.restore?.attempts === 1 && receipt.restore?.result === "PASS" && receipt.restore?.migrationCount === migration.appliedCount && receipt.restore?.schemaMatched === true && receipt.restore?.extensionsMatched === true && receipt.restore?.aggregateMatched === true && receipt.restore?.isolated === true
       && effects.backupWrites === 1 && effects.isolatedRestoreWrites === 1;
     if (!complete) errors.push("PASS_GATE_INCOMPLETE");
   }
@@ -305,7 +314,7 @@ export function verifyTrustedMigrationTree(sourceCommit, spawnImpl = spawnSync) 
   return { mode: "squash-equivalent" };
 }
 
-function sourceInventory(sourceCommit, spawnImpl = spawnSync) {
+export function sourceInventory(sourceCommit, spawnImpl = spawnSync) {
   const execute = (args, encoding = "utf8") => {
     const child = spawnImpl("git", args, { cwd: ROOT, env: baseEnvironment(), encoding, shell: false, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
     return { code: child.status ?? 1, stdout: child.stdout ?? (encoding ? "" : Buffer.alloc(0)) };
@@ -314,7 +323,7 @@ function sourceInventory(sourceCommit, spawnImpl = spawnSync) {
   const listed = execute(["ls-tree", "-r", "--name-only", sourceCommit, "--", "prisma/migrations"]);
   if (listed.code !== 0) throw new Error("SOURCE_MIGRATION_INVENTORY_FAILED");
   const files = String(listed.stdout).split(/\r?\n/u).filter((item) => item.endsWith("/migration.sql"));
-  if (files.length !== EXPECTED_MIGRATION_COUNT) throw new Error("SOURCE_MIGRATION_COUNT_INVALID");
+  if (sourceCommit !== BACKUP_SOURCE_SHA || files.length === 0) throw new Error("SOURCE_MIGRATION_COUNT_INVALID");
   const inventory = new Map();
   for (const file of files) {
     const name = file.split("/").at(-2) ?? "";
@@ -507,6 +516,7 @@ export async function runSecureTask(task, source = process.env, dependencies = {
     const active = rows.filter((row) => row.finished && !row.rolledBack);
     const rolledBack = rows.filter((row) => row.rolledBack);
     const unresolved = rows.filter((row) => !row.finished && !row.rolledBack);
+    if (new Set(active.map((row) => row.name)).size !== active.length) throw new Error("MIGRATION_HISTORY_DUPLICATE");
     let exactChecksumCount = 0;
     let formatVarianceCount = 0;
     let unknownMismatchCount = 0;
@@ -517,8 +527,10 @@ export async function runSecureTask(task, source = process.env, dependencies = {
       else unknownMismatchCount += 1;
     }
     const completedCounterpartCount = rolledBack.filter((row) => active.some((candidate) => candidate.name === row.name && candidate.checksum === row.checksum)).length;
-    receipt.migration = { expectedCount: EXPECTED_MIGRATION_COUNT, appliedCount: active.length, unresolvedFailedCount: unresolved.length, rollbackEntryCount: rolledBack.length, completedCounterpartCount, exactChecksumCount, formatVarianceCount, unknownMismatchCount, status: active.length === EXPECTED_MIGRATION_COUNT && unresolved.length === 0 && rolledBack.length === 1 && completedCounterpartCount === 1 && unknownMismatchCount === 0 ? (formatVarianceCount === 0 ? "UP_TO_DATE" : "UP_TO_DATE_FORMAT_VARIANCE") : "HISTORY_DIVERGED" };
-    if (!["UP_TO_DATE", "UP_TO_DATE_FORMAT_VARIANCE"].includes(receipt.migration.status)) throw new Error("MIGRATION_HISTORY_DIVERGED");
+    const historyVerified = active.length > 0 && active.length <= inventory.size && unresolved.length === 0 && completedCounterpartCount === rolledBack.length && unknownMismatchCount === 0;
+    const status = !historyVerified ? "HISTORY_DIVERGED" : active.length < inventory.size ? "BACKUP_READY_MIGRATIONS_PENDING" : formatVarianceCount === 0 ? "UP_TO_DATE" : "UP_TO_DATE_FORMAT_VARIANCE";
+    receipt.migration = { expectedCount: inventory.size, appliedCount: active.length, unresolvedFailedCount: unresolved.length, rollbackEntryCount: rolledBack.length, completedCounterpartCount, exactChecksumCount, formatVarianceCount, unknownMismatchCount, status };
+    if (!historyVerified) throw new Error("MIGRATION_HISTORY_DIVERGED");
 
     const sourceExtensions = sourcePsql(pgEnvironment, "SELECT extension.extname,namespace.nspname FROM pg_extension extension INNER JOIN pg_namespace namespace ON namespace.oid=extension.extnamespace WHERE extension.extname IN ('pgcrypto','pg_trgm') ORDER BY extension.extname;");
     receipt.database.readQueries += 1;
@@ -526,6 +538,7 @@ export async function runSecureTask(task, source = process.env, dependencies = {
     const extensionPlacements = parseExtensionPlacements(sourceExtensions.stdout);
 
     const sourceSnapshot = snapshot((sql) => { receipt.database.readQueries += 1; return sourcePsql(pgEnvironment, sql); });
+    if (sourceSnapshot.migrationCount !== active.length) throw new Error("SOURCE_SNAPSHOT_MIGRATION_DRIFT");
     const runnerTemp = await fsp.realpath(source.RUNNER_TEMP);
     tempRoot = await fsp.mkdtemp(path.join(runnerTemp, "celebratedeal-wp2-"));
     await fsp.writeFile(path.join(tempRoot, ".owner"), runId, { encoding: "utf8", flag: "wx" });
@@ -565,7 +578,7 @@ export async function runSecureTask(task, source = process.env, dependencies = {
     if (restored.code !== 0) throw new Error(classifyRestoreFailure(restored.stderr));
     const targetSnapshot = snapshot((sql) => targetPsql(containerId, sql));
     receipt.restore = { attempts: 1, result: "PASS", migrationCount: targetSnapshot.migrationCount, schemaMatched: sourceSnapshot.tableCount === targetSnapshot.tableCount && sourceSnapshot.columnCount === targetSnapshot.columnCount, extensionsMatched: sourceSnapshot.extensionDigest === targetSnapshot.extensionDigest, aggregateMatched: sourceSnapshot.aggregateDigest === targetSnapshot.aggregateDigest, isolated: true };
-    if (receipt.restore.migrationCount !== EXPECTED_MIGRATION_COUNT || !receipt.restore.schemaMatched || !receipt.restore.extensionsMatched || !receipt.restore.aggregateMatched) throw new Error("ISOLATED_RESTORE_MISMATCH");
+    if (receipt.restore.migrationCount !== active.length || !receipt.restore.schemaMatched || !receipt.restore.extensionsMatched || !receipt.restore.aggregateMatched) throw new Error("ISOLATED_RESTORE_MISMATCH");
     receipt.database.disconnected = true;
     receipt.result = "PASS";
   } catch (error) {

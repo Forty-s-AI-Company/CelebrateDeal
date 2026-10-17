@@ -48,6 +48,24 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Checkout exact WP2 RC migration source before secret injection
+        if: ${{ inputs.task == 'wp2-readonly-restore' }}
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: refs/pull/277/head
+          fetch-depth: 0
+          path: verified-wp2-source
+          persist-credentials: false
+
+      - name: Import and verify exact WP2 RC migration source before secret injection
+        if: ${{ inputs.task == 'wp2-readonly-restore' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C verified-wp2-source rev-parse HEAD)" = '9193326824b8b6bf774bdfa28e4783a1a1b8f304'
+          git fetch --no-tags ./verified-wp2-source HEAD:refs/remotes/origin/verified-wp2-source
+          test "$(git rev-parse refs/remotes/origin/verified-wp2-source)" = '9193326824b8b6bf774bdfa28e4783a1a1b8f304'
+
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -75,6 +93,12 @@ jobs:
       - name: Verify secure runner contract
         run: npm run secure:staging:contract
 
+      - name: Validate exact WP2 RC source before secret injection
+        if: ${{ inputs.task == 'wp2-readonly-restore' }}
+        env:
+          CELEBRATEDEAL_SOURCE_SHA: ${{ inputs.source_sha }}
+        run: test "$CELEBRATEDEAL_SOURCE_SHA" = '9193326824b8b6bf774bdfa28e4783a1a1b8f304'
+
       - name: Validate fixed LINE dispatch identity before secret injection
         if: ${{ inputs.task == 'line-notifications-e2e' }}
         shell: bash
@@ -101,6 +125,7 @@ jobs:
           set -euo pipefail
 
           firewall_backup="$RUNNER_TEMP/celebratedeal-iptables.rules"
+          firewall6_backup="$RUNNER_TEMP/celebratedeal-ip6tables.rules"
           hosts_backup="$RUNNER_TEMP/celebratedeal-hosts.original"
           destinations="$RUNNER_TEMP/celebratedeal-egress.tsv"
           hosts_file="$RUNNER_TEMP/celebratedeal-hosts"
@@ -135,11 +160,13 @@ jobs:
           done < "$destinations"
 
           sudo iptables-save > "$firewall_backup"
+          sudo ip6tables-save > "$firewall6_backup"
           sudo cp /etc/hosts "$hosts_backup"
           restore_network() {
             sudo iptables-restore < "$firewall_backup"
+            sudo ip6tables-restore < "$firewall6_backup"
             sudo cp "$hosts_backup" /etc/hosts
-            rm -f "$firewall_backup" "$hosts_backup" "$destinations" "$hosts_file"
+            rm -f "$firewall_backup" "$firewall6_backup" "$hosts_backup" "$destinations" "$hosts_file"
           }
           trap restore_network EXIT
 
@@ -151,6 +178,9 @@ jobs:
           sudo iptables -P OUTPUT DROP
           sudo iptables -A OUTPUT -o lo -j ACCEPT
           sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+          sudo ip6tables -P OUTPUT DROP
+          sudo ip6tables -A OUTPUT -o lo -j ACCEPT
+          sudo ip6tables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
           while IFS=$'\t' read -r _host address port; do
             sudo iptables -A OUTPUT -p tcp -d "$address" --dport "$port" -j ACCEPT
           done < "$hosts_file"
