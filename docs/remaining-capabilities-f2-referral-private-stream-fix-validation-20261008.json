@@ -1,0 +1,62 @@
+{
+  "task_id": "f2-referral-share-cards-20261008",
+  "head": "a56ad9a89e662dd8e7080b01974190e3adcd7031",
+  "source_revision": "sha256:ffea02376eb5c992fb824fc248d249424214191bcff73c32a24924bd7ed7a4b4",
+  "status": "CANONICAL_READY_PENDING_NEW_EXACT_HEAD_CI_DELIVERY",
+  "tests": {
+    "migrations": 95,
+    "database": 6,
+    "browser": 2,
+    "skipped": 0,
+    "flaky": 0,
+    "unit": "PASS",
+    "typecheck": "PASS",
+    "strict-index": "PASS",
+    "lint": "PASS",
+    "cleanup": "PASS"
+  },
+  "review": {
+    "dispatch": 5,
+    "findings": [],
+    "resolved_model": "gpt-6-astra",
+    "resolved_effort": "high",
+    "observed_model": "unknown",
+    "observed_effort": "unknown"
+  },
+  "canonical": {
+    "status": "READY",
+    "blockers": [],
+    "revision": "sha256:ffea02376eb5c992fb824fc248d249424214191bcff73c32a24924bd7ed7a4b4"
+  },
+  "dependency": "private381 f92e2d1159da724393e9a35dace3a910ca962c4c not delivered yet",
+  "ci": {
+    "head": "85fe9988c0a5ffd5bae85c58174fe978c142d691",
+    "push": 37710184097,
+    "pr": 37710187138,
+    "status": "IN_PROGRESS_LAST_QUERIED"
+  },
+  "evidence_directory": "C:\\Users\\eden\\.codex\\worktrees\\remaining-canonical-domain-workflows\\CelebrateDeal\\.ai-team\\reports\\referral-share\\private-stream-fix-integrated-20261008",
+  "current_head": "85fe9988c0a5ffd5bae85c58174fe978c142d691",
+  "tested_head": "a56ad9a89e662dd8e7080b01974190e3adcd7031",
+  "actual_main_binding": {
+    "status": "PASS",
+    "dependency_pr": {
+      "headRefOid": "f92e2d1159da724393e9a35dace3a910ca962c4c",
+      "mergeCommit": {
+        "oid": "a0fe022c75b4f8301018615ac803dcfa2f52ab76"
+      },
+      "state": "MERGED",
+      "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/381"
+    },
+    "accepted_private_head": "f92e2d1159da724393e9a35dace3a910ca962c4c",
+    "accepted_private_tree": "6043be47c232e3d97cb0e658aa5bcc703ca25fa4",
+    "merged_private_tree": "6043be47c232e3d97cb0e658aa5bcc703ca25fa4",
+    "tree_equal": true,
+    "tested_referral_head": "a56ad9a89e662dd8e7080b01974190e3adcd7031",
+    "current_referral_head": "85fe9988c0a5ffd5bae85c58174fe978c142d691",
+    "referral_full_tree_unchanged": true,
+    "actual_master_ancestor": true,
+    "referral_source_revision": "sha256:ffea02376eb5c992fb824fc248d249424214191bcff73c32a24924bd7ed7a4b4",
+    "historical_receipts_unmodified": true
+  }
+}

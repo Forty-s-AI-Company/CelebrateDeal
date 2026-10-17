@@ -1,0 +1,26 @@
+{
+  "status": "DELIVERED",
+  "task_id": "f2-referral-share-cards-20261008",
+  "pr": {
+    "headRefOid": "85fe9988c0a5ffd5bae85c58174fe978c142d691",
+    "mergeCommit": {
+      "oid": "aba65b4e7913f79f7de72a7b3abedb5d1f10ec3f"
+    },
+    "mergedAt": "2026-10-08T01:29:20Z",
+    "state": "MERGED",
+    "url": "https://github.com/Forty-s-AI-Company/CelebrateDeal/pull/385"
+  },
+  "accepted_head": "85fe9988c0a5ffd5bae85c58174fe978c142d691",
+  "merge_commit": "aba65b4e7913f79f7de72a7b3abedb5d1f10ec3f",
+  "accepted_tree": "2eb50a876d0e2cf9e4800c490266f49ba8cb91db",
+  "merged_tree": "2eb50a876d0e2cf9e4800c490266f49ba8cb91db",
+  "tree_equal": true,
+  "exact_ci_runs": [
+    37710184097,
+    37710187138
+  ],
+  "canonical_acceptance": "READY",
+  "review_dispatch": 5,
+  "history_proofs_unmodified": true,
+  "external_meta_or_notification_delivery_claimed": false
+}
