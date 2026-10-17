@@ -74,14 +74,24 @@ beforeEach(() => {
 describe("upsertProductAction", () => {
   it("persists validated upgrade settings in the tenant product transaction", async () => {
     await expect(upsertProductAction(initialProductActionState, validProduct({
-      upsellProductId: "upgrade", downsellProductId: "", upsellDiscount: "1.50",
+      upsellProductId: "upgrade", downsellProductId: "", upsellDiscount: "2",
     }))).rejects.toThrow("redirect:/products?updated=created");
     expect(mocks.productCreate).toHaveBeenCalledWith({ data: expect.objectContaining({
-      vendorId: "vendor-1", upsellProductId: "upgrade", downsellProductId: null, upsellDiscountCents: 150,
+      vendorId: "vendor-1", upsellProductId: "upgrade", downsellProductId: null, upsellDiscountCents: 200,
     }) });
     expect(mocks.productFindMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ vendorId: "vendor-1", id: { in: ["upgrade"] } }),
     }));
+  });
+  it.each([
+    ["a fractional TWD discount", { upsellProductId: "upgrade", downsellProductId: "", upsellDiscount: "1.50" }],
+    ["a difference above the PayUni maximum", { upsellProductId: "upgrade", downsellProductId: "", upsellDiscount: "0", price: "1" }],
+  ])("rejects %s server-side without creating a product", async (label, fields) => {
+    if (label.includes("maximum")) mocks.productFindMany.mockResolvedValue([{ id: "upgrade", priceCents: 20_000_100, currency: "TWD" }]);
+    const result = await upsertProductAction(initialProductActionState, validProduct(fields));
+    expect(result.error).toBe("invalid_product");
+    expect(result.draft?.upsellDiscount).toBe(fields.upsellDiscount);
+    expect(mocks.productCreate).not.toHaveBeenCalled();
   });
   it("rejects a cross-tenant upgrade without creating a product or losing the draft", async () => {
     mocks.productFindMany.mockResolvedValue([]);

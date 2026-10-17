@@ -298,6 +298,17 @@ describe("successful checkout response", () => {
     expect(postPurchaseMocks.consume).toHaveBeenCalledTimes(1);
     expect(createCheckoutSession).not.toHaveBeenCalled();
   });
+  it("maps a database-level credit rejection to the post-purchase 409 code, not a provider 502", async () => {
+    admissionMocks.verifyCheckoutAdmission.mockReturnValue({ productRevision: 4, idempotencyKey,
+      vendorId: "vendor-1", productId: "product-1", offerHash: postPurchaseCreditQuoteHash(upgradeQuote) });
+    // consumePostPurchaseCredit converts SQLSTATE 23514/23505 to this error (see post-purchase-credit.db.test.ts).
+    postPurchaseMocks.consume.mockRejectedValueOnce(new PostPurchaseUnavailableError());
+    const response = await POST(checkoutRequest(undefined, { postPurchaseToken }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "POST_PURCHASE_UNAVAILABLE" });
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
   it("does not silently charge full price when a previous order consumed the live voucher", async () => {
     const { LiveVoucherAlreadyUsedError } = await import("@/lib/live-interaction");
     liveInteractionMocks.resolveEligibleVoucherClaim.mockRejectedValueOnce(new LiveVoucherAlreadyUsedError());

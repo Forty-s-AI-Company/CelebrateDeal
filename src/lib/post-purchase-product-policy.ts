@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { isPayUniChargeableAmountCents } from "@/lib/payment-providers/payuni-amount";
 
 const identifier = z.string().max(160).regex(/^[A-Za-z0-9_-]+$/u);
 export class PostPurchaseProductPolicyError extends Error {}
@@ -36,12 +37,21 @@ export async function assertPostPurchaseProductPolicy(
     && (existing.upsellDiscountCents ?? 0) === input.policy.upsellDiscountCents) return;
   const ids = [...new Set([input.policy.upsellProductId, input.policy.downsellProductId].filter((id): id is string => id !== null))];
   if (ids.includes(input.productId)) throw new PostPurchaseProductPolicyError();
+  // TWD is charged in whole units; a fractional discount can never be paid.
+  if (input.currency === "TWD" && input.policy.upsellDiscountCents % 100 !== 0) throw new PostPurchaseProductPolicyError();
   if (!ids.length) return;
   const targets = await db.product.findMany({ where: { vendorId: input.vendorId, id: { in: ids },
     isActive: true, fulfillmentTypeConfirmed: true, checkoutUrl: null },
   select: { id: true, currency: true, priceCents: true } });
+  // Checkout re-checks against the paid source amount; this refuses offers the
+  // provider could never charge at the configured catalogue prices.
+  const offerAmounts = targets.flatMap(target => [
+    ...(target.id === input.policy.upsellProductId ? [target.priceCents - input.priceCents - input.policy.upsellDiscountCents] : []),
+    ...(target.id === input.policy.downsellProductId ? [target.priceCents - input.priceCents] : []),
+  ]);
   if (targets.length !== ids.length || targets.some(target => target.currency !== input.currency
-    || target.priceCents <= input.priceCents + (target.id === input.policy.upsellProductId ? input.policy.upsellDiscountCents : 0))) {
+    || target.priceCents <= input.priceCents + (target.id === input.policy.upsellProductId ? input.policy.upsellDiscountCents : 0))
+    || offerAmounts.some(amount => !isPayUniChargeableAmountCents(amount))) {
     throw new PostPurchaseProductPolicyError();
   }
 }

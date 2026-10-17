@@ -53,6 +53,30 @@ describe("merchant post-purchase policy", () => {
         vendorId: "vendor", id: { in: ["target"] }, isActive: true, fulfillmentTypeConfirmed: true, checkoutUrl: null,
       } }));
     });
+  it("rejects a fractional TWD discount before database access", async () => {
+    const findMany = vi.fn();
+    const db = { product: { findMany } } as unknown as Pick<Prisma.TransactionClient, "product">;
+    await expect(assertPostPurchaseProductPolicy(db, { vendorId: "vendor", productId: "source", currency: "TWD", priceCents: 1000,
+      policy: { upsellProductId: "target", downsellProductId: null, upsellDiscountCents: 50 } })).rejects.toThrow(PostPurchaseProductPolicyError);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+  it.each([
+    { label: "fractional upsell difference", currency: "USD", target: 2_000, discount: 50, downsell: null },
+    { label: "upsell above the PayUni maximum", currency: "TWD", target: 1_000 + 100 + 20_000_000, discount: 100, downsell: null },
+    { label: "downsell above the PayUni maximum", currency: "TWD", target: 1_000 + 20_000_000, discount: 0, downsell: "target" },
+  ])("rejects an offer the provider cannot charge: $label", async ({ currency, target, discount, downsell }) => {
+    const findMany = vi.fn().mockResolvedValue([{ id: "target", currency, priceCents: target }]);
+    const db = { product: { findMany } } as unknown as Pick<Prisma.TransactionClient, "product">;
+    await expect(assertPostPurchaseProductPolicy(db, { vendorId: "vendor", productId: "source", currency, priceCents: 1000,
+      policy: { upsellProductId: downsell ? null : "target", downsellProductId: downsell, upsellDiscountCents: discount } }))
+      .rejects.toThrow(PostPurchaseProductPolicyError);
+  });
+  it("accepts a whole-unit difference at the PayUni maximum", async () => {
+    const findMany = vi.fn().mockResolvedValue([{ id: "target", currency: "TWD", priceCents: 1_000 + 100 + 19_999_900 }]);
+    const db = { product: { findMany } } as unknown as Pick<Prisma.TransactionClient, "product">;
+    await expect(assertPostPurchaseProductPolicy(db, { vendorId: "vendor", productId: "source", currency: "TWD", priceCents: 1000,
+      policy: { upsellProductId: "target", downsellProductId: null, upsellDiscountCents: 100 } })).resolves.toBeUndefined();
+  });
   it("rejects self references before database access", async () => {
     const findMany = vi.fn();
     const db = { product: { findMany } } as unknown as Pick<Prisma.TransactionClient, "product">;

@@ -111,7 +111,7 @@ test("merchant configures offers; buyer declines, upgrades once, resumes and los
     const checkoutResponse = viewer.waitForResponse(response => response.url().endsWith("/api/payments/checkout") && response.request().method() === "POST");
     await viewer.locator('button[type="submit"]').last().click(); expect((await checkoutResponse).status()).toBe(200);
     await expect(viewer.getByRole("status")).toContainText("已建立");
-    const credit = await db.postPurchaseCredit.findUniqueOrThrow({ where: { vendorId_sourceOrderId: { vendorId: vendor.id, sourceOrderId } } });
+    const credit = await db.postPurchaseCredit.findFirstOrThrow({ where: { vendorId: vendor.id, sourceOrderId, releasedAt: null } });
     expect(credit.checkoutAmountCents).toBe(9500); expect(credit.creditAmountCents).toBe(10000);
     expect((await db.commerceOrder.findUniqueOrThrow({ where: { id: credit.targetOrderId } })).totalAmountCents).toBe(9500);
     stage("pending-recovery");

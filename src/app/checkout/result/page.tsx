@@ -6,6 +6,7 @@ import { PublicPolicyShell } from "@/components/public-policy";
 import { Card } from "@/components/ui";
 import { resolveBuyerSupportGrants } from "@/lib/buyer-support-access";
 import { getDb } from "@/lib/db";
+import { postPurchaseRecoveryAvailable } from "@/lib/post-purchase-checkout-recovery";
 import { paymentReturnOutcome, type PaymentReturnOutcome } from "@/lib/payment-return-outcome";
 import { CsrfField } from "@/components/csrf-field";
 import { enterStudentPortalFromCheckoutAction } from "@/app/actions/student-portal-actions";
@@ -66,11 +67,14 @@ function orderStatusTone(status: string) {
 }
 
 function retryCheckoutHref(grantId: string, order: { vendorId: string; status: string; items: Array<{ productId: string | null }>;
-  postPurchaseCreditReceived?: { id: string } | null }) {
+  postPurchaseCreditReceived?: { id: string } | null }, creditedRecoveryAvailable: boolean) {
   if (!new Set(["payment_failed", "expired"]).has(order.status)) return null;
   const productId = order.items[0]?.productId;
   if (!productId) return null;
-  if (order.postPurchaseCreditReceived) return `/checkout/recover/${encodeURIComponent(grantId)}`;
+  // A credited order never falls back to a full-price checkout. Its recovery
+  // link is shown only when the provider/readiness can actually resume it; a
+  // released credit is offered again from the original paid order instead.
+  if (order.postPurchaseCreditReceived) return creditedRecoveryAvailable ? `/checkout/recover/${encodeURIComponent(grantId)}` : null;
   return `/checkout/${encodeURIComponent(order.vendorId)}/${encodeURIComponent(productId)}`;
 }
 
@@ -81,6 +85,9 @@ export default async function PaymentResultPage({ searchParams }: {
   const presentation = outcomePresentation[outcome];
   const grants = await resolveBuyerSupportGrants(getDb(), await cookies());
   const sortedGrants = [...grants].sort((left, right) => right.order.createdAt.getTime() - left.order.createdAt.getTime());
+  const recoverableGrantIds = new Set(await Promise.all(sortedGrants
+    .filter(grant => grant.order.postPurchaseCreditReceived && ["payment_failed", "expired"].includes(grant.order.status))
+    .map(async grant => await postPurchaseRecoveryAvailable(getDb(), { vendorId: grant.order.vendorId, orderId: grant.order.id }) ? grant.id : null)));
 
   return (
     <PublicPolicyShell>
@@ -103,7 +110,7 @@ export default async function PaymentResultPage({ searchParams }: {
           <section className="mt-6 grid gap-4" aria-labelledby="payment-orders-title">
             <h2 id="payment-orders-title" className="text-xl font-bold text-slate-950">可安全查看的訂單</h2>
             {sortedGrants.map((grant) => {
-              const retryHref = retryCheckoutHref(grant.id, grant.order);
+              const retryHref = retryCheckoutHref(grant.id, grant.order, recoverableGrantIds.has(grant.id));
               const creditedRecovery = Boolean(grant.order.postPurchaseCreditReceived);
               return (
               <Card key={grant.id}>

@@ -68,13 +68,29 @@ export async function consumePostPurchaseCredit(
   });
   if (postPurchaseCreditQuoteHash(current) !== postPurchaseCreditQuoteHash(input.quote)) throw new PostPurchaseUnavailableError();
   try {
-    // The unique source-order key covers upsell and downsell together; it is
-    // retained even when the target payment fails, so recovery uses that order.
+    // The partial unique source-order key covers upsell and downsell together;
+    // it holds while the target can still be paid or locally recovered, and is
+    // released only after the target ends unpaid.
     return await tx.postPurchaseCredit.create({ data: { ...current, targetOrderId: input.targetOrderId } });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && ["P2002", "P2004"].includes(error.code)) throw new PostPurchaseUnavailableError();
+    if (isPostPurchaseCreditConstraintRejection(error)) throw new PostPurchaseUnavailableError();
     throw error;
   }
+}
+
+/**
+ * Unique (23505) and CHECK/trigger (23514) rejections are business refusals.
+ * A plpgsql RAISE surfaces from Prisma as an unknown request error, so the
+ * SQLSTATE is read from the driver error instead of a Prisma code.
+ */
+function isPostPurchaseCreditConstraintRejection(error: unknown) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (["P2002", "P2004"].includes(error.code)) return true;
+    const code = (error.meta as { code?: unknown } | undefined)?.code;
+    return code === "23505" || code === "23514";
+  }
+  return error instanceof Prisma.PrismaClientUnknownRequestError
+    && /\bcode: "(?:23505|23514)"/u.test(error.message);
 }
 
 /** Existing pending orders recover their immutable credit, never a new quote. */
@@ -85,13 +101,15 @@ export async function assertPostPurchaseCreditReplay(db: Database, cookies: Cook
     where: { vendorId_targetOrderId: { vendorId: input.vendorId, targetOrderId: input.targetOrderId } },
     include: { sourceOrder: { select: { status: true, isTestOrder: true, paidAmountCents: true, refundedAmountCents: true } } },
   });
-  if (!credit || credit.invalidatedAt || credit.targetProductId !== input.productId || credit.sourceOrder.status !== "paid"
+  if (!credit || credit.invalidatedAt || credit.releasedAt || credit.targetProductId !== input.productId || credit.sourceOrder.status !== "paid"
     || credit.sourceOrder.isTestOrder || credit.sourceOrder.refundedAmountCents !== 0
     || credit.sourceOrder.paidAmountCents !== credit.creditAmountCents) throw new PostPurchaseUnavailableError();
   const grant = await resolveBuyerSupportGrant(db, cookies, credit.buyerGrantId);
   if (!grant || grant.vendorId !== credit.vendorId || grant.orderId !== credit.sourceOrderId) throw new PostPurchaseUnavailableError();
   if (input.token) {
-    const binding = verifyPostPurchaseCheckoutToken(input.token);
+    // The credit is already bound to this order: the token's 10-minute quote
+    // window no longer applies, but its signature and every binding still do.
+    const binding = verifyPostPurchaseCheckoutToken(input.token, new Date(), { allowExpired: true });
     if (!binding || binding.vendorId !== credit.vendorId || binding.orderId !== credit.sourceOrderId
       || binding.grantId !== credit.buyerGrantId || binding.productId !== credit.targetProductId
       || binding.sourceProductId !== credit.sourceProductId || binding.kind !== credit.kind

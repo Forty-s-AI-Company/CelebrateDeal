@@ -32,7 +32,8 @@ export async function resolvePaidOrderPostPurchaseOffer(
   const order = await db.commerceOrder.findFirst({
     where: {
       id: input.orderId, vendorId: input.vendorId, status: "paid", isTestOrder: false, refundedAmountCents: 0,
-      postPurchaseCreditIssued: { is: null }, postPurchaseCreditReceived: { is: null },
+      // A released credit (its target ended unpaid) no longer holds the source.
+      postPurchaseCreditsIssued: { none: { releasedAt: null } }, postPurchaseCreditReceived: { is: null },
     },
     select: {
       currency: true,

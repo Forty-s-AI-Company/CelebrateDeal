@@ -6,11 +6,13 @@ const mocks = vi.hoisted(() => ({
   cookies: vi.fn(),
   getDb: vi.fn(),
   resolveBuyerSupportGrants: vi.fn(),
+  recoveryAvailable: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ cookies: mocks.cookies }));
 vi.mock("@/lib/db", () => ({ getDb: mocks.getDb }));
 vi.mock("@/lib/buyer-support-access", () => ({ resolveBuyerSupportGrants: mocks.resolveBuyerSupportGrants }));
+vi.mock("@/lib/post-purchase-checkout-recovery", () => ({ postPurchaseRecoveryAvailable: mocks.recoveryAvailable }));
 
 import { paymentReturnOutcome } from "@/lib/payment-return-outcome";
 
@@ -54,6 +56,7 @@ beforeEach(() => {
   mocks.cookies.mockResolvedValue({ getAll: () => [] });
   mocks.getDb.mockReturnValue({ buyerSupportOrderGrant: {} });
   mocks.resolveBuyerSupportGrants.mockResolvedValue([grant()]);
+  mocks.recoveryAvailable.mockResolvedValue(true);
 });
 
 describe("payment result page", () => {
@@ -65,6 +68,17 @@ describe("payment result page", () => {
     expect(findElementByHref(page, `/checkout/recover/${credited.id}`)?.type).toBe("a");
     expect(html).toContain("恢復原加購訂單");
     expect(html).toContain("原金額與抵扣額");
+    expect(html).not.toContain('href="/checkout/vendor-1/product-1"');
+  });
+  it.each(["payment_failed", "expired"])("hides credited %s recovery when the provider cannot resume it, without a full-price fallback", async status => {
+    const credited = grant(status);
+    mocks.resolveBuyerSupportGrants.mockResolvedValue([{ ...credited, order: { ...credited.order, id: "order-credited", postPurchaseCreditReceived: { id: "credit-1" } } }]);
+    mocks.recoveryAvailable.mockResolvedValue(false);
+    const page = await PaymentResultPage({});
+    const html = renderToStaticMarkup(page);
+    expect(mocks.recoveryAvailable).toHaveBeenCalledWith(expect.anything(), { vendorId: "vendor-1", orderId: "order-credited" });
+    expect(findElementByHref(page, `/checkout/recover/${credited.id}`)).toBeNull();
+    expect(html).not.toContain("恢復原加購訂單");
     expect(html).not.toContain('href="/checkout/vendor-1/product-1"');
   });
   it("shows the verified callback notice and actual order state without raw identifiers", async () => {

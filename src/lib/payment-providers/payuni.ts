@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { activePayUniCredentials } from "@/lib/payuni-credentials";
 import { payUniStagingPlanSessionAllowed } from "@/lib/payuni-staging-plan-test";
 import { payUniSetupNonce } from "@/lib/payuni-setup-correlation";
+import { PAYUNI_MAX_CREDIT_TRADE_AMOUNT, PAYUNI_MIN_TRADE_AMOUNT } from "@/lib/payment-providers/payuni-amount";
 import {
   PaymentQueryProviderError,
   type PaymentMethodReferenceRevocationInput,
@@ -22,8 +23,6 @@ const PAYUNI_API_BASE_URLS = {
 // endpoint; it must not inherit a caller- or environment-configurable URL.
 const PAYUNI_PRODUCTION_QUERY_URL = `${PAYUNI_API_BASE_URLS.production}/trade/query`;
 const PAYUNI_ORDER_NUMBER = /^[A-Za-z0-9_-]{1,25}$/;
-const PAYUNI_MIN_TRADE_AMOUNT = 1;
-const PAYUNI_MAX_CREDIT_TRADE_AMOUNT = 199_999;
 const PAYUNI_REFUND_VERSION = "1.0";
 const PAYUNI_QUERY_VERSION = "2.0";
 const PAYUNI_BIND_CANCEL_VERSION = "1.0";

@@ -4,6 +4,7 @@ import {
   reconcileCommerceOrderPaymentTransition,
 } from "@/lib/commerce-orders";
 import { getDb } from "@/lib/db";
+import { releasePostPurchaseCreditForTerminalPayment } from "@/lib/post-purchase-credit-release";
 
 export const INVENTORY_RESERVATION_TTL_MS = 30 * 60 * 1000;
 
@@ -554,6 +555,12 @@ export async function releaseExpiredInventoryReservations(limit = 100, now = new
           paymentTransactionId: reservation.paymentTransactionId,
           eventIdentity: `inventory-reservation:${reservation.id}`,
           occurredAt: now,
+        });
+        // An expired, unpaid upgrade checkout returns its source credit.
+        await releasePostPurchaseCreditForTerminalPayment(tx, {
+          vendorId: reservation.vendorId,
+          paymentTransactionId: reservation.paymentTransactionId,
+          now,
         });
       }
       return "released";

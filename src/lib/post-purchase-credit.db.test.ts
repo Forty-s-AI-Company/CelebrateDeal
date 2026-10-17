@@ -7,9 +7,12 @@ import { createCommerceOrderForCheckout, reconcileCommerceOrderPaymentTransition
 import { createReservedPaymentTransaction, failPendingCheckoutAndReleaseInventory,
   reacquireReleasedCheckoutInventory, releaseExpiredInventoryReservations } from "@/lib/inventory-reservations";
 import { protectProductDeliveryConfig } from "@/lib/product-delivery";
-import { issuePostPurchaseCheckoutToken } from "@/lib/post-purchase-upsell";
+import { issuePostPurchaseCheckoutToken, verifyPostPurchaseCheckoutToken } from "@/lib/post-purchase-upsell";
+import { PaymentWebhookPayload, processPaymentWebhook } from "@/lib/payment-webhooks";
+import { resolvePaidOrderPostPurchaseOffer } from "@/lib/post-purchase-upsell-access";
 import { assertPostPurchaseCreditReplay, consumePostPurchaseCredit, PostPurchaseUnavailableError, resolvePostPurchaseCreditQuote } from "./post-purchase-credit";
-import { resumePostPurchaseCheckout } from "./post-purchase-checkout-recovery";
+import { releasePostPurchaseCreditForTerminalPayment } from "./post-purchase-credit-release";
+import { postPurchaseRecoveryAvailable, resumePostPurchaseCheckout } from "./post-purchase-checkout-recovery";
 import { resolvePostPurchaseRecoveryEntry } from "./post-purchase-recovery-entry";
 
 const ownedVendors: string[] = [];
@@ -67,15 +70,17 @@ async function fixture(stock = 5) {
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
-async function upgrade(input: Fixture) {
+async function upgrade(input: Fixture, options: { providerName?: string; targetId?: string; token?: string; now?: Date } = {}) {
   const db = getDb();
-  const quote = await resolvePostPurchaseCreditQuote(db, input.cookies, { token: input.token, vendorId: input.vendor.id, productId: input.target.id });
-  const target = await db.product.findUniqueOrThrow({ where: { id: input.target.id } });
+  const token = options.token ?? input.token;
+  const quote = await resolvePostPurchaseCreditQuote(db, input.cookies, { token, vendorId: input.vendor.id,
+    productId: options.targetId ?? input.target.id, now: options.now });
+  const target = await db.product.findUniqueOrThrow({ where: { id: options.targetId ?? input.target.id } });
   let targetOrderId = "";
   const idempotencyKey = randomUUID();
   const payment = await createReservedPaymentTransaction({ vendorId: input.vendor.id, productId: target.id,
     expectedProductRevision: target.revision, checkoutIdempotencyKey: idempotencyKey,
-    transactionData: { vendorId: input.vendor.id, checkoutIdempotencyKey: idempotencyKey, providerName: "demo",
+    transactionData: { vendorId: input.vendor.id, checkoutIdempotencyKey: idempotencyKey, providerName: options.providerName ?? "demo",
       orderNumber: `PPU-TARGET-${randomUUID()}`, grossAmountCents: quote.checkoutAmountCents, netAmountCents: quote.checkoutAmountCents,
       currency: quote.currency, status: "pending", metadata: { synthetic: true, productId: target.id } },
     createCommerceOrder: async (tx, created, reservations) => {
@@ -83,7 +88,7 @@ async function upgrade(input: Fixture) {
         orderNumber: created.orderNumber!, checkoutIdempotencyKey: idempotencyKey, paymentTransactionId: created.id,
         totalAmountCents: quote.checkoutAmountCents, discountAmountCents: quote.creditAmountCents + quote.offerDiscountCents,
         currency: quote.currency, buyer, shipping: null });
-      await consumePostPurchaseCredit(tx, input.cookies, { token: input.token, quote, targetOrderId: order.id,
+      await consumePostPurchaseCredit(tx, input.cookies, { token, quote, targetOrderId: order.id, now: options.now,
         reserved: reservations.find(item => item.productId === target.id) });
       targetOrderId = order.id;
     } });
@@ -343,7 +348,7 @@ describe("transactional post-purchase upgrade credit", () => {
     const result = await upgrade(input);
     expect((await getDb().product.findUniqueOrThrow({ where: { id: input.target.id } })).inventory).toBe(0);
     expect(result.payment.grossAmountCents).toBe(9_500);
-    const credit = await getDb().postPurchaseCredit.findUniqueOrThrow({ where: { vendorId_sourceOrderId: { vendorId: input.vendor.id, sourceOrderId: input.orderId } } });
+    const credit = await getDb().postPurchaseCredit.findFirstOrThrow({ where: { vendorId: input.vendor.id, sourceOrderId: input.orderId, releasedAt: null } });
     expect(credit).toMatchObject({ targetOrderId: result.targetOrderId, creditAmountCents: 10_000, offerDiscountCents: 500,
       targetPriceCents: 20_000, checkoutAmountCents: 9_500, invalidatedAt: null });
   });
@@ -409,5 +414,166 @@ describe("transactional post-purchase upgrade credit", () => {
     const credit = await getDb().postPurchaseCredit.findFirstOrThrow({ where: { vendorId: input.vendor.id } });
     await expect(getDb().postPurchaseCredit.update({ where: { id: credit.id }, data: { checkoutAmountCents: 9_000 } })).rejects.toThrow();
     expect((await getDb().postPurchaseCredit.findUniqueOrThrow({ where: { id: credit.id } })).checkoutAmountCents).toBe(9_500);
+  });
+});
+
+async function digitalProduct(vendorId: string, slug: string, priceCents: number) {
+  const db = getDb();
+  const product = await db.product.create({ data: { vendorId, name: `Digital ${slug}`, slug: `${slug}-${randomUUID()}`,
+    priceCents, inventory: 5, fulfillmentType: "digital", fulfillmentTypeConfirmed: true } });
+  const allowlist = await db.vendorDeliveryUrlAllowlist.create({ data: { vendorId, hostname: "delivery.example.test",
+    pathPrefix: `/${slug}`, allowQuery: false, status: "active" } });
+  const configId = randomUUID();
+  const delivery = { fulfillmentType: "digital" as const, deliveryKind: "digital_link" as const, status: "active" as const,
+    title: product.name, destinationUrl: `https://delivery.example.test/${slug}`, destinationHostname: "delivery.example.test",
+    destinationPathPrefix: `/${slug}`, instructions: "Synthetic access" };
+  await db.productDeliveryConfig.create({ data: { id: configId, vendorId, productId: product.id, fulfillmentType: "digital",
+    deliveryKind: "digital_link", status: "active", title: delivery.title, allowlistId: allowlist.id,
+    ...protectProductDeliveryConfig(delivery, { vendorId, productId: product.id, configId, revision: 1 }) } });
+  return product;
+}
+
+function freshToken(input: Fixture, overrides: Partial<Parameters<typeof issuePostPurchaseCheckoutToken>[0]> = {}) {
+  return issuePostPurchaseCheckoutToken({ grantId: input.grant.id, orderId: input.orderId, vendorId: input.vendor.id,
+    sourceProductId: input.source.id, productId: input.target.id, kind: "upsell", amountCents: 9_500, ...overrides });
+}
+
+async function targetEntitlementStatus(vendorId: string, orderId: string) {
+  return (await getDb().commerceEntitlement.findFirstOrThrow({ where: { vendorId, orderItem: { orderId } } })).status;
+}
+
+describe("provider-chargeable post-purchase offers", () => {
+  it.each([
+    ["a fractional TWD discount", { upsellDiscountCents: 550 }, 20_000],
+    ["a difference above the PayUni maximum", {}, 10_000 + 500 + 20_000_000],
+  ])("refuses %s before consuming the source credit", async (_label, sourceUpdate, targetPriceCents) => {
+    const input = await fixture(); const db = getDb();
+    await db.product.update({ where: { id: input.source.id }, data: sourceUpdate });
+    await db.product.update({ where: { id: input.target.id }, data: { priceCents: targetPriceCents, revision: { increment: 1 } } });
+    // Never shown: the paid-order offer itself is unavailable.
+    expect(await resolvePaidOrderPostPurchaseOffer(db, { vendorId: input.vendor.id, orderId: input.orderId, kind: "upsell" })).toBeNull();
+    await expect(upgrade(input)).rejects.toBeInstanceOf(PostPurchaseUnavailableError);
+    expect(await db.postPurchaseCredit.count({ where: { vendorId: input.vendor.id } })).toBe(0);
+    expect(await db.commerceOrder.count({ where: { vendorId: input.vendor.id } })).toBe(1);
+    expect((await db.product.findUniqueOrThrow({ where: { id: input.target.id } })).inventory).toBe(5);
+  });
+});
+
+describe("released post-purchase credit", () => {
+  it("releases an unpaid PayUni failure, revokes its target and lets the source be quoted again", async () => {
+    const input = await fixture(); const first = await upgrade(input, { providerName: "payuni" }); const db = getDb();
+    await processPaymentWebhook(PaymentWebhookPayload.parse({ provider: "payuni", eventId: `ppu-failed-${randomUUID()}`,
+      eventType: "failed", vendorId: input.vendor.id, orderNumber: first.payment.orderNumber, providerTradeNo: "synthetic-failed-trade" }));
+    const released = await db.postPurchaseCredit.findUniqueOrThrow({ where: { vendorId_targetOrderId: { vendorId: input.vendor.id, targetOrderId: first.targetOrderId } } });
+    expect(released.releasedAt).not.toBeNull();
+    expect(released.invalidatedAt).toBeNull();
+    expect((await db.commerceOrder.findUniqueOrThrow({ where: { id: first.targetOrderId } })).status).toBe("payment_failed");
+    expect(await targetEntitlementStatus(input.vendor.id, first.targetOrderId)).toBe("revoked");
+    expect(await postPurchaseRecoveryAvailable(db, { vendorId: input.vendor.id, orderId: first.targetOrderId })).toBe(false);
+    await expect(assertPostPurchaseCreditReplay(db, input.cookies, { vendorId: input.vendor.id,
+      targetOrderId: first.targetOrderId, productId: input.target.id })).rejects.toThrow(PostPurchaseUnavailableError);
+
+    const second = await upgrade(input, { providerName: "payuni", token: freshToken(input) });
+    expect(await db.postPurchaseCredit.count({ where: { vendorId: input.vendor.id } })).toBe(2);
+    expect(await db.postPurchaseCredit.findFirstOrThrow({ where: { vendorId: input.vendor.id, sourceOrderId: input.orderId, releasedAt: null } }))
+      .toMatchObject({ targetOrderId: second.targetOrderId, checkoutAmountCents: 9_500, creditAmountCents: 10_000 });
+  });
+
+  it("releases an expired unpaid PayUni reservation and allows a new quote", async () => {
+    const input = await fixture(); const first = await upgrade(input, { providerName: "payuni" }); const db = getDb();
+    await releaseExpiredInventoryReservations(100, new Date(Date.now() + 31 * 60_000));
+    expect((await db.paymentTransaction.findUniqueOrThrow({ where: { id: first.payment.id } })).status).toBe("expired");
+    expect((await db.postPurchaseCredit.findUniqueOrThrow({ where: { vendorId_targetOrderId: { vendorId: input.vendor.id,
+      targetOrderId: first.targetOrderId } } })).releasedAt).not.toBeNull();
+    expect(await resolvePaidOrderPostPurchaseOffer(db, { vendorId: input.vendor.id, orderId: input.orderId, kind: "upsell" }))
+      .toMatchObject({ offer: { productId: input.target.id, amountCents: 9_500 } });
+    await upgrade(input, { providerName: "payuni", token: freshToken(input) });
+    expect(await db.postPurchaseCredit.count({ where: { vendorId: input.vendor.id, releasedAt: null } })).toBe(1);
+  });
+
+  it("never delivers a released credit on a late payment and never invalidates it on source refund", async () => {
+    const input = await fixture(); const first = await upgrade(input, { providerName: "payuni" }); const db = getDb();
+    await releaseExpiredInventoryReservations(100, new Date(Date.now() + 31 * 60_000));
+    const released = await db.postPurchaseCredit.findUniqueOrThrow({ where: { vendorId_targetOrderId: { vendorId: input.vendor.id, targetOrderId: first.targetOrderId } } });
+    expect(released.releasedAt).not.toBeNull();
+    await db.$transaction(tx => reconcileCommerceOrderPaymentTransition(tx, { vendorId: input.vendor.id,
+      paymentTransactionId: first.payment.id, transition: "paid", eventIdentity: "late-paid-after-release" }),
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    expect((await db.commerceOrder.findUniqueOrThrow({ where: { id: first.targetOrderId } })).paidAmountCents).toBe(9_500);
+    expect(await targetEntitlementStatus(input.vendor.id, first.targetOrderId)).toBe("revoked");
+    await expect(assertPostPurchaseCreditReplay(db, input.cookies, { vendorId: input.vendor.id,
+      targetOrderId: first.targetOrderId, productId: input.target.id })).rejects.toThrow(PostPurchaseUnavailableError);
+    // The release is permanent and the released row is immutable history.
+    await expect(db.postPurchaseCredit.update({ where: { id: released.id }, data: { releasedAt: null } })).rejects.toThrow();
+    await expect(db.postPurchaseCredit.update({ where: { id: released.id }, data: { invalidatedAt: new Date() } })).rejects.toThrow();
+
+    const second = await upgrade(input, { providerName: "payuni", token: freshToken(input) });
+    await refund(input);
+    const credits = await db.postPurchaseCredit.findMany({ where: { vendorId: input.vendor.id } });
+    expect(credits.find(credit => credit.id === released.id)).toMatchObject({ invalidatedAt: null, releasedAt: released.releasedAt });
+    expect(credits.find(credit => credit.targetOrderId === second.targetOrderId)?.invalidatedAt).not.toBeNull();
+  });
+
+  it("refuses to release a credit whose target can still be paid", async () => {
+    const input = await fixture(); const result = await upgrade(input, { providerName: "payuni" }); const db = getDb();
+    expect(await db.$transaction(tx => releasePostPurchaseCreditForTerminalPayment(tx, { vendorId: input.vendor.id,
+      paymentTransactionId: result.payment.id, now: new Date() }))).toBe(false);
+    const credit = await db.postPurchaseCredit.findFirstOrThrow({ where: { vendorId: input.vendor.id } });
+    await expect(db.postPurchaseCredit.update({ where: { id: credit.id }, data: { releasedAt: new Date() } })).rejects.toThrow();
+    expect((await db.postPurchaseCredit.findUniqueOrThrow({ where: { id: credit.id } })).releasedAt).toBeNull();
+    await expect(upgrade(input, { providerName: "payuni", token: freshToken(input) })).rejects.toBeInstanceOf(PostPurchaseUnavailableError);
+  });
+
+  it("keeps a locally resumable demo credit bound and offers its recovery", async () => {
+    const input = await fixture(1); const result = await upgrade(input); const db = getDb();
+    await db.paymentTransaction.update({ where: { id: result.payment.id }, data: {
+      metadata: { productId: input.target.id, postPurchaseCredit: { sourceOrderId: input.orderId }, postPurchaseSessionState: "unissued" },
+    } });
+    await failPendingCheckoutAndReleaseInventory({ vendorId: input.vendor.id, transactionId: result.payment.id, reason: "provider_checkout_failed" });
+    expect(await postPurchaseRecoveryAvailable(db, { vendorId: input.vendor.id, orderId: result.targetOrderId })).toBe(true);
+    expect((await db.postPurchaseCredit.findFirstOrThrow({ where: { vendorId: input.vendor.id } })).releasedAt).toBeNull();
+  });
+
+  it("binds exactly one credit when upsell and downsell race for the same source", async () => {
+    const input = await fixture(); const db = getDb();
+    const downsell = await digitalProduct(input.vendor.id, "downsell", 15_000);
+    await db.product.update({ where: { id: input.source.id }, data: { downsellProductId: downsell.id } });
+    const downsellToken = freshToken(input, { productId: downsell.id, kind: "downsell", amountCents: 5_000 });
+    const results = await Promise.allSettled([upgrade(input), upgrade(input, { targetId: downsell.id, token: downsellToken })]);
+    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    expect(await db.postPurchaseCredit.count({ where: { vendorId: input.vendor.id } })).toBe(1);
+    expect(await db.commerceOrder.count({ where: { vendorId: input.vendor.id } })).toBe(2);
+    const inventories = await db.product.findMany({ where: { id: { in: [input.target.id, downsell.id] } }, select: { inventory: true } });
+    expect(inventories.map(product => product.inventory).sort()).toEqual([4, 5]);
+  });
+});
+
+describe("post-purchase credit rejections and replay", () => {
+  it("maps a database trigger rejection to the post-purchase unavailable refusal", async () => {
+    const input = await fixture(); const db = getDb();
+    // The application sees a still-valid grant at `now`; the trigger checks the
+    // database clock, so only the trigger can reject this binding.
+    await db.buyerSupportOrderGrant.update({ where: { id: input.grant.id }, data: {
+      createdAt: new Date(Date.now() - 120_000), expiresAt: new Date(Date.now() - 1_000) } });
+    await expect(upgrade(input, { now: new Date(Date.now() - 60_000) })).rejects.toBeInstanceOf(PostPurchaseUnavailableError);
+    expect(await db.postPurchaseCredit.count({ where: { vendorId: input.vendor.id } })).toBe(0);
+    expect(await db.commerceOrder.count({ where: { vendorId: input.vendor.id } })).toBe(1);
+  });
+
+  it("replays an already-bound pending order with an expired but authentic token", async () => {
+    const input = await fixture(); const result = await upgrade(input);
+    const past = new Date(Date.now() - 11 * 60_000);
+    const expired = freshToken(input, { now: past });
+    expect(verifyPostPurchaseCheckoutToken(expired)).toBeNull();
+    await expect(assertPostPurchaseCreditReplay(getDb(), input.cookies, { vendorId: input.vendor.id,
+      targetOrderId: result.targetOrderId, productId: input.target.id, token: expired })).resolves.toMatchObject({ targetOrderId: result.targetOrderId });
+    // Signature and bindings are still enforced for an expired token.
+    for (const token of [freshToken(input, { now: past, amountCents: 9_400 }), `${expired.slice(0, -2)}AA`]) {
+      await expect(assertPostPurchaseCreditReplay(getDb(), input.cookies, { vendorId: input.vendor.id,
+        targetOrderId: result.targetOrderId, productId: input.target.id, token })).rejects.toThrow(PostPurchaseUnavailableError);
+    }
+    // An expired token still cannot open a new quote.
+    await expect(resolvePostPurchaseCreditQuote(getDb(), input.cookies, { token: expired, vendorId: input.vendor.id,
+      productId: input.target.id })).rejects.toThrow(PostPurchaseUnavailableError);
   });
 });

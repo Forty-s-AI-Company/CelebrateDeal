@@ -34,6 +34,7 @@ import { reconcileCommerceOrderPaymentTransition } from "@/lib/commerce-orders";
 import { ensureCommerceOrderPaidDelivery } from "@/lib/commerce-order-email";
 import { getDb } from "@/lib/db";
 import { applyPaymentInventoryTransition } from "@/lib/inventory-reservations";
+import { releasePostPurchaseCreditForTerminalPayment } from "@/lib/post-purchase-credit-release";
 import { reconcileElectronicInvoiceAfterPayment } from "@/lib/taiwan-electronic-invoice";
 import {
   isRefundEvent,
@@ -908,13 +909,20 @@ async function reconcileCommercePaymentLifecycle(
   },
 ) {
   if (input.eventType !== "paid" && input.eventType !== "failed") return null;
-  return reconcileCommerceOrderPaymentTransition(db, {
+  const transition = await reconcileCommerceOrderPaymentTransition(db, {
     vendorId: input.vendorId,
     paymentTransactionId: input.transactionId,
     eventIdentity: input.eventIdentity,
     transition: input.eventType,
     occurredAt: input.occurredAt,
   });
+  // A provider-reported failure with no money returns an upgrade credit.
+  if (input.eventType === "failed") {
+    await releasePostPurchaseCreditForTerminalPayment(db, {
+      vendorId: input.vendorId, paymentTransactionId: input.transactionId, now: input.occurredAt,
+    });
+  }
+  return transition;
 }
 
 /** Only generic billing sessions release their reusable transient checkout key. */
