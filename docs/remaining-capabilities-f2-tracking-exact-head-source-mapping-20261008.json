@@ -1,0 +1,21 @@
+{
+  "head": "c4b76a246940fc18f20faacebce8328476582eb4",
+  "worktree_review_revision": "sha256:df6e511dcd33febe0f57d34fec0234e44af4eaa39d8d15128ae39f93f9ef105c",
+  "exact_git_blob_revision": "sha256:c562b93d00888e39cd44925807b64b0e5496bc8ecc4d7fa839101c44d097d528",
+  "exact_files": 45,
+  "line_ending_only_differences": [
+    "prisma/migrations/20261007123000_server_tracking_credentials/migration.sql",
+    "src/app/actions/tracking-credential-actions.test.ts",
+    "src/app/actions/tracking-credential-actions.ts",
+    "src/lib/payment-webhooks.ts",
+    "src/lib/tracking-credentials.test.ts",
+    "src/lib/tracking-credentials.ts",
+    "src/lib/tracking-settings.db.test.ts",
+    "src/lib/tracking-settings.ts"
+  ],
+  "semantic_source_changes": 0,
+  "source_bytes_identical": false,
+  "exact_head_ci": "PENDING",
+  "acceptance": "NOT_READY",
+  "note": "Local review/test snapshot is not byte-identical to Git head; readonly Git object LF mapping retained without changing historical migration files or checksums. No merge or delivery claim."
+}
