@@ -10,8 +10,8 @@
 
 | 項目 | 結果 |
 |---|---:|
-| Prisma models | 126 |
-| Migration directories | 85 |
+| Prisma models | 133 |
+| Migration directories | 86 |
 | Isolated PostgreSQL version | 18.3 |
 | Isolated database binding | loopback-only |
 | Applied migrations in isolated DB | 66/71 current chain；既有 66 條由 CI 與本機 disposable PostgreSQL 完整 forward-apply 與 status 驗證；已合併的 5 條 automation／CRM／sales workspace migration 尚待 isolated DB forward-apply |
@@ -223,3 +223,15 @@
 新增 `CourseLesson` 與 `CourseLessonProgress`；前向 migration `20261006040000_native_course_learning`。三欄位 lesson 外鍵同時約束 tenant、course、lesson，進度具非負上限約束。此候選的 disposable PostgreSQL 證據尚待執行，不沿用上方歷史收據。
 
 F2.1 本輪新增 `AffiliatePortalAccess` 與前向 migration `20261006080000_affiliate_portal_access`，商家成員／affiliate採 composite tenant FK；本輪isolated branch未接入待交付community migration。85migrations、5PG regression PASS，包含退款ledger與併發/CAS。尚未完成UI browser/獨立review/gate/CI，不能宣稱READY。
+
+
+F2.2 本次候選新增以下模型與前向 migration；完整資料庫、退款與瀏覽器驗收尚在進行，不能宣稱 READY：
+
+- `MerchantAffiliatePolicy`
+- `MerchantAffiliatePolicyState`
+- `MerchantAffiliateProductRate`
+- `MerchantAffiliateCheckoutSnapshot`
+- `MerchantAffiliateCheckoutRecipient`
+- `MerchantAffiliateSalesCounter`
+- `MerchantAffiliateCalculation`
+- `20261006120000_merchant_affiliate_policy_snapshots`

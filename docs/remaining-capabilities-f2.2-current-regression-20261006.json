@@ -103,5 +103,33 @@
   "review_dispatch_used": 4,
   "review_dispatch_limit": 4,
   "extra_review_approval": "PENDING",
-  "overall_goal": "ACTIVE"
+  "overall_goal": "ACTIVE",
+  "dependency_patch_regression": {
+    "head": "f3e65b97940448e0b2d0803c751591ff8d49f01c",
+    "source_revision": "sha256:c882900512caf63acb2bf3af821b3184614cebd3453d1cebd6b6c96714da88c0",
+    "master_security_merge": "a11fa20f61e67ed04ba1bc5a09e26a4f25c5d3a2",
+    "fresh_disposable_browser": {
+      "schemaVersion": "merchant-affiliate-policy-browser/v1",
+      "status": "PASS",
+      "tests": {
+        "total": 61,
+        "passed": 61,
+        "failed": 0,
+        "skipped": 0
+      },
+      "cleanup": {
+        "container": "PASS",
+        "tempRoot": "PASS"
+      },
+      "startedAt": "2026-10-06T02:31:16.185Z",
+      "finishedAt": "2026-10-06T02:35:57.516Z",
+      "failedTitles": [],
+      "browser": {
+        "expected": 1,
+        "unexpected": 0,
+        "skipped": 0,
+        "flaky": 0
+      }
+    }
+  }
 }
