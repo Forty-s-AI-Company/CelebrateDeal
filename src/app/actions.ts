@@ -23,6 +23,7 @@ import { BillingCycleError, generateSettlementForVendor } from "@/lib/billing-cy
 import { assertServerActionSecurity } from "@/lib/csrf";
 import { retryWebhookEvent } from "@/lib/webhook-retry";
 import { getDb } from "@/lib/db";
+import { META_PIXEL_ID_PATTERN } from "@/lib/tracking-meta-transport";
 import { getPaymentProvider } from "@/lib/payment-providers";
 import { RefundProviderError } from "@/lib/payment-providers/types";
 import {
@@ -505,11 +506,16 @@ export async function saveBrandSettingsActionState(
 export async function saveTrackingSettingsAction(formData: FormData) {
   await assertServerActionSecurity(formData);
   const vendor = await requireVendorManager();
+  const facebookPixelId = optionalText(formData, "facebookPixelId");
+  // Same bound as the server transport; only a closed result code enters the URL.
+  if (facebookPixelId !== null && !META_PIXEL_ID_PATTERN.test(facebookPixelId)) {
+    redirect("/settings/tracking?tracking=invalid");
+  }
   await getDb().trackingSetting.upsert({
     where: { vendorId: vendor.id },
     create: {
       vendorId: vendor.id,
-      facebookPixelId: optionalText(formData, "facebookPixelId"),
+      facebookPixelId,
       tiktokPixelId: optionalText(formData, "tiktokPixelId"),
       googleTagManagerId: optionalText(formData, "googleTagManagerId"),
       enablePageView: formData.get("enablePageView") === "on",
@@ -517,7 +523,7 @@ export async function saveTrackingSettingsAction(formData: FormData) {
       enablePurchaseEvent: formData.get("enablePurchaseEvent") === "on",
     },
     update: {
-      facebookPixelId: optionalText(formData, "facebookPixelId"),
+      facebookPixelId,
       tiktokPixelId: optionalText(formData, "tiktokPixelId"),
       googleTagManagerId: optionalText(formData, "googleTagManagerId"),
       enablePageView: formData.get("enablePageView") === "on",
