@@ -1,0 +1,16 @@
+{
+  "task_id": "f2-merchant-remuneration",
+  "pull_request": 380,
+  "head": "db90c9582e5e6eb1c093535cd7174aefdd4323a2",
+  "verified_runs": [
+    { "id": 37565997428, "event": "pull_request", "status": "completed", "conclusion": "success" },
+    { "id": 37565993672, "event": "push", "status": "completed", "conclusion": "success" }
+  ],
+  "local_current_candidate": { "migrations": 91, "database_tests": 29, "browser_tests": 3, "skipped": 0, "flaky": 0, "cleanup": "PASS" },
+  "evidence": "docs/remaining-capabilities-f2-course-resume-ci-correction-20261007.json",
+  "review_dispatches": 4,
+  "max_review_dispatches": 4,
+  "latest_corrections_review": "PENDING_EXPLICIT_ADDITIONAL_DISPATCH_APPROVAL",
+  "delivery": "DRAFT_NOT_READY_NOT_MERGED",
+  "production_operations": false
+}

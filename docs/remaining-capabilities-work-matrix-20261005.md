@@ -234,3 +234,8 @@ Root resolved the current a5964d83 main integration without losing locale or com
 ### F2 withholding current delivered-main integration 20261008
 
 Preserved both documents and forward schema capabilities while integrating delivered community/PWA `e573a101`. Current 140 models / 94 migrations / 94 protected pages, vendorManager 55. Exact inventory assertions updated; historical migration windows/checksums and safety assertions retained. Previous fifth review applies to head `23b25045`; latest integrated candidate requires new current evidence, acceptance and review. Not delivered.
+
+
+### F2 remuneration protected delivery 20261008
+
+Original task f2-merchant-remuneration, root sole writer; independent Critical review dispatch6 findings=[], observed model/effort unknown. Accepted head35cc5086ed294f2a27d7aaa5f8228fb66c5cedc3; protected expected-head squash PR380 merge454773cceddb707e8a9c186b1267e06cf26a9380. Accepted/merged tree008e82e334ad9c284ebda0b8a3d7a7e470852849 equal. Both same-task canonical profiles READY; full86-source union retained. 94 forward migrations,29 remuneration DB,61 commission DB,1 actual financial browser,1067 TAP and required static checks PASS; exact-head push37703209942/PR37703216912 all SUCCESS. New evidence remaining-capabilities-f2-remuneration-commission-integrated-validation-20261008.json. DELIVERED; overall F1/F2/F3/Q1/Q2/A1/E1 goal remains IN_PROGRESS. Original unknown dirty work and historical checksums preserved.

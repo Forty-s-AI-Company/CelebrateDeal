@@ -1,0 +1,133 @@
+{
+  "updated_at": "2026-10-07T20:16:39.717567+00:00",
+  "head": "ebf28635f8b65fff2c792a7116851291bb2675e6",
+  "delivery_status": "NOT_DELIVERED",
+  "review_status": "CURRENT_REVISION_INDEPENDENT_REVIEW_PENDING_AUTHORIZED_DISPATCH",
+  "profiles": {
+    "primary": {
+      "source_revision": "sha256:f7d563a7ae517e65852344ef36f2478d4c2466f6bf79005fcc432dac8c1a9c3a",
+      "checks": [
+        {
+          "name": "unit",
+          "revision": "sha256:f7d563a7ae517e65852344ef36f2478d4c2466f6bf79005fcc432dac8c1a9c3a",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 36.594,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\current-main-20261008\\unit.json"
+        },
+        {
+          "name": "typescript",
+          "revision": "sha256:f7d563a7ae517e65852344ef36f2478d4c2466f6bf79005fcc432dac8c1a9c3a",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 98.484,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\current-main-20261008\\typescript.json"
+        },
+        {
+          "name": "strict-index",
+          "revision": "sha256:f7d563a7ae517e65852344ef36f2478d4c2466f6bf79005fcc432dac8c1a9c3a",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 48.172,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\current-main-20261008\\strict-index.json"
+        },
+        {
+          "name": "lint",
+          "revision": "sha256:f7d563a7ae517e65852344ef36f2478d4c2466f6bf79005fcc432dac8c1a9c3a",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 15.688,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\current-main-20261008\\lint.json"
+        },
+        {
+          "name": "db_browser",
+          "revision": "sha256:f7d563a7ae517e65852344ef36f2478d4c2466f6bf79005fcc432dac8c1a9c3a",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 348.688,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\current-main-20261008\\db_browser.json"
+        },
+        {
+          "name": "commission_db",
+          "revision": "sha256:f7d563a7ae517e65852344ef36f2478d4c2466f6bf79005fcc432dac8c1a9c3a",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 46.125,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\current-main-20261008\\commission_db.json"
+        },
+        {
+          "name": "contracts",
+          "revision": "sha256:f7d563a7ae517e65852344ef36f2478d4c2466f6bf79005fcc432dac8c1a9c3a",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 84.235,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\current-main-20261008\\contracts.json"
+        }
+      ],
+      "acceptance": {
+        "status": "BLOCKED",
+        "blockers": [
+          "independent_review_unverified",
+          "required_check_unverified:dependency_acceptance"
+        ],
+        "revision": "sha256:f7d563a7ae517e65852344ef36f2478d4c2466f6bf79005fcc432dac8c1a9c3a"
+      }
+    },
+    "dependency": {
+      "source_revision": "sha256:a23728bfd099856acf454ff15a1530d80f940d98f81bf58db535428ab6088ca5",
+      "checks": [
+        {
+          "name": "unit",
+          "revision": "sha256:a23728bfd099856acf454ff15a1530d80f940d98f81bf58db535428ab6088ca5",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 22.125,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\current-main-20261008\\dependency-unit.json"
+        },
+        {
+          "name": "typescript",
+          "revision": "sha256:a23728bfd099856acf454ff15a1530d80f940d98f81bf58db535428ab6088ca5",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 19.329,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\current-main-20261008\\dependency-typescript.json"
+        },
+        {
+          "name": "strict-index",
+          "revision": "sha256:a23728bfd099856acf454ff15a1530d80f940d98f81bf58db535428ab6088ca5",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 50.75,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\current-main-20261008\\dependency-strict-index.json"
+        },
+        {
+          "name": "lint",
+          "revision": "sha256:a23728bfd099856acf454ff15a1530d80f940d98f81bf58db535428ab6088ca5",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 11.813,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\current-main-20261008\\dependency-lint.json"
+        },
+        {
+          "name": "commission_db",
+          "revision": "sha256:a23728bfd099856acf454ff15a1530d80f940d98f81bf58db535428ab6088ca5",
+          "status": "PASS",
+          "exit_code": 0,
+          "duration_seconds": 29.797,
+          "evidence_path": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\current-main-20261008\\dependency-commission_db.json"
+        }
+      ],
+      "acceptance": {
+        "status": "BLOCKED",
+        "blockers": [
+          "independent_review_unverified"
+        ],
+        "revision": "sha256:a23728bfd099856acf454ff15a1530d80f940d98f81bf58db535428ab6088ca5"
+      }
+    }
+  },
+  "scope_policy": "All original and changed sources retained; every coupled profile must pass before primary acceptance.",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "historical_failure_evidence_preserved": true
+}

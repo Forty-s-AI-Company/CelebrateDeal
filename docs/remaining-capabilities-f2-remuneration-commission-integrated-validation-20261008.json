@@ -1,0 +1,96 @@
+{
+  "task_id": "f2-merchant-remuneration",
+  "head": "35cc5086ed294f2a27d7aaa5f8228fb66c5cedc3",
+  "integrated_main": "0e28b84c8f62d133339d3b357b88e1b2e6942eef",
+  "profiles": {
+    "primary": {
+      "acceptance": {
+        "status": "READY",
+        "blockers": [],
+        "revision": "sha256:587bfae703481c74336f7be555b3344620956d3fdc5598d72bf5d673529dd9d7"
+      },
+      "evidence": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\commission-delivered-20261008\\primary-evidence.json"
+    },
+    "dependency": {
+      "acceptance": {
+        "status": "READY",
+        "blockers": [],
+        "revision": "sha256:f5514678c9c5ea1c989fc9462c213a0d58ab3a9b46a4aab605115b82936303a2"
+      },
+      "evidence": "C:\\Users\\eden\\.codex\\worktrees\\remaining-affiliate-withholding\\CelebrateDeal\\.ai-team\\tmp\\f2-merchant-remuneration\\commission-delivered-20261008\\dependency-evidence.json"
+    }
+  },
+  "full_union_files": 86,
+  "database_browser": {
+    "status": "PASS",
+    "migrationCount": 94,
+    "tests": {
+      "total": 29,
+      "passed": 29,
+      "failed": 0,
+      "skipped": 0
+    },
+    "browser": {
+      "expected": 1,
+      "unexpected": 0,
+      "skipped": 0,
+      "flaky": 0
+    },
+    "cleanup": {
+      "container": "PASS",
+      "tempRoot": "PASS"
+    },
+    "sourceRevision": "sha256:c77f8da4a061c930f6228d015a93c13fafd4f17384f04e52346e84ef0660596c",
+    "sourceUnchanged": true
+  },
+  "review_dispatch": 6,
+  "review_status": "INDEPENDENT_REVIEW_6_PASS",
+  "delivery_status": "DELIVERED",
+  "exact_head_ci_runs": [
+    37703209942,
+    37703216912
+  ],
+  "exact_head_ci_status": "BOTH_SUCCESS",
+  "historical_evidence_and_unknown_dirty_preserved": true,
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "updated_at": "2026-10-07T23:44:14.894729+00:00",
+  "review_report": {
+    "task_id": "f2-merchant-remuneration",
+    "dispatch": 6,
+    "head": "35cc5086ed294f2a27d7aaa5f8228fb66c5cedc3",
+    "readonly": true,
+    "resolved": {
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "fallback": "Opus unavailable → native Astra"
+    },
+    "observed": {
+      "model": "unknown",
+      "effort": "unknown"
+    },
+    "snapshots": {
+      "primary": {
+        "files": 61,
+        "before": "sha256:587bfae703481c74336f7be555b3344620956d3fdc5598d72bf5d673529dd9d7",
+        "after": "sha256:587bfae703481c74336f7be555b3344620956d3fdc5598d72bf5d673529dd9d7",
+        "all_file_hashes_equal": true
+      },
+      "dependency": {
+        "files": 36,
+        "before": "sha256:f5514678c9c5ea1c989fc9462c213a0d58ab3a9b46a4aab605115b82936303a2",
+        "after": "sha256:f5514678c9c5ea1c989fc9462c213a0d58ab3a9b46a4aab605115b82936303a2",
+        "all_file_hashes_equal": true
+      }
+    },
+    "full_union_files": 86,
+    "uncovered_non_document_diff": [],
+    "findings": []
+  },
+  "canonical_acceptance": "BOTH_PROFILES_READY",
+  "merge_commit": "454773cceddb707e8a9c186b1267e06cf26a9380",
+  "merged_at": "2026-10-08T00:09:29Z",
+  "accepted_tree": "008e82e334ad9c284ebda0b8a3d7a7e470852849",
+  "merged_tree": "008e82e334ad9c284ebda0b8a3d7a7e470852849",
+  "accepted_merged_tree_equal": true
+}

@@ -1,0 +1,18 @@
+{
+  "kind": "review",
+  "source": "desktop_native",
+  "head": "23b25045cce18c35059d529e4b33c719b26e3e37",
+  "original_task_dispatch": 5,
+  "authorized_limit": 5,
+  "independent": true,
+  "agent": "/root/community_critical_review",
+  "resolved_model": "gpt-6-astra",
+  "resolved_effort": "high",
+  "observed_model": "unknown",
+  "observed_effort": "unknown",
+  "raw_report": [],
+  "findings": [],
+  "status": "PASS",
+  "canonical_acceptance": "NOT_YET_RUN",
+  "delivery": "NOT_DELIVERED"
+}
